@@ -17,8 +17,8 @@
  *
  * ## «Etter» er en EKTE gjengivelse, ikke en simulering
  *
- * `editor_master_preview` kjører profilens filterkjede + loudnorm over et
- * klemt utsnitt og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
+ * `editor_master_preview` kjører profilens filterkjede og samme nivåsteg som
+ * eksporten (måling og én forsterkning i Rust) over et klemt utsnitt og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
  * originalen. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
  * og den er heller ikke det som lages her.
  *

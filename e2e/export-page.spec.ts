@@ -335,15 +335,14 @@ test.describe("eksportering", () => {
 
   // F2-C-B: kvitteringen sier hvilket NIVÅ fila havnet på.
   //
-  // «−16 LUFS» er ikke pynt. Bakenden planlegger nå pass 2 slik at loudnorm
-  // kan levere målet med én forsterkning, og når toppene ikke gir rom for det,
+  // «−16 LUFS» er ikke pynt. Bakenden måler det behandlede signalet og
+  // leverer målet med én forsterkning; når toppene ikke gir rom for det,
   // lander eksporten LAVERE i stedet for å komprimere seg dit. Da må tallet
   // brukeren ser være det fila faktisk har — og forskjellen forklares, ikke
   // skjules.
   test("kvitteringen sier nivået mastringen landet på", async ({ page }) => {
     await openThenExport(page, {
       editor_export: exportOkMastered({
-        mode: "linear",
         achievedLufs: -16,
         targetLufs: -16,
         peakLimited: false,
@@ -361,7 +360,6 @@ test.describe("eksportering", () => {
   }) => {
     await openThenExport(page, {
       editor_export: exportOkMastered({
-        mode: "linear",
         achievedLufs: -20.8,
         targetLufs: -16,
         peakLimited: true,

@@ -24,7 +24,7 @@
 //!   versions start from exactly those samples.
 //! * One normaliser: all three files are measured (BS.1770 integrated) and given
 //!   a single linear gain to the same target, then the same true-peak limiter
-//!   at -1 dBTP, in Rust. ffmpeg's `loudnorm` is not involved on either side,
+//!   at -1 dBTP, in Rust. no ffmpeg level filter is involved on either side,
 //!   so a difference in level cannot be mistaken for a difference in the filters.
 //!   The target is the master preset's own LUFS, `-16` for the vocal profiles,
 //!   or `--target-lufs`.

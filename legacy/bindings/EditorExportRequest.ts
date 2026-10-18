@@ -51,7 +51,7 @@ bitrate: number | null,
  */
 bitDepth: number | null, 
 /**
- * Optional mastering preset id (a two-pass loudnorm chain is applied first).
+ * Optional mastering preset id (its chain runs first, then one measured gain to its loudness target).
  */
 masterPreset: string | null, 
 /**
@@ -100,7 +100,7 @@ date: string | null,
 vocalChainPreset: string | null, 
 /**
  * Full per-stage vocal-chain config. Overrides `vocalChainPreset`. The chain
- * runs BEFORE the mastering loudnorm (tone/dynamics first, loudness last).
+ * runs BEFORE the mastering level step (tone/dynamics first, loudness last).
  */
 processing: EditorProcessing | null, 
 /**

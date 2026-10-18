@@ -24,8 +24,8 @@
  *   — `src-tauri/src/editor/mod.rs`, `auto_process`
  *
  * Og et mastring-preset ER en stemmekjede: `speech-clear` er
- * `highpass=f=80` + tre EQ-bånd + `acompressor`, og DERETTER loudnorm mot
- * −16 LUFS (`crates/sundayrec-core/src/mastering.rs`). Én kjede, én
+ * `highpass=f=80` + tre EQ-bånd + `acompressor`, og DERETTER nivåsteget
+ * (én forsterkning) mot −16 LUFS (`crates/sundayrec-core/src/mastering.rs`). Én kjede, én
  * kompressor, ett høypass — og et utgivelsesnivå, som er halve løftet i
  * «jevner ut nivået».
  *
@@ -63,7 +63,7 @@ export const DEFAULT_SOUND_PROFILE: SoundProfile = "speech";
 /**
  * «Tale» → `speech-clear`, «Tale — tydelig (anbefalt)».
  *
- * −16 LUFS / LRA 8 / true peak −1 dBTP. Kjeden foran loudnorm er
+ * −16 LUFS / LRA 8 / true peak −1 dBTP. Kjeden foran nivåsteget er
  * `highpass=f=80`, −1,5 dB @ 200 Hz, +2 dB @ 3 kHz, −2 dB @ 7 kHz og en
  * kompressor på −18 dB / 2,5:1. Det er standardmålet for tale og podkast, og
  * det er presettet legacys mastring-panel selv forhåndsvelger.

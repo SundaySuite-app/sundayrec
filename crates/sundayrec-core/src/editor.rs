@@ -175,9 +175,10 @@ fn snap_rate(candidate: u32, supported: &[u32]) -> u32 {
 /// The sample rate an export should PIN for `fmt`, given the source's rate.
 ///
 /// Two hazards this closes:
-///   1. **Silent upsampling.** `loudnorm` runs its internal graph at 192 kHz, so
-///      an export with a mastering preset and no `-ar` lands a WAV/FLAC at
-///      192 kHz — four times the size of the service, for nothing.
+///   1. **Silent upsampling.** A filter graph that resamples internally (the old
+///      two-pass level filter ran at 192 kHz) with no `-ar` landed a mastered WAV/FLAC at
+///      192 kHz — four times the size of the service, for nothing. The pin stays
+///      so no graph can ever decide the file's rate again.
 ///   2. **Silent downsampling.** The reverse pin ("always 48 k") would throw away
 ///      a 96 kHz master. Lossless targets therefore keep the source rate exactly.
 ///
@@ -210,7 +211,7 @@ pub fn output_sample_rate(fmt: &str, source_rate: Option<u32>) -> Option<u32> {
 /// same `bitrate ?? <default>` fallbacks). `bit_depth` only affects WAV.
 ///
 /// `source_rate` is the probed sample rate of the recording; it pins `-ar` via
-/// [`output_sample_rate`] so neither the loudnorm-192 kHz artefact nor a silent
+/// [`output_sample_rate`] so neither an internal-resample artefact nor a silent
 /// downsample of a 96 kHz master can reach the file. `None` omits `-ar`.
 pub fn codec_args(
     fmt: &str,
@@ -341,7 +342,8 @@ pub fn is_supported_export_format(fmt: &str) -> bool {
 /// which is the pre-F2-8 behaviour.
 ///
 /// Why it matters: with a mastering preset the audio pad reaching the encoder
-/// comes out of `loudnorm`, which runs its internal graph at 192 kHz. Neither
+/// comes out of a graph that may resample internally (the old level filter ran at
+/// 192 kHz). Neither
 /// video builder emitted `-ar`, so the AAC encoder was handed that pad and
 /// picked whatever rate it could stand — a silent resample of the one file the
 /// church actually publishes. The audio-only path has pinned `-ar` since
@@ -776,6 +778,32 @@ pub fn video_filter_complex(
         "[v_main]".to_string(),
         "[a_main]".to_string(),
     )
+}
+
+/// The VIDEO half of [`video_filter_complex`]: trim (+ concat) the picture only, for an export
+/// whose audio arrives already cut, processed and levelled as raw PCM on another input (B1b,
+/// the mastered video export). Returns `(filter_complex, v_out)`.
+pub fn video_only_filter_complex(main_idx: usize, keeps: &[KeepSegment]) -> (String, String) {
+    let mut parts: Vec<String> = Vec::new();
+    if keeps.len() == 1 {
+        let seg = &keeps[0];
+        parts.push(format!(
+            "[{main_idx}:v]trim=start={}:end={},setpts=PTS-STARTPTS[v_main]",
+            ts(seg.start),
+            ts(seg.end)
+        ));
+    } else {
+        for (i, seg) in keeps.iter().enumerate() {
+            parts.push(format!(
+                "[{main_idx}:v]trim=start={}:end={},setpts=PTS-STARTPTS[vseg{i}]",
+                ts(seg.start),
+                ts(seg.end)
+            ));
+        }
+        let v_in: String = (0..keeps.len()).map(|i| format!("[vseg{i}]")).collect();
+        parts.push(format!("{v_in}concat=n={}:v=1:a=0[v_main]", keeps.len()));
+    }
+    (parts.join(";"), "[v_main]".to_string())
 }
 
 // ── FFmetadata chapters ───────────────────────────────────────────────────────
@@ -2284,7 +2312,7 @@ mod tests {
             ar_of(&codec_args("wv", None, None, Some(88_200))),
             Some("88200")
         );
-        // … nor silently UPsampled to loudnorm's internal 192 kHz.
+        // … nor silently UPsampled by an internal-resample graph.
         assert_eq!(
             ar_of(&codec_args("wav", None, None, Some(48_000))),
             Some("48000")
@@ -2384,8 +2412,8 @@ mod tests {
 
     #[test]
     fn video_export_pins_the_aac_rate_to_the_source() {
-        // 48 kHz in, 48 kHz out — the pin exists so `loudnorm`'s internal
-        // 192 kHz graph cannot decide the encoder's rate for us.
+        // 48 kHz in, 48 kHz out — the pin exists so no graph's internal
+        // rate can decide the encoder's rate for us.
         let a = video_codec_args("mp4", VideoCodec::H264, None, Some(48_000));
         assert!(a.windows(2).any(|w| w == ["-ar", "48000"]), "{a:?}");
         // The rate follows the AUDIO pad, so it sits after `-c:a aac`.
@@ -2698,7 +2726,7 @@ mod tests {
         let (fc, _map) = audio_export_filter_complex(
             &keeps,
             0,
-            &["loudnorm".to_string()],
+            &["alimiter".to_string()],
             &[],
             false,
             false,
@@ -2706,7 +2734,7 @@ mod tests {
             ConcatFormat::default(),
         );
         assert!(fc.contains("[seg0][seg1]concat=n=2:v=0:a=1[concat_out]"));
-        assert!(fc.contains("[concat_out]loudnorm[main_out]"));
+        assert!(fc.contains("[concat_out]alimiter[main_out]"));
     }
 
     // ── de-click join fades (P4) ─────────────────────────────────────────────

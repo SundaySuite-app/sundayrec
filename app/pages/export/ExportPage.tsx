@@ -657,16 +657,17 @@ function Running() {
 /**
  * «Nivå: −16 LUFS» — én linje, bare når det ER noe å si (F2-C-B).
  *
- * Nivået er ikke et ønske lenger: bakenden planlegger pass 2 slik at
- * `loudnorm` kan levere det med ÉN forsterkning, og når toppene ikke gir rom
- * for å nå presetets mål, lander eksporten lavere — og sier det, i stedet for
- * å komprimere seg fram til tallet. Uten en mastring (eller uten et svar fra
- * ffmpeg) står linja ikke der: en tom påstand er verre enn ingen.
+ * Nivået er ikke et ønske: bakenden måler det behandlede signalet i Rust,
+ * leverer det med ÉN forsterkning (og en true-peak-begrenser bare der toppene
+ * trenger det), og tallet her er det eksporten faktisk målte på lyden som gikk
+ * til koderen. Hvis toppene ikke gir rom for presetets mål, står det lavere
+ * tallet der, med grunnen ved siden av. Uten en mastring (eller for et opptak
+ * uten nivå å sette) står linja ikke der: en tom påstand er verre enn ingen.
  */
 function levelLine(): string {
   const l = exportedLoudness.value;
   if (!l) return "";
-  const lufs = formatLufs(l.peakLimited ? l.achievedLufs : l.targetLufs);
+  const lufs = formatLufs(l.achievedLufs);
   return l.peakLimited
     ? tf("app.editor.levelCapped", { lufs })
     : tf("app.editor.level", { lufs });

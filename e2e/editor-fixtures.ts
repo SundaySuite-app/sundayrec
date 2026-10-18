@@ -146,7 +146,7 @@ export const EXPORT_OK = fn(`(args) => {
 
 /**
  * A MASTERED export, as the backend reports it since F2-C-B: it says which
- * normalisation loudnorm actually performed and which level it landed on.
+ * level it landed on, measured on the audio the encoder was handed.
  *
  * `peakLimited` is the interesting half — a recording whose transients leave no
  * room for the preset's target lands QUIETER, on purpose, instead of being

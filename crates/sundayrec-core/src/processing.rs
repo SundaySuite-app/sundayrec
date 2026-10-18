@@ -22,7 +22,7 @@
 //!    [`VocalChain::build_filters`] returns the ordered, non-empty fragments.
 //!
 //! The final loudness stage is intentionally NOT here — loudness normalisation
-//! is [`crate::mastering`]'s two-pass `loudnorm`, appended *after* this chain by
+//! is [`crate::loudness`]'s one linear gain (and limiter), applied *after* this chain by
 //! the export seam. This module shapes the tone/dynamics; mastering sets the
 //! delivery loudness.
 

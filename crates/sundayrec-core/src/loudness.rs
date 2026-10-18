@@ -1,6 +1,6 @@
 //! Loudness in Rust (B1a, docs/LYDMOTOR.md fase 1): measurement and gain plan.
 //!
-//! This replaces the two-pass ffmpeg `loudnorm` with something we steer ourselves:
+//! The level is set in Rust, in steps we steer ourselves (the ffmpeg filter this replaced is gone, B1b):
 //!
 //! 1. **Measure** the processed signal with the BS.1770-4 / EBU R128 meter vendored from
 //!    filmcraft ([`Meter`], [`measure_planar`]).
@@ -175,6 +175,11 @@ impl GainPlan {
 pub const MAX_REFINEMENTS: usize = 4;
 /// [`apply_to_target`] stops once the output is this close to the target, LU.
 pub const SETTLED_LU: f64 = 0.1;
+
+/// An export reports its level as "capped" when it lands more than this far under the target, LU.
+/// Linear gain plus the corrected limiter normally lands within [`SETTLED_LU`]; this is the
+/// size of a miss worth telling the user about (a recording whose peaks leave no room).
+pub const SHORTFALL_REPORT_LU: f64 = 0.3;
 
 /// What [`apply_to_target`] ended up doing.
 #[derive(Debug, Clone, Copy, PartialEq)]
