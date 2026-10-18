@@ -3145,10 +3145,7 @@ struct AudioParams {
 /// over it) and the «Tale» decision. `channels` is the probed channel count of the source.
 /// Pure; unit-tested without ffmpeg.
 #[cfg(feature = "editor")]
-fn resolve_audio_params(
-    choice: &AudioChoice<'_>,
-    channels: Option<u32>,
-) -> AppResult<AudioParams> {
+fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppResult<AudioParams> {
     // An empty preset id is "no mastering" (the renderer sends `undefined`, but a stray ''
     // must not read as an unknown preset).
     let preset = match choice.preset_id.map(str::trim) {
@@ -5633,8 +5630,10 @@ mod tests {
             processing: Option<EditorProcessing>,
             repair: Option<EditorChannelRepair>,
         }
-        let mut mixer = EditorProcessing::default();
-        mixer.denoise_enabled = true;
+        let mixer = EditorProcessing {
+            denoise_enabled: true,
+            ..EditorProcessing::default()
+        };
         let dead = EditorChannelRepair {
             mode: "duplicateLeft".into(),
             left_db: 0.0,
