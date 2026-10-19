@@ -141,9 +141,9 @@ impl Player {
             .name("playback-device".into())
             .spawn(move || device::run(dev_shared, source_rate, ready_tx, stop_rx))
             .map_err(|e| e.to_string())?;
-        let (rate, channels, data, marks) = ready_rx
-            .recv()
-            .map_err(|_| "avspillingstråden døde før enheten var åpnet".to_string())??;
+        let (rate, channels, data, marks) = ready_rx.recv().map_err(|_| {
+            "the playback device thread died before the device was open".to_string()
+        })??;
         let mut p = Self::start(programme, shared, rate, channels, data, marks, sink)?;
         p.device = Some((stop_tx, handle));
         Ok(p)
@@ -375,7 +375,7 @@ fn report(
         if !told_device && shared.device_failed.load(Ordering::Acquire) {
             told_device = true;
             sink(PlaybackEvent::Error {
-                message: "lydenheten for avspilling falt ut".into(),
+                message: "the output device failed".into(),
             });
         }
         if let Some(message) = error.lock().ok().and_then(|mut e| e.take()) {
@@ -430,10 +430,10 @@ mod device {
         let host = open_host(CpalHostKind::Default)?;
         let device = host
             .default_output_device()
-            .ok_or_else(|| "fant ingen lydenhet for avspilling".to_string())?;
+            .ok_or_else(|| "no output device".to_string())?;
         let cfg = device
             .default_output_config()
-            .map_err(|e| format!("lydenheten svarte ikke: {e}"))?;
+            .map_err(|e| format!("querying the output device failed: {e}"))?;
         let rate = cfg.sample_rate();
         let ch = usize::from(cfg.channels()).max(1);
         let (dp, dc, mp, mc) = rings(rate, ch);
@@ -451,12 +451,12 @@ mod device {
             SF::U16 => build::<u16>(&device, config, r, shared),
             SF::F64 => build::<f64>(&device, config, r, shared),
             SF::I24 => build::<cpal::I24>(&device, config, r, shared),
-            other => return Err(format!("lydenhetens format støttes ikke: {other:?}")),
+            other => return Err(format!("unsupported output sample format: {other:?}")),
         }
-        .map_err(|e| format!("avspillingen kunne ikke åpne lydenheten: {e}"))?;
+        .map_err(|e| format!("could not open the output device: {e}"))?;
         stream
             .play()
-            .map_err(|e| format!("avspillingen kunne ikke starte: {e}"))?;
+            .map_err(|e| format!("could not start the output stream: {e}"))?;
         Ok((stream, rate, ch, dp, mp))
     }
 

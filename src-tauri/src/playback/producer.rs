@@ -79,7 +79,7 @@ impl<O: PcmOpener> Job<O> {
     ) -> Result<Self, String> {
         let built = chain
             .build(plan.rate() as f32, channels)
-            .map_err(|e| format!("lydkjeden kunne ikke bygges: {e}"))?;
+            .map_err(|e| format!("the audio chain could not be built: {e}"))?;
         let start = start.min(plan.program_frames());
         let preroll = (PREROLL_SEC * f64::from(plan.rate())) as u64;
         let from = start.saturating_sub(preroll);
@@ -292,7 +292,7 @@ impl<O: PcmOpener + Clone> Producer<O> {
                         chunk.clear();
                         chunk_pos = 0;
                         self.fail(
-                            format!("avspillingen kunne ikke lese fila: {e}"),
+                            format!("reading the recording failed: {e}"),
                             gen,
                             pushed_samples / ch as u64,
                             &mut pending,

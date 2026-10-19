@@ -306,7 +306,7 @@ fn a_cut_file_plays_through_ffmpeg_to_the_end_or_skips() {
     };
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("sine.wav");
-    let ok = std::process::Command::new(&ffmpeg)
+    let ok = crate::util::hidden_std_command(&ffmpeg)
         .args(["-nostdin", "-v", "error", "-f", "lavfi", "-i"])
         .arg("sine=frequency=250:sample_rate=48000:duration=4")
         .args(["-c:a", "pcm_f32le"])
