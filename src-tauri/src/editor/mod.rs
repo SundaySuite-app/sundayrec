@@ -38,10 +38,15 @@
 //! `sundayrec_core::open_read`, where the resampling to 16 kHz and 8 kHz is done
 //! in Rust. The first of them to ask starts the read; the rest find it done or
 //! wait for it ([`open::OPEN_BOOK`]). The sidecars are unchanged and keyed as
-//! before. [`analysis_decodes_of`] counts the reads, and the tests say one.
-//! What does NOT share it is the programme measure ([`program_plan`]): it
-//! measures the signal after the cuts and the chain, which do not exist yet when a
-//! file is opened.
+//! before. The `astats` round that used to measure the channels is gone (B4b);
+//! the meter that replaced it is part of the read.
+//!
+//! [`analysis_decodes_of`] counts every whole-file read that measures, by kind
+//! ([`Decode`]), and the tests say one for everything above. What does NOT share
+//! the read is the programme measure ([`program_plan`]) and the export's
+//! measuring pass: they measure the signal after the cuts and the chain, which
+//! do not exist yet when a file is opened. The counter shows them as their own
+//! kinds, so that they are visible rather than assumed.
 //!
 //! The export is the other side of that: it always runs on the untouched
 //! original, never on a proxy or an extract, so what the user hears while
@@ -1820,7 +1825,7 @@ where
     disabled("segments")
 }
 
-/// Analyse stereo channel balance (needs ffmpeg astats).
+/// Analyse stereo channel balance.
 #[cfg(not(feature = "editor"))]
 pub async fn diagnose_channels(_input_path: &str) -> AppResult<EditorChannelDiagnosis> {
     disabled("diagnoseChannels")
@@ -2111,6 +2116,7 @@ pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
     }
     let args = peak_probe_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    count_analysis_decode(input_path, Decode::PeakProbe);
     let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
     let drain = child.stderr.take().map(|mut stderr| {
         tauri::async_runtime::spawn(async move {
@@ -2223,134 +2229,14 @@ fn read_segments_cache(
     .then_some(cache.segments)
 }
 
-/// Upper bound for the up-front PCM allocation: 6 h of 16 kHz mono f32 (~1.4 GB).
-/// A bogus probed duration must not turn into a bogus allocation; past this the
-/// `Vec` simply grows as before.
-#[cfg(feature = "editor")]
-const ANALYSIS_PCM_MAX_PREALLOC_SAMPLES: usize = 16_000 * 3600 * 6;
-
-/// Samples to reserve for the analysis buffer, from the byte count the probed
-/// duration implies (s16le: two bytes a sample). `None`/non-finite → no reserve.
-#[cfg(feature = "editor")]
-fn analysis_pcm_capacity(expected_bytes: Option<f64>) -> usize {
-    match expected_bytes {
-        // +1 sample of slack for the carry byte straddling a read.
-        Some(b) if b.is_finite() && b > 0.0 => {
-            (((b / 2.0) as usize).saturating_add(1)).min(ANALYSIS_PCM_MAX_PREALLOC_SAMPLES)
-        }
-        _ => 0,
-    }
-}
-
-/// Decode a recording to the 16 kHz mono f32 PCM the detector works on.
-///
-/// Since B4a only shadow mode (`--features vad`, default off) reads the file this way: the sermon
-/// search itself gets its 16 kHz PCM from the open round ([`open`]), made from the recording's
-/// own rate in Rust. The shadow pass keeps its decode because it runs minutes after the round,
-/// in the background, and holding ~345 MB of f32 alive across it to avoid a second ffmpeg read
-/// (seconds, against the model's minutes) would be the expensive trade, not the frugal one.
-///
-/// `on_progress` receives the 0..1 fraction, measured as bytes off the pipe over
-/// the byte count the probed duration implies. Capped at 0.99: the pass this
-/// feeds always has a tail the decode cannot see, and only the caller knows when
-/// its own work is finished.
-///
-/// Memory (P3): this used to `wait_with_output()`, i.e. buffer the ENTIRE stream
-/// as bytes (~230 MB for 2 h) and then `collect()` a second, equally large
-/// `Vec<f32>` from it. The bytes are folded into the f32 vec as they arrive, so
-/// only one buffer is ever held.
-///
-/// HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-#[cfg_attr(not(feature = "vad"), allow(dead_code))]
-pub(crate) async fn decode_analysis_pcm<F>(input_path: &str, on_progress: F) -> AppResult<Vec<f32>>
-where
-    F: Fn(f32),
-{
-    use sundayrec_core::audio_analysis::SAMPLE_RATE;
-    use sundayrec_core::editor::analysis_decode_args;
-    use tokio::io::AsyncReadExt;
-
-    // Same denominator as the waveform decode — see `peaks`. `None` when the
-    // container has no probeable duration: then no fraction would be honest.
-    let expected_bytes = duration_hint(input_path)
-        .await
-        .filter(|d| *d > 0.0)
-        .map(|d| d * f64::from(SAMPLE_RATE) * 2.0);
-
-    count_analysis_decode(input_path);
-    let args = analysis_decode_args(input_path);
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| AppError::Recording("analysis decode: no stdout pipe".into()))?;
-    // Drain stderr concurrently or a full pipe wedges ffmpeg mid-decode.
-    let drain = child.stderr.take().map(|mut stderr| {
-        tauri::async_runtime::spawn(async move {
-            let mut sink = Vec::new();
-            let _ = stderr.read_to_end(&mut sink).await;
-        })
-    });
-
-    // Raw s16le mono → f32 normalised samples for the classifier, folded in as
-    // the chunks arrive (a sample can straddle a read, hence the carry byte).
-    //
-    // Sized up front from the probed duration: a `Vec` grown by doubling holds
-    // old and new buffers at once while it reallocates, which at 3 h (~690 MB
-    // of f32) peaked near 1.6 GB.
-    let mut pcm: Vec<f32> = Vec::with_capacity(analysis_pcm_capacity(expected_bytes));
-    let mut buf = vec![0u8; 64 * 1024];
-    let mut carry: Option<u8> = None;
-    let mut read_bytes: u64 = 0;
-    let mut ticked = 0.0f32;
-    loop {
-        let n = stdout
-            .read(&mut buf)
-            .await
-            .map_err(|e| AppError::Recording(format!("analysis decode read: {e}")))?;
-        if n == 0 {
-            break;
-        }
-        // One tick per percent — see the identical guard in `peaks`.
-        read_bytes += n as u64;
-        if let Some(expected) = expected_bytes {
-            let frac = ((read_bytes as f64 / expected) as f32).clamp(0.0, 0.99);
-            if frac >= ticked + 0.01 {
-                ticked = frac;
-                on_progress(frac);
-            }
-        }
-        let mut chunk = &buf[..n];
-        if let Some(lo) = carry.take() {
-            pcm.push(i16::from_le_bytes([lo, chunk[0]]) as f32 / 32768.0);
-            chunk = &chunk[1..];
-        }
-        pcm.extend(
-            chunk
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0),
-        );
-        if chunk.len() % 2 == 1 {
-            carry = Some(chunk[chunk.len() - 1]);
-        }
-    }
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| AppError::Recording(format!("analysis decode wait: {e}")))?;
-    if let Some(h) = drain {
-        let _ = h.await;
-    }
-    if !status.success() {
-        return Err(AppError::Recording(
-            "analysis decode failed (ffmpeg non-zero)".into(),
-        ));
-    }
-    Ok(pcm)
+/// The 16 kHz mono PCM the sermon search ran on, for the shadow VAD (`vad` feature): the shadow
+/// scores the same samples the open round made, so a recording is still read once with the model
+/// on. To the first caller, and only after [`segments`] has handed out the detection that the
+/// shadow compares against; `None` otherwise (the shadow then does not run: it never reads the
+/// file itself).
+#[cfg(all(feature = "editor", feature = "vad"))]
+pub(crate) fn take_shadow_pcm(path: &str) -> Option<Vec<f32>> {
+    open::peek(path)?.detected_now()?.take_shadow_pcm()
 }
 
 /// The sermon search: classify + group with the core, promote the sermon block, and map to UI
@@ -2494,7 +2380,7 @@ fn diagnosis_from_levels(levels: sundayrec_core::levels::ChannelLevels) -> Edito
 }
 
 /// Analyse a recording's stereo channel balance: the peaks and RMS of each channel, measured over
-/// the whole file in the open round (B4a: they used to be an `astats` round of their own), and
+/// the whole file in the open round (they used to be an `astats` round of their own), and
 /// the core's recommended repair (swap / duplicate-good-channel / per-channel makeup).
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
@@ -3005,27 +2891,64 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
 #[cfg(feature = "editor")]
 const TALE_PRESET_ID: &str = "speech-clear";
 
-/// How many times each recording has been decoded for ANALYSIS in this process (B4a), by path.
-/// The open round counts one; the tests read it to prove that opening a recording reads the file
-/// once, not once per consumer.
+/// The whole-file reads of a recording that exist to MEASURE it, by what they are. The counter
+/// ([`analysis_decodes_of`]) counts every one of them, so a test (and the bench) can say how many
+/// times a file is decoded instead of assuming it. A new whole-file read that measures must say
+/// which of these it is, or add one; a read that only plays or encodes is not counted.
 #[cfg(feature = "editor")]
-static ANALYSIS_DECODES: std::sync::Mutex<Vec<(String, u64)>> = std::sync::Mutex::new(Vec::new());
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Decode {
+    /// The open round ([`open`]): waveform, sermon search, channel levels and «Tale»'s analysis,
+    /// in ONE read. Also the shadow VAD's (`vad` feature), which takes its PCM from this read.
+    Open,
+    /// The export's measuring pass ([`pcm::measure_and_plan`]): the kept parts of the source,
+    /// through the chain, measured and staged. Needs the cuts and the chain, so it cannot be part
+    /// of the open round.
+    Staging,
+    /// The programme loudness ([`pcm::measure_program`]): the same, measured and thrown away; what
+    /// the preview levels against. Cached per request ([`PLAN_BOOK`]).
+    Programme,
+    /// [`probe_true_peak_db`] (`volumedetect` over the file). No caller in the app today.
+    PeakProbe,
+}
+
+/// How many times each recording has been read for ANALYSIS in this process, by path and kind.
+/// The tests read it to prove that opening a recording reads the file once, not once per
+/// consumer. The preview's window (at most 60 s of the file) and the export's encode (which reads
+/// the staged copy, not the recording) are not whole-file reads of the recording and are not
+/// counted.
+#[cfg(feature = "editor")]
+static ANALYSIS_DECODES: std::sync::Mutex<Vec<(String, Decode, u64)>> =
+    std::sync::Mutex::new(Vec::new());
 
 #[cfg(feature = "editor")]
-fn count_analysis_decode(path: &str) {
+fn count_analysis_decode(path: &str, kind: Decode) {
     let mut all = ANALYSIS_DECODES.lock().unwrap_or_else(|e| e.into_inner());
-    match all.iter_mut().find(|(p, _)| p == path) {
-        Some((_, n)) => *n += 1,
-        None => all.push((path.to_string(), 1)),
+    match all.iter_mut().find(|(p, k, _)| p == path && *k == kind) {
+        Some((_, _, n)) => *n += 1,
+        None => all.push((path.to_string(), kind, 1)),
     }
 }
 
-/// Whole-file analysis decodes of `path` so far in this process.
+/// Whole-file analysis reads of `path` so far in this process, of every kind.
 #[cfg(feature = "editor")]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn analysis_decodes_of(path: &str) -> u64 {
     let all = ANALYSIS_DECODES.lock().unwrap_or_else(|e| e.into_inner());
-    all.iter().find(|(p, _)| p == path).map_or(0, |(_, n)| *n)
+    all.iter()
+        .filter(|(p, _, _)| p == path)
+        .map(|(_, _, n)| n)
+        .sum()
+}
+
+/// The same, of one kind.
+#[cfg(feature = "editor")]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn analysis_decodes_by(path: &str, kind: Decode) -> u64 {
+    let all = ANALYSIS_DECODES.lock().unwrap_or_else(|e| e.into_inner());
+    all.iter()
+        .find(|(p, k, _)| p == path && *k == kind)
+        .map_or(0, |(_, _, n)| *n)
 }
 
 /// What the analysis decided, kept per file ([`open::OPEN_BOOK`]) so the preview, the loudness
@@ -4774,21 +4697,6 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names.len(), 1, "a temp was left behind: {names:?}");
-    }
-
-    #[cfg(feature = "editor")]
-    #[test]
-    fn analysis_pcm_is_preallocated_from_the_probed_duration() {
-        // 3 h at 16 kHz mono s16le: the reserve is the sample count, not 0.
-        let bytes = 3.0 * 3600.0 * 16_000.0 * 2.0;
-        assert_eq!(analysis_pcm_capacity(Some(bytes)), 172_800_001);
-        // No usable duration → no reserve; a bogus one is capped, not honoured.
-        assert_eq!(analysis_pcm_capacity(None), 0);
-        assert_eq!(analysis_pcm_capacity(Some(f64::NAN)), 0);
-        assert_eq!(
-            analysis_pcm_capacity(Some(1e15)),
-            ANALYSIS_PCM_MAX_PREALLOC_SAMPLES
-        );
     }
 
     /// Drive `pump_export_progress` with a writer that emits `ticks` progress
@@ -8081,7 +7989,7 @@ mod tests {
         /// A stereo 32-bit float WAV in `dir`: speech-like syllables in noise, a 50 Hz hum on the
         /// left channel only, the right 6 dB lower and without hum. Odd rate on purpose (44.1
         /// kHz): the round resamples it to 16 kHz with the rational ratio 160/441. Float, because
-        /// `astats` (which the round replaced, and which the comparison test still runs) loses its
+        /// `astats` (which the round replaced, and which the oracle test still runs) loses its
         /// noise floor on 16-bit samples this quiet: its queue of window maxima breaks on the many
         /// equal values a quantised room tone has.
         fn open_fixture(
@@ -8294,15 +8202,57 @@ mod tests {
             });
         }
 
-        /// The round against the four reads it replaced, on the same file: the rate-converted
-        /// analysis must reach the same decisions and the same numbers. The old routes are run
-        /// here exactly as the app ran them (`-ar 16000` in ffmpeg, `astats`, the 8 kHz mono
-        /// pipe), the new one through [`open::opened`].
+        /// What ffmpeg's `astats=metadata=0` printed for a file, as the numbers the round measures:
+        /// per channel the `Peak level`, `RMS level` and `Noise floor` (dBFS), and the `Overall`
+        /// block's noise floor. A test-only reader: the app does not use `astats` any more, the
+        /// oracle below does, because it is a second, independent implementation.
+        struct AstatsSummary {
+            peak: [f64; 2],
+            rms: [f64; 2],
+            overall_floor: f64,
+        }
+
+        fn parse_astats_summary(stderr: &str) -> AstatsSummary {
+            let (mut peak, mut rms) = ([f64::NAN; 2], [f64::NAN; 2]);
+            let (mut channel, mut overall, mut overall_floor) = (0usize, false, f64::NAN);
+            for line in stderr.lines() {
+                let value = |marker: &str| {
+                    let tail = line.split_once(marker)?.1.trim();
+                    tail.split_whitespace().next()?.parse::<f64>().ok()
+                };
+                if line.contains("Channel:") {
+                    channel += 1;
+                } else if line.trim_end().ends_with("Overall") {
+                    overall = true;
+                } else if overall {
+                    if let Some(v) = value("Noise floor dB:") {
+                        overall_floor = v;
+                    }
+                } else if (1..=2).contains(&channel) {
+                    if let Some(v) = value("Peak level dB:") {
+                        peak[channel - 1] = v;
+                    } else if let Some(v) = value("RMS level dB:") {
+                        rms[channel - 1] = v;
+                    }
+                }
+            }
+            AstatsSummary {
+                peak,
+                rms,
+                overall_floor,
+            }
+        }
+
+        /// The round against ffmpeg itself, on the same file: ffmpeg's own resampler (`-ar 16000`),
+        /// its own `astats` and its own 8 kHz mono downmix are the ORACLE, a second implementation
+        /// the round did not write. They are what the app ran before B4a (four reads); here they
+        /// are run the old way, in the test only, and the one read through [`open::opened`] must
+        /// reach the same decisions and the same numbers. The core tests pin the meter and the
+        /// resampler against brute force of their own definitions; this is what pins those
+        /// definitions to what ffmpeg measures.
         #[test]
-        fn the_round_agrees_with_the_four_reads_it_replaced_or_skips() {
-            use sundayrec_core::editor::{
-                analysis_decode_args, peaks_pipe_args, PeakAccumulator, PEAKS_BUCKET_SAMPLES,
-            };
+        fn the_round_agrees_with_ffmpeg_itself_or_skips() {
+            use sundayrec_core::editor::{peaks_pipe_args, PeakAccumulator, PEAKS_BUCKET_SAMPLES};
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -8342,7 +8292,13 @@ mod tests {
             let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
             acc.push_bytes(&run(peaks_pipe_args(&src)).stdout);
             let old_peaks = acc.finish();
-            let old_bytes = run(analysis_decode_args(&src)).stdout;
+            // 16 kHz mono s16le on stdout, ffmpeg's resampler.
+            let old_bytes = run(["-nostdin", "-hide_banner", "-i", &src, "-vn"]
+                .into_iter()
+                .chain(["-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
+                .map(String::from)
+                .collect())
+            .stdout;
             let old_pcm: Vec<f32> = old_bytes
                 .as_chunks::<2>()
                 .0
@@ -8372,10 +8328,12 @@ mod tests {
                 .stderr,
             )
             .into_owned();
-            let old_levels =
-                sundayrec_core::levels::parse_levels(&old_stats).expect("astats levels");
-            let old_floor =
-                sundayrec_core::levels::parse_noise_floor_db(&old_stats).expect("floor");
+            let old = parse_astats_summary(&old_stats);
+            let old_floor = old.overall_floor;
+            assert!(
+                old.peak.iter().chain(&old.rms).all(|v| v.is_finite()),
+                "{old_stats}"
+            );
 
             // The new one.
             let new = with_sidecars(&ffmpeg, &ffprobe, |rt| {
@@ -8434,17 +8392,10 @@ mod tests {
 
             // The channel diagnosis: measured on the same samples, so the same numbers.
             let new_levels = opened.channel_levels().unwrap();
-            assert!((new_levels.peak_db_left - old_levels.peak_db_left).abs() < 0.01);
-            assert!(
-                (new_levels.peak_db_right.unwrap() - old_levels.peak_db_right.unwrap()).abs()
-                    < 0.01
-            );
-            assert!(
-                (new_levels.rms_db_left.unwrap() - old_levels.rms_db_left.unwrap()).abs() < 0.01
-            );
-            assert!(
-                (new_levels.rms_db_right.unwrap() - old_levels.rms_db_right.unwrap()).abs() < 0.01
-            );
+            assert!((new_levels.peak_db_left - old.peak[0]).abs() < 0.01);
+            assert!((new_levels.peak_db_right.unwrap() - old.peak[1]).abs() < 0.01);
+            assert!((new_levels.rms_db_left.unwrap() - old.rms[0]).abs() < 0.01);
+            assert!((new_levels.rms_db_right.unwrap() - old.rms[1]).abs() < 0.01);
             // The noise floor: the exact sliding-window maximum (the core tests pin it against a
             // brute force). `astats` computes the same thing with a queue of its own that is
             // exact on most recordings (the 90-minute service in docs/LYDMOTOR.md agrees to
@@ -8472,6 +8423,186 @@ mod tests {
                     "{n:?} vs {o:?}"
                 );
             }
+        }
+
+        /// A 90-minute mono FLAC at 8 kHz (a sine that switches between loud and quiet every few
+        /// seconds, so the search and the meters have something to find). Small on disk and
+        /// quick to make, but 5400 s long to every consumer: the duration, the byte counts and the
+        /// progress arithmetic are those of a whole service.
+        fn ninety_minute_fixture(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+        ) -> String {
+            let out = dir.join(name);
+            let made = std::process::Command::new(ffmpeg)
+                .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+                .args(["-f", "lavfi", "-i"])
+                .arg("sine=frequency=300:sample_rate=8000:duration=5400")
+                .args(["-af", "volume='if(lt(mod(t,12),7),0.5,0.02)':eval=frame"])
+                .args(["-ac", "1", "-c:a", "flac", "-y"])
+                .arg(&out)
+                .output()
+                .expect("ffmpeg runs");
+            assert!(
+                made.status.success(),
+                "{}",
+                String::from_utf8_lossy(&made.stderr)
+            );
+            out.to_string_lossy().into_owned()
+        }
+
+        /// THE gate of B4b: a 90-minute recording is opened (waveform, sermon search, channel
+        /// diagnosis, one-click chain, «Tale»'s sentence and decision, all asked at once and then
+        /// again) and the counter says the file was decoded ONCE: one whole-file read, of the
+        /// open kind, and no other kind of read. Not an assumption: every whole-file read that
+        /// measures goes through [`count_analysis_decode`].
+        #[test]
+        fn a_ninety_minute_recording_is_decoded_once_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = ninety_minute_fixture(&ffmpeg, dir.path(), "service.flac");
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let engine = ExportEngine::new();
+                    let info = load_recording(&src).await.expect("load");
+                    assert!(
+                        (5399.0..=5401.0).contains(&info.duration_sec),
+                        "a 90-minute file: {} s",
+                        info.duration_sec
+                    );
+                    assert_eq!(analysis_decodes_of(&src), 0, "opening is not reading");
+                    let (pk, seg, diag, auto, said, clean) = tokio::join!(
+                        peaks(&src, |_| {}),
+                        segments(&src, false, |_| {}),
+                        diagnose_channels(&src),
+                        auto_process(&src),
+                        tale_said(&src),
+                        tale_clean_for(&engine, &src),
+                    );
+                    let pk = pk.expect("peaks");
+                    assert!(
+                        (539_000..=541_000).contains(&pk.peaks.len()),
+                        "100 a second for 90 minutes: {}",
+                        pk.peaks.len()
+                    );
+                    assert!(!seg.expect("segments").0.is_empty());
+                    diag.expect("diagnosis");
+                    auto.expect("auto process");
+                    assert!(said.expect("sentence").analysed);
+                    assert!(clean.unwrap().is_some());
+                    // And asked again, one by one, the way the editor does over the next minutes.
+                    peaks(&src, |_| {}).await.expect("peaks again");
+                    segments(&src, false, |_| {}).await.expect("segments again");
+                    diagnose_channels(&src).await.expect("diagnosis again");
+                    tale_said(&src).await.expect("sentence again");
+                });
+            });
+            assert_eq!(
+                analysis_decodes_of(&src),
+                1,
+                "a 90-minute recording is decoded once, however many ask"
+            );
+            assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
+        }
+
+        /// B4b: with the shadow VAD on (`vad` feature) the model scores the samples the sermon
+        /// search ran on, taken from the open round: no read of its own, so the count stays one.
+        /// Only after the detection has been handed out, and only once.
+        #[cfg(feature = "vad")]
+        #[test]
+        fn the_shadow_vad_takes_the_open_rounds_samples_and_reads_nothing_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "shadow.wav", 44_100, 20.0);
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let (_, analysis) = segments(&src, false, |_| {}).await.expect("segments");
+                    assert!(analysis.is_some());
+                })
+            });
+            let pcm = take_shadow_pcm(&src).expect("the samples the search ran on");
+            assert!(
+                (319_000..=321_000).contains(&pcm.len()),
+                "20 s at 16 kHz: {}",
+                pcm.len()
+            );
+            assert!(take_shadow_pcm(&src).is_none(), "once");
+            assert_eq!(analysis_decodes_of(&src), 1, "and the shadow read nothing");
+        }
+
+        /// The reads that do NOT share the open round are counted as what they are, so they
+        /// cannot hide: the export's measuring pass (the kept parts through the chain, staged)
+        /// and the preview's programme measure each read the source once per request, apart from
+        /// the open round, and a second identical preview request reads nothing.
+        #[test]
+        fn the_reads_that_do_not_share_the_open_round_are_counted_apart_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "apart.wav", 44_100, 20.0);
+            let out_dir = tempfile::tempdir().unwrap();
+            let req = EditorMasterPreviewRequest {
+                source_token: "t".into(),
+                preset_id: Some("speech-clear".into()),
+                start_sec: 2.0,
+                duration_sec: 8.0,
+                processing: None,
+                channel_repair: None,
+                cut_regions: Vec::new(),
+                full_length_sec: Some(20.0),
+            };
+            let mut ex = export_request(&src, &out_dir.path().to_string_lossy(), "wav", &[], 20.0);
+            ex.master_preset = Some("speech-clear".into());
+            // One hold of the sidecar lock for the whole sequence: the open book keeps only a few
+            // recordings, and other tests reading files at the same time would push this one out
+            // between the steps.
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    peaks(&src, |_| {}).await.expect("peaks");
+                    diagnose_channels(&src).await.expect("diagnosis");
+                    assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
+                    assert_eq!(analysis_decodes_of(&src), 1);
+
+                    assert!(prepare_listen(&req, &src).await.expect("prepare"));
+                    assert!(prepare_listen(&req, &src).await.expect("prepare again"));
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Programme),
+                        1,
+                        "the programme is measured once per request"
+                    );
+                    assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
+
+                    let engine = ExportEngine::new();
+                    let (_, on_progress) = sink();
+                    export(&engine, &ex, &ex.inputs, false, on_progress)
+                        .await
+                        .expect("the export should succeed");
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Staging),
+                        1,
+                        "the export measures the kept parts once"
+                    );
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Open),
+                        1,
+                        "and «Tale» comes from the round already made"
+                    );
+                });
+            });
+            assert_eq!(analysis_decodes_by(&src, Decode::PeakProbe), 0);
+            assert_eq!(analysis_decodes_of(&src), 3);
         }
 
         /// B4a: the clock for opening a long recording and exporting it. NOT part of the suite:
@@ -8510,9 +8641,12 @@ mod tests {
             let t0 = std::time::Instant::now();
             let lap = |what: &str| {
                 eprintln!(
-                    "BENCH {what:<28} {:>7.2} s since start, {} analysis decodes",
+                    "BENCH {what:<28} {:>7.2} s since start, {} analysis decodes ({} open, {} staging, {} programme)",
                     t0.elapsed().as_secs_f64(),
-                    analysis_decodes_of(&file)
+                    analysis_decodes_of(&file),
+                    analysis_decodes_by(&file, Decode::Open),
+                    analysis_decodes_by(&file, Decode::Staging),
+                    analysis_decodes_by(&file, Decode::Programme)
                 );
             };
             rt.block_on(async {

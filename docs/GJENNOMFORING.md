@@ -1538,6 +1538,18 @@ telleren i en test, og alle eksisterende analyse-tester er grønne.
 > teller i en test som viser at en 90-minutters fil dekodes én gang — ikke en
 > antakelse. Mål åpningstiden før og etter og skriv begge i PR-en.
 
+**Gjort i B4b:** `astats`-resten er slettet (`levels::parse_levels`/`parse_noise_floor_db`,
+`decode_analysis_pcm` og `analysis_decode_args`). Sammenligningen mot de gamle rutene er
+beholdt som orakel mot ffmpeg selv (`the_round_agrees_with_ffmpeg_itself_or_skips`):
+ffmpegs egen resampler, `astats` og 8 kHz-nedmiks er en uavhengig implementasjon, og kjernetestene
+mot brute force låser bare målerne til sin egen definisjon. Telleren (`analysis_decodes_of`)
+teller nå alle helfilslesinger som måler, per slag (`Decode`): åpningsrunden, eksportens
+måle-pass (`Staging`), programmålingen (`Programme`) og `volumedetect`-proben (`PeakProbe`).
+Porten er `a_ninety_minute_recording_is_decoded_once_or_skips` (en 90-minutters fil, alle
+forbrukere, én lesing). Skygge-VAD (`vad`) tar nå PCM-en fra åpningsrunden
+(`take_shadow_pcm`) i stedet for å dekode på nytt; prisen er at 16 kHz-PCM-en (~345 MB for 90
+minutter) lever til skyggen har tatt den, bare i `vad`-bygg.
+
 ## B5a — Avspillingsmotoren
 
 **Modell:** **Opus** — en sanntids lydtråd med cpal som klokke. Allokering,

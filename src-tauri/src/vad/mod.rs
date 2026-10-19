@@ -38,8 +38,8 @@
 
 use std::sync::Arc;
 
-// Shadow mode's orchestration: decode → score → compare → record. Needs the
-// analysis decode, which is the `editor` seam's, so it compiles only when both
+// Shadow mode's orchestration: samples → score → compare → record. Needs the
+// open round's PCM, which is the `editor` seam's, so it compiles only when both
 // features are on. Everything ABOVE it is pure and lives in
 // `sundayrec_core::shadow`, which is always compiled.
 #[cfg(feature = "editor")]

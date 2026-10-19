@@ -1,8 +1,10 @@
-//! Shadow mode's I/O half (E9) — decode, score, compare, write, log.
+//! Shadow mode's I/O half (E9) — take the samples, score, compare, write, log.
 //!
-//! Every decision here belongs to [`sundayrec_core::shadow`]; what is left is a
-//! second ffmpeg decode, a thread that will be busy for minutes, one sidecar
-//! write and a log line. The model is loaded once per process
+//! Every decision here belongs to [`sundayrec_core::shadow`]; what is left is
+//! a thread that will be busy for minutes, one sidecar write and a log line.
+//! The samples are the open round's (B4b): the sermon search that produced the
+//! heuristic answer ran on them, and the shadow scores the very same ones, so a
+//! recording is read ONCE with the model on as well as off. The model is loaded once per process
 //! ([`SHARED_MODEL`]) and a fresh backend is built per file, which is what
 //! [`SileroVadModel`]'s `Send + Sync` guarantee exists for.
 //!
@@ -13,7 +15,7 @@
 //! as they do in a build without this feature — and the answer it produces is
 //! never shown, never persisted as detection, and never read by anything that
 //! decides. Progress is emitted on `editor://shadow-progress` through the same
-//! throttled emitter every other decode uses, so a later stage that wants to
+//! throttled emitter every other analysis uses, so a later stage that wants to
 //! surface it needs no backend change; no renderer listens today, on purpose. A
 //! second progress bar for work nobody is waiting on turns a background
 //! measurement into something that looks like part of the job.
@@ -24,10 +26,14 @@
 //! 90-minute service, on top of the analysis pass that just finished. Inline,
 //! that would double a wait the operator is watching. Detached, it costs a core
 //! for two minutes on a machine that has just finished analysing and is not
-//! recording (the analysis pass is only reachable from the editor). The decode
-//! is repeated rather than the PCM carried across the task boundary: a second
-//! ffmpeg read is seconds, and holding ~345 MB of f32 alive for the length of
-//! the inference to save them is the worse trade.
+//! recording (the analysis pass is only reachable from the editor).
+//!
+//! The price of the single read is memory: the 16 kHz PCM (~345 MB for 90
+//! minutes, f32) is kept alive for the length of the inference instead of being
+//! dropped when the search is done. That is paid only in a `vad` build (default
+//! off, a measuring tool) and only until the shadow takes the samples; B4a had
+//! chosen a second read (seconds) over that, and B4b reverses it so that the
+//! counter can say one read in every build.
 
 use std::sync::Arc;
 
@@ -62,7 +68,7 @@ fn shared_model() -> Result<Arc<SileroVadModel>, VadError> {
 /// read.
 ///
 /// Returns whether an observation reached the disk. Every failure path is a
-/// `false` plus a log line: a model that will not load, a decode that fails, a
+/// `false` plus a log line: a model that will not load, samples that are not there, a
 /// hop that errors, a sidecar we may not overwrite. None of them is allowed to
 /// surface, because the app in that state behaves exactly as it does today.
 pub async fn observe<F>(
@@ -74,32 +80,23 @@ pub async fn observe<F>(
 where
     F: Fn(f32) + Send + Sync + 'static,
 {
-    // Fail before the decode when the model is unavailable — otherwise a broken
-    // build burns a full ffmpeg pass per recording to discover it every time.
+    // The samples are the open round's: the search that produced `heuristic` ran on them, and
+    // the file is not read again. Taken first, so a build that cannot score does not keep 345 MB
+    // alive for it.
+    let Some(pcm) = crate::editor::take_shadow_pcm(&input_path) else {
+        tracing::warn!("shadow: no PCM from the open round — skipping");
+        return false;
+    };
+    // Fail before the work when the model is unavailable.
     if let Err(e) = shared_model() {
         tracing::warn!(error = %e, "shadow: VAD model unavailable — skipping");
         return false;
     }
 
-    // The decode is the cheap tenth of this pass; the inference is the rest.
-    // Splitting the reported fraction the same way keeps the bar honest instead
-    // of parking it at 100 % for two minutes.
-    const DECODE_SHARE: f32 = 0.10;
-    let pcm = {
-        let report = &on_progress;
-        match crate::editor::decode_analysis_pcm(&input_path, |f| report(f * DECODE_SHARE)).await {
-            Ok(pcm) => pcm,
-            Err(e) => {
-                tracing::warn!(error = %e, "shadow: analysis decode failed — skipping");
-                return false;
-            }
-        }
-    };
-
     // Minutes of sequential inference: `spawn_blocking`, or it starves the async
     // runtime this app records and streams on.
     let scored = tauri::async_runtime::spawn_blocking(move || {
-        let report = |f: f32| on_progress(DECODE_SHARE + f * (1.0 - DECODE_SHARE));
+        let report = &on_progress;
         let scorer = VadScorer::new(
             || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
             settings,

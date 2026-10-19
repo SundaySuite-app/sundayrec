@@ -34,7 +34,7 @@
 //!   - [`video_encoder`] — which video encoder a recording gets: the Windows hardware probe order (nvenc → qsv → amf → mf → libx264), the golden-tested argv per encoder, and the fall-back-on-failure decision (C0a)
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
-//!   - [`levels`]       — pure parser for `astats` per-channel peak-level stderr → live UI meters (B-5)
+//!   - [`levels`]       — the per-channel level value (peak, RMS) the live meters and the editor's channel diagnosis share
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
