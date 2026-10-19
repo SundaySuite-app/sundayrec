@@ -78,6 +78,7 @@ import {
   sessionStartedAtMs,
   silenceActive,
   sessionCameraLost,
+  sessionVideoProblem,
   sessionVideoDropped,
   silenceDetail,
 } from "../../state/recording";
@@ -269,6 +270,21 @@ function Overlay() {
       {camera && sessionCameraLost.value ? (
         <p data-testid="overlay-camera-lost" role="status" class={styles.hint}>
           {t("app.overlay.cameraLost")}
+        </p>
+      ) : null}
+
+      {/* M3R: opptaket har ikke bilde (koderen stoppet, eller kameraet åpnet
+          aldri), og lyden tas opp. Samme rolige status som over: ingenting å
+          gjøre midt i en gudstjeneste, men hun skal ikke tro at bildet tas opp. */}
+      {camera && sessionVideoProblem.value ? (
+        <p
+          data-testid="overlay-video-problem"
+          role="status"
+          class={styles.hint}
+        >
+          {sessionVideoProblem.value === "camera_not_opened"
+            ? t("app.overlay.cameraNotOpened")
+            : t("app.overlay.videoStopped")}
         </p>
       ) : null}
 

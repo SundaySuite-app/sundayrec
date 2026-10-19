@@ -630,6 +630,8 @@
       "autoStop": "Zatrzyma się samo za {left}",
       "videoSkipped": "Kamera trochę nie nadąża, więc kilka klatek zostało pominiętych. Dźwięk nie jest naruszony.",
       "cameraLost": "Kamera przestała działać — dźwięk nadal jest nagrywany",
+      "videoStopped": "Obraz się zatrzymał — dźwięk nadal jest nagrywany",
+      "cameraNotOpened": "Nie udało się otworzyć kamery — dźwięk jest nagrywany bez obrazu",
       "finalizingHint": "Nagranie jest zapisywane na dysk. Zajmie to kilka sekund, a plik jest w tym czasie bezpieczny."
     },
     "done": {

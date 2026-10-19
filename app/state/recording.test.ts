@@ -33,6 +33,7 @@ import {
   scheduledStopMs,
   sessionCameraLost,
   sessionVideoDropped,
+  sessionVideoProblem,
   silenceActive,
 } from "./recording";
 import { toasts } from "../ui/toast";
@@ -514,6 +515,52 @@ describe("kameraet er borte (C5b)", () => {
       h.emit("recording-progress", {
         bytes_written: s,
         video_lost_ms: s * 1000,
+      });
+    }
+    expect(writes - base).toBe(1);
+    off();
+    h.off();
+  });
+});
+
+describe("bildet mangler mens lyden tas opp (M3R)", () => {
+  it("hvert hjerteslag er fasit, og en ny økt arver ikke forrige", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    expect(sessionVideoProblem.value).toBe(null);
+    h.emit("recording-progress", { bytes_written: 10, video_problem: null });
+    expect(sessionVideoProblem.value).toBe(null);
+    h.emit("recording-progress", {
+      bytes_written: 20,
+      video_problem: "encoder_stopped",
+    });
+    expect(sessionVideoProblem.value).toBe("encoder_stopped");
+    // Et event uten feltet (lydopptak, eldre motor) rører det ikke.
+    h.emit("recording-progress", { bytes_written: 25 });
+    expect(sessionVideoProblem.value).toBe("encoder_stopped");
+    // Et nytt fragment med friskt bilde: borte igjen.
+    h.emit("recording-progress", { bytes_written: 30, video_problem: null });
+    expect(sessionVideoProblem.value).toBe(null);
+    h.emit("recording-progress", {
+      bytes_written: 40,
+      video_problem: "camera_not_opened",
+    });
+    expect(sessionVideoProblem.value).toBe("camera_not_opened");
+    markSessionStarted();
+    expect(sessionVideoProblem.value).toBe(null);
+    h.off();
+  });
+
+  it("signalet skrives bare når verdien skifter", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    let writes = 0;
+    const off = sessionVideoProblem.subscribe(() => writes++);
+    const base = writes;
+    for (let s = 1; s <= 60; s++) {
+      h.emit("recording-progress", {
+        bytes_written: s,
+        video_problem: "camera_not_opened",
       });
     }
     expect(writes - base).toBe(1);
