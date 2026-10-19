@@ -41,6 +41,7 @@
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
 //!   - [`editor`]       — non-destructive cut/trim/region planning + export-arg math (PU-7 editor)
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
+//!   - [`playback`]     — the playback engine's pure half (B5a): the cut plan, constant-power joins, and the reader that turns kept segments into one programme
 //!   - [`chain`]        — the vocal chain and the mastering presets as a list of filmcraft effects, built from the same preset tables (B2a)
 //!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
@@ -78,6 +79,7 @@ pub mod mastering;
 pub mod notify;
 pub mod open_read;
 pub mod pcm_stream;
+pub mod playback;
 pub mod preflight;
 pub mod preroll;
 pub mod processing;
