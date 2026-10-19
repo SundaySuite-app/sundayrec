@@ -46,12 +46,35 @@ kvitteringen). Se CHANGELOG «E-postvarsler er fjernet» og `docs/SMOKE-TEST.md`
 
 Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
 
-### Gjenstår fra runde 2
+### Macs tillatelse (D2, venter på eierens prøve)
 
-- **macOS-tillatelsen** leses ikke. `UNUserNotificationCenter` krever en
-  Objective-C-blokk, krasjer utenfor en `.app`-bundle, og det er ikke bevist at
-  den speiler NSUserNotification-veien pluginen viser varsler gjennom. Spike på
-  ekte Mac først; til da er svaret `unknown` + testvarselet.
+- **macOS leser nå systemets svar** via `UNUserNotificationCenter
+.getNotificationSettings` (`objc2-user-notifications`, samme objc2-familie
+  som resten av appen). `notify::permission` avgjør slik:
+
+  | Systemet sier                                           | Kortet viser |
+  | ------------------------------------------------------- | ------------ |
+  | Utenfor en `.app`-bundle (dev, `cargo run`, tester)     | `unknown`    |
+  | Kallet svarer ikke innen 1,5 s (`MAC_SETTINGS_TIMEOUT`) | `unknown`    |
+  | `notDetermined` (appen har aldri bedt om tillatelse)    | `unknown`    |
+  | `denied`                                                | `denied`     |
+  | Tillatt, men bannerstil «Ingen» (`alertSetting` av)     | `denied`     |
+  | Tillatt (authorized/provisional/ephemeral), banner på   | `granted`    |
+
+- **Vakter:** bundlen sjekkes FØR noe UserNotifications-kall (kallet kan avbryte
+  prosessen utenfor en bundle; `NSBundle.mainBundle`-stien må ende på `.app` og ha
+  identifikator). Kallet har en Objective-C-blokk og er avgrenset i tid, så en
+  hengende blokk gir `unknown`, aldri en frossen side. Kommandoen går på
+  blokkeringspoolen, ikke hovedtråden. Et ObjC-unntak fanges.
+- **Testet uten Mac-innstillinger:** utenfor bundle kalles ikke systemet
+  (testen panikker hvis det gjøres) og svaret er `unknown`; en stand-in som
+  aldri svarer ender som `unknown` innen tidsgrensen; en ekte testprosess gir
+  `unknown` uten krasj.
+- **Ikke bevist:** at denne tillatelsen speiler veien pluginen faktisk viser
+  varsler gjennom (eldre `NSUserNotification`), og at `notDetermined` er riktig
+  for en app som aldri ber om tillatelse. Eierens prøve med varsler av og på:
+  `docs/RIG-DAY.md` §«(w) Varselstatus på Mac». Først da stryker vi punktet i
+  `PLAN.md`.
 
 ## ✅ Runde 3 — «Senere»-lista (2026-09-28)
 

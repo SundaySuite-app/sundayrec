@@ -5,9 +5,17 @@ use crate::error::{AppError, AppResult};
 use crate::notify::permission::{self, NotificationPermission};
 
 /// Whether the OS shows SundayRec's notifications (see `notify::permission`).
+///
+/// Async + blocking pool: the macOS answer waits (bounded) for an Objective-C
+/// completion block and must not hold the main thread meanwhile.
 #[tauri::command]
-pub fn notification_permission(app: tauri::AppHandle) -> NotificationPermission {
-    permission::current(&app.config().identifier)
+pub async fn notification_permission(app: tauri::AppHandle) -> NotificationPermission {
+    let identifier = app.config().identifier.clone();
+    let answer = tauri::async_runtime::spawn_blocking(move || permission::current(&identifier))
+        .await
+        .unwrap_or(NotificationPermission::Unknown);
+    tracing::info!("notify: the OS says notifications are {answer:?}");
+    answer
 }
 
 /// «Send testvarsel» — the same path every failure alert takes.
