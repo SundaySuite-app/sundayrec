@@ -1127,6 +1127,65 @@ pub async fn editor_prepare_listen(
     editor::prepare_listen(&request, &source).await
 }
 
+/// Where the engine's events go: `editor://listen`.
+const LISTEN_EVENT: &str = "editor://listen";
+
+/// Open the listening session for the recording behind `request.source_token`, with the cuts
+/// the request carries, paused at `request.start_sec` (source seconds), «Før» chosen and no chain
+/// yet (B5b). It waits for nothing: the chain comes from [`editor_listen_chain`].
+#[tauri::command]
+pub async fn editor_listen_open(
+    app: tauri::AppHandle,
+    chosen: State<'_, ChosenPaths>,
+    listen: State<'_, editor::listen::ListenEngine>,
+    request: EditorMasterPreviewRequest,
+) -> AppResult<editor::listen::EditorListenOpened> {
+    let source = resolve_source(&chosen, &request.source_token).await?;
+    editor::listen::open(
+        &listen,
+        move |e| {
+            let _ = app.emit(LISTEN_EVENT, e);
+        },
+        &request,
+        &source,
+    )
+    .await
+}
+
+/// Put the chain of this choice (profile or mixer, channel repair, cuts) into the open session.
+/// The same request as the preview's; the programme is measured first if it has not been (and
+/// shared with the preparation and the export). Returns whether the chain went in.
+#[tauri::command]
+pub async fn editor_listen_chain(
+    export: State<'_, ExportEngine>,
+    chosen: State<'_, ChosenPaths>,
+    listen: State<'_, editor::listen::ListenEngine>,
+    request: EditorMasterPreviewRequest,
+) -> AppResult<bool> {
+    let source = resolve_source(&chosen, &request.source_token).await?;
+    editor::listen::set_chain(&listen, &export, &request, &source).await
+}
+
+/// Play, pause, jump, or choose Før/Etter in the open session. Nothing open is not an error.
+#[tauri::command]
+pub async fn editor_listen_transport(
+    listen: State<'_, editor::listen::ListenEngine>,
+    action: editor::listen::EditorListenAction,
+) -> AppResult<()> {
+    listen.transport(&action);
+    Ok(())
+}
+
+/// Stop the listening and let go of the sound card.
+#[tauri::command]
+pub async fn editor_listen_close(listen: State<'_, editor::listen::ListenEngine>) -> AppResult<()> {
+    // The engine fades out and joins its threads: not on the async runtime.
+    if let Some(session) = listen.detach() {
+        off_runtime(move || session.close()).await?;
+    }
+    Ok(())
+}
+
 // `editor_master_apply` (the `#[tauri::command]` wrapper around
 // `editor::master_apply`) closed F2-C-E T10: no caller in app/e2e/tray, and
 // already carried as `unreachable` in `scripts/command-reachability-baseline.json`

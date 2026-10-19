@@ -41,6 +41,7 @@
 import type { Settings, EditorSegment } from "../../legacy/types";
 import type { MasterPreviewParams } from "./pages/editor/export-params";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
+import type { EditorListenAction } from "../../legacy/bindings/EditorListenAction";
 import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
@@ -409,6 +410,24 @@ declare global {
         sourceToken: string,
         listen: MasterPreviewParams,
       ) => Promise<boolean>;
+      /** B5b: open the listening session (the playback engine) for the recording,
+       *  paused, «Før» chosen, no chain yet. */
+      editorListenOpen: (
+        sourceToken: string,
+        listen: MasterPreviewParams,
+      ) => Promise<
+        { ok: true; programSecs: number } | { ok: false; error: string }
+      >;
+      /** Install the chain of this choice in the open session; measures the
+       *  programme first if needed. Resolves to whether it went in. */
+      editorListenChain: (
+        sourceToken: string,
+        listen: MasterPreviewParams,
+      ) => Promise<boolean>;
+      /** Play, pause, jump (source seconds) or choose Før/Etter. Never rejects. */
+      editorListenTransport: (action: EditorListenAction) => Promise<void>;
+      /** Stop the listening and release the sound card. Never rejects. */
+      editorListenClose: () => Promise<void>;
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */

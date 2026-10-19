@@ -8,9 +8,10 @@
 //!  ───────────────                                 ───────────────────────────
 //!  ffmpeg -ss … f32le ─▶ ProgramReader               RtRenderer::render
 //!     (cut plan, constant-power joins)                 pop finished samples
-//!  ─▶ BuiltChain (B2a)                                 fade gain (start/stop/seek)
+//!  ├▶ dry                                               Før/Etter mix (B5b)
+//!  └▶ BuiltChain (B2a) ─▶ wet                           fade gain (start/stop/seek)
 //!  ─▶ Resampler → device rate          ══ SPSC ring ══▶  count frames = THE CLOCK
-//!  ─▶ device channels, interleaved     ══ markers  ══▶  publish position (atomics)
+//!  ─▶ device channels, `[dry | wet]`   ══ markers  ══▶  publish position (atomics)
 //!
 //!  reporter thread: reads the atomics ~30×/s and hands PlaybackEvents to the sink (the UI)
 //! ```
@@ -31,8 +32,14 @@
 //! thread), one producer, one reporter. [`Player`] itself is `Send` and holds only channels,
 //! atomics and join handles.
 //!
-//! UI and Tauri commands are B5b/B5c. The runner `examples/playback.rs` drives this module on
-//! the Mac's speakers (RIG-DAY «Avspillingsmotoren»).
+//! **Før and Etter (B5b).** Both the programme as it is and the programme through the chain are
+//! in the ring, time-aligned; the callback crossfades between them in 20 ms
+//! ([`Player::set_wet`]). A chain change while it plays ([`Player::set_chain`]) is built and
+//! warmed up beside the one that runs and crossfaded in by the producer ([`producer`]).
+//!
+//! The sound step drives this through the commands in `editor::listen` (B5b); the Klipp step
+//! comes in B5c. The runner `examples/playback.rs` drives this module on the Mac's speakers
+//! (RIG-DAY «Avspillingsmotoren», «Før/Etter og profilbytte»).
 
 pub mod producer;
 pub mod rt;
@@ -82,6 +89,8 @@ pub struct PlaybackStats {
     pub xruns: u64,
     /// Programme seconds made per second of producer work (decode + chain + resampling).
     pub realtime_factor: Option<f64>,
+    /// How long the last chain change took to warm up before it could be crossfaded in (ms).
+    pub chain_warm_ms: Option<u64>,
 }
 
 /// How often the reporter looks at the atomics.
@@ -99,7 +108,8 @@ fn rings(
     HeapCons<Marker>,
 ) {
     let frames = (RING_SEC * f64::from(device_rate)).ceil() as usize;
-    let (dp, dc) = HeapRb::<f32>::new(frames.max(1024) * device_channels.max(1)).split();
+    // Two layers per frame: `[dry | wet]` (Før and Etter).
+    let (dp, dc) = HeapRb::<f32>::new(frames.max(1024) * device_channels.max(1) * 2).split();
     let (mp, mc) = HeapRb::<Marker>::new(1024).split();
     (dp, dc, mp, mc)
 }
@@ -163,13 +173,14 @@ impl Player {
     {
         let shared = Arc::new(Shared::default());
         let (dp, dc, mp, mc) = rings(device_rate, device_channels);
-        let r = RtRenderer::new(
+        let r = RtRenderer::with_layers(
             dc,
             mc,
             shared.clone(),
             device_channels,
             device_rate,
             programme.plan.rate(),
+            2,
         );
         let p = Self::start(
             programme,
@@ -198,6 +209,8 @@ impl Player {
     {
         let error = Arc::new(Mutex::new(None));
         shared.paused.store(true, Ordering::Release);
+        // «Etter» until told otherwise (with no chain it is the same as «Før»).
+        shared.wet_target.store(1.0f32.to_bits(), Ordering::Release);
         let (cmd, cmd_rx) = mpsc::channel();
         let plan = programme.plan.clone();
         let producer = Producer {
@@ -257,6 +270,27 @@ impl Player {
         self.shared.paused.store(true, Ordering::Release);
     }
 
+    /// Choose what the ear gets: `true` = «Etter» (through the chain), `false` = «Før» (the
+    /// programme as it is, cuts and all). Heard within [`rt::MIX_FADE_SEC`]: both are already in
+    /// the ring, and the callback crossfades between them. Nothing is rendered, nothing waits.
+    pub fn set_wet(&self, wet: bool) {
+        let v: f32 = if wet { 1.0 } else { 0.0 };
+        self.shared.wet_target.store(v.to_bits(), Ordering::Release);
+    }
+
+    /// Whether «Etter» is chosen.
+    pub fn wet(&self) -> bool {
+        f32::from_bits(self.shared.wet_target.load(Ordering::Acquire)) > 0.5
+    }
+
+    /// Change the chain while it plays: a new profile, a mixer setting. The producer builds and
+    /// warms it up beside the one that runs and crossfades to it ([`producer`] says how), so
+    /// the ear gets no click and no gap; it is heard after what is already in the ring (at
+    /// most [`producer::LEAD_SEC`]). A newer chain replaces one still being warmed up.
+    pub fn set_chain(&self, chain: Chain) {
+        let _ = self.cmd.send(Command::SetChain(chain));
+    }
+
     /// Jump to `secs` of programme time. The callback fades out, drops the old audio and fades
     /// the new in; a pause stays a pause.
     /// Returns the new generation: position events of older generations are stale.
@@ -292,6 +326,7 @@ impl Player {
             xruns: self.shared.xruns.load(Ordering::Relaxed),
             realtime_factor: (ns > 0 && frames > 0)
                 .then(|| (frames as f64 / f64::from(self.plan.rate())) / (ns as f64 / 1e9)),
+            chain_warm_ms: Some(self.shared.warm_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
         }
     }
 
@@ -437,7 +472,7 @@ mod device {
         let rate = cfg.sample_rate();
         let ch = usize::from(cfg.channels()).max(1);
         let (dp, dc, mp, mc) = rings(rate, ch);
-        let r = RtRenderer::new(dc, mc, shared.clone(), ch, rate, source_rate);
+        let r = RtRenderer::with_layers(dc, mc, shared.clone(), ch, rate, source_rate, 2);
         let config = cpal::StreamConfig {
             channels: cfg.channels(),
             sample_rate: rate,

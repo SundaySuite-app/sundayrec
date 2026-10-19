@@ -91,6 +91,7 @@ use crate::error::AppResult;
 use sundayrec_core::detect::Detection;
 
 mod export_journal;
+pub mod listen;
 #[cfg(feature = "editor")]
 mod open;
 #[cfg(feature = "editor")]

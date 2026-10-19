@@ -688,10 +688,9 @@
       "listenAria": "Posłuchaj dźwięku przed poprawą lub po niej",
       "before": "Przed",
       "after": "Po",
-      "sample": "{at} — 20 sekund z kazania",
-      "rendering": "Przygotowywanie próbki …",
+      "sample": "{at} — od kazania",
       "listenPreparing": "Przygotowuję odsłuch – za pierwszym razem to chwilę potrwa …",
-      "listenFailed": "Nie udało się przygotować próbki. Eksport działa normalnie.",
+      "listenFailed": "Nie udało się uruchomić odsłuchu. Eksport działa normalnie.",
       "said": {
         "hum": "Usunęliśmy buczenie z sieci",
         "noise": "Wyciszyliśmy szum tła",

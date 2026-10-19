@@ -1371,7 +1371,7 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - The page: the token is sent, a gone file has its own sentence, the export refusal has its own:
    - VERIFIED-BY: e2e/editor.spec.ts::«Rediger» på en biblioteksrad åpner opptaket
    - VERIFIED-BY: e2e/editor.spec.ts::kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp
-   - VERIFIED-BY: e2e/editor.spec.ts::«Etter» ber om en ekte gjengivelse av de samme tjue sekundene
+   - VERIFIED-BY: e2e/editor.spec.ts::«Etter» spilles av motoren, og Før/Etter er et bytte — ingenting gjengis
    - VERIFIED-BY: e2e/library.spec.ts::«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten
    - VERIFIED-BY: app/editor/export-core.test.ts::opptakslappen har setninger: åpne på nytt, borte, avvist — og jingelen
    - VERIFIED-BY: app/editor/loader-core.test.ts::kjenner source_missing: lappen peker på en fil som er borte (A2)

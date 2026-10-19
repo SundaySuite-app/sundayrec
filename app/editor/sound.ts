@@ -1,43 +1,39 @@
 /**
- * Steg 2 — LYD. Tilstanden, analysen og de tjue sekundene man lytter på.
+ * Steg 2 — LYD. Tilstanden, analysen og lyttingen.
  *
  * Tabellen som gjør de tre ordene om til tall bor i `sound-profiles.ts` og er
  * ren. Her er alt som har en bivirkning: et signal per ting treet viser, ÉN
- * memoisert kanalanalyse per fil, og et eget `<audio>`-element for lyttingen.
+ * memoisert kanalanalyse per fil, og lyttingen på avspillingsmotoren.
  *
- * ## Hvorfor lyttingen har sitt EGET element
+ * ## «Før» og «Etter» er en bryter, ikke en gjengivelse (B5b)
  *
- * Transporten i steg 1 eier `E.playerEl` og skriver `playheadSec` seksti ganger
- * i sekundet mens den går. Å låne det elementet til en 20-sekunders
- * forhåndslytting ville flyttet spillehodet i bølgeformen, og etterpå stått
- * igjen med `src` pekende på en temp-fil som slettes ved neste oppstart. To
- * jobber, to elementer — og begge eies av en modul, ikke av JSX, av samme grunn
- * som `E.playerEl`: et element Preact rendrer mister `src`-en sin når noe over
- * det tegnes på nytt.
+ * Lyttingen gikk før gjennom `editor_master_preview`: en tjuesekunders mp3 gjengitt
+ * av ffmpeg for hvert valg, spilt av i et eget `<audio>`. Nå spiller Rust opptaket
+ * selv, på lydkortet, med kuttene (`playback/`, B5a), og har BÅDE programmet slik
+ * det er («Før») og programmet gjennom kjeden («Etter») klare i det samme øyeblikket.
+ * Å velge side er en melding som lydtråden krysstoner på 20 ms; ingenting gjengis og
+ * ingen fil skrives. Spillehodet er det motoren sier (`editor-listen`, `Position`),
+ * ikke noe vi regner ut her.
  *
- * ## «Etter» er en EKTE gjengivelse, ikke en simulering
+ * To ting venter fortsatt, og begge er målingen av programmet, ikke lyden:
  *
- * `editor_master_preview` bygger kjeden fra de samme valgene som eksporten
- * (profilen eller mikseren, kanalreparasjonen og «Tale»-beslutningen — én felles
- * Rust-funksjon) og setter nivået fra HELE programmet slik eksporten gjør, over et
- * klemt utsnitt, og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
- * originalen. Programmet (et helt kjedepass, ca. ett minutt per 45 minutters
- * program) måles i bakgrunnen når steget åpnes (`watchListenPrepare`), så første gjengivelse
- * som regel finner det ferdig; ellers måler den selv, og neste er raske. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
- * og den er heller ikke det som lages her.
+ *   - kjeden for «Etter» trenger nivået eksporten ville gitt programmet (ett helt
+ *     kjedepass, første gang for hvert valg og hver kuttliste). `watchListenPrepare`
+ *     gjør den ferdig i bakgrunnen mens steget er åpent, så den som trykker «Etter»
+ *     som regel ikke venter;
+ *   - «Før» venter på ingenting: økta åpnes uten kjede, og kjeden settes inn når den er klar.
  *
- * ⚠️ Utsnittet blir liggende i OS-ens temp-mappe til OS-en selv rydder den.
- * Kjernen HAR predikatet som kjenner igjen dem (`is_preview_temp_name`,
- * `sundayrec-master-preview-*.mp3`), men ingen sveip i `src-tauri` kaller det —
- * en gjeld fra mastring-panelet, ikke en P4b innfører. Hver fil er ~800 kB
- * (20 s, 320 kbps), én per profil per opptak. Det ryddes ikke herfra: å kalle
- * en editor-oppryddingskommando ville sett riktig ut og gjort noe helt annet —
- * den sveipen (`editor::startup_sweep`, det som er igjen etter at V1/PR3 tok
- * `editor_cleanup_temp_files`) sletter `.__editor_tmp`/`.__editor_bak` ved
- * siden av OPPTAKET, ikke forhåndsvisninger i OS-ens temp-mappe.
+ * Bytter man profil eller mikser mens det spiller, bygger motoren den nye kjeden ved
+ * siden av den gamle og krysstoner (`playback/producer.rs`): ingen klikk, ingen pause,
+ * og den nye høres etter høyst et halvt sekund.
+ *
+ * ## Økta
+ *
+ * Én økt om gangen, åpnet av første «spill» og lukket når steget forlates eller fila
+ * byttes (`stopListen`). Økta eier lydkortet, så den holdes ikke åpen lenger enn steget.
  */
 
-import { effect, signal } from "@preact/signals";
+import { computed, effect, signal } from "@preact/signals";
 import type {
   ExportChannelRepair,
   MasterPreviewParams,
@@ -46,6 +42,7 @@ import { defaultProcessing, type Processing } from "@lib/pages/editor/mixer";
 
 import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
 import { isRecording } from "../state/recording";
+import type { EditorListenEvent } from "@legacy/bindings/EditorListenEvent";
 import { cuts, E } from "./model";
 import { sermonWindow } from "./editor-core";
 import {
@@ -190,34 +187,23 @@ export type ListenSide = "before" | "after";
 
 export const listenSide = signal<ListenSide>("after");
 export const listenPlaying = signal(false);
-export const listenBusy = signal(false);
 export const listenError = signal(false);
-/** «Etter» venter på at programmet måles (første gang for dette valget og disse kuttene),
- *  ikke på at utsnittet gjengis. Teksten under knappen er en annen da. */
-export const listenPreparing = signal(false);
+/** Økta er åpen og kjeden for det som er valgt NÅ er ikke inne i den ennå: «Etter» venter
+ *  på målingen av programmet (første gang for dette valget og disse kuttene), ikke på lyd.
+ *  Teksten under knappen sier det. */
+const listenStale = signal(false);
+export const listenPreparing = computed(
+  () => listenStale.value && listenSide.value === "after",
+);
 
-/** Utsnittets startsekund, for linja «0:21:08 — 20 sekunder fra prekenen». */
+/** Hvor lyttingen begynner (kildesekunder): midt i prekenen. Linja «0:21:08 — fra prekenen». */
 export const listenStart = signal(0);
+/** Spillehodet slik motoren melder det (kildesekunder), eller `null` før første melding. */
+export const listenAt = signal<number | null>(null);
+/** Hull i lyden motoren har telt (ringen gikk tom mens det spilte). Til diagnose. */
+export const listenUnderruns = signal(0);
 
-/** Ferdige «Etter»-utsnitt, nøklet på hele forespørselen (valg, utsnitt og kutt). Å be bakenden gjengi de
- *  samme tjue sekundene på nytt hver gang man bytter fane er en ffmpeg-kjøring
- *  for et svar vi allerede har. */
-const previews = new Map<string, string>();
-
-let el: HTMLAudioElement | null = null;
-let stopTimer = 0;
-
-function player(): HTMLAudioElement {
-  if (!el) {
-    el = new Audio();
-    el.preload = "metadata";
-    el.addEventListener("ended", () => (listenPlaying.value = false));
-    el.addEventListener("pause", () => (listenPlaying.value = false));
-  }
-  return el;
-}
-
-/** Regn ut hvor utsnittet begynner, ut fra prekenvinduet slik det står NÅ. */
+/** Regn ut hvor lyttingen begynner, ut fra prekenvinduet slik det står NÅ. */
 export function refreshListenStart(): void {
   const window = sermonWindow({
     cuts: E.cuts,
@@ -228,79 +214,235 @@ export function refreshListenStart(): void {
   listenStart.value = listenStartSec(window, E.duration);
 }
 
-/** Stopp lyttingen. Kalles når steget forlates og når fila lukkes. */
+/** Økta, når den er åpen: hvilken fil den hører til, og avmeldingen fra motorens hendelser. */
+let session: { token: string; unlisten: () => void } | null = null;
+let opening: Promise<boolean> | null = null;
+let openSeq = 0;
+let closing: Promise<void> | null = null;
+/** Høyeste generasjon sett: en posisjon fra en eldre er forsinket og ignoreres. */
+let maxGen = 0;
+/** Programmet er spilt ut: neste «spill» begynner på nytt. */
+let atEnd = false;
+/** Nøkkelen til kjeden som ligger i motoren, og telling av forespørsler om en ny. */
+let installedKey: string | null = null;
+let chainSeq = 0;
+let chainInflight: { key: string; promise: Promise<ChainResult> } | null = null;
+
+type ChainResult = "ok" | "superseded" | "failed";
+
+/** Stopp lyttingen og slipp lydkortet. Kalles når steget forlates og når fila lukkes. */
 export function stopListen(): void {
-  window.clearTimeout(stopTimer);
-  stopTimer = 0;
-  if (el) {
-    el.pause();
-    // `removeAttribute` og ikke `src = ''`: en tom streng er en RELATIV url og
-    // får webviewen til å laste sida selv som media, med en feil i konsollen
-    // for hver gang.
-    el.removeAttribute("src");
-    el.load();
-  }
+  const had = session;
+  session = null;
+  opening = null;
+  openSeq++;
+  atEnd = false;
+  installedKey = null;
+  maxGen = 0;
+  chainSeq++;
+  chainInflight = null;
   listenPlaying.value = false;
+  listenStale.value = false;
+  listenAt.value = null;
+  if (!had) return;
+  had.unlisten();
+  // Neste åpning venter på denne: lydkortet har én eier om gangen.
+  closing = Promise.resolve(window.api.editorListenClose()).then(() => {
+    closing = null;
+  });
 }
 
-export function setListenSide(side: ListenSide): void {
-  if (listenSide.value === side) return;
-  stopListen();
-  listenSide.value = side;
-  listenError.value = false;
+function onListenEvent(raw: unknown): void {
+  const e = raw as EditorListenEvent;
+  switch (e.kind) {
+    case "position":
+      if (e.gen < maxGen) return;
+      maxGen = e.gen;
+      listenAt.value = e.sourceSecs;
+      return;
+    case "ended":
+      listenPlaying.value = false;
+      atEnd = true;
+      return;
+    case "underrun":
+      listenUnderruns.value = e.total;
+      return;
+    case "error":
+      listenError.value = true;
+      listenPlaying.value = false;
+      return;
+    default:
+      return;
+  }
+}
+
+/** Forespørselen uten lyd: kuttene og lengden og hvor man begynner. Det økta åpnes med. */
+function bareRequest(start: number): MasterPreviewParams {
+  return {
+    cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
+    fullLengthSec: E.duration,
+    startSec: start,
+    durationSec: LISTEN_SPAN_SEC,
+  };
+}
+
+/** Åpne økta hvis den ikke er åpen. Venter ikke på noe annet enn at lydkortet er åpnet. */
+async function ensureSession(): Promise<boolean> {
+  const token = E.sourceToken;
+  if (!token) return false;
+  if (session && session.token === token) return true;
+  if (opening) return opening;
+  const mine = ++openSeq;
+  const run = (async () => {
+    if (closing) await closing;
+    const res = await window.api.editorListenOpen(
+      token,
+      listenRequest(listenStart.peek()) ?? bareRequest(listenStart.peek()),
+    );
+    // Steget ble forlatt, eller en annen fil åpnet, mens lydkortet åpnet.
+    if (openSeq !== mine || E.sourceToken !== token) {
+      if (res.ok && !session) void window.api.editorListenClose();
+      return false;
+    }
+    if (!res.ok) return false;
+    maxGen = 0;
+    atEnd = false;
+    installedKey = null;
+    listenAt.value = listenStart.peek();
+    session = {
+      token,
+      unlisten: window.api.on("editor-listen", onListenEvent) ?? (() => {}),
+    };
+    listenStale.value = true;
+    return true;
+  })().finally(() => {
+    if (openSeq === mine) opening = null;
+  });
+  opening = run;
+  return run;
+}
+
+/** Nøkkelen til et valg: forespørselen uten hvor man lytter, for den avgjør kjeden. */
+function chainKey(request: MasterPreviewParams): string {
+  return programKey(request);
 }
 
 /**
- * Spill de tjue sekundene, på den siden som er valgt.
+ * Sett kjeden for det som er valgt nå inn i økta. Måler programmet først hvis det ikke er gjort
+ * (delt med bakgrunnsmålingen og eksporten). En nyere forespørsel går foran en eldre som blir
+ * ferdig senere. Når kjeden er inne og «Etter» er valgt, velges «Etter» i motoren — det er
+ * da bryteren skjer, og den er øyeblikkelig.
+ */
+async function installChain(): Promise<ChainResult> {
+  await ensureSoundAnalysis();
+  const token = E.sourceToken;
+  const request = listenRequest(listenStart.peek());
+  if (!session || !token || !request) return "failed";
+  const key = chainKey(request);
+  // Samme forespørsel er allerede på vei: vent på den i stedet for å bestille den en gang til.
+  if (chainInflight && chainInflight.key === key) return chainInflight.promise;
+  if (!chainInflight && installedKey === key) {
+    listenStale.value = false;
+    await applySide();
+    return "ok";
+  }
+  // En annen forespørsel er på vei: den ville lagt seg over denne i motoren om den ble ferdig
+  // etter, så også et valg motoren allerede har bestilles på nytt (nyere forespørsel vinner).
+  const my = ++chainSeq;
+  listenStale.value = true;
+  const promise = (async (): Promise<ChainResult> => {
+    const ok = await window.api.editorListenChain(token, request);
+    if (my !== chainSeq) return "superseded";
+    if (!ok) {
+      listenError.value = true;
+      return "failed";
+    }
+    installedKey = key;
+    listenStale.value = false;
+    await applySide();
+    return "ok";
+  })();
+  chainInflight = { key, promise };
+  void promise.finally(() => {
+    if (chainInflight?.promise === promise) chainInflight = null;
+  });
+  return promise;
+}
+
+/** Velg siden i motoren: «Etter» bare når kjeden for valget er inne. */
+async function applySide(): Promise<void> {
+  if (!session) return;
+  const request = listenRequest(listenStart.peek());
+  const ready = request !== null && installedKey === chainKey(request);
+  await window.api.editorListenTransport({
+    kind: "side",
+    after: listenSide.peek() === "after" && ready,
+  });
+}
+
+/** Velg side. Er økta åpen og kjeden inne, er det hørt med en gang. */
+export function setListenSide(side: ListenSide): void {
+  if (listenSide.value === side) return;
+  listenSide.value = side;
+  listenError.value = false;
+  if (!session) return;
+  if (side === "before") {
+    void applySide();
+    return;
+  }
+  void installChain();
+}
+
+/**
+ * Spill, eller pause.
  *
- * «Før» er ORIGINALEN fra utsnittets startsekund, stoppet av en timer — det
- * finnes ingen «spill fra … til …» på et medieelement. «Etter» er bakendens
- * gjengivelse, som allerede ER tjue sekunder lang og derfor stopper selv.
+ * Økta åpnes av det første «spill». «Etter» venter på at kjeden er inne (målingen av
+ * programmet, første gang); «Før» venter ikke. Etter en pause fortsetter det der det stod,
+ * og etter at programmet er spilt ut begynner det på nytt der lyttingen begynner.
  */
 export async function toggleListen(): Promise<void> {
   if (listenPlaying.value) {
-    stopListen();
+    listenPlaying.value = false;
+    await window.api.editorListenTransport({ kind: "pause" });
     return;
   }
-  const side = listenSide.value;
-  const start = listenStart.value;
   listenError.value = false;
-
-  if (side === "after") {
-    // Eksporten venter på kanalanalysen; det gjør «Etter» også, ellers hører man
-    // et opptak med død kanal på ett øre som eksporten så reparerer.
-    await ensureSoundAnalysis();
-    const request = listenRequest(start);
-    // Ingen preset og ingen mikser = «Ingen»: ingenting å gjengi.
-    if (!request) return;
-    // Samme valg, samme utsnitt, samme kutt = samme lyd. Nøkkelen er selve
-    // forespørselen, så en endring i mikseren, en ny kanalanbefaling eller et nytt
-    // kutt gjengir på nytt i stedet for å spille et utsnitt som ikke lenger stemmer.
-    const key = JSON.stringify(request);
-    const ready = previews.get(key);
-    const path = ready ?? (await renderPreview(key, request));
-    if (!path) {
-      listenError.value = true;
-      return;
-    }
-    await playFile(path, 0, null);
-    return;
-  }
-
-  // «Før» — originalen. Den samme transporten steg 1 bruker, og den samme
-  // ærlige begrensningen: uten en spillbar kilde er det ingenting å høre.
-  if (E.playbackSource === "none") {
+  if (!(await ensureSession())) {
     listenError.value = true;
     return;
   }
-  await playFile(E.filePath, start, LISTEN_SPAN_SEC);
+  // Kjeden settes inn for begge sider: «Før» spiller med en gang og «Etter» er klar når man trykker.
+  const chain = installChain();
+  if (listenSide.peek() === "after") {
+    let result = await chain;
+    while (result === "superseded" && chainInflight) {
+      result = await chainInflight.promise;
+    }
+    // Steget ble forlatt mens kjeden ventet: det er ikke en feil.
+    if (!session) return;
+    if (result !== "ok") {
+      listenError.value = true;
+      return;
+    }
+  }
+  if (!session) return;
+  if (atEnd) {
+    atEnd = false;
+    maxGen = 0;
+    await window.api.editorListenTransport({
+      kind: "seekSource",
+      secs: listenStart.peek(),
+    });
+  }
+  await window.api.editorListenTransport({ kind: "play" });
+  listenPlaying.value = true;
 }
 
 /**
- * Forespørselen «Etter» sender: lydfeltene fra `soundExportFields` — den ENE
+ * Forespørselen kjeden bygges av: lydfeltene fra `soundExportFields` — den ENE
  * funksjonen eksporten også leser lyd-steget gjennom — og kuttene og lengden
- * eksporten sender, slik at bakenden kan måle programmet og ikke bare utsnittet.
- * `null` når valget ikke gir noe å gjengi («Ingen»).
+ * eksporten sender, slik at bakenden kan måle programmet. `null` når valget ikke
+ * gir noe å høre («Ingen»).
  */
 export function listenRequest(start: number): MasterPreviewParams | null {
   const fields = soundExportFields({
@@ -319,32 +461,6 @@ export function listenRequest(start: number): MasterPreviewParams | null {
     startSec: start,
     durationSec: LISTEN_SPAN_SEC,
   };
-}
-
-async function renderPreview(
-  key: string,
-  request: MasterPreviewParams,
-): Promise<string | null> {
-  const pk = programKey(request);
-  listenBusy.value = true;
-  // Er programmet ikke målt ennå, er det DET man venter på — ikke på de tjue sekundene.
-  listenPreparing.value = !readyPlans.has(pk);
-  try {
-    // Måles det allerede i bakgrunnen, vent på den målingen: bakenden ville ventet på den
-    // samme uansett (én måling per nøkkel), men her vet skjermen hva den venter på.
-    const pending = pendingPlans.get(pk);
-    if (pending) await pending;
-    const res = await window.api.masterPreview(E.sourceToken, request);
-    if (!res?.ok || !res.previewPath) return null;
-    previews.set(key, res.previewPath);
-    readyPlans.add(pk);
-    return res.previewPath;
-  } catch {
-    return null;
-  } finally {
-    listenBusy.value = false;
-    listenPreparing.value = false;
-  }
 }
 
 // ── Lyttingen gjøres klar i bakgrunnen ──────────────────────────────────────
@@ -366,27 +482,40 @@ function programKey(request: MasterPreviewParams): string {
 
 /** Be bakenden måle programmet nå — med mindre det er målt, pågår, eller et opptak går.
  *  Bakenden vokter det siste også (opptak og eksport går foran), men det er billigere å ikke
- *  spørre. */
-function prepareNow(): void {
+ *  spørre. Er økta åpen når målingen er ferdig, settes den nye kjeden inn i den. */
+async function prepareNow(): Promise<void> {
   if (isRecording.peek()) return;
   const token = E.sourceToken;
   if (!token) return;
   const request = listenRequest(listenStart.peek());
-  if (!request) return;
+  if (!request) {
+    // «Ingen»: det er ingenting å høre «Etter» på. Kortet er borte, og lyttingen med det.
+    if (session) stopListen();
+    return;
+  }
   const pk = programKey(request);
-  if (readyPlans.has(pk) || pendingPlans.has(pk)) return;
-  const run = (async () => {
-    try {
-      const ready = await window.api.prepareListen(token, request);
-      if (ready && E.sourceToken === token) readyPlans.add(pk);
-      return ready;
-    } catch {
-      return false;
-    } finally {
-      pendingPlans.delete(pk);
+  if (!readyPlans.has(pk)) {
+    let run = pendingPlans.get(pk);
+    if (!run) {
+      const started = (async () => {
+        try {
+          const ready = await window.api.prepareListen(token, request);
+          if (ready && E.sourceToken === token) readyPlans.add(pk);
+          return ready;
+        } catch {
+          return false;
+        } finally {
+          pendingPlans.delete(pk);
+        }
+      })();
+      pendingPlans.set(pk, started);
+      run = started;
     }
-  })();
-  pendingPlans.set(pk, run);
+    await run;
+  }
+  if (session && readyPlans.has(pk) && E.sourceToken === token) {
+    void installChain();
+  }
 }
 
 /** Planlegg en måling om `delayMs`; en ny planlegging erstatter den forrige. Kanalanalysen
@@ -408,8 +537,10 @@ export function cancelListenPrepare(): void {
 /**
  * Hold «Etter» klar mens steget er åpent: mål programmet med en gang, og på nytt (med
  * ventetid) når valget, mikseren, kanalreparasjonen eller kuttene endres. Under et opptak
- * startes ingenting, og når opptaket er over, tas det igjen. Returnerer en funksjon som
- * avslutter overvåkingen; en måling som alt pågår i bakenden får gå ferdig.
+ * startes ingenting, og når opptaket er over, tas det igjen. Er økta åpen, settes den nye
+ * kjeden inn når den er målt — det er det som gjør profilbytte midt i avspilling.
+ * Returnerer en funksjon som avslutter overvåkingen; en måling som alt pågår i bakenden får
+ * gå ferdig.
  */
 export function watchListenPrepare(): () => void {
   let first = true;
@@ -423,6 +554,8 @@ export function watchListenPrepare(): () => void {
       cuts.value,
       isRecording.value,
     ];
+    // Spiller økta den gamle kjeden, er den nye ikke inne før målingen er ferdig.
+    if (session) listenStale.value = true;
     scheduleListenPrepare(first ? 0 : PREPARE_DEBOUNCE_MS);
     first = false;
   });
@@ -430,41 +563,6 @@ export function watchListenPrepare(): () => void {
     dispose();
     cancelListenPrepare();
   };
-}
-
-async function playFile(
-  path: string,
-  from: number,
-  limitSec: number | null,
-): Promise<void> {
-  const audio = player();
-  window.clearTimeout(stopTimer);
-  // `asset://`-tilgangen er gitt av Rust: til opptaket da det ble åpnet, og til
-  // forhåndsvisningen da den ble rendret (A2).
-  audio.src = window.api.toAssetUrl(path);
-  audio.load();
-  if (from > 0) {
-    // `currentTime` før metadataen er inne blir kastet av elementet, stille.
-    await new Promise<void>((resolve) => {
-      if (audio.readyState >= 1) return resolve();
-      const done = (): void => resolve();
-      audio.addEventListener("loadedmetadata", done, { once: true });
-      audio.addEventListener("error", done, { once: true });
-      window.setTimeout(done, 4000);
-    });
-    audio.currentTime = from;
-  }
-  try {
-    await audio.play();
-    listenPlaying.value = true;
-  } catch {
-    listenError.value = true;
-    listenPlaying.value = false;
-    return;
-  }
-  if (limitSec !== null) {
-    stopTimer = window.setTimeout(() => stopListen(), limitSec * 1000);
-  }
 }
 
 /** Glem alt som hørte til ÉN fil. */
@@ -482,13 +580,11 @@ export function resetSound(): void {
   analyzingSound.value = false;
   listenSide.value = "after";
   listenError.value = false;
-  listenBusy.value = false;
-  listenPreparing.value = false;
   listenStart.value = 0;
+  listenUnderruns.value = 0;
   cancelListenPrepare();
   readyPlans.clear();
   pendingPlans.clear();
   analysisFor = "";
   analysis = null;
-  previews.clear();
 }

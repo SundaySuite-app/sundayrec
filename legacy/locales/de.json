@@ -682,10 +682,9 @@
       "listenAria": "Den Ton vor oder nach der Verbesserung hören",
       "before": "Vorher",
       "after": "Nachher",
-      "sample": "{at} — 20 Sekunden aus der Predigt",
-      "rendering": "Die Hörprobe wird erstellt …",
+      "sample": "{at} — ab der Predigt",
       "listenPreparing": "Die Hörprobe wird vorbereitet – beim ersten Mal dauert es etwas …",
-      "listenFailed": "Die Hörprobe konnte nicht erstellt werden. Der Export läuft wie gewohnt.",
+      "listenFailed": "Die Wiedergabe konnte nicht gestartet werden. Der Export läuft wie gewohnt.",
       "said": {
         "hum": "Wir haben das Netzbrummen entfernt",
         "noise": "Wir haben das Hintergrundrauschen gedämpft",

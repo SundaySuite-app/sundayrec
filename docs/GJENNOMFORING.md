@@ -1619,6 +1619,15 @@ umiddelbart — ingen mp3 rendres.
 > profil midt i avspilling skal være uten klikk — filmcrafts parametre glattes
 > per sampel, så det skal gå. Slett ingenting her; `master_preview` dør i B5c.
 
+**Gjort i B5b:** Før/Etter er to lag i ringen som lydtråden krysstoner på 20 ms (hørt innen
+20 ms, også mens det spiller), og en profil- eller mikserendring mens det spiller bygges som en
+ny kjede ved siden av og krysstones inn i produsenten (40 ms, uten klikk eller pause). Ingen mp3
+gjengis for lyd-steget. Arkitektur, bevis og målinger: `docs/LYDMOTOR.md` §Fase 5 «Gjort i B5b»;
+lytteprøven: RIG-DAY «(b) Før/Etter og profilbytte». Til B5c: `master_preview`,
+`editor_prepare_listen` er fortsatt i bruk (forhåndsmålingen deler `listen_plan`), temp-mp3-ene
+rydder ingen sveip (nå opprettes de ikke lenger av lyd-steget); eksporten bruker fortsatt 15 ms
+ut/inn-toning ved kutt.
+
 ## B5c — `<audio>` ut av Klipp-steget
 
 **Modell:** Sonnet · **Gren:** `ombygging/b5c-audio-element-ut` · **Pakke:** B5

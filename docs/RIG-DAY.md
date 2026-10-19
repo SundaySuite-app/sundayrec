@@ -1092,6 +1092,39 @@ hopp tok, og til slutt `underruns`, `xruns` og sanntidsfaktoren.
       `underruns` over 0 i et løp uten hopp, `xruns` som teller mens du ikke
       gjør noe annet, eller et klikk ved hopp/pause.
 
+## (b) Før/Etter og profilbytte mens det spiller (B5b)
+
+Lyd-steget i Rediger lytter nå på avspillingsmotoren (B5a), ikke på en gjengitt
+mp3: «Før» (originalen, med kuttene) og «Etter» (gjennom profilens kjede, på
+nivået eksporten gir) ligger begge klare, og valget er en krysstoning på 20 ms i
+lydtråden. Ca. 15 min på Macen; samme på Windows-boksen. Hodetelefoner.
+
+- [ ] **Før/Etter i kjøreren.** Fra repoets rot:
+      `$P ~/Downloads/2026.01.04.mp3 --profile speech-clear --at 3:side=before --at 4:side=after --at 9:side=before --at 11:side=after --for 14`
+      **Lytt etter:** klikk eller smell ved hvert bytte (skal være ingen), og at
+      forskjellen mellom «Før» og «Etter» er den samme hver gang. Tidsjusteringen:
+      ekko eller en «hul» (kam-filter) lyd i selve overgangen betyr at «Før» og
+      «Etter» ikke ligger på samme sample (det skal de, også med de-noiser og
+      limiter som har forsinkelse). **Forventet:** `underruns 0`, `xruns 0`.
+- [ ] **Profilbytte mens det spiller, i kjøreren.**
+      `$P ~/Downloads/2026.01.04.mp3 --profile speech-clear --at 4:chain=voice-noisy-room --at 8:chain=speech-clear --at 12:chain=voice-noisy-room --for 16`
+      **Lytt etter:** at lyden bytter profil UTEN klikk og uten pause (krysstoning
+      på 40 ms), og at den nye kommer inn etter høyst et halvt sekund. Kompressor
+      og støyfjerner skal ikke «pumpe» rett etter bytte (den nye kjeden varmes opp
+      på det siste sekundet før den slippes inn). **Forventet:** `underruns 0`,
+      `last chain warm-up` under ca. 200 ms (målt på Macen: 75 ms).
+- [ ] **I appen.** Rediger → åpne et ekte opptak → steget Lyd → «Etter» → spill.
+      Trykk «Før» og «Etter» om og om igjen mens det spiller: skal høres med en
+      gang, uten ventetekst og uten pause. Bytt så mellom «Tale» og «Tale og
+      musikk» mens det spiller: en kort melding om å gjøre klar lyttingen kan
+      stå en stund første gang for hvert valg (hele opptaket måles), mens den
+      gamle lyden fortsetter; så kommer den nye inn uten klikk. Trykk pause og
+      spill igjen (fortsetter der det stod), og forlat steget (lyden stopper).
+      **Lytt etter:** klikk ved hvert bytte, ekko eller kam i overgangen,
+      pumping etter profilbytte; og at tidspunktet ved knappen følger lyden.
+      **Windows:** samme på rigg-PC-en; i tillegg at lyden ikke hakker mens
+      profilen byttes (den nye kjeden varmes opp i en egen tråd).
+
 ## Etterpå
 
 - [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det

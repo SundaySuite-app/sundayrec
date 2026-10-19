@@ -23,6 +23,18 @@
 //! else moves the position: the reporter thread only READS it, so a stalled device is a stalled
 //! playhead, never one that runs on by wall time.
 //!
+//! ## Layers: Før and Etter (B5b)
+//!
+//! A frame in the ring can carry two layers: the programme as it is (`dry`, «Før») and the
+//! programme through the chain (`wet`, «Etter»), time-aligned by the producer. The callback
+//! mixes them with a gain it keeps itself: `mix` glides toward the target the control side
+//! publishes ([`Shared::wet_target`]) over [`MIX_FADE_SEC`], with a smoothstep curve whose two
+//! gains always sum to one (the two layers are the same signal, so equal gain, not equal power,
+//! is the right crossfade: no dip and no bump). The switch is therefore heard within
+//! [`MIX_FADE_SEC`], whatever is in the ring, and costs the callback one multiply-add per
+//! sample. While the output is silent (paused, between generations) the mix snaps to the target
+//! so a resume does not start with a glide nobody asked for.
+//!
 //! ## Fades
 //!
 //! Start, resume, pause and seek are click-free by a [`FADE_SEC`] raised-sine ramp on the
@@ -32,7 +44,7 @@
 //! is consumed while paused. After an underrun the gain restarts from zero, so the audio that
 //! comes back fades in instead of stepping in.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use ringbuf::traits::{Consumer, Observer};
@@ -42,6 +54,11 @@ use ringbuf::HeapCons;
 pub const FADE_SEC: f64 = 0.008;
 /// Audio buffered before a (re)start is allowed to begin, seconds.
 pub const PRIME_SEC: f64 = 0.100;
+/// Length of the Før/Etter crossfade, seconds. Short enough to be «now», long enough that the
+/// step between two different signals is not a click.
+pub const MIX_FADE_SEC: f64 = 0.020;
+/// Most frames the callback mixes per pass (the scratch it owns for a two-layer ring).
+pub const MAX_MIX_FRAMES: usize = 4096;
 
 /// What a marker says about the `data` stream at frame `at` (counted from the first frame ever
 /// pushed into the ring).
@@ -87,6 +104,11 @@ pub struct Shared {
     pub work_frames: AtomicU64,
     /// The generation whose last sample the producer has pushed (0 = none).
     pub produced_gen: AtomicU64,
+    /// Which layer the ear gets: `f32::to_bits` of 0.0 («Før», the programme as it is) … 1.0
+    /// («Etter», through the chain). Only read when the ring has two layers.
+    pub wet_target: AtomicU32,
+    /// How long the last new chain took to warm up in its helper thread, milliseconds.
+    pub warm_ms: AtomicU64,
 }
 
 impl Shared {
@@ -125,6 +147,13 @@ pub struct RtRenderer {
     ramp: usize,
     fade: Vec<f32>,
     prime: usize,
+    /// Layers per frame in the ring: 1 = the finished signal, 2 = `[dry | wet]`.
+    layers: usize,
+    /// Where the Før/Etter mix stands, 0.0 (all dry) … 1.0 (all wet).
+    mix: f32,
+    mix_step: f32,
+    /// Two-layer frames popped from the ring, before they are mixed. Allocated once.
+    scratch: Vec<f32>,
 }
 
 impl RtRenderer {
@@ -138,6 +167,21 @@ impl RtRenderer {
         device_rate: u32,
         source_rate: u32,
     ) -> Self {
+        Self::with_layers(data, marks, shared, channels, device_rate, source_rate, 1)
+    }
+
+    /// [`Self::new`] for a ring whose frames carry `layers` (1 or 2) layers of `channels`
+    /// channels each. With two, the callback mixes Før and Etter ([`Shared::wet_target`]).
+    pub fn with_layers(
+        data: HeapCons<f32>,
+        marks: HeapCons<Marker>,
+        shared: Arc<Shared>,
+        channels: usize,
+        device_rate: u32,
+        source_rate: u32,
+        layers: usize,
+    ) -> Self {
+        let layers = layers.clamp(1, 2);
         let fade_len = ((FADE_SEC * f64::from(device_rate)).round() as usize).max(1);
         let fade = (0..=fade_len)
             .map(|i| {
@@ -146,6 +190,7 @@ impl RtRenderer {
             })
             .collect();
         shared.silent.store(true, Ordering::Release);
+        let shared_target = shared.wet_target.load(Ordering::Relaxed);
         Self {
             data,
             marks,
@@ -166,6 +211,14 @@ impl RtRenderer {
             ramp: 0,
             fade,
             prime: ((PRIME_SEC * f64::from(device_rate)).round() as usize).max(1),
+            layers,
+            mix: f32::from_bits(shared_target),
+            mix_step: (1.0 / (MIX_FADE_SEC * f64::from(device_rate.max(1)))) as f32,
+            scratch: if layers == 2 {
+                vec![0.0; MAX_MIX_FRAMES * channels.max(1) * 2]
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -175,7 +228,12 @@ impl RtRenderer {
 
     /// Frames waiting in the ring (for tests and diagnosis; not used by the callback).
     pub fn buffered_frames(&self) -> usize {
-        self.data.occupied_len() / self.channels
+        self.data.occupied_len() / (self.channels * self.layers)
+    }
+
+    /// Where the Før/Etter mix stands now, 0.0 … 1.0 (for tests and diagnosis).
+    pub fn mix(&self) -> f32 {
+        self.mix
     }
 
     // RT-BEGIN — everything from here to RT-END runs on the audio thread. The ratchet test
@@ -190,6 +248,11 @@ impl RtRenderer {
             .fetch_add(frames as u64, Ordering::Relaxed);
         let want = self.shared.requested_gen.load(Ordering::Acquire);
         let paused = self.shared.paused.load(Ordering::Acquire);
+        let target = f32::from_bits(self.shared.wet_target.load(Ordering::Relaxed)).clamp(0.0, 1.0);
+        // Nobody hears a glide while the output is silent: start from the target.
+        if self.state != State::Playing || self.ramp == 0 {
+            self.mix = target;
+        }
         let mut i = 0;
         let mut underran = false;
         while i < frames {
@@ -234,7 +297,7 @@ impl RtRenderer {
                     if !up {
                         n = n.min(self.ramp);
                     }
-                    let avail = self.data.occupied_len() / ch;
+                    let avail = self.data.occupied_len() / (ch * self.layers);
                     if avail == 0 {
                         underran = true;
                         self.ramp = 0;
@@ -242,9 +305,36 @@ impl RtRenderer {
                         break;
                     }
                     n = n.min(avail);
+                    if self.layers == 2 {
+                        n = n.min(MAX_MIX_FRAMES);
+                    }
                     let dst = &mut out[i * ch..(i + n) * ch];
-                    let got = self.data.pop_slice(dst);
-                    debug_assert_eq!(got, dst.len());
+                    if self.layers == 2 {
+                        let got = self.data.pop_slice(&mut self.scratch[..n * ch * 2]);
+                        debug_assert_eq!(got, n * ch * 2);
+                        let step = self.mix_step;
+                        let mut mix = self.mix;
+                        for (frame, pair) in dst
+                            .chunks_exact_mut(ch)
+                            .zip(self.scratch.chunks_exact(ch * 2))
+                        {
+                            // Glide toward the target; smoothstep keeps the two gains summing to 1.
+                            if mix < target {
+                                mix = (mix + step).min(target);
+                            } else if mix > target {
+                                mix = (mix - step).max(target);
+                            }
+                            let wet = mix * mix * (3.0 - 2.0 * mix);
+                            let dry = 1.0 - wet;
+                            for (c, s) in frame.iter_mut().enumerate() {
+                                *s = pair[c] * dry + pair[ch + c] * wet;
+                            }
+                        }
+                        self.mix = mix;
+                    } else {
+                        let got = self.data.pop_slice(dst);
+                        debug_assert_eq!(got, dst.len());
+                    }
                     for frame in dst.chunks_exact_mut(ch) {
                         if up {
                             if self.ramp < self.fade.len() - 1 {
@@ -274,9 +364,10 @@ impl RtRenderer {
     /// Discard what belongs to older generations and look for `want`'s start. `true` once the
     /// start is reached and enough of the new generation is buffered (or it ends before that).
     fn flush_step(&mut self, want: u64) -> bool {
-        let ch = self.channels;
+        let ch = self.channels * self.layers;
         // FIRST the fill level: everything counted here was pushed before any marker we have not
-        // seen yet, so it is safe to discard up to the matching start.
+        // seen yet, so it is safe to discard up to the matching start. (`ch` is the frame's
+        // width in samples here, both layers.)
         let avail = self.data.occupied_len() / ch;
         if self.pending.is_some_and(|m| m.gen != want) {
             self.pending = None;
@@ -368,10 +459,15 @@ pub(crate) mod tests {
 
     impl Rig {
         pub fn new(channels: usize) -> Rig {
-            let (data, dc) = HeapRb::<f32>::new(RATE as usize * channels).split();
+            Self::with_layers(channels, 1)
+        }
+
+        /// A rig whose ring carries `layers` layers per frame (2 = `[dry | wet]`).
+        pub fn with_layers(channels: usize, layers: usize) -> Rig {
+            let (data, dc) = HeapRb::<f32>::new(RATE as usize * channels * layers).split();
             let (marks, mc) = HeapRb::<Marker>::new(64).split();
             let shared = Arc::new(Shared::default());
-            let r = RtRenderer::new(dc, mc, shared.clone(), channels, RATE, RATE);
+            let r = RtRenderer::with_layers(dc, mc, shared.clone(), channels, RATE, RATE, layers);
             Rig {
                 r,
                 data,
@@ -402,6 +498,26 @@ pub(crate) mod tests {
                 }
             }
             self.pushed += frames as u64;
+        }
+
+        /// Push `frames` frames of a two-layer ring: `dry(i)` then `wet(i)` in every channel.
+        pub fn push2(&mut self, dry: impl Fn(u64) -> f32, wet: impl Fn(u64) -> f32, frames: usize) {
+            let ch = self.r.channels();
+            for i in 0..frames as u64 {
+                let (d, w) = (dry(self.pushed + i), wet(self.pushed + i));
+                for _ in 0..ch {
+                    self.data.try_push(d).unwrap();
+                }
+                for _ in 0..ch {
+                    self.data.try_push(w).unwrap();
+                }
+            }
+            self.pushed += frames as u64;
+        }
+
+        pub fn set_wet(&self, wet: bool) {
+            let v: f32 = if wet { 1.0 } else { 0.0 };
+            self.shared.wet_target.store(v.to_bits(), Ordering::Release);
         }
 
         pub fn end(&mut self, gen: u64) {
@@ -558,6 +674,106 @@ pub(crate) mod tests {
         assert_eq!(rig.shared.device_frames.load(Ordering::Relaxed), 14_400);
     }
 
+    /// B5b: with two layers in the ring, «Før»/«Etter» is the callback's own crossfade: the
+    /// output is the dry layer, then the wet layer within `MIX_FADE_SEC`, with no step larger
+    /// than the signals' own plus the crossfade's slope, and nothing is consumed twice.
+    #[test]
+    fn the_before_after_switch_is_a_crossfade_in_the_callback() {
+        let mut rig = Rig::with_layers(2, 2);
+        rig.set_wet(false);
+        rig.start(1, 0);
+        // dry and wet are different signals, 2 rad apart, so the step between them is the worst case.
+        rig.push2(sine(0.0), sine(2.0), 40_000);
+        let a = rig.run(8_000);
+        // A at the start, after the fade-in: exactly the dry layer.
+        let dry_at = |i: usize| sine(0.0)(i as u64);
+        assert!(
+            (a[7_999] - dry_at(7_999)).abs() < 1e-6,
+            "dry before the switch"
+        );
+        rig.set_wet(true);
+        let b = rig.run(4_000);
+        let joined: Vec<f32> = a.iter().chain(&b).copied().collect();
+        let fade = (MIX_FADE_SEC * f64::from(RATE)).round() as usize;
+        // The crossfade's own slope: smoothstep, steepest 1.5/fade, over at most |dry − wet| ≤ 1.
+        let allowed = 1.5 * NATURAL + 1.5 / fade as f32;
+        assert!(
+            worst_step(&joined) < allowed,
+            "{} vs {allowed}",
+            worst_step(&joined)
+        );
+        // After `fade` frames the ear has the wet layer exactly.
+        let wet_at = |i: usize| sine(2.0)((8_000 + i) as u64);
+        for (i, v) in b.iter().enumerate().skip(fade + 2) {
+            assert!(
+                (v - wet_at(i)).abs() < 1e-6,
+                "frame {i} is not the wet layer"
+            );
+        }
+        assert_eq!(rig.r.mix(), 1.0);
+        // …and back.
+        rig.set_wet(false);
+        let c = rig.run(2_000);
+        let dry_c = |i: usize| sine(0.0)((12_000 + i) as u64);
+        assert!((c[1_999] - dry_c(1_999)).abs() < 1e-6);
+        assert_eq!(rig.shared.underruns.load(Ordering::Relaxed), 0);
+    }
+
+    /// The two layers are the same signal, so the crossfade sums gains to one: identical layers
+    /// stay identical through the switch (a constant-power curve would bulge by 3 dB).
+    #[test]
+    fn a_switch_between_identical_layers_changes_nothing() {
+        let mut rig = Rig::with_layers(1, 2);
+        rig.set_wet(false);
+        rig.start(1, 0);
+        rig.push2(|_| 0.5, |_| 0.5, 30_000);
+        let a = rig.run(4_000);
+        rig.set_wet(true);
+        let b = rig.run(4_000);
+        rig.set_wet(false);
+        let c = rig.run(4_000);
+        for s in [&a[400..], &b[..], &c[..]] {
+            assert!(s.iter().all(|x| (x - 0.5).abs() < 1e-6), "no dip, no bump");
+        }
+    }
+
+    /// A glide nobody hears: while paused (or between generations) the mix snaps to the target,
+    /// so the resume does not start with a crossfade through the fade-in.
+    #[test]
+    fn the_mix_snaps_while_the_output_is_silent() {
+        let mut rig = Rig::with_layers(1, 2);
+        rig.set_wet(false);
+        rig.start(1, 0);
+        rig.push2(|_| 0.25, |_| 0.75, 30_000);
+        let _ = rig.run(4_000);
+        rig.shared.paused.store(true, Ordering::Release);
+        let _ = rig.run(2_000);
+        rig.set_wet(true);
+        let _ = rig.run(512); // silent: snaps
+        assert_eq!(rig.r.mix(), 1.0);
+        rig.shared.paused.store(false, Ordering::Release);
+        let b = rig.run(2_000);
+        // The fade-in is the 8 ms gain on the wet layer only: it ends exactly on 0.75.
+        assert!((b[1_999] - 0.75).abs() < 1e-6, "{}", b[1_999]);
+    }
+
+    /// A seek on a two-layer ring discards both layers of the old generation.
+    #[test]
+    fn a_seek_on_a_two_layer_ring_keeps_the_frames_whole() {
+        let mut rig = Rig::with_layers(2, 2);
+        rig.set_wet(true);
+        rig.start(1, 0);
+        rig.push2(|_| 0.1, |_| 0.2, 20_000);
+        let _ = rig.run(4_000);
+        rig.start(2, 96_000);
+        rig.push2(|_| 0.3, |_| 0.6, 20_000);
+        let _ = rig.run(4_000);
+        let out = rig.run(4_000);
+        assert_eq!(rig.shared.playing_gen.load(Ordering::Acquire), 2);
+        // Wet layer of the new generation, whole frames: 0.6, not a half-frame mixture.
+        assert!(out.iter().all(|x| (x - 0.6).abs() < 1e-6), "{}", out[0]);
+    }
+
     /// No allocation on the audio thread: the callback is driven through every state (silence,
     /// prime, play, seek fade + flush, pause, resume, underrun, end) with a counting global
     /// allocator armed for this thread. One allocation anywhere in `render` fails it.
@@ -588,6 +804,23 @@ pub(crate) mod tests {
         allocs += drive(&mut rig, 6); // end
         assert!(rig.shared.underruns.load(Ordering::Relaxed) > 0);
         assert_eq!(rig.shared.ended_gen.load(Ordering::Acquire), 2);
+        // The same states on a two-layer ring, with the Før/Etter switch flipped throughout.
+        let mut rig = Rig::with_layers(2, 2);
+        rig.start(1, 0);
+        rig.push2(sine(0.0), sine(1.0), 30_000);
+        allocs += drive(&mut rig, 6);
+        for flip in 0..6 {
+            rig.set_wet(flip % 2 == 0);
+            allocs += drive(&mut rig, 3);
+        }
+        rig.start(2, 500);
+        rig.push2(sine(0.0), sine(1.0), 20_000);
+        allocs += drive(&mut rig, 20);
+        rig.shared.paused.store(true, Ordering::Release);
+        rig.set_wet(false);
+        allocs += drive(&mut rig, 4);
+        rig.shared.paused.store(false, Ordering::Release);
+        allocs += drive(&mut rig, 60);
         assert!(
             crate::playback::alloc_probe::armed_works(),
             "the probe must see allocations"
