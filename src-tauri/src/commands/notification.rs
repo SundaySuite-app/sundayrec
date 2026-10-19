@@ -18,6 +18,22 @@ pub async fn notification_permission(app: tauri::AppHandle) -> NotificationPermi
     answer
 }
 
+/// First step of «Send testvarsel»: on a Mac that was never asked, put the
+/// system permission dialog up (only then, only inside the `.app`), and return
+/// the status afterwards. Already granted/denied, and other platforms: just the
+/// status. May wait for the user to answer, so: blocking pool, never the main
+/// thread.
+#[tauri::command]
+pub async fn notification_request_permission(app: tauri::AppHandle) -> NotificationPermission {
+    let identifier = app.config().identifier.clone();
+    let answer =
+        tauri::async_runtime::spawn_blocking(move || permission::request_and_current(&identifier))
+            .await
+            .unwrap_or(NotificationPermission::Unknown);
+    tracing::info!("notify: after the permission request the OS says {answer:?}");
+    answer
+}
+
 /// «Send testvarsel» — the same path every failure alert takes.
 #[tauri::command]
 pub fn notification_send_test(app: tauri::AppHandle) {

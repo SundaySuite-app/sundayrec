@@ -25,6 +25,7 @@ import { useSetting } from "../../settings/use-setting";
 import {
   notificationPermission,
   refreshNotificationPermission,
+  sendTestNotification,
 } from "../../state/notification-permission";
 import { settings } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
@@ -66,14 +67,17 @@ export function NotifyPage() {
   }, []);
 
   async function sendTest(): Promise<void> {
-    if (!(await window.api.notificationSendTest())) {
+    // Første trykk på en Mac som aldri er spurt: macOS-dialogen kommer FØR
+    // varselet, og kortet leses på nytt med svaret.
+    const result = await sendTestNotification(window.api);
+    if (!result.sent) {
       toast("error", t("app.setup.notify.testFailed"));
       return;
     }
     // Sendt er ikke det samme som vist: står varsler av, sier teksten det.
     toast(
       "success",
-      permission === "denied"
+      result.permission === "denied"
         ? t("app.setup.notify.testSentDenied")
         : t("app.setup.notify.testSent"),
     );

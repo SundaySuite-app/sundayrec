@@ -175,6 +175,7 @@ test.describe("kortene folder ut den ekte skjermen", () => {
       fixtures: {
         ...FIXTURES,
         notification_permission: "denied",
+        notification_request_permission: "denied",
         notification_open_settings: fn(`() => {
           window.__E2E_OPENED__ = (window.__E2E_OPENED__ ?? 0) + 1;
         }`),

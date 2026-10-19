@@ -9,8 +9,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   Før sto det «vet ikke» og en knapp for testvarsel. Nå leser appen systemets
   varselinnstilling og viser grønt når varsler er på, og rødt når de er av for
   SundayRec (eller bannerstilen er satt til «Ingen»). Er innstillingen aldri
-  spurt om, eller svaret uteblir, står det fortsatt «vet ikke». Må prøves på en
-  ekte Mac med varsler av og på.
+  spurt om, eller svaret uteblir, står det «vet ikke». Første gang du trykker
+  «Send testvarsel» på en Mac der SundayRec aldri har spurt, ber appen macOS om
+  tillatelse (du får macOS' vanlige spørsmål), og kortet oppdateres med svaret
+  før testvarselet sendes. Appen spør bare da, aldri ved oppstart, og ikke igjen
+  etter at du har svart. Må prøves på en ekte Mac med varsler av og på.
 
 - **«Behold bare prekenen» på en video går flere ganger raskere.** Når videoen bare
   kuttes (ingen annen bildebehandling), kopieres bildet rett fra opptaket i stedet for

@@ -316,6 +316,7 @@ export const BOOT_FIXTURES: Fixtures = {
   // Varsler er slått på i OS-et: kortet «Hvem får beskjed?» er grønt i
   // hver spec som ikke handler om det motsatte.
   notification_permission: "granted",
+  notification_request_permission: "granted",
   notification_send_test: VOID,
   notification_open_settings: VOID,
   get_launch_at_login: false,

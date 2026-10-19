@@ -29,6 +29,14 @@
 //!   (`alertSetting` disabled, i.e. style «Ingen»), is `denied`; the other
 //!   authorised states are `granted`. Whether the legacy path obeys the same
 //!   switches is the owner's trial (`docs/RIG-DAY.md`).
+//! - **Asking (D2b):** the app never asks at start-up. The first «Send
+//!   testvarsel» does, through [`request_and_current`]: only when the status
+//!   is `notDetermined` (macOS never shows the dialog twice, so `granted` and
+//!   `denied` are left alone), only inside a `.app`, with
+//!   `requestAuthorizationWithOptions` (alert + sound). The dialog stays up
+//!   until the user answers, so that wait has its own, roomy limit
+//!   ([`MAC_REQUEST_TIMEOUT`]) and runs on the blocking pool; the status is
+//!   then read again.
 //! - **Everything else:** `unknown`.
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +47,11 @@ use ts_rs::TS;
 /// How long the macOS settings call may take before the answer is `unknown`.
 #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
 pub const MAC_SETTINGS_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// How long the macOS permission DIALOG may stay unanswered before we stop
+/// waiting (and read the status as it then is). A person has to read and click.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub const MAC_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// What the OS says about showing SundayRec's notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -131,6 +144,62 @@ fn resolve_mac(
     bounded(timeout, ask).map_or(NotificationPermission::Unknown, from_mac_settings)
 }
 
+/// Should the app put the macOS permission dialog up? Only for a status that
+/// was never decided: macOS does not show the dialog again after an answer, and
+/// asking anyway would only add a pointless wait.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+fn should_ask(s: MacSettings) -> bool {
+    s.auth == MacAuth::NotDetermined
+}
+
+/// Read the status; if it was never decided, ask once (`request` must hand
+/// `()` to the sender when the user has answered), then read it again. `read`
+/// and `request` are NOT called unless `in_bundle`.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+fn resolve_mac_asking(
+    in_bundle: bool,
+    read_timeout: Duration,
+    request_timeout: Duration,
+    mut read: impl FnMut(mpsc::Sender<MacSettings>),
+    request: impl FnOnce(mpsc::Sender<()>),
+) -> NotificationPermission {
+    if !in_bundle {
+        return NotificationPermission::Unknown;
+    }
+    let Some(first) = bounded(read_timeout, &mut read) else {
+        return NotificationPermission::Unknown;
+    };
+    if !should_ask(first) {
+        return from_mac_settings(first);
+    }
+    // The answer (or the lack of one) is read from the system, not from the
+    // completion handler's `granted` flag: the banner style matters too.
+    let _ = bounded(request_timeout, request);
+    bounded(read_timeout, &mut read).map_or(NotificationPermission::Unknown, from_mac_settings)
+}
+
+/// «Send testvarsel» on a machine that may never have been asked: put the macOS
+/// dialog up if (and only if) the status is undecided, then return the status.
+/// Blocks until the user answers or [`MAC_REQUEST_TIMEOUT`]; call from the
+/// blocking pool. Other platforms: same as [`current`].
+pub fn request_and_current(identifier: &str) -> NotificationPermission {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = identifier;
+        resolve_mac_asking(
+            mac_un::in_app_bundle(),
+            MAC_SETTINGS_TIMEOUT,
+            MAC_REQUEST_TIMEOUT,
+            mac_un::request_settings,
+            mac_un::request_authorization,
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        current(identifier)
+    }
+}
+
 /// Ask the OS. `identifier` is the bundle identifier (`tauri.conf.json`), which
 /// is the AUMID the Windows installer registers notifications under.
 pub fn current(identifier: &str) -> NotificationPermission {
@@ -181,10 +250,11 @@ pub fn settings_url() -> Option<&'static str> {
 mod mac_un {
     use super::{is_app_bundle, MacAlert, MacAuth, MacSettings};
     use block2::RcBlock;
-    use objc2_foundation::NSBundle;
+    use objc2::runtime::Bool;
+    use objc2_foundation::{NSBundle, NSError};
     use objc2_user_notifications::{
-        UNAuthorizationStatus, UNNotificationSetting, UNNotificationSettings,
-        UNUserNotificationCenter,
+        UNAuthorizationOptions, UNAuthorizationStatus, UNNotificationSetting,
+        UNNotificationSettings, UNUserNotificationCenter,
     };
     use std::panic::AssertUnwindSafe;
     use std::ptr::NonNull;
@@ -195,6 +265,22 @@ mod mac_un {
         let path = bundle.bundlePath().to_string();
         let id = bundle.bundleIdentifier().map(|i| i.to_string());
         is_app_bundle(&path, id.as_deref())
+    }
+
+    /// Put the system permission dialog up (alert + sound); the completion
+    /// block sends `()` once the user has answered. Only call when
+    /// [`in_app_bundle`], and only when the status is `notDetermined`.
+    pub fn request_authorization(tx: Sender<()>) {
+        let block = RcBlock::new(move |_granted: Bool, _error: *mut NSError| {
+            let _ = tx.send(());
+        });
+        let _ = objc2::exception::catch(AssertUnwindSafe(|| {
+            UNUserNotificationCenter::currentNotificationCenter()
+                .requestAuthorizationWithOptions_completionHandler(
+                    UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
+                    &block,
+                );
+        }));
     }
 
     /// Fire `getNotificationSettings`; the completion block sends the result.
@@ -357,6 +443,149 @@ mod tests {
     fn the_real_macos_call_in_a_test_binary_is_unknown_and_does_not_crash() {
         assert!(!mac_un::in_app_bundle());
         assert_eq!(current("app.test"), NotificationPermission::Unknown);
+    }
+
+    #[test]
+    fn we_ask_only_when_the_status_was_never_decided() {
+        use MacAlert::*;
+        use MacAuth::*;
+        // (status, asks?) — macOS shows the dialog once; granted/denied stay.
+        for (auth, asks) in [(NotDetermined, true), (Denied, false), (Allowed, false)] {
+            assert_eq!(should_ask(settings(auth, Enabled)), asks, "{auth:?}");
+        }
+    }
+
+    /// A stand-in system: a status that changes when the dialog is answered.
+    struct Fake {
+        before: MacSettings,
+        after: MacSettings,
+        reads: std::sync::atomic::AtomicUsize,
+        asks: std::sync::atomic::AtomicUsize,
+    }
+
+    impl Fake {
+        fn new(before: MacSettings, after: MacSettings) -> Self {
+            Fake {
+                before,
+                after,
+                reads: Default::default(),
+                asks: Default::default(),
+            }
+        }
+        fn run(&self) -> NotificationPermission {
+            use std::sync::atomic::Ordering::SeqCst;
+            resolve_mac_asking(
+                true,
+                T,
+                T,
+                |tx| {
+                    self.reads.fetch_add(1, SeqCst);
+                    // Once asked, the system reports the new status.
+                    let s = if self.asks.load(SeqCst) > 0 {
+                        self.after
+                    } else {
+                        self.before
+                    };
+                    tx.send(s).ok();
+                },
+                |tx| {
+                    self.asks.fetch_add(1, SeqCst);
+                    tx.send(()).ok();
+                },
+            )
+        }
+        fn counts(&self) -> (usize, usize) {
+            use std::sync::atomic::Ordering::SeqCst;
+            (self.reads.load(SeqCst), self.asks.load(SeqCst))
+        }
+    }
+
+    #[test]
+    fn outside_a_bundle_neither_the_status_nor_the_dialog_is_touched() {
+        let r = resolve_mac_asking(
+            false,
+            T,
+            T,
+            |_| panic!("must not read outside a bundle"),
+            |_| panic!("must not ask outside a bundle"),
+        );
+        assert_eq!(r, NotificationPermission::Unknown);
+    }
+
+    #[test]
+    fn an_undecided_status_asks_once_and_reports_the_answer() {
+        for (after, want) in [
+            (
+                settings(MacAuth::Allowed, MacAlert::Enabled),
+                NotificationPermission::Granted,
+            ),
+            (
+                settings(MacAuth::Denied, MacAlert::Enabled),
+                NotificationPermission::Denied,
+            ),
+        ] {
+            let sys = Fake::new(settings(MacAuth::NotDetermined, MacAlert::Enabled), after);
+            assert_eq!(sys.run(), want);
+            // Asked once; the status is read again afterwards.
+            assert_eq!(sys.counts(), (2, 1));
+        }
+    }
+
+    #[test]
+    fn a_decided_status_never_asks_again() {
+        for (auth, want) in [
+            (MacAuth::Allowed, NotificationPermission::Granted),
+            (MacAuth::Denied, NotificationPermission::Denied),
+        ] {
+            let s = settings(auth, MacAlert::Enabled);
+            let sys = Fake::new(s, s);
+            assert_eq!(sys.run(), want);
+            assert_eq!(sys.counts(), (1, 0), "{auth:?}: no new request");
+        }
+    }
+
+    #[test]
+    fn a_dialog_nobody_answers_ends_undecided_within_the_limit() {
+        let t0 = std::time::Instant::now();
+        let undecided = settings(MacAuth::NotDetermined, MacAlert::Enabled);
+        let (keep, _rx) = mpsc::channel::<mpsc::Sender<()>>();
+        let r = resolve_mac_asking(
+            true,
+            T,
+            T,
+            move |tx| {
+                tx.send(undecided).ok();
+            },
+            |tx| {
+                keep.send(tx).ok();
+            },
+        );
+        assert_eq!(r, NotificationPermission::Unknown);
+        assert!(t0.elapsed() < Duration::from_secs(2), "bounded in time");
+    }
+
+    #[test]
+    fn a_status_that_never_answers_does_not_ask() {
+        let (keep, _rx) = mpsc::channel::<mpsc::Sender<MacSettings>>();
+        let r = resolve_mac_asking(
+            true,
+            T,
+            T,
+            |tx| {
+                keep.send(tx).ok();
+            },
+            |_| panic!("must not ask when the status could not be read"),
+        );
+        assert_eq!(r, NotificationPermission::Unknown);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_real_request_in_a_test_binary_does_not_ask_and_does_not_crash() {
+        assert_eq!(
+            request_and_current("app.test"),
+            NotificationPermission::Unknown
+        );
     }
 
     #[test]

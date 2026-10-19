@@ -190,6 +190,12 @@ declare global {
       notificationPermission: () => Promise<
         import("../../legacy/bindings/NotificationPermission").NotificationPermission
       >;
+      /** First step of «Send testvarsel»: on a Mac never asked, puts the
+       *  system permission dialog up and resolves with the status afterwards
+       *  (may wait for the user). Otherwise just the status. */
+      notificationRequestPermission: () => Promise<
+        import("../../legacy/bindings/NotificationPermission").NotificationPermission
+      >;
       /** Show a test notification. `false` when the command failed. */
       notificationSendTest: () => Promise<boolean>;
       /** Open the OS notification settings. `false` when it could not. */
