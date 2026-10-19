@@ -1674,6 +1674,12 @@ RIG-DAY-punkt).
   hvert kutt); og CLI-en re-baserer inngangen på containerens starttid, som concat
   melder 80 ms for tidlig på grunn av AAC-forsinkelsen (løst med `-copyts` og
   `-itsoffset` for avrundingen).
+- **Målt (syntetisk 90-minutters 720p30-video, M1 Pro, release, prekenen = 30 min):**
+  uten profil 82,9 s før, 20,4 s etter; med «Tale» 120,9 s før, 51,3 s etter. Det som
+  er igjen er lyden, ikke bildet: AAC-koding (standardkoderen `twoloop` går 31× sanntid,
+  `-aac_coder fast` 133×, derfor `fast` i kopimodus) og Rust-kjeden. Bildet tar 0,2 s å
+  kopiere. «Sekunder» gjelder derfor bildet; hele eksporten tar ca. 20 s uten og ca.
+  50 s med profil. Måles av `b6_bench_the_sermon_cut_on_a_long_video` (`--ignored`).
 - **Forutsetningene i B6-teksten holdt:** C0b og B2b er merget (nøkkelbilder hvert 2. s,
   `resolve_audio_params`/`pre_chain_for` delt med forhåndslyttingen).
 
