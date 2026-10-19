@@ -602,6 +602,8 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
     sizeBytes: r.byte_size ?? null,
     fileSizeBytes: r.byte_size ?? null,
     note: r.note ?? undefined,
+    // D3: integrated loudness measured while recording; null = not measured.
+    loudnessLufs: r.integrated_lufs ?? null,
   };
 }
 

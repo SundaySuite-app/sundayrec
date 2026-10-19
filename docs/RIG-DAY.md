@@ -292,6 +292,57 @@ faktisk skal se nå — sist.
 
 - [ ] **(c3b) Ett videoopptak uten de gamle stiene (C3b, `ombygging/c3b-slett-gamle-stier`).** C3b slettet ffmpeg-fangsten; alt under er bevist i testene bortsett fra det som trenger et ekte kamera. **Gjør:** på Opptak, slå på «Ta med kamera» og velg FaceTime-kameraet. **Forventet:** kameralista viser de samme navnene som før (den leses nå fra den native kameralista), og kortet sier hva kameraet leverer («maks 1080p · 30 bilder i sekundet» e.l.) — ikke «fikk ikke spurt». Ta opp 1 min med klapp i start og slutt. **Forventet:** overlegget viser et levende bilde mens det tar opp (forhåndsvisnings-JPEG-en skrives nå av videosporets ffmpeg), én mp4 med bilde og synkront klapp, og en egen lydfil hvis «behold ren lydfil» er på. Kjør Diagnose etterpå: «Video» er testet og OK. Velg så et kamera som ikke er koblet til (trekk ut iPhone-en etter at du valgte den) og ta opp 20 s. **Forventet:** opptaket går som rent lydopptak (loggen sier «no camera matches the stored name — recording the sound only»), ikke svart video. **Rødt funn:** ingen bilde i overlegget med et kamera som virker, «fikk ikke spurt» om et kamera som virker, svart video der kameraet mangler, eller at opptaket ikke starter.
 
+- [ ] **(d3-mac) Lydstyrke under opptak og historikken, innebygd mikrofon (D3, Mac).**
+      Ingen rigg trengs; ca. 8 minutter. Bruk en bygning med D3 (`npm run tauri dev`
+      fra repoet, eller betaen når den er ute) og Macens innebygde mikrofon. 1. Start et opptak og snakk vanlig i 10 sekunder.
+      **Forventet:** etter ca. 3 sekunder står linja «Lydstyrke −NN LUFS» under
+      toppmåleren i opptaksoverlegget, og tallet følger stemmen (snakker du
+      vanlig ligger det rundt −35 til −20 med innebygd mikrofon; roper du,
+      stiger det; tier du, synker det mot −60 og lavere). Ingen varsel. 2. Stopp opptaket. **Forventet:** raden i Bibliotek viser «NN LUFS» ved
+      siden av varigheten. Et opptak på under noen få sekunder viser ingen
+      lydstyrke (det er «ikke målt», ikke 0). 3. **Dempet mikrofon (varselet, ekte 5 minutter).** Sett inngangsnivået for
+      den innebygde mikrofonen helt ned (Systeminnstillinger → Lyd → Inngang),
+      start et opptak, og **bytt til en annen app så SundayRec-vinduet ikke er i
+      fokus**. Snakk av og til. **Forventet:** ingenting før det har gått mer
+      enn 5 minutter (ta tiden; ikke ved 5:00 nøyaktig, og ikke etter et kort
+      stille parti). Så kommer ÉTT systemvarsel «Opptaket er svært svakt — er
+      mikseren dempet?», og når du går tilbake til vinduet står det samme som
+      banner. Det kommer ikke igjen resten av opptaket (vent 5 minutter til). 4. **Kort stille parti.** Samme nivå, men skru opp inngangen igjen etter
+      4 minutter. **Forventet:** aldri noe varsel. 5. Skru opp inngangen før et nytt opptak: **Forventet:** ingen varsel, og
+      lydstyrken i overlegget går tilbake til normalt nivå.
+      **Rødt funn:** varsel før 5 minutter, flere varsler i ett opptak, varsel
+      på et normalt opptak, lydstyrketall som står stille mens du snakker, eller
+      xrun-tall over null i loggen/diagnosen som ikke var der uten D3
+      (`native_xruns`; måleren går på skrivertråden og skal ikke røre det).
+
+- [ ] **(d3-rigg) Dempet mikser på flerkanalskortet (D3, riggen).** Dette er
+      punktet som viser at terskelen på −40 LUFS er riktig for DERE, ikke bare
+      for en innebygd mikrofon. Bruk flerkanalskortet og mikseren dere
+      faktisk tar opp fra, med kanalvalget (A3) satt som på en vanlig søndag. 1. **Normalt opptak først.** Mikseren som vanlig; ta opp 10 minutter
+      med tale og en sang. **Noter** lydstyrketallet i overlegget under tale
+      og under sang, og det integrerte tallet i Bibliotek etterpå.
+      **Forventet:** tale rundt −30 til −18 LUFS, aldri under −40 over lengre
+      tid, og ingen varsel. Står normal tale her under −40, er terskelen for
+      høy for dette oppsettet: **skriv ned tallene** (det er svaret på
+      eierspørsmålet i PR-en), ikke avkryss. 2. **Dempet.** Trekk master-fader eller kanalfader helt ned (eller muten
+      kanalen appen tar opp) og start et opptak; snakk i rommet som vanlig. La
+      det gå **over 5 minutter**, med SundayRec-vinduet ute av fokus.
+      **Forventet:** ÉTT systemvarsel «Opptaket er svært svakt — er mikseren
+      dempet?» litt over 5 minutter inn, banner når du ser på vinduet, og et
+      lavt tall i Bibliotek etterpå. Overlegget viser «under −70» hvis
+      kanalen er helt stum. 3. **Delvis dempet kanal.** Dempe bare ÉN av kanalene appen har valgt (f.eks.
+      høyre i et stereopar). **Noter** om lydstyrketallet faller under −40
+      (da varsler vi) eller ikke. En kanal av to som er stum, drar snittet ned med
+      bare ca. 3 LU; vi varsler altså IKKE på en enkelt død kanal, og det er
+      slik det skal være (kanalfeil er A3s og kanaldiagnosens jobb). 4. **Kortvarig nedtrekk.** Trekk faderen ned i 3–4 minutter midt i et
+      opptak og skru opp igjen. **Forventet:** ingen varsel. 5. **xrun-tall.** Ta opp 60 minutter med flerkanalskortet på vanlig
+      kanalvalg. Sammenlign `native_xruns` i diagnosen med et tidligere opptak
+      på samme oppsett (A3c). **Forventet:** ikke høyere. Måleren er bevist
+      ikke å påvirke xrun-tallet i CI (se PR-en); her beviser vi det på kortet.
+      **Rødt funn:** ingen varsel på et dempet opptak, varsel på et normalt
+      opptak, flere varsler, xrun-tall som stiger med D3, eller et lydstyrketall
+      i overlegget som ikke svarer til hva kanalene faktisk gir.
+
 ## Windows-boksen
 
 - [ ] **(c3b-win-sync) Bildets fangsttid på Windows (M3R #5).** Før var bildene stemplet ved _ankomst_; nå brukes kameraets samplingstid (`FrameStamper`). **Gjør:** USB-webkamera (helst også et opptakskort/HDMI og et virtuelt kamera), start et opptak med loggen åpen (`%LOCALAPPDATA%\…\logs\sundayrec.log`) og finn `camera: frame time source` (`SampleTime`, `Anchored` eller `Arrival`, og `late_ms`). Ta opp 2 min med skarpt klapp (hendene foran kameraet, mikrofonen ved siden) i start og slutt; åpne mp4-en bilde for bilde og mål avstanden fra klappets lydtopp til bildet der hendene møtes. Gjør det samme på en bygning FØR fiksen (v0.26.0-beta.1) hvis du har en. **Forventet:** forskyvning innenfor ±1 bilde (≤ ±33 ms), bildet ikke etter lyden; `SampleTime` på vanlige UVC-kameraer. **Meld tilbake:** forskyvning før/etter per kamera, og hvilken modus loggen viste. `Anchored` med klapp > 1 bilde etter lyden = kameraets faste forsinkelse må inn som konstant per kamera (si fra, tallet står i målingen). **Rødt funn:** bildet systematisk > 2 bilder bak lyden, eller forskyvning som vokser over 2 minutter.

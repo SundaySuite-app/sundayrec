@@ -49,6 +49,7 @@
       "noHitsDesc": "The search looks at the date, the file name and the note.",
       "video": "Video",
       "underMinute": "Under 1 min",
+      "loudness": "{lufs} LUFS",
       "delete": "Delete",
       "movedToTrash": "Moved to trash",
       "autoDeleteOff": "Recordings are not deleted automatically",
@@ -624,6 +625,7 @@
       "autoStop": "Stops by itself in {left}",
       "videoSkipped": "The camera is falling a little behind, so a few frames were skipped. The audio is not affected.",
       "cameraLost": "The camera dropped out — the audio is still being recorded",
+      "loudness": "Loudness {lufs} LUFS",
       "videoStopped": "The picture stopped — the audio is still being recorded",
       "cameraNotOpened": "The camera did not open — the audio is being recorded without a picture",
       "finalizingHint": "The recording is being written to disk. It takes a few seconds, and the file is safe meanwhile."
@@ -1152,6 +1154,7 @@
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
     "trashManifestUnreadable": "The trash listing could not be read. The files are still there, but the app no longer knows where they came from.",
     "dataDirMoveFailed": "The history and settings could not be moved to the new folder. The app is using the old one this time, and nothing has been deleted. Your recording files are still in the recordings folder. Restart the app; if that does not help, get in touch.",
-    "dataLeftInOldDir": "History and settings from the older version were left in the old folder. This version uses the new folder, so what you saved with the older version is not shown here. Your recording files are still in the recordings folder."
+    "dataLeftInOldDir": "History and settings from the older version were left in the old folder. This version uses the new folder, so what you saved with the older version is not shown here. Your recording files are still in the recordings folder.",
+    "levelWeak": "The recording is very quiet — is the mixer turned down?"
   }
 }

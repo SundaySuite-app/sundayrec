@@ -41,6 +41,7 @@ import { signal } from "@preact/signals";
 import { liveFromRecordingState } from "@lib/preroll-lifecycle-core";
 import type { RecorderState } from "@legacy/bindings/RecorderState";
 
+import { isMeasuredLufs } from "../audio/lufs";
 import { levelWordFor } from "../audio/level-words";
 import { tf } from "../i18n";
 import { toast } from "../ui/toast";
@@ -88,6 +89,16 @@ export const sessionCameraLost = signal(false);
  */
 export type VideoProblem = "encoder_stopped" | "camera_not_opened";
 export const sessionVideoProblem = signal<VideoProblem | null>(null);
+
+/**
+ * Kortsiktig lydstyrke (LUFS, 3 s-vindu) for opptaket nå, fra
+ * `recording://progress`s `short_term_lufs` (D3). `null` = ikke målt ennå
+ * (de første sekundene) — hvert hjerteslag er fasit. Digital stillhet er −120,
+ * aldri −∞. Overlegget viser den ved siden av toppnivåene; varselet etter fem
+ * minutter under −40 bestemmes i Rust (`WeakLevelWatch`) og kommer som et
+ * vanlig `backend://warning` (`level_weak`).
+ */
+export const sessionLufs = signal<number | null>(null);
 
 /** Motorens auto-stopp-frist (absolutt epoke-ms), eller `null` for ingen. */
 export const scheduledStopMs = signal<number | null>(null);
@@ -172,6 +183,7 @@ export function markSessionStarted(): void {
   sessionVideoDropped.value = 0;
   sessionCameraLost.value = false;
   sessionVideoProblem.value = null;
+  sessionLufs.value = null;
   reconnecting.value = false;
   clearSilence();
   exitFinalizing();
@@ -554,6 +566,7 @@ export function initRecording(): () => void {
             video_frames_dropped?: number;
             video_lost_ms?: number | null;
             video_problem?: VideoProblem | null;
+            short_term_lufs?: number | null;
           }
         | undefined;
       const bytes = d?.bytes ?? d?.bytes_written;
@@ -569,6 +582,13 @@ export function initRecording(): () => void {
       if (d && "video_lost_ms" in d) {
         const gone = typeof d.video_lost_ms === "number";
         if (sessionCameraLost.peek() !== gone) sessionCameraLost.value = gone;
+      }
+      // D3: lydstyrken er fasit per hjerteslag, som kameraet over.
+      if (d && "short_term_lufs" in d) {
+        const lufs = isMeasuredLufs(d.short_term_lufs)
+          ? d.short_term_lufs
+          : null;
+        if (sessionLufs.peek() !== lufs) sessionLufs.value = lufs;
       }
       if (d && "video_problem" in d) {
         const why = d.video_problem ?? null;

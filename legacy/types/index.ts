@@ -50,6 +50,7 @@ export interface RecordingEntry {
   timestamp?: number
   fileSizeBytes?: number    // actual file size on disk after recording
   durationSec?: number      // recording duration in seconds
+  loudnessLufs?: number | null // integrated loudness (LUFS), measured while recording (D3); null = not measured
   /**
    * When the recording BEGAN, epoch ms — `recording.started_at` straight from
    * the row (P3).

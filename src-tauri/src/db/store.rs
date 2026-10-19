@@ -266,6 +266,12 @@ pub struct RecordingRow {
     pub created_at: f64,
     /// Free-text user note (capped at [`NOTE_MAX_CHARS`] on write).
     pub note: Option<String>,
+    /// Integrated loudness (LUFS, BS.1770 gated) of the finished recording,
+    /// measured while it was taken (D3). `None` = not measured: older rows,
+    /// recovered recordings, anything under a few seconds. A recording that
+    /// never rose above the meter's gate reads -120, not `None`.
+    #[serde(default)]
+    pub integrated_lufs: Option<f64>,
 }
 
 /// Maximum length of a recording note, in characters. Ports the Electron
@@ -283,8 +289,9 @@ pub async fn insert_recording(pool: &SqlitePool, mut row: RecordingRow) -> AppRe
     }
     sqlx::query(
         "INSERT INTO recording
-            (id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            (id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note,
+             integrated_lufs)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )
     .bind(&row.id)
     .bind(&row.file_path)
@@ -294,6 +301,7 @@ pub async fn insert_recording(pool: &SqlitePool, mut row: RecordingRow) -> AppRe
     .bind(row.byte_size)
     .bind(row.created_at)
     .bind(&row.note)
+    .bind(row.integrated_lufs)
     .execute(pool)
     .await?;
     Ok(row)
@@ -342,7 +350,8 @@ pub async fn recording_file_path(pool: &SqlitePool, id: &str) -> AppResult<Optio
 /// List recordings, newest first.
 pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> {
     let rows = sqlx::query(
-        "SELECT id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note
+        "SELECT id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note,
+                integrated_lufs
          FROM recording ORDER BY created_at DESC",
     )
     .fetch_all(pool)
@@ -358,6 +367,7 @@ pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> 
             byte_size: r.get("byte_size"),
             created_at: r.get("created_at"),
             note: r.get("note"),
+            integrated_lufs: r.get("integrated_lufs"),
         })
         .collect())
 }
@@ -554,6 +564,7 @@ mod tests {
 
     fn sample(file: &str, started: f64) -> RecordingRow {
         RecordingRow {
+            integrated_lufs: None,
             id: String::new(),
             file_path: file.to_string(),
             device_name: Some("Built-in Microphone".to_string()),
@@ -764,6 +775,7 @@ mod tests {
     async fn optional_columns_round_trip_as_null() {
         let (pool, _d) = temp_pool().await;
         let row = RecordingRow {
+            integrated_lufs: None,
             id: String::new(),
             file_path: "/tmp/partial.mp3".to_string(),
             device_name: None,

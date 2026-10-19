@@ -49,6 +49,7 @@
       "noHitsDesc": "La recherche porte sur la date, le nom du fichier et la note.",
       "video": "Vidéo",
       "underMinute": "Moins de 1 min",
+      "loudness": "{lufs} LUFS",
       "delete": "Supprimer",
       "movedToTrash": "Déplacé vers la corbeille",
       "autoDeleteOff": "Les enregistrements ne sont pas supprimés automatiquement",
@@ -624,6 +625,7 @@
       "autoStop": "S’arrête tout seul dans {left}",
       "videoSkipped": "La caméra a un peu de retard, quelques images ont été sautées. Le son n’est pas affecté.",
       "cameraLost": "La caméra s’est déconnectée — le son continue d’être enregistré",
+      "loudness": "Volume sonore {lufs} LUFS",
       "videoStopped": "L’image s’est arrêtée — le son continue d’être enregistré",
       "cameraNotOpened": "La caméra n’a pas pu s’ouvrir — le son est enregistré sans image",
       "finalizingHint": "L’enregistrement est écrit sur le disque. Cela prend quelques secondes, et le fichier est en sécurité pendant ce temps."
@@ -1152,6 +1154,7 @@
     "diskLow": "L’espace disque commence à manquer — {freeGb} Go libres. L’enregistrement s’arrêtera de lui-même si le disque est plein.",
     "trashManifestUnreadable": "Le contenu de la corbeille n’a pas pu être lu. Les fichiers sont toujours là, mais l’application ne sait plus d’où ils viennent.",
     "dataDirMoveFailed": "L’historique et les réglages n’ont pas pu être déplacés vers le nouveau dossier. L’application utilise l’ancien cette fois, et rien n’a été supprimé. Vos fichiers d’enregistrement sont toujours dans le dossier des enregistrements. Redémarrez l’application ; si cela ne suffit pas, contactez-nous.",
-    "dataLeftInOldDir": "L’historique et les réglages de l’ancienne version sont restés dans l’ancien dossier. Cette version utilise le nouveau dossier, donc ce que vous avez enregistré avec l’ancienne version n’apparaît pas ici. Vos fichiers d’enregistrement sont toujours dans le dossier des enregistrements."
+    "dataLeftInOldDir": "L’historique et les réglages de l’ancienne version sont restés dans l’ancien dossier. Cette version utilise le nouveau dossier, donc ce que vous avez enregistré avec l’ancienne version n’apparaît pas ici. Vos fichiers d’enregistrement sont toujours dans le dossier des enregistrements.",
+    "levelWeak": "L’enregistrement est très faible — la table de mixage est-elle baissée ?"
   }
 }

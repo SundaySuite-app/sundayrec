@@ -589,6 +589,7 @@ impl RecorderEngine {
             camera,
             preroll_clip,
             state: self.state_writer(&app, generation),
+            loudness: Default::default(),
             opts,
         };
         let session_state = ctx.state.clone();

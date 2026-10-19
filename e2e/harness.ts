@@ -398,6 +398,7 @@ export function recordingRow(over: Partial<RecordingRow> = {}): RecordingRow {
     byte_size: 86_000_000,
     created_at: 1_754_400_000_000,
     note: null,
+    integrated_lufs: null,
     ...over,
   };
 }

@@ -1,0 +1,12 @@
+-- D3 — integrated loudness of a finished recording.
+--
+-- The native engine measures the routed f32 stream (BS.1770, gated) while the
+-- take runs, and the history row stores the integrated LUFS of the delivered
+-- file so a muted mixer shows up in the list afterwards, not only as a warning
+-- in the middle of the service.
+--
+-- Nullable, no default: older rows, crash-recovered recordings and anything
+-- shorter than a few seconds have no measurement, and that is «unknown», not
+-- zero. Add-only (an older build ignores the column), per the rule in
+-- `db/store.rs`.
+ALTER TABLE recording ADD COLUMN integrated_lufs REAL;

@@ -49,6 +49,7 @@
       "noHitsDesc": "Sökningen tittar i datum, filnamn och anteckning.",
       "video": "Video",
       "underMinute": "Under 1 min",
+      "loudness": "{lufs} LUFS",
       "delete": "Radera",
       "movedToTrash": "Flyttad till papperskorgen",
       "autoDeleteOff": "Inspelningar raderas inte automatiskt",
@@ -624,6 +625,7 @@
       "autoStop": "Stoppar av sig själv om {left}",
       "videoSkipped": "Kameran hänger lite efter, så några bilder har hoppats över. Ljudet påverkas inte.",
       "cameraLost": "Kameran föll bort — ljudet spelas fortfarande in",
+      "loudness": "Ljudstyrka {lufs} LUFS",
       "videoStopped": "Bilden stannade — ljudet spelas fortfarande in",
       "cameraNotOpened": "Kameran kunde inte öppnas — ljudet spelas in utan bild",
       "finalizingHint": "Inspelningen skrivs till disk. Det tar några sekunder, och filen är trygg under tiden."
@@ -1152,6 +1154,7 @@
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
     "trashManifestUnreadable": "Papperskorgens innehåll kunde inte läsas. Filerna finns kvar, men appen vet inte längre var de kom ifrån.",
     "dataDirMoveFailed": "Historiken och inställningarna kunde inte flyttas till den nya mappen. Appen använder den gamla den här gången, och inget har raderats. Dina inspelningsfiler finns kvar i inspelningsmappen. Starta om appen; hjälper det inte, hör av dig.",
-    "dataLeftInOldDir": "Historik och inställningar från den äldre versionen finns kvar i den gamla mappen. Den här versionen använder den nya mappen, så det du sparade med den äldre versionen visas inte här. Dina inspelningsfiler finns kvar i inspelningsmappen."
+    "dataLeftInOldDir": "Historik och inställningar från den äldre versionen finns kvar i den gamla mappen. Den här versionen använder den nya mappen, så det du sparade med den äldre versionen visas inte här. Dina inspelningsfiler finns kvar i inspelningsmappen.",
+    "levelWeak": "Inspelningen är mycket svag — är mixern nedskruvad?"
   }
 }

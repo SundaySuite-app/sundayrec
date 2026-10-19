@@ -33,6 +33,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use super::lufs::LoudnessSlot;
 use ringbuf::traits::Consumer;
 use ringbuf::HeapCons;
 use sundayrec_core::silence::{SilenceDetector, SilenceEvent};
@@ -105,6 +106,9 @@ pub struct WriterConfig {
     /// Cadence of the periodic `sync_data` (see [`SYNC_EVERY`]).
     pub sync_every: Duration,
     pub silence: SilenceDetector,
+    /// D3: the deliverable's loudness meter, fed from the same drained block as
+    /// the silence detector. `None` = no measuring (tests, pre-roll).
+    pub loudness: Option<Arc<LoudnessSlot>>,
     /// Live mirror of [`WriterSummary::periodic_syncs`], bumped after each
     /// periodic `sync_data`. `None` in production; tests use it to wait for
     /// real syncs instead of guessing how long an fsync takes on a busy disk.
@@ -224,6 +228,13 @@ fn run_writer(
         );
     }
 
+    // D3: borrow the deliverable's meter for this fragment. Dropped on every
+    // exit of this function (clean or error), which parks it back.
+    let mut lufs_tap = cfg
+        .loudness
+        .as_ref()
+        .map(|slot| slot.begin(cfg.spec.sample_rate, channels));
+
     let mut samples = vec![0.0f32; DRAIN_CHUNK];
     let mut bytes: Vec<u8> = Vec::with_capacity(DRAIN_CHUNK * 2);
     let mut data_bytes: u64 = 0;
@@ -246,6 +257,12 @@ fn run_writer(
             let peak = sundayrec_core::audio::block_peak(block);
             if let Some(ev) = cfg.silence.feed(peak, (n / channels) as u64) {
                 let _ = events.send(WriterEvent::Silence(ev));
+            }
+
+            // Loudness (D3): after the silence feed, before the disk write — on
+            // THIS thread, never in the RT callback.
+            if let Some(tap) = lufs_tap.as_mut() {
+                tap.feed(block);
             }
 
             wav::encode_s16le(block, &mut bytes);
@@ -350,6 +367,7 @@ mod tests {
             sync_every: Duration::from_millis(40),
             // −50 dB, 48 kHz — loud test samples never trip it.
             silence: SilenceDetector::new(-50.0, SPEC.sample_rate),
+            loudness: None,
             sync_count: None,
         }
     }
@@ -567,6 +585,154 @@ mod tests {
             WriterEvent::Error { kind, .. } => assert_eq!(kind, WriterErrorKind::Io),
             other => panic!("expected error event, got {other:?}"),
         }
+    }
+
+    /// D3 — the loudness meter on this thread must not cost the capture
+    /// anything. The producer below is the RT callback's stand-in: it pushes a
+    /// block per tick into the real ring and counts what the callback would
+    /// count (`overrun` = samples that did not fit), and watches how full the
+    /// ring gets. The same 8-channel stream runs at 10x real time with and
+    /// without the meter, writing a real WAV each time.
+    ///
+    /// The CI bound is generous (no drops, ring never half full); the numbers
+    /// are printed for the PR.
+    #[test]
+    fn the_loudness_meter_does_not_cost_the_capture_a_sample() {
+        use ringbuf::traits::{Observer, Producer};
+
+        const CH: u16 = 8;
+        const RATE: u32 = 48_000;
+        const WALL_SECS: f64 = 3.0;
+        // 480 frames = 10 ms of audio per «callback».
+        const BLOCK_FRAMES: usize = 480;
+
+        struct Run {
+            speedup: u64,
+            overrun: u64,
+            peak_fill_ms: f64,
+            frames: u64,
+            wall: Duration,
+            integrated: Option<f64>,
+        }
+
+        let run = |measure: bool, speedup: u64| -> Run {
+            let spec = WavSpec {
+                channels: CH,
+                sample_rate: RATE,
+            };
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cap = crate::recorder::native_capture::stream::ring_capacity(RATE, CH);
+            let (mut prod, cons) = HeapRb::<f32>::new(cap).split();
+            let stop = Arc::new(AtomicBool::new(false));
+            let frames_written = Arc::new(AtomicU64::new(0));
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let slot = Arc::new(LoudnessSlot::new());
+            let mut cfg = test_cfg(dir.path().join("cap.wav"));
+            cfg.spec = spec;
+            // Production cadences: the bound being proven is the shipping one.
+            cfg.flush_every = FLUSH_EVERY;
+            cfg.sync_every = SYNC_EVERY;
+            cfg.silence = SilenceDetector::new(-50.0, RATE);
+            cfg.loudness = measure.then(|| Arc::clone(&slot));
+            let join = spawn_wav_writer(
+                cons,
+                cfg,
+                Arc::clone(&stop),
+                Arc::new(AtomicU64::new(0)),
+                Arc::clone(&frames_written),
+                tx,
+            )
+            .expect("spawn writer");
+
+            // A speech-like, non-trivial signal on every channel.
+            let block: Vec<f32> = (0..BLOCK_FRAMES * CH as usize)
+                .map(|i| 0.2 * ((i / CH as usize) as f32 * 0.07).sin())
+                .collect();
+            let tick = Duration::from_micros(10_000 / speedup);
+            let total_blocks = (WALL_SECS / tick.as_secs_f64()) as usize;
+            let t0 = Instant::now();
+            let mut overrun = 0u64;
+            let mut peak = 0usize;
+            for n in 0..total_blocks {
+                let pushed = prod.push_slice(&block);
+                overrun += (block.len() - pushed) as u64;
+                peak = peak.max(prod.occupied_len());
+                // Pace to the deadline (spin-wait the tail: sleeps are coarse).
+                let due = t0 + tick * (n as u32 + 1);
+                while Instant::now() < due {
+                    std::hint::spin_loop();
+                }
+            }
+            stop.store(true, Ordering::Relaxed);
+            let summary = join.join().expect("join").expect("clean finalize");
+            let wall = t0.elapsed();
+            Run {
+                speedup,
+                overrun,
+                peak_fill_ms: peak as f64 / (f64::from(RATE) * f64::from(CH)) * 1e3,
+                frames: summary.frames,
+                wall,
+                integrated: slot.integrated(),
+            }
+        };
+
+        // Production needs real time (1x); 10x is margin. A shared CI runner
+        // in a debug build (Windows especially: slow fsync) may hold neither
+        // pace for 3 s, with or without the meter, so step down until BOTH
+        // runs hold, and require that to happen by real time at the latest.
+        // On the Mac the pair holds 10x with zero overrun (see the PR).
+        let (without, with) = [10, 4, 1]
+            .into_iter()
+            .find_map(|speedup| {
+                let without = run(false, speedup);
+                if without.overrun > 0 {
+                    eprintln!(
+                        "{speedup}x: the writer alone dropped {} samples",
+                        without.overrun
+                    );
+                    return None;
+                }
+                let with = run(true, speedup);
+                if with.overrun > 0 && speedup > 1 {
+                    eprintln!(
+                        "{speedup}x: the writer with the meter dropped {} samples",
+                        with.overrun
+                    );
+                    return None;
+                }
+                Some((without, with))
+            })
+            .expect("the writer alone must hold real time");
+        let speedup = without.speedup;
+        eprintln!(
+            "D3 writer, 8 ch @ 48 kHz, {speedup}x real time, {WALL_SECS} s wall:\n  \
+             without meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}\n  \
+             with    meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}",
+            without.overrun,
+            without.peak_fill_ms,
+            without.frames,
+            without.wall,
+            with.overrun,
+            with.peak_fill_ms,
+            with.frames,
+            with.wall,
+        );
+        assert_eq!(without.integrated, None, "no meter, no measurement");
+        let lufs = with.integrated.expect("the writer fed the meter");
+        assert!((-40.0..-5.0).contains(&lufs), "measured {lufs} LUFS");
+        assert_eq!(
+            with.overrun, 0,
+            "the meter must not cause a single dropped sample"
+        );
+        assert_eq!(
+            with.frames, without.frames,
+            "same frames on disk with and without"
+        );
+        assert!(
+            with.peak_fill_ms < 2_500.0,
+            "the ring never reached half full with the meter ({:.0} ms of 5000)",
+            with.peak_fill_ms
+        );
     }
 
     #[test]

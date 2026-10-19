@@ -195,6 +195,14 @@ pub struct RecordingProgress {
     /// in words for as long as it is set.
     #[serde(default)]
     pub video_problem: Option<VideoProblem>,
+    /// Short-term loudness (BS.1770, 3 s window) of the recording so far, in
+    /// LUFS (D3). `null` until the meter has a full window. Always finite:
+    /// digital silence is -120, never -inf (JSON cannot carry infinity). The
+    /// overlay shows it beside the peaks; the weak-level watch
+    /// (`sundayrec_core::level_watch`) reads it.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub short_term_lufs: Option<f64>,
 }
 
 /// Why a video session has no picture (see [`RecordingProgress::video_problem`]).
@@ -273,6 +281,7 @@ mod tests {
             video_frames_dropped: 7,
             video_lost_ms: Some(61_000),
             video_problem: Some(VideoProblem::EncoderStopped),
+            short_term_lufs: Some(-23.5),
         };
         let json = serde_json::to_string(&p).unwrap();
         let back: RecordingProgress = serde_json::from_str(&json).unwrap();

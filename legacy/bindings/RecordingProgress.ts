@@ -29,4 +29,12 @@ video_lost_ms: number | null,
  * dead WAV writer, which says `device_disconnected`; the overlay says it
  * in words for as long as it is set.
  */
-video_problem: VideoProblem | null, };
+video_problem: VideoProblem | null, 
+/**
+ * Short-term loudness (BS.1770, 3 s window) of the recording so far, in
+ * LUFS (D3). `null` until the meter has a full window. Always finite:
+ * digital silence is -120, never -inf (JSON cannot carry infinity). The
+ * overlay shows it beside the peaks; the weak-level watch
+ * (`sundayrec_core::level_watch`) reads it.
+ */
+short_term_lufs: number | null, };

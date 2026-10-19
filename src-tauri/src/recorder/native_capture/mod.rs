@@ -26,6 +26,8 @@
 //! - [`stream`] — the consolidated cpal layer (host open, fuzzy device find,
 //!   format negotiation, one typed stream-builder set) shared with the VU
 //!   engine in `audio/vu.rs`.
+//! - [`lufs`] — D3: BS.1770 loudness of the routed stream, measured on the writer
+//!   thread (never in the RT callback): live short-term + per-deliverable integrated.
 //! - [`writer`] — the WAV writer thread (f32→s16, 250 ms flush + in-place
 //!   header patching, byte/frame counters, in-process silence feed).
 //! - [`segment`] — the segment runner: one capture-fragment life (the only
@@ -42,6 +44,7 @@
 //! capture paths (and the `SUNDAYREC_NATIVE_VIDEO` switch that let video in
 //! during C3a) are gone.
 
+pub mod lufs;
 pub mod preroll;
 pub mod segment;
 pub mod stream;

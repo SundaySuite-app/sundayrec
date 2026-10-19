@@ -188,6 +188,9 @@ pub enum AlertText {
     /// The camera has been gone for over a minute; the audio is still being
     /// recorded (C5b).
     TakeCameraLost,
+    /// The level has been far too low for over five minutes (D3): the mixer is
+    /// probably turned down.
+    TakeLevelWeak,
     /// Free space fell below the graduated warning threshold. `{gb}`
     TakeDiskLow,
 
@@ -252,6 +255,7 @@ impl AlertText {
         AlertText::TakeQuality,
         AlertText::TakeReconnecting,
         AlertText::TakeCameraLost,
+        AlertText::TakeLevelWeak,
         AlertText::TakeDiskLow,
         AlertText::WakeNotArmed,
         AlertText::TestNotification,
@@ -1139,6 +1143,15 @@ impl AlertText {
             (A::TakeCameraLost, L::Pl) => "Kamera przestała działać — dźwięk nadal jest nagrywany",
             (A::TakeCameraLost, L::Fr) => "La caméra s'est déconnectée — le son continue d'être enregistré",
 
+            // ── TakeLevelWeak ─────────────────────────────────────────────────
+            (A::TakeLevelWeak, L::No) => "Opptaket er svært svakt — er mikseren dempet?",
+            (A::TakeLevelWeak, L::En) => "The recording is very quiet — is the mixer turned down?",
+            (A::TakeLevelWeak, L::De) => "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?",
+            (A::TakeLevelWeak, L::Sv) => "Inspelningen är mycket svag — är mixern nedskruvad?",
+            (A::TakeLevelWeak, L::Da) => "Optagelsen er meget svag — er mixeren skruet ned?",
+            (A::TakeLevelWeak, L::Pl) => "Nagranie jest bardzo ciche — czy mikser jest wyciszony?",
+            (A::TakeLevelWeak, L::Fr) => "L'enregistrement est très faible — la table de mixage est-elle baissée ?",
+
             // ── TakeDiskLow ───────────────────────────────────────────────────
             (A::TakeDiskLow, L::No) => {
                 "Lite plass på disken — {gb} GB igjen. Opptaket stopper når disken er full."
@@ -1286,7 +1299,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            51,
+            52,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();

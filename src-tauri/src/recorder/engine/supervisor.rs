@@ -122,6 +122,7 @@ async fn spawn_capture(
         pinned_rate,
         reopen,
         video_plan,
+        ctx.loudness.current(),
     )
     .await
 }
@@ -241,6 +242,7 @@ async fn run_session(
         camera: _,
         preroll_clip: _,
         state: _,
+        loudness: _,
     } = &ctx;
     // F2-W5: hold the machine awake for the WHOLE session — this binding is
     // dropped (and the block released) by the normal return, by every early
@@ -327,6 +329,8 @@ async fn run_session(
         // next launch.
         let delivery_encode = Some(delivery_encode_for(&ctx.opts, ctx.camera.is_some()));
         let mut session = RecordingSession::new(session_output, start_ms);
+        // D3: deliverable 0's loudness meter, before its first fragment opens.
+        ctx.loudness.open_deliverable();
         // The OS device-list-change signal. Grabbed once per session (it installs
         // the platform listener on first use and is a process-wide singleton
         // thereafter) so a reconnect back-off can be cut short the moment the
@@ -455,6 +459,7 @@ async fn run_session(
                     first_delivery = first_delivery.or(first);
 
                     let next = session.begin_split_segment(close_ms);
+                    ctx.loudness.open_deliverable();
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
                     match spawn_capture(
                         &ctx,
@@ -661,6 +666,7 @@ async fn run_session(
                                             )
                                             .await;
                                             let split_path = session.begin_split_segment(now_ms());
+                                            ctx.loudness.open_deliverable();
                                             match spawn_capture(
                                                 &ctx,
                                                 &split_path,

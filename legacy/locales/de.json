@@ -49,6 +49,7 @@
       "noHitsDesc": "Die Suche schaut in Datum, Dateiname und Notiz.",
       "video": "Video",
       "underMinute": "Unter 1 Min.",
+      "loudness": "{lufs} LUFS",
       "delete": "Löschen",
       "movedToTrash": "In den Papierkorb verschoben",
       "autoDeleteOff": "Aufnahmen werden nicht automatisch gelöscht",
@@ -624,6 +625,7 @@
       "autoStop": "Stoppt von selbst in {left}",
       "videoSkipped": "Die Kamera kommt nicht ganz mit, daher wurden einige Bilder übersprungen. Der Ton ist nicht betroffen.",
       "cameraLost": "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen",
+      "loudness": "Lautheit {lufs} LUFS",
       "videoStopped": "Das Bild ist ausgefallen — der Ton wird weiter aufgenommen",
       "cameraNotOpened": "Die Kamera ließ sich nicht öffnen — der Ton wird ohne Bild aufgenommen",
       "finalizingHint": "Die Aufnahme wird auf die Festplatte geschrieben. Das dauert ein paar Sekunden, und die Datei ist derweil sicher."
@@ -1152,6 +1154,7 @@
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
     "trashManifestUnreadable": "Der Inhalt des Papierkorbs konnte nicht gelesen werden. Die Dateien sind noch da, aber die App weiß nicht mehr, woher sie stammen.",
     "dataDirMoveFailed": "Verlauf und Einstellungen konnten nicht in den neuen Ordner verschoben werden. Die App verwendet diesmal den alten, und es wurde nichts gelöscht. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner. Starte die App neu; falls das nicht hilft, melde dich.",
-    "dataLeftInOldDir": "Verlauf und Einstellungen der älteren Version liegen noch im alten Ordner. Diese Version verwendet den neuen Ordner, daher werden die Änderungen der älteren Version hier nicht angezeigt. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner."
+    "dataLeftInOldDir": "Verlauf und Einstellungen der älteren Version liegen noch im alten Ordner. Diese Version verwendet den neuen Ordner, daher werden die Änderungen der älteren Version hier nicht angezeigt. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner.",
+    "levelWeak": "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?"
   }
 }

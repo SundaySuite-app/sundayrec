@@ -46,6 +46,7 @@
  */
 
 import { pairRecordings } from "@lib/pages/history-core";
+import { isMeasuredLufs } from "../../audio/lufs";
 import type { RecordingEntry } from "@legacy/types";
 
 /** Grensen søket slår inn på. Legacys egen: under to tegn filtreres ingenting,
@@ -68,6 +69,9 @@ export interface LibraryRow {
   /** Er det video i denne økta? Enten som sidefil, eller fordi raden selv er
    *  videofila (et opptak uten separat lydfil). */
   hasVideo: boolean;
+  /** Integrert lydstyrke (LUFS) målt under opptaket (D3), eller `null` = ikke
+   *  målt (eldre rader, gjenopprettede opptak). Aldri 0 som «ukjent». */
+  loudnessLufs: number | null;
   /** Notatet, hvis noen har skrevet ett. Vises som undertekst, ikke
    *  redigerbart — notatfeltet er ute av nivå 1 (eiervalg, canvas sett 3). */
   note: string | null;
@@ -158,6 +162,7 @@ export function toLibraryRows(
       atMs: startedAtOf(r),
       durationSec: durationOf(r),
       hasVideo: videoEntry !== null || isVideoPath(path),
+      loudnessLufs: isMeasuredLufs(r.loudnessLufs) ? r.loudnessLufs : null,
       note,
       filename: r.filename ?? "",
       path,

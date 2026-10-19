@@ -143,6 +143,34 @@ som de andre pensjonerte oppføringene; lista over dem står i modulhodet til
 
 Verifisering på rigg: `docs/RIG-DAY.md` (v9).
 
+## ✅ Runde 6 — dempet mikser (D3)
+
+- **Opptaket er svært svakt i over 5 minutter.** Den native motoren måler
+  kortsiktig lydstyrke (BS.1770, 3 s) på den rutede f32-strømmen, på skrivertråden
+  (aldri i lydtilbakekallet), og sender den med 1 Hz-hjerteslaget
+  (`recording://progress.short_term_lufs`). Under **−40 LUFS i mer enn 5 minutter**
+  sier appen «Opptaket er svært svakt — er mikseren dempet?» (`AlertText::TakeLevelWeak`,
+  sju språk):
+  - som **banner** med en gang (`backend://warning`, kode `level_weak`, nøkkelen
+    `notify.levelWeak`), og
+  - som **systemvarsel** når vinduet ikke er i fokus (`TakeAlert::LevelWeak`,
+    `notify::take::raise`, samme regel som de andre under-opptak-varslene).
+- **Én gang per opptak** (nullstilles når et nytt fragment/opptak starter, som
+  de andre under-opptak-varslene). Et nivå som kommer tilbake over −40 nullstiller
+  de 5 minuttene; et kort stille parti (bønn, stillhet) varsler aldri.
+- **Digital stillhet er svakt.** −∞ fra måleren (og alt under målerens
+  −70 LUFS-port) regnes som under −40; på tråden er det −120, ikke −∞ (JSON bærer
+  ikke uendelig).
+- Beslutningen er en ren tilstandsmaskin med injisert klokke:
+  `sundayrec_core::level_watch::WeakLevelWatch`. Testene kjører fem «minutter» på
+  mikrosekunder.
+- **Stillhetsvarselet vinner.** Er stillhetsvarselet («Stillhet oppdaget») gitt i opptaket, holdes «svakt»-varselet tilbake resten av opptaket (`WeakLevelWatch::note_silence_alerted`). Stille >5 min gir altså bare stillhetsvarselet; dempet men ikke stille >5 min gir «svakt»; kommer «svakt» først og stillhet etterpå, sies begge i den rekkefølgen.
+- Overlegget viser «Lydstyrke −NN LUFS» under toppmåleren; Bibliotek viser
+  integrert LUFS per opptak (`recording.integrated_lufs`, migrering `0009`).
+- Ingen ny telemetrinøkkel: tallene er lokale.
+
+Verifisering på rigg: `docs/RIG-DAY.md` (d3-mac, d3-rigg).
+
 ## Senere
 
 Hvert punkt har en betingelse for når det kan tas.
