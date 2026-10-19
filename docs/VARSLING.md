@@ -119,10 +119,7 @@ Verifisering på rigg: `docs/RIG-DAY.md` (v9).
 - Beslutningen er en ren tilstandsmaskin med injisert klokke:
   `sundayrec_core::level_watch::WeakLevelWatch`. Testene kjører fem «minutter» på
   mikrosekunder.
-- **Et fem minutter langt, helt stille parti varsler også** (det er mer enn
-  5 minutter under −40). Stillhetsvarselet («Stillhet oppdaget») er den
-  eksisterende veien for det; dette varselet er for «det er lyd, men alt for
-  svak». Begge kan komme.
+- **Stillhetsvarselet vinner.** Er stillhetsvarselet («Stillhet oppdaget») gitt i opptaket, holdes «svakt»-varselet tilbake resten av opptaket (`WeakLevelWatch::note_silence_alerted`). Stille >5 min gir altså bare stillhetsvarselet; dempet men ikke stille >5 min gir «svakt»; kommer «svakt» først og stillhet etterpå, sies begge i den rekkefølgen.
 - Overlegget viser «Lydstyrke −NN LUFS» under toppmåleren; Bibliotek viser
   integrert LUFS per opptak (`recording.integrated_lufs`, migrering `0009`).
 - Ingen ny telemetrinøkkel: tallene er lokale.

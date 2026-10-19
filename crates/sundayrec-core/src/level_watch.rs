@@ -26,6 +26,22 @@
 //!   the five minutes start over. A prayer or a minute of silence inside a
 //!   normal service never gets near the line.
 //!
+//! ## Silence wins
+//!
+//! A take that is silent for over five minutes also trips the silence warning
+//! («Stillhet oppdaget»). Telling the operator the same fact twice is noise, so
+//! once the silence warning has been given in this take the weak-level warning
+//! is held back for the rest of it ([`WeakLevelWatch::note_silence_alerted`]):
+//!
+//! - silent > 5 min  ⇒ only the silence warning;
+//! - weak but not silent > 5 min ⇒ only the weak-level warning;
+//! - weak warning first, silence later ⇒ both were said, in that order (the
+//!   weak one was already true and useful when it was given; the silence
+//!   warning is a different, stronger fact and is never suppressed);
+//! - silence warning first, weak later in the same take ⇒ no weak warning,
+//!   even if the sound came back and then went weak again: the silence warning
+//!   already told the operator to look at the mixer.
+//!
 //! ## Once per take
 //!
 //! The warning is due ONCE. [`WeakLevelWatch::observe`] keeps answering `true`
@@ -72,6 +88,8 @@ pub struct WeakLevelWatch {
     weak_since: Option<Duration>,
     /// The warning for this take was raised; say nothing more.
     alerted: bool,
+    /// The silence warning was given in this take: hold this one back.
+    silence_told: bool,
 }
 
 impl WeakLevelWatch {
@@ -80,6 +98,7 @@ impl WeakLevelWatch {
         Self {
             weak_since: None,
             alerted: false,
+            silence_told: false,
         }
     }
 
@@ -107,9 +126,16 @@ impl WeakLevelWatch {
 
     fn due(&self, at: Duration) -> bool {
         match self.weak_since {
-            Some(since) if !self.alerted => at.saturating_sub(since) > WEAK_AFTER,
+            Some(since) if !self.alerted && !self.silence_told => {
+                at.saturating_sub(since) > WEAK_AFTER
+            }
             _ => false,
         }
+    }
+
+    /// The silence warning has been given: this take will not also say «svakt».
+    pub fn note_silence_alerted(&mut self) {
+        self.silence_told = true;
     }
 
     /// The warning was raised; do not say it again this take.
@@ -222,6 +248,59 @@ mod tests {
         assert!(!w.observe(s(300), None));
         // …so five minutes after the first weak reading it is due.
         assert!(w.observe(s(501), None));
+    }
+
+    /// Seconds at which the warning was due, raising it (as the caller does)
+    /// the first time.
+    fn raised(w: &mut WeakLevelWatch, from: u64, to: u64, lufs: f64) -> Vec<u64> {
+        let mut v = vec![];
+        for t in from..=to {
+            if w.observe(s(t), Some(lufs)) {
+                v.push(t);
+                w.mark_alerted();
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn silent_over_five_minutes_gives_only_the_silence_warning() {
+        let mut w = WeakLevelWatch::new();
+        // Digital silence from the start. The silence warning fires first (its
+        // own timer is shorter) and the engine tells us.
+        assert!(!w.observe(s(3), Some(f64::NEG_INFINITY)));
+        w.note_silence_alerted();
+        assert!(feed(&mut w, 4, 1800, f64::NEG_INFINITY).is_empty());
+    }
+
+    #[test]
+    fn weak_but_not_silent_gives_the_weak_warning() {
+        let mut w = WeakLevelWatch::new();
+        // No silence warning (the signal is quiet, not gone).
+        assert_eq!(raised(&mut w, 3, 1800, -55.0), vec![304]);
+    }
+
+    #[test]
+    fn weak_first_then_silence_says_both_in_that_order() {
+        let mut w = WeakLevelWatch::new();
+        assert_eq!(raised(&mut w, 3, 400, -55.0), vec![304]);
+        // Later the mixer is cut completely: the silence warning is the
+        // engine's, unaffected; the weak one stays quiet (already said).
+        w.note_silence_alerted();
+        assert!(feed(&mut w, 401, 1800, f64::NEG_INFINITY).is_empty());
+    }
+
+    #[test]
+    fn silence_told_holds_weak_back_for_the_rest_of_the_take_and_reset_frees_it() {
+        let mut w = WeakLevelWatch::new();
+        w.note_silence_alerted();
+        assert!(feed(&mut w, 0, 100, -20.0).is_empty());
+        assert!(
+            feed(&mut w, 101, 1000, -55.0).is_empty(),
+            "silence came first"
+        );
+        w.reset();
+        assert_eq!(raised(&mut w, 0, 400, -55.0), vec![301]);
     }
 
     #[test]

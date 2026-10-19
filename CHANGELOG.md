@@ -10,7 +10,7 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   den integrerte lydstyrken for hvert nye opptak. Har lydstyrken vært under
   −40 LUFS i mer enn 5 minutter, sier appen fra: «Opptaket er svært svakt — er
   mikseren dempet?», som banner og som systemvarsel når vinduet ikke er i fokus, én
-  gang per opptak. Et kort stille parti (bønn, stillhet) utløser det ikke. Måleren
+  gang per opptak. Et kort stille parti (bønn, stillhet) utløser det ikke, og er stillhetsvarselet allerede gitt, kommer ikke dette i tillegg. Måleren
   kjører på skrivertråden, ikke i lydtilbakekallet: på en 8-kanalers strøm ved
   10 ganger sanntid ble ingen lydprøver tapt og ringbufferen ble aldri mer enn
   noen tiendedels sekund full, med og uten måler. Må prøves med en dempet mikser

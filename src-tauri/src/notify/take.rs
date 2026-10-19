@@ -175,6 +175,8 @@ pub fn wire(app: &AppHandle) {
 
     let handle = app.clone();
     app.listen(SILENCE_EVENT, move |_| {
+        // D3: the silence warning has been given; «svakt» holds back.
+        lock_recover(&LEVEL).watch.note_silence_alerted();
         let app = handle.clone();
         tauri::async_runtime::spawn(async move { raise(&app, TakeAlert::Silence, None) });
     });
