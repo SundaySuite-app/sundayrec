@@ -339,6 +339,10 @@ Hørbarheten er ikke prøvd (Ørene, RIG-DAY (B3b)).
   GJENNOMFORING §B4a). Målt på en 90-minutters mp3 på Macen: åpning →
   ferdig analyse 35,7 s → 10,2 s, bølgeformen 5,6 s → 5,6 s, fire dekodinger →
   én.
+- **Gjort i B4b:** `astats`-resten ut, og telleren (`analysis_decodes_of`, per slag) er
+  porten: en test åpner en 90-minutters fil med alle forbrukere og krever én helfilslesing.
+  Eksportens måle-pass og programmålingen er egne lesinger (de trenger kutt og kjede) og vises
+  som det i telleren. Skygge-VAD leser ikke lenger selv.
 
 ### Fase 5 — forhåndslytting i sanntid
 

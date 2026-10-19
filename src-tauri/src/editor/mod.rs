@@ -8273,6 +8273,35 @@ mod tests {
             assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
         }
 
+        /// B4b: with the shadow VAD on (`vad` feature) the model scores the samples the sermon
+        /// search ran on, taken from the open round: no read of its own, so the count stays one.
+        /// Only after the detection has been handed out, and only once.
+        #[cfg(feature = "vad")]
+        #[test]
+        fn the_shadow_vad_takes_the_open_rounds_samples_and_reads_nothing_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "shadow.wav", 44_100, 20.0);
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let (_, analysis) = segments(&src, false, |_| {}).await.expect("segments");
+                    assert!(analysis.is_some());
+                })
+            });
+            let pcm = take_shadow_pcm(&src).expect("the samples the search ran on");
+            assert!(
+                (319_000..=321_000).contains(&pcm.len()),
+                "20 s at 16 kHz: {}",
+                pcm.len()
+            );
+            assert!(take_shadow_pcm(&src).is_none(), "once");
+            assert_eq!(analysis_decodes_of(&src), 1, "and the shadow read nothing");
+        }
+
         /// The reads that do NOT share the open round are counted as what they are, so they
         /// cannot hide: the export's measuring pass (the kept parts through the chain, staged)
         /// and the preview's programme measure each read the source once per request, apart from
@@ -8287,15 +8316,6 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let src = open_fixture(&ffmpeg, dir.path(), "apart.wav", 44_100, 20.0);
             let out_dir = tempfile::tempdir().unwrap();
-            with_sidecars(&ffmpeg, &ffprobe, |rt| {
-                rt.block_on(async {
-                    peaks(&src, |_| {}).await.expect("peaks");
-                    diagnose_channels(&src).await.expect("diagnosis");
-                });
-            });
-            assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
-            assert_eq!(analysis_decodes_of(&src), 1);
-
             let req = EditorMasterPreviewRequest {
                 source_token: "t".into(),
                 preset_id: Some("speech-clear".into()),
@@ -8306,33 +8326,44 @@ mod tests {
                 cut_regions: Vec::new(),
                 full_length_sec: Some(20.0),
             };
-            with_sidecars(&ffmpeg, &ffprobe, |rt| {
-                rt.block_on(async {
-                    assert!(prepare_listen(&req, &src).await.expect("prepare"));
-                    assert!(prepare_listen(&req, &src).await.expect("prepare again"));
-                });
-            });
-            assert_eq!(
-                analysis_decodes_by(&src, Decode::Programme),
-                1,
-                "the programme is measured once per request"
-            );
-            assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
-
             let mut ex = export_request(&src, &out_dir.path().to_string_lossy(), "wav", &[], 20.0);
             ex.master_preset = Some("speech-clear".into());
-            let (result, _) = run_export_blocking(&ffmpeg, &ffprobe, &ex);
-            result.expect("the export should succeed");
-            assert_eq!(
-                analysis_decodes_by(&src, Decode::Staging),
-                1,
-                "the export measures the kept parts once"
-            );
-            assert_eq!(
-                analysis_decodes_by(&src, Decode::Open),
-                1,
-                "and «Tale» comes from the round already made"
-            );
+            // One hold of the sidecar lock for the whole sequence: the open book keeps only a few
+            // recordings, and other tests reading files at the same time would push this one out
+            // between the steps.
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    peaks(&src, |_| {}).await.expect("peaks");
+                    diagnose_channels(&src).await.expect("diagnosis");
+                    assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
+                    assert_eq!(analysis_decodes_of(&src), 1);
+
+                    assert!(prepare_listen(&req, &src).await.expect("prepare"));
+                    assert!(prepare_listen(&req, &src).await.expect("prepare again"));
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Programme),
+                        1,
+                        "the programme is measured once per request"
+                    );
+                    assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
+
+                    let engine = ExportEngine::new();
+                    let (_, on_progress) = sink();
+                    export(&engine, &ex, &ex.inputs, false, on_progress)
+                        .await
+                        .expect("the export should succeed");
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Staging),
+                        1,
+                        "the export measures the kept parts once"
+                    );
+                    assert_eq!(
+                        analysis_decodes_by(&src, Decode::Open),
+                        1,
+                        "and «Tale» comes from the round already made"
+                    );
+                });
+            });
             assert_eq!(analysis_decodes_by(&src, Decode::PeakProbe), 0);
             assert_eq!(analysis_decodes_of(&src), 3);
         }

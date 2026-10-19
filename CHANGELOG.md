@@ -17,6 +17,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   tilfeller leser opptil to desibel for lavt. Må prøves på en ekte Windows-PC
   (tråder og 44,1 kHz-filer).
 
+- **Det gamle `astats`-målet er borte, og «én lesing» er nå bevist.** Å åpne et opptak
+  leser fila én gang, også et på 90 minutter, og det er en teller i testene som
+  sier det, ikke en antakelse. Eksporten og forhåndslyttingen måler fortsatt
+  lyden etter klipp og kjede i en egen lesing hver, og telleren viser dem som det.
+  Ingenting endrer seg for deg i bruk; den gamle målekoden er ryddet bort.
+
 ## v0.27.0-beta.1 — ny lyd i redigeringen og ny videomotor, til beta-ringen
 
 - **Videoen på Windows ligger ikke lenger etter lyden.** Kamerabildene ble stemplet med tiden de kom fram til appen, ikke tiden de ble tatt – på et USB-kamera 50–150 ms senere, så bildet kunne ligge 1–4 bilder bak lyden. Nå brukes kameraets egen fangsttid (som på Mac). Må prøves på en ekte Windows-PC (klappetest).
