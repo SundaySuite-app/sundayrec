@@ -1731,10 +1731,19 @@ impl PeakAccumulator {
         }
     }
 
+    /// Fold one sample already in -1..1 (the open round, B4a: the 8 kHz mono signal arrives as
+    /// f32 from the Rust resampler, not as bytes off a pipe). Same bucketing as the bytes.
+    pub fn push_f32(&mut self, sample: f32) {
+        self.push_abs(sample.abs());
+    }
+
     fn push_sample(&mut self, sample: i16) {
         // `i16::MIN.abs()` overflows — go through f32 like `downsample_peaks`'s
         // input did (the WAV reader divided by 32768 before taking `abs`).
-        let a = (sample as f32 / 32768.0).abs();
+        self.push_abs((sample as f32 / 32768.0).abs());
+    }
+
+    fn push_abs(&mut self, a: f32) {
         if a > self.current {
             self.current = a;
         }
