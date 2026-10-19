@@ -364,6 +364,11 @@ Hørbarheten er ikke prøvd (Ørene, RIG-DAY (B3b)).
   intervaller og muxes inn.
 - **Ferdig når:** «Behold bare prekenen» på en 90-minutters video tar sekunder,
   ikke minutter, og lyd og bilde er i synk ved hvert kutt (RIG-DAY).
+- **Gjort (B6):** `sundayrec_core::video_copy` planlegger kuttene (start tilbake til
+  rent nøkkelbilde, slutt fram til neste rene deling, avvisning med grunn), og
+  `editor::export` kopierer bildet via concat-demuxeren og rendrer lyden i Rust over
+  nøyaktig de snappede intervallene. Tider før og etter, og synkmålingene, står i
+  PR-en; riggbeviset er RIG-DAY (v10). Se GJENNOMFORING.md §B6 for rettelsene til planen.
 
 ## Hva vi ikke tar fra filmcraft
 

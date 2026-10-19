@@ -846,6 +846,36 @@ during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
       at bildet er tilbake; meldingen kommer ikke i det hele tatt (da leser ikke
       sporet kamerahelsen; sjekk loggen for `camera reconnect:`-linjene fra (v8)).
 
+- [ ] **(v10) «Behold bare prekenen» på en ekte gudstjeneste med video tar
+      sekunder, og lyd og bilde er i synk ved hvert kutt (B6, Mac og Windows).**
+      Bruk et ekte opptak med video fra den nye motoren (v0.26 eller nyere, så
+      nøkkelbildene står hvert 2. sekund), helst 60–90 minutter. 1. Rediger → Klipp: la prekenen stå (auto-valget), eller sett to kutt for
+      hånd. Rediger → Lyd: **ingen** profil først. Eksporter med «Ta med video
+      (MP4)». **Forventet:** ferdig på sekunder (tid det, og noter filstørrelse
+      og maskin), ikke minutter; loggen sier «cut-only video export: the
+      picture is copied». Bildekvaliteten er den samme som i opptaket (det er
+      de samme bildene). 2. **Synk ved kuttet.** Spill den eksporterte filen i en vanlig spiller
+      (QuickTime/VLC) og hopp til prekenens første ord og til siste setning.
+      **Forventet:** leppene stemmer med lyden begge steder; ingen hørbar klikk
+      i skjøten. Gjør det samme for et kutt midt i prekenen (sett et kutt over
+      en sang inni): leppene stemmer før og etter kuttet. 3. **Klappetest (valgfritt, strengest).** Ta opp 2 minutter der du
+      klapper hendene foran kameraet hvert 10. sekund, og eksporter med et kutt
+      som ikke ligger på et helt 2-sekunds-tall (f.eks. 33 s). Bla bilde for
+      bilde i VLC (`e`) over hvert klapp. **Forventet:** lydtoppen og bildet
+      der hendene møtes er innenfor ett bilde (33 ms) ved hvert klapp, også de
+      etter kuttet. 4. **Starten kan ligge opptil 2 s tidligere enn du satte den.** Det er
+      prisen for å kopiere bildet: en kopi kan bare begynne på et nøkkelbilde,
+      og appen går alltid tilbake, aldri fram, så ingen ord blir borte. Lyden
+      begynner på samme sted som bildet. Vurder om det er greit for en prekens
+      første setning (eierspørsmål i PR-en). 5. **Fallback:** eksporter et gammelt opptak (fra før v0.26, nøkkelbilde
+      sjelden) og et kutt kortere enn 2 s inni. **Forventet:** eksporten tar
+      minutter som før (bildet kodes om), kuttet er nøyaktig der du satte det, og
+      loggen sier «video export re-encodes: …» med grunnen.
+      **Rødt funn:** bilde og lyd som glir fra hverandre etter et kutt (mål
+      forskjellen og hvilket kutt), svart eller frosset bilde i starten av en
+      del, en eksport som aldri blir ferdig, eller en kopi som tar like lang tid
+      som før (da kopierte den ikke; send loggen).
+
 ## Ørene
 
 Lydkjede-funn som verken CI eller en sidecar-måling kan avgjøre alene — de

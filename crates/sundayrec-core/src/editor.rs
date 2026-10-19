@@ -384,6 +384,31 @@ pub fn video_codec_args(
     a
 }
 
+/// The codec args of a video export whose PICTURE is copied (B6): `-c:v copy`, the AAC track as
+/// in [`video_codec_args`], and the `hvc1` tag a copied HEVC picture needs for QuickTime. The
+/// picture is already in the file; only the sound is encoded.
+pub fn video_copy_codec_args(
+    container: &str,
+    codec: VideoCodec,
+    source_rate: Option<u32>,
+) -> Vec<String> {
+    let s = |v: &str| v.to_string();
+    let mut a = vec![s("-c:v"), s("copy")];
+    if codec == VideoCodec::H265 && matches!(container, "mp4" | "mov" | "m4v") {
+        a.extend([s("-tag:v"), s("hvc1")]);
+    }
+    a.extend(video_audio_codec_args(source_rate));
+    // With the picture copied, the AAC encode is the whole wait: the default two-loop
+    // coder runs at ~30× real time (19 s for 10 minutes, measured on an M1 Pro), the fast
+    // coder at ~130×. At 256 kbit/s stereo the difference is not one the sermon's listeners
+    // can use; the re-encoding path keeps the default, where the picture dominates anyway.
+    a.extend([s("-aac_coder"), s("fast")]);
+    if matches!(container, "mp4" | "mov" | "m4v") {
+        a.extend([s("-movflags"), s("+faststart")]);
+    }
+    a
+}
+
 /// The encoder backend for a video output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VideoEncoder {
@@ -3580,6 +3605,23 @@ mod tests {
     }
 
     // ── probe / decode argv ────────────────────────────────────────────────────
+
+    #[test]
+    fn a_copied_picture_gets_no_encoder_but_keeps_the_audio_rules() {
+        let a = video_copy_codec_args("mp4", VideoCodec::H264, Some(96_000));
+        assert_eq!(&a[..2], ["-c:v", "copy"]);
+        assert!(!a.contains(&"libx264".to_string()));
+        assert!(a.windows(2).any(|w| w == ["-c:a", "aac"]));
+        // The AAC track is pinned to 48 kHz exactly as in the encoding path.
+        assert!(a.windows(2).any(|w| w == ["-ar", "48000"]));
+        assert!(a.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+        assert!(a.windows(2).any(|w| w == ["-aac_coder", "fast"]));
+        // A copied HEVC picture needs the hvc1 tag for QuickTime; mkv takes neither tag nor flag.
+        let h = video_copy_codec_args("mov", VideoCodec::H265, None);
+        assert!(h.windows(2).any(|w| w == ["-tag:v", "hvc1"]));
+        let m = video_copy_codec_args("mkv", VideoCodec::H265, None);
+        assert!(!m.contains(&"-tag:v".to_string()) && !m.contains(&"-movflags".to_string()));
+    }
 
     #[test]
     fn ffprobe_load_args_target_first_audio_and_format_duration() {
