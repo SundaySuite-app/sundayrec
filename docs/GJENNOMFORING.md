@@ -1649,6 +1649,34 @@ RIG-DAY-punkt).
 
 **Hvor det bevises:** Macen (fart og synk) + **Riggen** (bekreftelse).
 
+**Rettelser til planen (funnet i B6):**
+
+- **Én liste av intervaller, ikke to.** Planen (`sundayrec_core::video_copy::plan_copy_cut`)
+  snapper brukerens kutt til det en kopi kan, og de snappede intervallene erstatter
+  `keeps` i hele eksporten: concat-listen for bildet og den Rust-rendrede lyden
+  leser samme liste. Synken kan ikke gli ved et kutt, fordi det ikke finnes to tall som
+  kan være uenige. Lyden går alltid via Rust-stien i kopimodus (også uten profil), siden
+  det er den som rendrer nøyaktig disse intervallene.
+- **Starten snapper tilbake, slutten fram.** Starten til nærmeste _rene_ nøkkelbilde før
+  kuttet (aldri etter, så ingen ord forsvinner; opptil 2,5 s tilbake), slutten til neste
+  sted der strømmen kan deles uten at B-bilder krysser (som regel 0–3 bilder
+  fram). Nøkkelbilder med ledende bilder fra forrige gruppe (åpen GOP) er ikke
+  start-steder.
+- **Det som ikke kan kopieres nøyaktig, kodes om som før**, med grunn i loggen: nøkkelbilde
+  lenger tilbake enn 2,5 s (opptak fra før C0b), et kutt kortere enn snappen
+  (det ville forsvunnet), en kilde som ikke er mp4/mov, en kodek som ikke er den
+  eksporten ber om (HEVC-opptak, standard H.264), eller pakker uten tidsstempler.
+  Svikter selve kopien (ffmpeg-feil, eller bilde og lyd ulikt langt over 70 ms),
+  kastes den og eksporten kjøres på nytt som omkoding.
+- **Tre ffmpeg-fakta** (målt på 9.0.1, bevist på nytt av testene): concat-demuxerens
+  `outpoint` kutter på **dts**, ikke pts (B-bilder gir to bilder for mye med pts);
+  uten `duration` plasseres neste del etter dts-avstanden (bildet glir mot lyden ved
+  hvert kutt); og CLI-en re-baserer inngangen på containerens starttid, som concat
+  melder 80 ms for tidlig på grunn av AAC-forsinkelsen (løst med `-copyts` og
+  `-itsoffset` for avrundingen).
+- **Forutsetningene i B6-teksten holdt:** C0b og B2b er merget (nøkkelbilder hvert 2. s,
+  `resolve_audio_params`/`pre_chain_for` delt med forhåndslyttingen).
+
 **Startmelding:**
 
 > Les `docs/GJENNOMFORING.md` §B6 og `docs/LYDMOTOR.md` fase 6. Gjennomfør økta

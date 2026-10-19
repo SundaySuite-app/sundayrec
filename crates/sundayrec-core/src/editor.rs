@@ -3602,6 +3602,22 @@ mod tests {
     // ── probe / decode argv ────────────────────────────────────────────────────
 
     #[test]
+    fn a_copied_picture_gets_no_encoder_but_keeps_the_audio_rules() {
+        let a = video_copy_codec_args("mp4", VideoCodec::H264, Some(96_000));
+        assert_eq!(&a[..2], ["-c:v", "copy"]);
+        assert!(!a.contains(&"libx264".to_string()));
+        assert!(a.windows(2).any(|w| w == ["-c:a", "aac"]));
+        // The AAC track is pinned to 48 kHz exactly as in the encoding path.
+        assert!(a.windows(2).any(|w| w == ["-ar", "48000"]));
+        assert!(a.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+        // A copied HEVC picture needs the hvc1 tag for QuickTime; mkv takes neither tag nor flag.
+        let h = video_copy_codec_args("mov", VideoCodec::H265, None);
+        assert!(h.windows(2).any(|w| w == ["-tag:v", "hvc1"]));
+        let m = video_copy_codec_args("mkv", VideoCodec::H265, None);
+        assert!(!m.contains(&"-tag:v".to_string()) && !m.contains(&"-movflags".to_string()));
+    }
+
+    #[test]
     fn ffprobe_load_args_target_first_audio_and_format_duration() {
         let args = ffprobe_load_args("/rec/a.mp4");
         assert!(args.contains(&"-show_entries".to_string()));

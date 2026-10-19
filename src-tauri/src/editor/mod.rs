@@ -47,6 +47,18 @@
 //! original, never on a proxy or an extract, so what the user hears while
 //! editing and what lands in the file are the same signal.
 //!
+//! ## A video that is only cut is copied (B6)
+//!
+//! A video export with no other picture work copies the picture packets instead of
+//! encoding them ([`sundayrec_core::video_copy`]): the cuts snap to the keyframes the copy
+//! can start at, and those snapped intervals REPLACE the user's keeps for the whole export.
+//! The picture reaches ffmpeg as a concat list ([`plan_video_copy`]); the sound is decoded,
+//! cut, chained and levelled in Rust over exactly the same intervals and arrives as raw PCM.
+//! One list feeds both, which is what keeps them together at every cut. When a copy is not
+//! possible (old keyframes, a cut shorter than the snap, a non-mp4 source) or does not come
+//! out right (ffmpeg fails, picture and sound differ in length), the export is the re-encode
+//! it always was ([`COPY_FALLBACK`]).
+//!
 //! ## Feature flag
 //!
 //! Behind the **default-off `editor`** cargo feature. NO new native dep — ffmpeg
@@ -7403,6 +7415,16 @@ mod tests {
             ffprobe: &std::path::Path,
             req: &ExportCase,
         ) -> (AppResult<EditorExportResult>, Ticks) {
+            run_export_blocking_with(ffmpeg, ffprobe, req, true)
+        }
+
+        /// [`run_export_blocking`] with the B6 copy path switchable.
+        fn run_export_blocking_with(
+            ffmpeg: &std::path::Path,
+            ffprobe: &std::path::Path,
+            req: &ExportCase,
+            allow_copy: bool,
+        ) -> (AppResult<EditorExportResult>, Ticks) {
             let engine = ExportEngine::new();
             let (ticks, on_progress) = sink();
             let rt = tokio::runtime::Runtime::new().unwrap();
@@ -7412,7 +7434,14 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(&engine, req, &req.inputs, false, on_progress));
+            let r = rt.block_on(export_inner(
+                &engine,
+                req,
+                &req.inputs,
+                false,
+                allow_copy,
+                on_progress,
+            ));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -9024,7 +9053,7 @@ mod tests {
             let v0 = stream_start_secs(ffprobe, path, "v");
             let mut flashes = Vec::new();
             let mut prev = false;
-            for (i, f) in frames.chunks_exact(16).enumerate() {
+            for (i, f) in frames.as_chunks::<16>().0.iter().enumerate() {
                 let lit = f.iter().map(|b| u32::from(*b)).sum::<u32>() / 16 > 100;
                 if lit && !prev {
                     flashes.push(v0 + i as f64 / 30.0);
@@ -9037,7 +9066,7 @@ mod tests {
             let a0 = stream_start_secs(ffprobe, path, "a");
             let mut beeps: Vec<f64> = Vec::new();
             let mut last_loud: Option<usize> = None;
-            for (i, s) in pcm.chunks_exact(2).enumerate() {
+            for (i, s) in pcm.as_chunks::<2>().0.iter().enumerate() {
                 if i16::from_le_bytes([s[0], s[1]]).unsigned_abs() > 8000 {
                     if last_loud.is_none_or(|l| i - l > 960) {
                         beeps.push(a0 + i as f64 / 48_000.0);
@@ -9193,6 +9222,82 @@ mod tests {
                  (one frame is 33.3 ms)",
                 flashes.len()
             );
+        }
+
+        /// B6 measurement, not a test: «Behold bare prekenen» on a long video, with the picture
+        /// re-encoded (what the export did before) and copied (now), without and with the
+        /// «Tale» preset. `SUNDAYREC_B6_BENCH_SOURCE` names the video, `SUNDAYREC_B6_BENCH_KEEP`
+        /// the kept span as `start-end` seconds (default 1200-3000, a 30 minute sermon in a
+        /// 90 minute service). Run with:
+        /// `SUNDAYREC_B6_BENCH_SOURCE=/path/long.mp4 cargo test --release --features editor
+        ///  --lib b6_bench -- --ignored --nocapture`
+        #[test]
+        #[ignore = "measurement: needs SUNDAYREC_B6_BENCH_SOURCE"]
+        fn b6_bench_the_sermon_cut_on_a_long_video() {
+            let Some(source) = std::env::var_os("SUNDAYREC_B6_BENCH_SOURCE") else {
+                eprintln!("SKIP: SUNDAYREC_B6_BENCH_SOURCE is not set");
+                return;
+            };
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let source = source.to_string_lossy().into_owned();
+            let (keep_start, keep_end) = std::env::var("SUNDAYREC_B6_BENCH_KEEP")
+                .ok()
+                .and_then(|v| {
+                    let (a, b) = v.split_once('-')?;
+                    Some((a.parse::<f64>().ok()?, b.parse::<f64>().ok()?))
+                })
+                .unwrap_or((1200.0, 3000.0));
+            let total = probe_total_secs(&ffprobe, &source);
+            let dir = tempfile::tempdir().unwrap();
+            for preset in [None, Some("speech-clear")] {
+                for allow_copy in [false, true] {
+                    let mut req = export_request(
+                        &source,
+                        &dir.path().to_string_lossy(),
+                        "mp4",
+                        &[(0.0, keep_start), (keep_end, total)],
+                        total,
+                    );
+                    req.master_preset = preset.map(String::from);
+                    let started = std::time::Instant::now();
+                    let (result, _ticks) =
+                        run_export_blocking_with(&ffmpeg, &ffprobe, &req, allow_copy);
+                    let took = started.elapsed();
+                    let out = result.expect("the bench export should succeed");
+                    let size = std::fs::metadata(&out.output_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    eprintln!(
+                        "B6 BENCH {:>12} preset={:<12} {:6.1} s  ({:.0} MB out, {:.0} s kept)",
+                        if allow_copy { "copy" } else { "re-encode" },
+                        preset.unwrap_or("none"),
+                        took.as_secs_f64(),
+                        size as f64 / 1e6,
+                        keep_end - keep_start
+                    );
+                    let _ = std::fs::remove_file(&out.output_path);
+                }
+            }
+        }
+
+        fn probe_total_secs(ffprobe: &std::path::Path, path: &str) -> f64 {
+            let out = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "csv=p=0",
+                    path,
+                ])
+                .output()
+                .expect("ffprobe should run");
+            String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
         }
 
         /// B6: a source whose timestamps start at 100 s (a container that does not start at
