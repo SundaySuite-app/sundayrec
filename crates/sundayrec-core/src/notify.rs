@@ -486,7 +486,7 @@ mod tests {
                 "{c} is not snake_case"
             );
         }
-        assert_eq!(code::ALL.len(), 7);
+        assert_eq!(code::ALL.len(), 8);
     }
 
     #[test]

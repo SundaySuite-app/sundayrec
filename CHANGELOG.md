@@ -5,6 +5,17 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Dempet mikser oppdages mens opptaket går.** Opptaksvinduet viser nå lydstyrken
+  (kortsiktig LUFS, over de siste 3 sekundene) under toppmåleren, og Bibliotek viser
+  den integrerte lydstyrken for hvert nye opptak. Har lydstyrken vært under
+  −40 LUFS i mer enn 5 minutter, sier appen fra: «Opptaket er svært svakt — er
+  mikseren dempet?», som banner og som systemvarsel når vinduet ikke er i fokus, én
+  gang per opptak. Et kort stille parti (bønn, stillhet) utløser det ikke. Måleren
+  kjører på skrivertråden, ikke i lydtilbakekallet: på en 8-kanalers strøm ved
+  10 ganger sanntid ble ingen lydprøver tapt og ringbufferen ble aldri mer enn
+  noen tiendedels sekund full, med og uten måler. Må prøves med en dempet mikser
+  på flerkanalskortet; −40 er ikke målt mot ekte opptak ennå.
+
 - **«Behold bare prekenen» på en video går flere ganger raskere.** Når videoen bare
   kuttes (ingen annen bildebehandling), kopieres bildet rett fra opptaket i stedet for
   å kodes om, og lyden lages over nøyaktig de samme stykkene. Lyd og bilde følger
