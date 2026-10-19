@@ -46,11 +46,11 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 Kode, men bare etter et forsøk på ekte maskin.
 
-| Punkt                                                                                                                                   | Kilde                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel) — pakke D2, se [GJENNOMFORING.md](GJENNOMFORING.md) §D2 | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
-| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet                                               | [VARSLING.md](VARSLING.md) §Senere                               |
-| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)                                                   | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
+| Punkt                                                                                                                          | Kilde                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| macOS: lese om systemet viser SundayRecs varsler (kode levert i D2; **venter på eierens prøve** med varsler av/på, RIG-DAY §w) | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
+| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet                                      | [VARSLING.md](VARSLING.md) §Senere                               |
+| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)                                          | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
 
 ## Eier (Richard)
 

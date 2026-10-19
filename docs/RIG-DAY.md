@@ -955,6 +955,36 @@ gjennomført (se (e2) i Mac-boksen over), mens den egne «Kirke»-mastringsprofi
 og automatisk monolevering venter på en lyttetest. De to siste har ingenting
 å rigg-teste før en PR har landet.)_
 
+## (w) Varselstatus på Mac
+
+D2: «Hvem får beskjed?» leser macOS' varselinnstilling for SundayRec. Dette gjør
+du selv — Claude rører ikke Systeminnstillinger. Ca. 5 min, kun Macen.
+
+Bygg bundelen (uten signering): `npm run tauri build -- --debug --bundles app
+--config '{"bundle":{"createUpdaterArtifacts":false}}'`. Appen havner i
+`target/debug/bundle/macos/SundayRec.app`. Logglinjen du leter etter er
+`notify: the OS says notifications are …` (appens logg, `~/Library/Logs`).
+
+- [ ] **Utenfor bundle.** `npm run tauri dev`, åpne oppsettsiden «Varsler».
+      **Forventet:** «vet ikke» (ikke grønt, ikke rødt), appen krasjer ikke.
+- [ ] **Varsler PÅ.** Start `SundayRec.app` (dobbeltklikk). Systeminnstillinger →
+      Varsler → SundayRec: «Tillat varsler» på, bannerstil Bannere/Varsler.
+      Åpne oppsettsiden «Varsler». **Forventet:** grønt «på». Trykk «Send
+      testvarsel»: varselet vises.
+- [ ] **Varsler AV.** Slå «Tillat varsler» av for SundayRec, gå tilbake til
+      appen (vinduet får fokus, kortet leses på nytt). **Forventet:** rødt «av».
+      «Send testvarsel» viser ingenting.
+- [ ] **Bannerstil «Ingen».** Slå varsler på igjen, men velg bannerstil
+      «Ingen». **Forventet:** rødt (vi regner uten banner som ikke varslet).
+      Er du uenig, noter det som funn.
+- [ ] **Aldri spurt.** (Kun om SundayRec ikke står i lista under Varsler.)
+      **Forventet:** «vet ikke» — appen ber ikke selv om tillatelse. Noter om
+      testvarselet likevel vises.
+- [ ] **Speiler innstillingen pluginens vei?** I «Varsler AV»-trinnet: vises
+      testvarselet likevel? Da lyver kortet, og D2 må ikke strykes fra PLAN.md.
+      Noter hva som skjedde i hvert trinn.
+      **Rødt funn:** kortet og testvarselet er uenige.
+
 ## Etterpå
 
 - [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
