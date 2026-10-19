@@ -685,7 +685,7 @@ mod tests {
             .into_iter()
             .find_map(|speedup| {
                 let without = run(false, speedup);
-                if without.overrun > 0 {
+                if without.overrun > 0 || without.peak_fill_ms >= 2_500.0 {
                     eprintln!(
                         "{speedup}x: the writer alone dropped {} samples",
                         without.overrun
@@ -693,10 +693,14 @@ mod tests {
                     return None;
                 }
                 let with = run(true, speedup);
-                if with.overrun > 0 && speedup > 1 {
+                // Holding a pace means no drops AND the ring never more than
+                // half full; past that the writer is falling behind and only
+                // the short run hides it.
+                if (with.overrun > 0 || with.peak_fill_ms >= 2_500.0) && speedup > 1 {
                     eprintln!(
-                        "{speedup}x: the writer with the meter dropped {} samples",
-                        with.overrun
+                        "{speedup}x: the writer with the meter fell behind \
+                         (dropped {}, ring peak {:.0} ms)",
+                        with.overrun, with.peak_fill_ms
                     );
                     return None;
                 }
