@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.27.0-beta.1 — ny lyd i redigeringen og ny videomotor, til beta-ringen
+
 - **Videoen på Windows ligger ikke lenger etter lyden.** Kamerabildene ble stemplet med tiden de kom fram til appen, ikke tiden de ble tatt – på et USB-kamera 50–150 ms senere, så bildet kunne ligge 1–4 bilder bak lyden. Nå brukes kameraets egen fangsttid (som på Mac). Må prøves på en ekte Windows-PC (klappetest).
 
 - **Maskinvarekoderen for video faller nå trygt tilbake, og et opptak uten bilde
