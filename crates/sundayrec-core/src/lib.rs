@@ -34,6 +34,7 @@
 //!   - [`video_encoder`] — which video encoder a recording gets: the Windows hardware probe order (nvenc → qsv → amf → mf → libx264), the golden-tested argv per encoder, and the fall-back-on-failure decision (C0a)
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
+//!   - [`level_watch`]  — D3: the weak-level (muted mixer) state machine, injected clock
 //!   - [`levels`]       — pure parser for `astats` per-channel peak-level stderr → live UI meters (B-5)
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
@@ -70,6 +71,7 @@ pub mod ffmpeg;
 pub mod filename;
 pub mod history;
 pub mod lang;
+pub mod level_watch;
 pub mod levels;
 pub mod loudness;
 pub mod mastering;

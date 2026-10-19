@@ -165,6 +165,7 @@ mod tests {
     /// A history row for `file`; its id.
     async fn known(pool: &SqlitePool, file: &str) -> String {
         let row = RecordingRow {
+            integrated_lufs: None,
             id: String::new(),
             file_path: file.to_string(),
             device_name: None,
@@ -275,6 +276,7 @@ mod tests {
         touch(Path::new(&media));
         let new_id = {
             let row = RecordingRow {
+                integrated_lufs: None,
                 id: String::new(),
                 file_path: media.clone(),
                 device_name: None,

@@ -463,6 +463,7 @@ impl HeadlessSession {
         if valid {
             let byte_size = std::fs::metadata(&final_path).map(|m| m.len() as i64).ok();
             let row = crate::db::store::RecordingRow {
+                integrated_lufs: None,
                 id: String::new(),
                 file_path: final_path.clone(),
                 device_name: Some("lavfi".into()),
@@ -1506,6 +1507,7 @@ mod tests {
                     flush_every: FLUSH_EVERY,
                     sync_every: SYNC_EVERY,
                     silence: SilenceDetector::new(-50.0, NATIVE_RATE),
+                    loudness: None,
                     sync_count: None,
                 },
                 Arc::clone(&stop),
@@ -1742,6 +1744,7 @@ mod tests {
                     flush_every: FLUSH_EVERY,
                     sync_every: SYNC_EVERY,
                     silence: SilenceDetector::new(-50.0, VRATE),
+                    loudness: None,
                     sync_count: None,
                 },
                 Arc::clone(&writer_stop),

@@ -440,6 +440,9 @@ async fn finalize_one(
     let started_at = deliverable.started_at_ms;
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
     let row = RecordingRow {
+        // D3: measured on the writer thread while the take ran; `None` for a
+        // deliverable nothing measured (a crash-recovered one never reaches here).
+        integrated_lufs: ctx.loudness.integrated(index),
         id: String::new(),
         file_path: final_path.clone(),
         device_name: Some(ctx.opts.audio_device_name.clone()),
@@ -564,6 +567,7 @@ async fn extract_separate_audio(
         .map(|m| m.len() as i64)
         .ok();
     let row = RecordingRow {
+        integrated_lufs: None,
         id: String::new(),
         file_path: sep_path,
         device_name: Some(opts.audio_device_name.clone()),

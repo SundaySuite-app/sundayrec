@@ -5548,6 +5548,7 @@ mod tests {
         crate::db::store::insert_recording(
             &pool,
             crate::db::store::RecordingRow {
+                integrated_lufs: None,
                 id: String::new(),
                 file_path: elsewhere
                     .path()

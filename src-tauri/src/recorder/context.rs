@@ -34,6 +34,7 @@ use sundayrec_core::selftest::RecordingTelemetry;
 use tauri::AppHandle;
 
 use crate::recorder::engine::{RecordingOpts, StateWriter};
+use crate::recorder::native_capture::lufs::LoudnessLedger;
 use crate::recorder::native_capture::preroll::PrerollClip;
 use crate::recorder::native_capture::stream::CpalHostKind;
 
@@ -109,6 +110,8 @@ pub(crate) struct SessionContext {
     /// The ONE generation-guarded door to the recorder's shared state and
     /// auto-stop countdown. See [`StateWriter`] for what the guard is for.
     pub(crate) state: StateWriter,
+    /// One loudness meter per deliverable (D3), measured on the writer thread.
+    pub(crate) loudness: LoudnessLedger,
 }
 
 /// The three counters ONE segment is driven against.

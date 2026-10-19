@@ -20,7 +20,10 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Listener, Runtime};
 
 use sundayrec_core::alerts::AlertText;
-use sundayrec_core::notify::{should_native_during_take, CameraOutageWatch, TakeAlert};
+use sundayrec_core::level_watch::WeakLevelWatch;
+use sundayrec_core::notify::{
+    code, should_native_during_take, BackendWarning, CameraOutageWatch, TakeAlert,
+};
 
 use crate::util::lock_recover;
 
@@ -32,9 +35,36 @@ static SENT: Mutex<Option<HashSet<TakeAlert>>> = Mutex::new(None);
 /// re-armed by the camera coming back, not by a new fragment starting.
 static CAMERA: Mutex<CameraOutageWatch> = Mutex::new(CameraOutageWatch::new());
 
+/// The weak-level watch (D3) and the instant its take began, so the heartbeat
+/// can hand the pure state machine «time since the take began» without the
+/// machine owning a clock.
+struct LevelState {
+    watch: WeakLevelWatch,
+    origin: Option<std::time::Instant>,
+}
+
+static LEVEL: Mutex<LevelState> = Mutex::new(LevelState {
+    watch: WeakLevelWatch::new(),
+    origin: None,
+});
+
 /// A new take started: every kind may be said once again.
 fn reset() {
     *lock_recover(&SENT) = None;
+    let mut l = lock_recover(&LEVEL);
+    l.watch.reset();
+    l.origin = None;
+}
+
+/// One heartbeat's short-term loudness: is the «mixer turned down?» warning
+/// due now? Marks it raised when it is, so it is said once. Pure over `at`
+/// (time since the take began) — see `sundayrec_core::level_watch`.
+fn level_step(watch: &mut WeakLevelWatch, at: std::time::Duration, lufs: Option<f64>) -> bool {
+    let due = watch.observe(at, lufs);
+    if due {
+        watch.mark_alerted();
+    }
+    due
 }
 
 /// Whether `alert` was already told natively during this take.
@@ -58,6 +88,7 @@ fn text(alert: TakeAlert, free_gb: Option<f64>) -> String {
         TakeAlert::Quality => AlertText::TakeQuality.text(lang),
         TakeAlert::Reconnecting => AlertText::TakeReconnecting.text(lang),
         TakeAlert::CameraLost => AlertText::TakeCameraLost.text(lang),
+        TakeAlert::LevelWeak => AlertText::TakeLevelWeak.text(lang),
         TakeAlert::DiskLow => {
             AlertText::TakeDiskLow.fill(lang, &[("gb", &format!("{:.1}", free_gb.unwrap_or(0.0)))])
         }
@@ -113,6 +144,24 @@ pub fn wire(app: &AppHandle) {
         let Ok(p) = serde_json::from_str::<RecordingProgress>(ev.payload()) else {
             return;
         };
+        // D3: the level has been far too low for over five minutes. The banner
+        // is raised at once (it is what an operator at the screen sees); the
+        // system notification follows the usual rule (window not in view).
+        let level_due = {
+            let mut l = lock_recover(&LEVEL);
+            let origin = *l.origin.get_or_insert_with(std::time::Instant::now);
+            level_step(&mut l.watch, origin.elapsed(), p.short_term_lufs)
+        };
+        if level_due {
+            tracing::info!("notify: the level has been under -40 LUFS for over five minutes");
+            let lang = crate::ui_lang::current();
+            super::warn(
+                &handle,
+                BackendWarning::warn(code::LEVEL_WEAK).msg(AlertText::TakeLevelWeak.text(lang)),
+            );
+            let app = handle.clone();
+            tauri::async_runtime::spawn(async move { raise(&app, TakeAlert::LevelWeak, None) });
+        }
         let in_view = crate::window::main_window_in_view(&handle);
         let raise_now = camera_step(&mut lock_recover(&CAMERA), p.video_lost_ms, in_view);
         if raise_now {
@@ -208,6 +257,31 @@ mod tests {
         assert!(!camera_step(&mut w, ms(75), true));
         assert!(camera_step(&mut w, ms(76), false), "now nobody is looking");
         assert!(!camera_step(&mut w, ms(77), false));
+    }
+
+    #[test]
+    fn the_level_warning_is_raised_once_and_only_after_five_minutes() {
+        use std::time::Duration;
+        let mut w = WeakLevelWatch::new();
+        let mut raised = 0;
+        for t in 0..=1800u64 {
+            if level_step(&mut w, Duration::from_secs(t), Some(-55.0)) {
+                raised += 1;
+                assert_eq!(t, 301, "the first second past five minutes");
+            }
+        }
+        assert_eq!(raised, 1, "exactly once");
+        // A normal take never raises it.
+        let mut w = WeakLevelWatch::new();
+        assert!((0..=1800u64).all(|t| !level_step(&mut w, Duration::from_secs(t), Some(-22.0))));
+    }
+
+    #[test]
+    fn the_level_sentence_is_the_one_the_plan_asks_for() {
+        assert_eq!(
+            AlertText::TakeLevelWeak.text(sundayrec_core::lang::Lang::No),
+            "Opptaket er svært svakt — er mikseren dempet?"
+        );
     }
 
     #[test]

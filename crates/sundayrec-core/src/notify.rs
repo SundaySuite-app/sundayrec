@@ -65,6 +65,10 @@ pub mod code {
     /// per such session.
     pub const DATA_LEFT_IN_OLD_DIR: &str = "data_left_in_old_dir";
 
+    /// D3: the take has been far too quiet for over five minutes — the mixer
+    /// is probably turned down (`level_watch`). Raised once per take.
+    pub const LEVEL_WEAK: &str = "level_weak";
+
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
     pub const ALL: &[&str] = &[
@@ -75,6 +79,7 @@ pub mod code {
         TRASH_MANIFEST_UNREADABLE,
         DATA_DIR_MOVE_FAILED,
         DATA_LEFT_IN_OLD_DIR,
+        LEVEL_WEAK,
     ];
 }
 
@@ -258,6 +263,9 @@ pub enum TakeAlert {
     /// keeps recording (C5b). Said once per OUTAGE, not once per take: see
     /// [`CameraOutageWatch`].
     CameraLost,
+    /// The level has been under −40 LUFS for over five minutes (D3): the mixer
+    /// is probably turned down. Said once per take (`level_watch`).
+    LevelWeak,
 }
 
 /// How long the camera must have been gone before the operator is told

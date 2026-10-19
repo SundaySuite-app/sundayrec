@@ -33,6 +33,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use super::lufs::LoudnessSlot;
 use ringbuf::traits::Consumer;
 use ringbuf::HeapCons;
 use sundayrec_core::silence::{SilenceDetector, SilenceEvent};
@@ -105,6 +106,9 @@ pub struct WriterConfig {
     /// Cadence of the periodic `sync_data` (see [`SYNC_EVERY`]).
     pub sync_every: Duration,
     pub silence: SilenceDetector,
+    /// D3: the deliverable's loudness meter, fed from the same drained block as
+    /// the silence detector. `None` = no measuring (tests, pre-roll).
+    pub loudness: Option<Arc<LoudnessSlot>>,
     /// Live mirror of [`WriterSummary::periodic_syncs`], bumped after each
     /// periodic `sync_data`. `None` in production; tests use it to wait for
     /// real syncs instead of guessing how long an fsync takes on a busy disk.
@@ -224,6 +228,13 @@ fn run_writer(
         );
     }
 
+    // D3: borrow the deliverable's meter for this fragment. Dropped on every
+    // exit of this function (clean or error), which parks it back.
+    let mut lufs_tap = cfg
+        .loudness
+        .as_ref()
+        .map(|slot| slot.begin(cfg.spec.sample_rate, channels));
+
     let mut samples = vec![0.0f32; DRAIN_CHUNK];
     let mut bytes: Vec<u8> = Vec::with_capacity(DRAIN_CHUNK * 2);
     let mut data_bytes: u64 = 0;
@@ -246,6 +257,12 @@ fn run_writer(
             let peak = sundayrec_core::audio::block_peak(block);
             if let Some(ev) = cfg.silence.feed(peak, (n / channels) as u64) {
                 let _ = events.send(WriterEvent::Silence(ev));
+            }
+
+            // Loudness (D3): after the silence feed, before the disk write — on
+            // THIS thread, never in the RT callback.
+            if let Some(tap) = lufs_tap.as_mut() {
+                tap.feed(block);
             }
 
             wav::encode_s16le(block, &mut bytes);
@@ -350,6 +367,7 @@ mod tests {
             sync_every: Duration::from_millis(40),
             // −50 dB, 48 kHz — loud test samples never trip it.
             silence: SilenceDetector::new(-50.0, SPEC.sample_rate),
+            loudness: None,
             sync_count: None,
         }
     }

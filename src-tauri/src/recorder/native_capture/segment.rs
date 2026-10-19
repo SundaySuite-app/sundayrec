@@ -63,6 +63,7 @@ use crate::recorder::engine::{
     RecordingProgress, SegmentOutcome, StateWriter, VideoProblem, LEVELS_EVENT, PROGRESS_EVENT,
     SILENCE_EVENT, STARTED_EVENT,
 };
+use crate::recorder::native_capture::lufs::LoudnessSlot;
 use crate::recorder::native_capture::stream::{
     build_input_stream_typed, classify_stream_error_counting, find_device_exact_typed,
     find_device_typed, negotiate_typed, open_host, ring_capacity, CpalHostKind, NativeStartError,
@@ -142,6 +143,9 @@ pub struct NativeSegment {
     /// RECONNECT must find again, exactly, rather than whatever the stored
     /// label fuzzy-matches (`None` only if cpal could not report a name).
     pub device_name: Option<String>,
+    /// The deliverable's loudness meter (D3), read for the live short-term
+    /// value. The WRITER thread feeds it; nothing here measures.
+    loudness: Option<Arc<LoudnessSlot>>,
     /// The video track of a native VIDEO session (C3a); `None` for audio-only.
     video: Option<VideoTrack>,
     /// The video track's counters, read once it has stopped.
@@ -165,7 +169,7 @@ pub async fn spawn_native_segment(
     output_path: &str,
     pinned_rate: Option<u32>,
 ) -> AppResult<NativeSegment> {
-    spawn_native_segment_for(host, opts, output_path, pinned_rate, None, None)
+    spawn_native_segment_for(host, opts, output_path, pinned_rate, None, None, None)
         .await
         .map_err(NativeStartError::into_app_error)
 }
@@ -183,6 +187,9 @@ pub async fn spawn_native_segment(
 ///
 /// `video` is the session's [`NativeVideoPlan`] for a native VIDEO session
 /// (C3a): the fragment then also records `<output>.mkv`. `None` = audio-only.
+///
+/// `loudness` is the deliverable's meter (D3): the writer thread measures the
+/// routed stream into it. `None` = no measuring.
 pub async fn spawn_native_segment_for(
     host: CpalHostKind,
     opts: &RecordingOpts,
@@ -190,10 +197,19 @@ pub async fn spawn_native_segment_for(
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
     video: Option<&NativeVideoPlan>,
+    loudness: Option<Arc<LoudnessSlot>>,
 ) -> Result<NativeSegment, NativeStartError> {
-    spawn_native_segment_typed(host, opts, output_path, pinned_rate, reopen, video)
-        .await
-        .map_err(|e| if reopen.is_some() { e.for_reopen() } else { e })
+    spawn_native_segment_typed(
+        host,
+        opts,
+        output_path,
+        pinned_rate,
+        reopen,
+        video,
+        loudness,
+    )
+    .await
+    .map_err(|e| if reopen.is_some() { e.for_reopen() } else { e })
 }
 
 async fn spawn_native_segment_typed(
@@ -203,6 +219,7 @@ async fn spawn_native_segment_typed(
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
     video_plan: Option<&NativeVideoPlan>,
+    loudness: Option<Arc<LoudnessSlot>>,
 ) -> Result<NativeSegment, NativeStartError> {
     let exact = reopen.map(str::to_owned);
     let device_name = exact
@@ -308,6 +325,7 @@ async fn spawn_native_segment_typed(
                 silence_threshold_db(opts.stop_on_silence, opts.silence_threshold_db),
                 spec.sample_rate,
             ),
+            loudness: loudness.clone(),
             sync_count: None,
         },
         Arc::clone(&writer_stop),
@@ -420,6 +438,7 @@ async fn spawn_native_segment_typed(
         frames,
         spec,
         device_name: opened_name,
+        loudness,
         video,
         video_stats: None,
     };
@@ -883,9 +902,18 @@ pub(crate) trait SegmentSignals {
     fn video_problem(&self) -> Option<VideoProblem> {
         None
     }
+    /// Short-term loudness (D3), LUFS, read at the same tick; `None` until the
+    /// meter has a full window (and for a fake that does not measure).
+    fn short_term_lufs(&self) -> Option<f64> {
+        None
+    }
 }
 
 impl SegmentSignals for NativeSegment {
+    fn short_term_lufs(&self) -> Option<f64> {
+        self.loudness.as_ref().and_then(|l| l.short_term())
+    }
+
     async fn next_signal(&mut self) -> SegmentSignal {
         // Both arms are `mpsc::Receiver::recv`, which is cancel-safe, and
         // `select!` drops the loser without polling it to completion — so this
@@ -993,12 +1021,14 @@ pub(crate) trait EventSink {
 }
 
 /// One 1 Hz progress heartbeat, as the runner reads it off the segment.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct ProgressTick {
     pub bytes_written: u64,
     pub video_frames_dropped: u64,
     pub video_lost_ms: Option<u64>,
     pub video_problem: Option<VideoProblem>,
+    /// Short-term loudness in LUFS (D3); `None` until measured. Finite always.
+    pub short_term_lufs: Option<f64>,
 }
 
 /// The ambient facts the runner reads that are neither a signal nor an event:
@@ -1062,6 +1092,7 @@ impl EventSink for AppEventSink<'_> {
                 video_frames_dropped: p.video_frames_dropped,
                 video_lost_ms: p.video_lost_ms,
                 video_problem: p.video_problem,
+                short_term_lufs: p.short_term_lufs,
             },
         );
     }
@@ -1478,6 +1509,7 @@ where
                             .video_lost_for()
                             .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
                         video_problem: seg.video_problem(),
+                        short_term_lufs: seg.short_term_lufs(),
                     });
                 }
             }

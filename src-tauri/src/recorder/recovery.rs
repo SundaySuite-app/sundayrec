@@ -920,6 +920,7 @@ async fn recover_session_with(
             .filter(|d| *d > 0.0);
 
         let row = RecordingRow {
+            integrated_lufs: None,
             id: String::new(),
             file_path: final_path,
             device_name: Some(manifest.device_name.clone()),
@@ -1166,6 +1167,7 @@ mod tests {
         crate::db::store::insert_recording(
             &pool,
             crate::db::store::RecordingRow {
+                integrated_lufs: None,
                 id: String::new(),
                 file_path: m.deliverables[0].primary_path.clone(),
                 device_name: Some("Soundcraft USB".into()),

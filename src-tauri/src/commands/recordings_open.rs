@@ -609,6 +609,7 @@ mod tests {
 
     fn row(file: &str) -> RecordingRow {
         RecordingRow {
+            integrated_lufs: None,
             id: String::new(),
             file_path: file.to_string(),
             device_name: None,
