@@ -16,6 +16,16 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   fortsatt opp» eller «Kameraet åpnet ikke — lyden tas opp, men uten bilde». Lyden
   berøres ikke. Teksten finnes på alle sju språk.
 
+- **Kameraet som er stumt regnes som borte, og forhåndsvisningen står ikke død etter
+  Stopp.** Et kamera som er koblet til men ikke sender bilde (en HDMI-kilde som er
+  slått av, en iPhone som er låst) ga før en melding som blinket av og på, og
+  60-sekundersvarselet kom aldri; nå står meldingen fast, og varselet kommer etter
+  ett minutt. Starter et nytt opptaksfragment mens kameraet er borte, kobler det seg
+  til igjen når kameraet er tilbake, og viser at kameraet er borte i mellomtiden
+  (før sa appen at alt var i orden). Etter Stopp uten at noen så på kamerabildet,
+  viser kamerasiden igjen bilde neste gang, og åpner du kamerasiden akkurat når
+  opptaket starter, brukes det samme kameraet i stedet for to.
+
 - **Mikserens støyfjerning skåner nå musikken.** «Støyfjerning» i den avanserte
   mikseren er blitt like varsom som i «Tale»: den virker på tale og på rommets
   stillhet i pausene, men lar en holdt akkord eller en pad stå urørt (før kunne den

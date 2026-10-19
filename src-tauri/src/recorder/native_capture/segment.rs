@@ -458,7 +458,17 @@ async fn start_video_track(
         fps_num: fps.num,
         fps_den: fps.den,
     };
-    let taken = crate::camera::preview::take_for_recording(&key);
+    // Blocking: if the page is opening this very camera right now, the recording
+    // waits for that opening and records from it (M3R #14).
+    let taken = {
+        let key = key.clone();
+        tokio::task::spawn_blocking(move || crate::camera::preview::take_for_recording(&key))
+            .await
+            .unwrap_or(crate::camera::preview::Taken {
+                opened: None,
+                carried: None,
+            })
+    };
     let mut carried = taken.carried;
     let mut own_camera = false;
     let opened = match taken.opened {
@@ -610,7 +620,7 @@ pub(crate) async fn abort_native_segment(seg: &mut NativeSegment, output_path: &
 /// preview's `Session::Recording` stayed behind, so the next `camera_preview_start`
 /// found a session that "had" its camera, returned Ok, and never made a
 /// picture; another camera was refused with "a recording is using the camera".
-async fn stop_camera(source: Box<dyn VideoSource>) -> Option<Box<dyn VideoSource>> {
+pub(crate) async fn stop_camera(source: Box<dyn VideoSource>) -> Option<Box<dyn VideoSource>> {
     if crate::camera::preview::keeps_camera(source.as_ref()) {
         source.frames().close();
         return Some(source);
