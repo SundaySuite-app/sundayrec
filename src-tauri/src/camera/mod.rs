@@ -486,7 +486,8 @@ pub fn host_now_ns() -> u64 {
 /// without it; opening is what asks). Blocks briefly: on Windows it enumerates
 /// through Media Foundation and DirectShow on the camera worker thread.
 pub fn list() -> Result<Vec<CameraInfo>, CameraError> {
-    let cameras = {
+    // Typed: on Linux the block is only an `Err`, which names no `Ok` type.
+    let cameras: Result<Vec<CameraInfo>, CameraError> = {
         #[cfg(target_os = "macos")]
         {
             Ok(macos_backend::list())
@@ -499,7 +500,8 @@ pub fn list() -> Result<Vec<CameraInfo>, CameraError> {
         {
             Err(CameraError::Unsupported)
         }
-    }?;
+    };
+    let cameras = cameras?;
     remember_seen(&cameras);
     Ok(cameras)
 }
