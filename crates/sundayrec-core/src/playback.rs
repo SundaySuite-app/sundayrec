@@ -496,7 +496,9 @@ mod tests {
             frames: usize,
         ) -> io::Result<usize> {
             // Hand over at most 1000 frames per call, like a pipe would.
-            let n = (frames as u64).min(1000).min(self.len.saturating_sub(self.at)) as usize;
+            let n = (frames as u64)
+                .min(1000)
+                .min(self.len.saturating_sub(self.at)) as usize;
             for (c, d) in dst.iter_mut().enumerate() {
                 for (i, x) in d[at..at + n].iter_mut().enumerate() {
                     *x = (self.f)(self.at + i as u64, c);
@@ -551,7 +553,8 @@ mod tests {
 
     /// Deterministic white noise, independent per (frame, channel): an xorshift hash of the frame.
     fn noise(i: u64, c: usize) -> f32 {
-        let mut x = i.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (c as u64 + 1).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let mut x = i.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (c as u64 + 1).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         x ^= x >> 31;
         x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
         x ^= x >> 29;
@@ -580,7 +583,10 @@ mod tests {
         assert_eq!(plan.program_to_source(0), SR as u64);
         assert_eq!(plan.program_to_source(2 * SR as u64 - 1), 3 * SR as u64 - 1);
         assert_eq!(plan.program_to_source(2 * SR as u64), 5 * SR as u64);
-        assert_eq!(plan.program_to_source(u64::MAX), (6.5 * f64::from(SR)) as u64);
+        assert_eq!(
+            plan.program_to_source(u64::MAX),
+            (6.5 * f64::from(SR)) as u64
+        );
         // And back: a cut maps to the next keep's start.
         assert_eq!(plan.source_to_program(4 * SR as u64), 2 * SR as u64);
         assert_eq!(plan.source_to_program(0), 0);
@@ -612,7 +618,9 @@ mod tests {
         let plan = CutPlan::new(&keeps(&[(0.0, 2.0137), (6.211, 9.0)]), 10.0, SR);
         let mut r = ProgramReader::new(plan.clone(), src.clone(), 2, 0);
         let out = read_all(&mut r, 1000);
-        let rms = |s: &[f32]| (s.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / s.len() as f64).sqrt();
+        let rms = |s: &[f32]| {
+            (s.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / s.len() as f64).sqrt()
+        };
         let whole = rms(&out[0]);
         let join = plan.starts[1] as usize;
         let w = 240; // 5 ms windows, sliding over the 20 ms fade and around it
@@ -621,7 +629,10 @@ mod tests {
             assert!(db.abs() < 1.0, "window at {start}: {db:.2} dB");
         }
         // The two sides are independent noise: the crossfade really mixed two streams.
-        assert_eq!(*src.opens.borrow(), vec![0, (6.211 * f64::from(SR)).round() as u64 - 480]);
+        assert_eq!(
+            *src.opens.borrow(),
+            vec![0, (6.211 * f64::from(SR)).round() as u64 - 480]
+        );
         let _ = src.open(0);
     }
 
@@ -637,20 +648,32 @@ mod tests {
             .windows(2)
             .map(|w| f64::from((w[1] - w[0]).abs()))
             .fold(0.0, f64::max);
-        assert!(worst < 2.0 * natural, "worst step {worst:.4} vs natural {natural:.4}");
+        assert!(
+            worst < 2.0 * natural,
+            "worst step {worst:.4} vs natural {natural:.4}"
+        );
         // The baseline the test would catch: splice the same two keeps with no fade.
         let j = plan.starts[1];
         let hard_a = sine220(plan.keeps[0].end - 1, 0);
         let hard_b = sine220(plan.keeps[1].start, 0);
-        assert!(f64::from((hard_b - hard_a).abs()) > 4.0 * natural, "the test's cut must be mid-cycle");
+        assert!(
+            f64::from((hard_b - hard_a).abs()) > 4.0 * natural,
+            "the test's cut must be mid-cycle"
+        );
         assert!(j > 0);
     }
 
     #[test]
     fn the_output_does_not_depend_on_block_size_or_where_reading_starts() {
         let plan = CutPlan::new(&keeps(&[(0.5, 1.2), (1.9, 2.6), (3.0, 4.0)]), 4.0, SR);
-        let whole = read_all(&mut ProgramReader::new(plan.clone(), synth(noise, 4.0), 2, 0), 4096);
-        let odd = read_all(&mut ProgramReader::new(plan.clone(), synth(noise, 4.0), 2, 0), 333);
+        let whole = read_all(
+            &mut ProgramReader::new(plan.clone(), synth(noise, 4.0), 2, 0),
+            4096,
+        );
+        let odd = read_all(
+            &mut ProgramReader::new(plan.clone(), synth(noise, 4.0), 2, 0),
+            333,
+        );
         assert_eq!(whole, odd);
         // Start inside the first fade, and inside a plain region.
         for start in [plan.starts[1] - 100, plan.starts[1] + 7, 12_345] {
@@ -676,7 +699,10 @@ mod tests {
     #[test]
     fn the_end_fades_out() {
         let plan = CutPlan::whole(1.0, SR);
-        let out = read_all(&mut ProgramReader::new(plan, synth(|_, _| 0.5, 1.0), 1, 0), 4096);
+        let out = read_all(
+            &mut ProgramReader::new(plan, synth(|_, _| 0.5, 1.0), 1, 0),
+            4096,
+        );
         let last = *out[0].last().unwrap();
         assert!(last.abs() < 0.01, "last sample {last}");
         assert_eq!(out[0][SR as usize - 481], 0.5);

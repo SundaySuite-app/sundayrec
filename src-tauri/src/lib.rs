@@ -15,6 +15,7 @@
 //!   commands  thin Tauri IPC handlers (`entity_verb`)
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
+//!   playback  the playback engine (B5a): ffmpeg → cut plan → chain → resampler → ring → cpal; the sound card is the clock
 
 pub mod appdata;
 pub mod audio;
@@ -55,7 +56,14 @@ pub mod platform;
 // 30 minutes before a start; nothing ever acted on it, so a Windows box woken by
 // our own timer at T−10 could hit the 2-minute unattended-sleep timeout and be
 // asleep again when the recording was due. This module is the missing half.
+pub mod playback;
 pub mod power;
+
+// B5a: counts allocations per thread in the lib's test binary, so a test can prove the audio
+// callback allocates nothing (`playback::rt::tests::render_never_allocates`). Test-only.
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOC: playback::alloc_probe::Counting = playback::alloc_probe::Counting;
 pub mod preflight;
 pub mod recorder;
 // R3: THE save-folder resolution seam — every "configured folder or the
