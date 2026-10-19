@@ -2297,9 +2297,10 @@ velger for den; her ser analysen det, sier det i én setning (legacys egne
 nyttelasten. «Ingen» får den ikke — «eksporter lyden slik den ble tatt opp» er
 et løfte.
 
-Analysen (`editor_auto_process`, én full `astats`-passering) startes når
-lyd-steget åpnes, ikke ved filåpning: der konkurrerer topputtrekket og
-segmentanalysen allerede om den samme fila. Den er memoisert per fil, og
+Analysen (`editor_auto_process`) måles av åpningsrunden (B4a): den ene
+lesingen av fila som bølgeformen, prekensøket, «Tale» og kanalmålingen deler.
+Den starter når en av dem spør først (som regel bølgeformen, ved filåpning),
+og `auto_process` finner den ferdig eller venter på den. Den er memoisert per fil, og
 **`runExport` venter på den** — en frivillig som går rett fra Klipp til
 Eksporter skal få den samme reparasjonen som en som stoppet innom.
 

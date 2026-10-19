@@ -1091,12 +1091,21 @@ commands over the same ffmpeg sidecar.
 Three things the editor overhaul settled, and what you are checking here:
 
 - **Playback is the ORIGINAL**, streamed by a media element over `asset://`.
-  The 8 kHz decode feeds the WAVEFORM only; nothing decodes the recording into
-  renderer memory. A transcoded AAC proxy is the fallback, taken only when the
+  The open round (B4a: ONE ffmpeg read in the recording's own rate, resampled to
+  16 kHz and 8 kHz in Rust) feeds the waveform, the sermon search, the channel
+  diagnosis and «Tale»; nothing decodes the recording into renderer memory. A transcoded AAC proxy is the fallback, taken only when the
   webview has no decoder for the container or the original won't open — and it
   announces itself with a notice.
 - **Caches**: peaks and segments land in sidecars beside the recording, keyed on
-  size+mtime. A second open of the same file must not re-decode it.
+  size+mtime. A second open of the same file must not re-decode it. A FIRST open
+  reads the file once for everything (one `ffmpeg` in Activity Monitor / Task
+  Manager while «Analyserer bølgeform…» and «Leter etter prekenen …» run, not
+  one after the other), and the log says what the round cost: `open round: time
+spent per half`.
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::opening_a_recording_reads_it_once_for_every_consumer_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::consumers_asking_at_once_share_one_read_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_and_force_reads_again_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_the_four_reads_it_replaced_or_skips
 - **Export is honest**: it always runs on the untouched original; a mastering
   target measures the CUT signal (not the raw file) before it normalises;
   "Normaliser" is skipped under a mastering preset and the modal says so; the

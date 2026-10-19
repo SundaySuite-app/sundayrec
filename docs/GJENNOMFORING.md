@@ -1490,6 +1490,16 @@ PCM-en til:
 
 Sidevognene (`.peaks.json`, segmentene) beholdes, og nøkles på samme måte.
 
+**Avvik fra planen, funnet i B4a:** «lydstyrke» kan ikke samles i åpningsrunden.
+Programmålingen (`pcm::measure_program`, forhåndslytting og eksport) måler
+signalet _etter_ kutt og kjede, og både kuttene og kjeden (mikser, «Tale»s
+vedtak) finnes ikke når fila åpnes. Den forblir en egen runde, med egen cache
+(`PLAN_BOOK`). Brumsjekken (B3a) er med: den er en del av «Tale»s analyse, som
+nå får PCM-en fra åpningsrunden. Det som er samlet er altså fire lesinger til
+én (bølgeform, prekensøk, kanalmåling, «Tale»); programmålingen og eksportens
+kjede-runde står igjen. B4b bevises derfor på analysene, ikke på «hele
+eksporten».
+
 **Port:** `cargo test --workspace`; alle eksisterende analysetester.
 
 **Ferdig når:** alle fem forbrukerne får data fra samme runde, og ingen

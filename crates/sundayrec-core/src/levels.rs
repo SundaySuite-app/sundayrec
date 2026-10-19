@@ -3,8 +3,11 @@
 //!
 //! WHY: [`ChannelLevels`] is the small per-channel level value the recording
 //! screen's meters are fed (the native engine fills it from its own peaks), and
-//! the editor's channel diagnosis runs `astats` over a finished file and reads
-//! the summary back through [`parse_levels`]. (Until C3b the recorder's own
+//! the editor's channel diagnosis once ran `astats` over a finished file and read
+//! the summary back through [`parse_levels`]. Since B4a the same numbers are
+//! measured in Rust, in the open round ([`crate::open_read::ChannelMeter`]); the
+//! parsers below have no caller in the app any more. They stay for the test that
+//! holds the Rust measurement against `astats`, and B4b removes them. (Until C3b the recorder's own
 //! ffmpeg also printed live `ametadata` level lines for the meters; that capture
 //! and its line parser are gone.)
 //!

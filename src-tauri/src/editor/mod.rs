@@ -24,9 +24,24 @@
 //! `asset://` ([`allow_asset_path`] widens the scope to the one file, when the
 //! command layer opens it). Nothing
 //! here decodes audio *for playback*: [`extract_playback_proxy`] is a LAST
-//! resort for containers the webview has no decoder for, and [`peaks`] decodes
-//! only to 100 buckets/second for the waveform — streamed on a pipe and cached
-//! in a sidecar, so a reopen re-reads a small JSON instead of the media.
+//! resort for containers the webview has no decoder for, and [`peaks`] gives the
+//! waveform at 100 buckets/second — cached in a sidecar, so a reopen re-reads a
+//! small JSON instead of the media.
+//!
+//! ## One read when a recording is opened (B4a)
+//!
+//! The waveform, the sermon search ([`segments`]), the channel diagnosis
+//! ([`diagnose_channels`], [`auto_process`]) and «Tale»'s analysis
+//! ([`tale_said`], and the preview and export behind it) used to decode the file once
+//! each. They are now four views of ONE ffmpeg read, in the recording's own
+//! sample rate and channels: [`open`] runs it and fans the blocks out to
+//! `sundayrec_core::open_read`, where the resampling to 16 kHz and 8 kHz is done
+//! in Rust. The first of them to ask starts the read; the rest find it done or
+//! wait for it ([`open::OPEN_BOOK`]). The sidecars are unchanged and keyed as
+//! before. [`analysis_decodes_of`] counts the reads, and the tests say one.
+//! What does NOT share it is the programme measure ([`program_plan`]): it
+//! measures the signal after the cuts and the chain, which do not exist yet when a
+//! file is opened.
 //!
 //! The export is the other side of that: it always runs on the untouched
 //! original, never on a proxy or an extract, so what the user hears while
@@ -1965,7 +1980,7 @@ where
     sweep_editor_temp_once();
 
     let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, false, &on_progress).await?;
+    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &on_progress).await?;
     // The decode IS done, whatever the byte arithmetic came to (an ffprobe duration is a
     // container header and can be a little short or long). Say so once, unconditionally, so the
     // bar always reaches the end — and so a source whose duration could not be probed still gets
@@ -2388,11 +2403,16 @@ where
     }
 
     let engine = ExportEngine::new();
-    let mut opened = open::opened(&engine, input_path, force, &on_progress).await?;
+    let search = if force {
+        open::Search::Force
+    } else {
+        open::Search::IfMissing
+    };
+    let mut opened = open::opened(&engine, input_path, search, &on_progress).await?;
     if !opened.has_detection() {
         // Joined a read that was started when the segments sidecar still counted as fresh (or
         // by a consumer that did not need the search): start one that carries it.
-        opened = open::opened(&engine, input_path, true, &on_progress).await?;
+        opened = open::opened(&engine, input_path, open::Search::Force, &on_progress).await?;
     }
     let detected = opened
         .detected()
@@ -2466,7 +2486,7 @@ fn diagnosis_from_levels(levels: sundayrec_core::levels::ChannelLevels) -> Edito
 #[cfg(feature = "editor")]
 pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagnosis> {
     let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, false, &|_| {}).await?;
+    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &|_| {}).await?;
     Ok(diagnosis_from_levels(opened.channel_levels()?))
 }
 
@@ -2483,7 +2503,7 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
 #[cfg(feature = "editor")]
 pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, false, &|_| {}).await?;
+    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &|_| {}).await?;
     let diagnosis = diagnosis_from_levels(opened.channel_levels()?);
     let noise_floor = opened.levels.noise_floor_db;
     let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
@@ -2549,7 +2569,7 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
 pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
     let work = async {
         let engine = ExportEngine::new();
-        let clean = tale_clean_for(&engine, input_path).await?;
+        let clean = tale_clean_with(&engine, input_path, open::Search::IfMissing).await?;
         Ok::<_, AppError>(tale_said_from(clean.as_ref()))
     };
     match until_superseded(tale_epoch(), work).await {
@@ -3026,7 +3046,19 @@ async fn tale_clean_for(
     engine: &ExportEngine,
     input_path: &str,
 ) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
-    match open::opened(engine, input_path, false, &|_| {}).await {
+    tale_clean_with(engine, input_path, open::Search::Skip).await
+}
+
+/// [`tale_clean_for`], with a say in whether the read it may have to start carries the sermon
+/// search too: the sound step's sentence is asked inside the editor, where the search is wanted
+/// next; the export and the preview are not.
+#[cfg(feature = "editor")]
+async fn tale_clean_with(
+    engine: &ExportEngine,
+    input_path: &str,
+    search: open::Search,
+) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
+    match open::opened(engine, input_path, search, &|_| {}).await {
         Ok(opened) => Ok(Some(opened.analysis.decide())),
         Err(AppError::Recording(code)) if code == "cancelled" || code == "timeout" => {
             Err(AppError::Recording(code))
@@ -8071,10 +8103,12 @@ mod tests {
             let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
             acc.push_bytes(&run(peaks_pipe_args(&src)).stdout);
             let old_peaks = acc.finish();
-            let old_pcm: Vec<f32> = run(analysis_decode_args(&src))
-                .stdout
-                .chunks_exact(2)
-                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+            let old_bytes = run(analysis_decode_args(&src)).stdout;
+            let old_pcm: Vec<f32> = old_bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0)
                 .collect();
             let old_detection = sundayrec_core::detect::analyse_pcm(
                 &old_pcm,
@@ -8108,7 +8142,7 @@ mod tests {
             let new = with_sidecars(&ffmpeg, &ffprobe, |rt| {
                 rt.block_on(async {
                     let engine = ExportEngine::new();
-                    let opened = open::opened(&engine, &src, true, &|_| {})
+                    let opened = open::opened(&engine, &src, open::Search::Force, &|_| {})
                         .await
                         .expect("round");
                     let detected = opened.detected().await.unwrap().expect("search");

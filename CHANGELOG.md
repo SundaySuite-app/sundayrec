@@ -5,6 +5,18 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Et langt opptak åpnes nesten fire ganger så fort.** Før ble fila lest fire
+  ganger fra du åpnet den til alt var analysert: for bølgeformen, for å finne
+  prekenen, for å sjekke kanalene og for «Tale»s analyse. Nå leses den én gang,
+  og alle fire får det de trenger fra den ene lesingen. På en 90 minutter lang
+  mp3 gikk tiden fra åpning til ferdig analyse fra 36 til 10 sekunder; bølgeformen
+  kommer like raskt som før (5,6 sekunder). Resultatene er de samme: samme
+  prekenforslag, samme kanaldiagnose, samme «Tale»-vedtak. Støygulvet som velger
+  «støyfylt rom»-kjeden regnes nå ut av appen selv, eksakt etter definisjonen
+  (minste glidende 50 ms-topp), i stedet for av ffmpegs `astats`, som i sjeldne
+  tilfeller leser opptil to desibel for lavt. Må prøves på en ekte Windows-PC
+  (tråder og 44,1 kHz-filer).
+
 ## v0.27.0-beta.1 — ny lyd i redigeringen og ny videomotor, til beta-ringen
 
 - **Videoen på Windows ligger ikke lenger etter lyden.** Kamerabildene ble stemplet med tiden de kom fram til appen, ikke tiden de ble tatt – på et USB-kamera 50–150 ms senere, så bildet kunne ligge 1–4 bilder bak lyden. Nå brukes kameraets egen fangsttid (som på Mac). Må prøves på en ekte Windows-PC (klappetest).

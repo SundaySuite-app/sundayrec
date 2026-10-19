@@ -639,6 +639,23 @@ faktisk skal se nå — sist.
       radfyll (`raw bytes` delt på bildeantall = bredde × høyde × 1,5)? Opptakskort
       finnes ikke og står som åpent.
 
+- [ ] **(B4a-w) Å åpne et langt opptak på Windows-boksen (B4a,
+      `ombygging/b4a-en-dekoding`).** Åpningsrunden leser fila én gang og
+      deler den ut på tre tråder (selve lesingen, nivåmåleren og
+      16 kHz-halvdelen); CI beviser tallene, men ikke tida på en vanlig PC.
+      Åpne et opptak på 60–90 minutter i **Redigering**, både en 48 kHz- og en
+      44,1 kHz-fil (WAV eller mp3). **Forventet:** bølgeformen kommer på
+      omtrent samme tid som en ren dekoding av fila tar (ca. 10 % av
+      spilletida eller mindre), «Leter etter prekenen …» er ferdig noen
+      sekunder senere, og lyd-steget kommer med sin setning uten egen ventetid.
+      Det går bare **én** `ffmpeg.exe` i Oppgavebehandling under åpningen, og
+      CPU-bruken ligger på to–tre kjerner, ikke alle. Loggen har linja
+      `open round: time spent per half` med sekundene nivåmåleren og
+      16 kHz-halvdelen brukte; skriv dem ned. **Rødt funn:** bølgeformen tar
+      mer enn dobbelt så lang tid som før (v0.25.3), to `ffmpeg.exe` samtidig,
+      «unreadable» på en fil som åpnet før, eller et kanalvarsel («dødt
+      venstre») på et opptak som er i orden.
+
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
 respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_

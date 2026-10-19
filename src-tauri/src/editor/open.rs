@@ -150,28 +150,42 @@ pub(super) fn peek(path: &str) -> Option<Arc<Opened>> {
     OPEN_BOOK.cached(&key_of(path)?)
 }
 
+/// Whether a read has to carry the sermon search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Search {
+    /// No: the caller wants the waveform, the levels or «Tale» only (the export and the preview
+    /// ask for «Tale»'s decision; they should not pay for 345 MB of PCM and a classifier).
+    Skip,
+    /// Yes when the segments sidecar is missing or stale: the editor's open.
+    IfMissing,
+    /// Yes, and a kept read goes: the operator asked for the analysis again.
+    Force,
+}
+
 /// The read of `path`: from [`OPEN_BOOK`], from the read already running, or by starting it.
 ///
-/// `want_detect` makes sure the read carries the sermon search: it drops a kept read (the
-/// operator asked for the analysis again) and starts one that does. A read that is already
-/// running without the search is joined as it is, and the caller that needs the search asks
-/// again ([`super::segments`]).
+/// `search` says whether the read has to carry the sermon search ([`Search`]). A read that is
+/// already running without it is joined as it is, and the caller that needs it asks again
+/// ([`super::segments`]).
 ///
 /// `on_progress` gets the read's 0..1 fraction, capped at 0.99: whoever asked decides when
 /// its own work is done.
 pub(super) async fn opened(
     engine: &ExportEngine,
     path: &str,
-    want_detect: bool,
+    search: Search,
     on_progress: &impl Fn(f32),
 ) -> AppResult<Arc<Opened>> {
     let Some((size_bytes, mtime_ms)) = media_stat(path) else {
         return Err(AppError::Validation("file_not_found".into()));
     };
     let key = key_of(path);
-    let carry_detect =
-        want_detect || super::read_segments_cache(path, size_bytes, mtime_ms).is_none();
-    if want_detect {
+    let carry_detect = match search {
+        Search::Skip => false,
+        Search::IfMissing => super::read_segments_cache(path, size_bytes, mtime_ms).is_none(),
+        Search::Force => true,
+    };
+    if search == Search::Force {
         if let Some(k) = &key {
             OPEN_BOOK.forget(k);
         }

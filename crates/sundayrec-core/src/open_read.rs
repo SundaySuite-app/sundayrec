@@ -175,7 +175,12 @@ impl Resampler {
 
     fn dot(a: &[f32], b: &[f32]) -> f32 {
         let mut acc = [0.0f32; LANES];
-        for (ca, cb) in a.chunks_exact(LANES).zip(b.chunks_exact(LANES)) {
+        for (ca, cb) in a
+            .as_chunks::<LANES>()
+            .0
+            .iter()
+            .zip(b.as_chunks::<LANES>().0)
+        {
             for ((a, x), y) in acc.iter_mut().zip(ca).zip(cb) {
                 *a += x * y;
             }
@@ -270,8 +275,8 @@ pub struct ChannelMeter {
 fn peak_and_sumsq(a: &[f32]) -> (f32, f64) {
     let mut pk = [0.0f32; LANES];
     let mut sq = [0.0f32; LANES];
-    let mut chunks = a.chunks_exact(LANES);
-    for c in &mut chunks {
+    let (chunks, rest) = a.as_chunks::<LANES>();
+    for c in chunks {
         for ((p, s), x) in pk.iter_mut().zip(sq.iter_mut()).zip(c) {
             *p = p.max(*x);
             *s += x * x;
@@ -279,7 +284,7 @@ fn peak_and_sumsq(a: &[f32]) -> (f32, f64) {
     }
     let mut peak = pk.iter().copied().fold(0.0, f32::max);
     let mut sumsq: f64 = sq.iter().map(|v| f64::from(*v)).sum();
-    for &x in chunks.remainder() {
+    for &x in rest {
         peak = peak.max(x);
         sumsq += f64::from(x) * f64::from(x);
     }
@@ -289,8 +294,7 @@ fn peak_and_sumsq(a: &[f32]) -> (f32, f64) {
 impl ChannelMeter {
     pub fn new(sample_rate: u32) -> Self {
         // astats: `FFMAX(time_constant * rate + .5, 1)`
-        let window =
-            (((FLOOR_WINDOW_S * f64::from(sample_rate) + 0.5) as usize).max(1)).min(1 << 24);
+        let window = ((FLOOR_WINDOW_S * f64::from(sample_rate) + 0.5) as usize).clamp(1, 1 << 24);
         Self {
             window,
             count: 0,

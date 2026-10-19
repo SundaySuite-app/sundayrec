@@ -329,6 +329,16 @@ Hørbarheten er ikke prøvd (Ørene, RIG-DAY (B3b)).
 - Sidevognene (`.peaks.json`, segmentene) beholdes. De nøkles på samme måte.
 - **Ferdig når:** å åpne en 90-minutters fil dekoder den én gang (sjekkes med
   en teller i en test), og alle eksisterende analyse-tester er grønne.
+- **Gjort i B4a** (`sundayrec_core::open_read`, `editor/open.rs`): røret går i
+  opptakets egen rate, resamplingen til 16 kHz (og 8 kHz for bølgeformen) er
+  Rust (Kaiser-sinc, eksakt rasjonalt forhold), og `astats` er erstattet av en
+  kanalmåler som regner de samme tre tallene (topp, RMS, støygulv som minste
+  glidende 50 ms-maksimum). Fire lesinger er blitt én: bølgeform, prekensøk,
+  kanalmåling, «Tale». **Lydstyrken kom ikke med:** programmålingen måler
+  signalet etter kutt og kjede, som ikke finnes når fila åpnes (se
+  GJENNOMFORING §B4a). Målt på en 90-minutters mp3 på Macen: åpning →
+  ferdig analyse 35,7 s → 10,2 s, bølgeformen 5,6 s → 5,6 s, fire dekodinger →
+  én.
 
 ### Fase 5 — forhåndslytting i sanntid
 
