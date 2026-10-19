@@ -1153,11 +1153,39 @@ mod tests {
 
     /// The fetched ffmpeg/ffprobe, or `None` → the caller SKIPs. Under
     /// `SUNDAYREC_REQUIRE_SIDECAR=1` a missing sidecar PANICS instead.
-    fn sidecar_or_skip() -> Option<()> {
-        let have = crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg").is_some()
-            && crate::media::ffmpeg::tests::fetched_sidecar("ffprobe").is_some();
-        if have {
-            return Some(());
+    /// The fetched sidecars, pinned through `SUNDAYREC_FFMPEG`/`_FFPROBE` for
+    /// the whole test under THE env lock (`media::ffmpeg::tests::ENV_LOCK`).
+    /// Without the pin, `ffmpeg_path()` falls through to PATH: a homebrew
+    /// ffmpeg locally, nothing on CI — and a parallel longrun test's
+    /// `remove_var` can strike mid-test (macOS CI on #402: 0 slots written).
+    struct SidecarPin {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SidecarPin {
+        fn drop(&mut self) {
+            // SAFETY: still holding ENV_LOCK.
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+        }
+    }
+
+    fn sidecar_or_skip() -> Option<SidecarPin> {
+        let guard = crate::media::ffmpeg::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let ffmpeg = crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg");
+        let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe");
+        if let (Some(ffmpeg), Some(ffprobe)) = (ffmpeg, ffprobe) {
+            // SAFETY: serialised by ENV_LOCK; removed on Drop, before the
+            // guard is released.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            return Some(SidecarPin { _guard: guard });
         }
         assert!(
             std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
@@ -1274,9 +1302,9 @@ mod tests {
     /// the MKV still holds exactly one frame per slot.
     #[test]
     fn a_hardware_encoder_that_fails_after_ffmpeg_read_the_first_frames_falls_back() {
-        if sidecar_or_skip().is_none() {
+        let Some(_pin) = sidecar_or_skip() else {
             return;
-        }
+        };
         let dir = tempfile::tempdir().expect("tempdir");
         let mkv = dir.path().join("hw.mkv");
         let opened = Arc::new(Mutex::new(Vec::new()));
@@ -1309,9 +1337,9 @@ mod tests {
     /// carries to the overlay — and the file keeps the pictures it had.
     #[test]
     fn an_encoder_that_dies_mid_fragment_is_reported_and_keeps_its_file() {
-        if sidecar_or_skip().is_none() {
+        let Some(_pin) = sidecar_or_skip() else {
             return;
-        }
+        };
         let dir = tempfile::tempdir().expect("tempdir");
         let mkv = dir.path().join("sw.mkv");
         let (prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
