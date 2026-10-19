@@ -428,6 +428,7 @@ where
     let staged = StagedPcm::new();
     let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
     let path = staged.path().to_path_buf();
+    super::count_analysis_decode(source, super::Decode::Staging);
     let (input, frames) = run_chain(
         engine,
         &args,
@@ -592,6 +593,7 @@ pub(super) async fn measure_program(
     };
     let args = decode_args(source, keeps, source_duration, fmt);
     let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
+    super::count_analysis_decode(source, super::Decode::Programme);
     let (loud, _frames) = run_chain(
         engine,
         &args,

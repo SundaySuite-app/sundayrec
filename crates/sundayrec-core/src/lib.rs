@@ -35,7 +35,7 @@
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
 //!   - [`level_watch`]  — D3: the weak-level (muted mixer) state machine, injected clock
-//!   - [`levels`]       — pure parser for `astats` per-channel peak-level stderr → live UI meters (B-5)
+//!   - [`levels`]       — the per-channel level value (peak, RMS) the live meters and the editor's channel diagnosis share
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)

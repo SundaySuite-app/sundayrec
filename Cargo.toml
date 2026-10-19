@@ -25,3 +25,8 @@ resolver = "2"
 # in dev/test profiles (mirrors upstream's root Cargo.toml).
 [profile.dev.package.filmcraft-audio-dsp]
 opt-level = 3
+
+# sundayrec-core (B4b): the open round (Kaiser-sinc resampler, level meter, the sermon
+# search) is the per-sample work of the 90-minute test; unoptimised it takes minutes.
+[profile.dev.package.sundayrec-core]
+opt-level = 2

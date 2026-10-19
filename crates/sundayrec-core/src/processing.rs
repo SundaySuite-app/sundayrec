@@ -185,9 +185,9 @@ pub fn channel_repair_needs_stereo(repair: ChannelRepair) -> bool {
 }
 
 /// Measured per-channel levels (dBFS) feeding [`diagnose_channels`]. Peaks are
-/// required (from `astats`/`levels`); RMS is optional — but see the note above
+/// required (the open round measures them, [`crate::open_read::ChannelMeter`]); RMS is optional — but see the note above
 /// [`diagnose_channels`]: without it the diagnosis is working half-blind, and
-/// the seam that has an astats SUMMARY must fill it in.
+/// the seam that has the file's summary must fill it in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChannelLevelsDb {
     pub peak_left_db: f64,
@@ -831,7 +831,7 @@ pub fn vocal_chain_presets() -> Vec<VocalChainPreset> {
 /// wide margin (a clean take commonly measures −60…−70 dBFS, see
 /// [`recommend_vocal_preset`]'s own threshold comment), so `nf=-25` tells
 /// `afftdn` the floor is ~35–45 dB louder than it actually is. `auto_process`
-/// already runs an `astats` pass and has the real number in hand; this is where
+/// already has the measured number in hand (the open round); this is where
 /// it gets applied instead of thrown away.
 ///
 /// `measured_noise_floor_db` is [`resolve_noise_floor_db`]'d (clamped to

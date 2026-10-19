@@ -58,7 +58,7 @@ mod harness {
         ScoringInput, FRAME_MS, SAMPLE_RATE,
     };
     use sundayrec_core::detect::{detect, Detection, PrepAnalysisSegment};
-    use sundayrec_core::editor::{analysis_decode_args, sidecar_path, Sidecar};
+    use sundayrec_core::editor::{sidecar_path, Sidecar};
     use sundayrec_core::feedback::{
         FeedbackSegment, FeedbackSegmentKind, RecordingFeedback, SermonPickCorrection,
         FEEDBACK_SCHEMA,
@@ -203,7 +203,24 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
     /// streaming it would mean either two decode passes or holding the hop
     /// probabilities and the frames anyway.
     fn decode(ffmpeg: &str, path: &Path) -> Result<Vec<f32>, String> {
-        let args = analysis_decode_args(&path.to_string_lossy());
+        // 16 kHz mono s16le on stdout, ffmpeg's own resampler: this evaluation tool decodes
+        // on its own (the app takes the open round's samples).
+        let args: Vec<String> = [
+            "-nostdin",
+            "-hide_banner",
+            "-i",
+            &path.to_string_lossy(),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "s16le",
+            "-",
+        ]
+        .map(String::from)
+        .to_vec();
         let output = Command::new(ffmpeg)
             .args(&args)
             .stdin(Stdio::null())

@@ -1105,7 +1105,8 @@ spent per half`.
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::opening_a_recording_reads_it_once_for_every_consumer_or_skips
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::consumers_asking_at_once_share_one_read_or_skips
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_and_force_reads_again_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_the_four_reads_it_replaced_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_ffmpeg_itself_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_ninety_minute_recording_is_decoded_once_or_skips
 - **Export is honest**: it always runs on the untouched original; a mastering
   target measures the CUT signal (not the raw file) before it normalises;
   "Normaliser" is skipped under a mastering preset and the modal says so; the

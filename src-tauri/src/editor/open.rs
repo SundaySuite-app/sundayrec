@@ -77,6 +77,12 @@ pub(super) struct Detected {
     pub(super) segments: Vec<EditorSegment>,
     detection: Detection,
     handed_out: AtomicBool,
+    /// The 16 kHz mono PCM the search ran on, kept for the shadow VAD (`vad` feature, default
+    /// off) so that it scores the same samples without a read of its own. Taken once
+    /// ([`Self::take_shadow_pcm`]); a build without the feature drops the PCM when the search is
+    /// done, as before.
+    #[cfg(feature = "vad")]
+    shadow_pcm: Mutex<Option<Vec<f32>>>,
 }
 
 impl Detected {
@@ -85,6 +91,15 @@ impl Detected {
     /// but name.
     pub(super) fn take_detection(&self) -> Option<Detection> {
         (!self.handed_out.swap(true, Ordering::AcqRel)).then(|| self.detection.clone())
+    }
+
+    /// The PCM behind the detection, for the shadow VAD; to the first caller only.
+    #[cfg(feature = "vad")]
+    pub(super) fn take_shadow_pcm(&self) -> Option<Vec<f32>> {
+        self.shadow_pcm
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
     }
 }
 
@@ -100,6 +115,17 @@ impl Opened {
     /// Whether this read carries the sermon search.
     pub(super) fn has_detection(&self) -> bool {
         self.detect.is_some()
+    }
+
+    /// The sermon search's answer if it is already there; waits for nothing.
+    #[cfg(feature = "vad")]
+    pub(super) fn detected_now(&self) -> Option<Arc<Detected>> {
+        let rx = self.detect.as_ref()?;
+        let state = rx.borrow();
+        match state.as_ref() {
+            Some(Ok(d)) => Some(d.clone()),
+            _ => None,
+        }
     }
 
     /// Wait for the sermon search that follows the read. `None` if this read did not carry one.
@@ -245,7 +271,7 @@ async fn read_once(
         .filter(|d| d.is_finite() && *d > 0.0)
         .map_or(0, |d| (d * f64::from(fmt.sample_rate)) as u64);
 
-    count_analysis_decode(path);
+    count_analysis_decode(path, super::Decode::Open);
     let tx = progress.clone();
     let read = pcm::run_chain(
         engine,
@@ -357,6 +383,9 @@ fn spawn_detection(
         // is the only thing a VAD model replaces, and it is chosen here and nowhere else.
         let detection =
             sundayrec_core::detect::analyse_pcm(&pcm16, SAMPLE_RATE, FRAME_MS, &HeuristicScorer);
+        // Only the shadow VAD wants the samples after the search, and it takes them from here
+        // rather than reading the file again.
+        #[cfg(not(feature = "vad"))]
         drop(pcm16);
         // The editor displays a projection of that one detection: bounds, class and
         // confidence, with the offered sermon block promoted. `detection` itself keeps what the
@@ -386,6 +415,8 @@ fn spawn_detection(
             segments,
             detection,
             handed_out: AtomicBool::new(false),
+            #[cfg(feature = "vad")]
+            shadow_pcm: Mutex::new(Some(pcm16)),
         }))));
     });
     rx
