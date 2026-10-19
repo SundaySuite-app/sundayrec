@@ -60,6 +60,8 @@ use sundayrec_core::detect::Detection;
 
 mod export_journal;
 #[cfg(feature = "editor")]
+mod open;
+#[cfg(feature = "editor")]
 mod pcm;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
@@ -1920,22 +1922,22 @@ fn read_peaks_cache(input_path: &str, size_bytes: u64, mtime_ms: u64) -> Option<
     .then(|| dequantize_peaks(&cache.peaks))
 }
 
-/// Decode audio to 8 kHz mono PCM **on a pipe** and fold it into 100 peaks per
-/// second as it arrives — the SAME rate the renderer's waveform indexes against
-/// (`pi = sec*100`). Caches the result next to the recording, so every reopen is
-/// a file read instead of a full decode.
+/// The waveform: 100 peaks per second of the 8 kHz mono mix — the SAME rate the renderer's
+/// waveform indexes against (`pi = sec*100`). Cached next to the recording, so every reopen is a
+/// file read instead of a full decode.
 ///
-/// What this replaced (P3): a full decode to an 8 kHz WAV written into a
-/// per-call temp dir that was NEVER deleted, then read back into RAM in its
-/// entirety before being down-sampled away. On a 2 h 96 kHz FLAC that was a
-/// ~115 MB temp file, a ~230 MB `Vec<f32>`, and the whole cost paid again on
-/// every single reopen. Now: a few kB of buffer, no temp file, and one decode
-/// per recording for the life of the file.
+/// B4a: a cache miss is not a decode of its own any more. It is the open round ([`open`]): ONE
+/// ffmpeg read of the file, in its own rate and channels, that the waveform, the sermon search,
+/// the channel diagnosis and «Tale» all share, with the 8 kHz mix made in Rust
+/// ([`sundayrec_core::open_read`]). Whoever of them asks first starts the read, and the rest find
+/// it done or wait for it.
 ///
-/// `on_progress` receives the decode's 0..1 fraction — bytes read over the byte
-/// count the probed duration implies at this pipe's fixed rate. That is a
-/// measurement, not an estimate: the pipe is 8 kHz mono s16le, so every second
-/// of audio is exactly 16 000 bytes. Callers that want no progress pass `|_| {}`.
+/// What this replaced (P3): a full decode to an 8 kHz WAV written into a per-call temp dir that
+/// was NEVER deleted, then read back into RAM in its entirety. Then (until B4a): a decode of its
+/// own to a pipe, a few kB of buffer, and a second, third and fourth decode for the rest.
+///
+/// `on_progress` receives the read's 0..1 fraction, measured as frames folded in over the frames
+/// the probed duration implies. Callers that want no progress pass `|_| {}`.
 ///
 /// HARDWARE-UNVERIFIED (the decode itself is proven only by the smoke test).
 #[cfg(feature = "editor")]
@@ -1943,11 +1945,7 @@ pub async fn peaks<F>(input_path: &str, on_progress: F) -> AppResult<EditorPeaks
 where
     F: Fn(f32),
 {
-    use sundayrec_core::editor::{
-        peaks_pipe_args, quantize_peaks, PeakAccumulator, PEAKS_BUCKET_SAMPLES, PEAKS_PER_SEC,
-        PEAKS_SAMPLE_RATE,
-    };
-    use tokio::io::AsyncReadExt;
+    use sundayrec_core::editor::{quantize_peaks, PEAKS_PER_SEC, PEAKS_SAMPLE_RATE};
 
     let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
         return Err(AppError::Validation("file_not_found".into()));
@@ -1966,108 +1964,15 @@ where
     // temp dirs older versions leaked here.
     sweep_editor_temp_once();
 
-    // The kill-timer for the decode, scaled from the media length. Without one a
-    // wedged ffmpeg (a stalled network volume, a half-mounted share) leaves the
-    // read loop below waiting for an EOF that never comes — the editor hangs on
-    // "Analyserer bølgeform…" with no cancel anywhere in reach.
-    let hint = duration_hint(input_path).await;
-    let op_timeout = sundayrec_core::editor::editor_op_timeout(hint);
-    // The denominator for progress: the probe's duration at the pipe's fixed
-    // rate. `None` (an unprobeable container) means no fraction can be honest,
-    // and the read loop reports nothing rather than a made-up one.
-    let expected_bytes = hint
-        .filter(|d| *d > 0.0)
-        .map(|d| d * f64::from(PEAKS_SAMPLE_RATE) * 2.0);
-
-    let args = peaks_pipe_args(input_path);
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| AppError::Recording("peaks decode: no stdout pipe".into()))?;
-    // stderr MUST be drained concurrently: ffmpeg blocks once the stderr pipe
-    // fills, and a blocked ffmpeg stops writing stdout — the classic deadlock
-    // this repo has paid for before.
-    let drain = child.stderr.take().map(|mut stderr| {
-        tauri::async_runtime::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes).await;
-            String::from_utf8_lossy(&bytes).into_owned()
-        })
-    });
-
-    let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
-    // Read AND wait under the one timer: timing only the `wait()` would still
-    // hang, because a wedged ffmpeg's stdout never reaches EOF. `child` is
-    // borrowed (not moved) so it is still ours to kill if the timer fires.
-    let child_ref = &mut child;
-    // Borrowed, not moved: the sink is needed once more after the loop, for the
-    // final tick that guarantees the bar reaches the end.
-    let progress_ref = &on_progress;
-    let waited = tokio::time::timeout(op_timeout, async move {
-        let mut buf = vec![0u8; 64 * 1024];
-        let mut read_bytes: u64 = 0;
-        let mut ticked = 0.0f32;
-        loop {
-            let n = stdout
-                .read(&mut buf)
-                .await
-                .map_err(|e| AppError::Recording(format!("peaks decode read: {e}")))?;
-            if n == 0 {
-                break;
-            }
-            acc.push_bytes(&buf[..n]);
-            // One tick per PERCENT, not per read: a 2 h FLAC is ~1 800 reads of
-            // this loop and an event each would be a telemetry flood into the
-            // very pipeline it is reporting on (the v0.5.0 lesson). The command
-            // layer throttles by time on top of this.
-            read_bytes += n as u64;
-            if let Some(expected) = expected_bytes {
-                let frac = ((read_bytes as f64 / expected) as f32).clamp(0.0, 0.99);
-                if frac >= ticked + 0.01 {
-                    ticked = frac;
-                    progress_ref(frac);
-                }
-            }
-        }
-        let status = child_ref
-            .wait()
-            .await
-            .map_err(|e| AppError::Recording(format!("peaks decode wait: {e}")))?;
-        Ok::<_, AppError>((acc, status))
-    })
-    .await;
-
-    let (acc, status) = match waited {
-        Ok(r) => r?,
-        Err(_elapsed) => {
-            // Kill it ourselves rather than relying on the drop: `kill()` also
-            // reaps, so the abandoned decode leaves no zombie holding the file.
-            let _ = child.kill().await;
-            tracing::warn!(
-                timeout_ms = op_timeout.as_millis() as u64,
-                "peaks decode exceeded its kill-timer"
-            );
-            return Err(AppError::Recording("timeout: peaks decode".into()));
-        }
-    };
-    let stderr_buf = match drain {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    if !status.success() {
-        let tail: String = stderr_buf.chars().rev().take(500).collect();
-        let tail: String = tail.chars().rev().collect();
-        return Err(AppError::Recording(format!("peaks decode failed: {tail}")));
-    }
-    // The decode IS done, whatever the byte arithmetic came to (an ffprobe
-    // duration is a container header and can be a little short or long). Say so
-    // once, unconditionally, so the bar always reaches the end — and so a source
-    // whose duration could not be probed still gets one honest event.
+    let engine = ExportEngine::new();
+    let opened = open::opened(&engine, input_path, false, &on_progress).await?;
+    // The decode IS done, whatever the byte arithmetic came to (an ffprobe duration is a
+    // container header and can be a little short or long). Say so once, unconditionally, so the
+    // bar always reaches the end — and so a source whose duration could not be probed still gets
+    // one honest event.
     on_progress(1.0);
 
-    let peaks = acc.finish();
+    let peaks = opened.peaks.clone();
     // Best-effort cache write: a read-only folder or a full disk costs a
     // recompute next time, never an error here (same contract as the autosave
     // sidecars).
@@ -2312,11 +2217,11 @@ fn analysis_pcm_capacity(expected_bytes: Option<f64>) -> usize {
 
 /// Decode a recording to the 16 kHz mono f32 PCM the detector works on.
 ///
-/// Split out of [`segments`] (E9) because shadow mode needs the same buffer and
-/// re-running the decode is the cheap half of that pass — a second ffmpeg read
-/// costs seconds where the model costs minutes, and holding ~345 MB of f32 alive
-/// across a detached background task to avoid it would be the expensive trade,
-/// not the frugal one.
+/// Since B4a only shadow mode (`--features vad`, default off) reads the file this way: the sermon
+/// search itself gets its 16 kHz PCM from the open round ([`open`]), made from the recording's
+/// own rate in Rust. The shadow pass keeps its decode because it runs minutes after the round,
+/// in the background, and holding ~345 MB of f32 alive across it to avoid a second ffmpeg read
+/// (seconds, against the model's minutes) would be the expensive trade, not the frugal one.
 ///
 /// `on_progress` receives the 0..1 fraction, measured as bytes off the pipe over
 /// the byte count the probed duration implies. Capped at 0.99: the pass this
@@ -2330,6 +2235,7 @@ fn analysis_pcm_capacity(expected_bytes: Option<f64>) -> usize {
 ///
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
+#[cfg_attr(not(feature = "vad"), allow(dead_code))]
 pub(crate) async fn decode_analysis_pcm<F>(input_path: &str, on_progress: F) -> AppResult<Vec<f32>>
 where
     F: Fn(f32),
@@ -2345,6 +2251,7 @@ where
         .filter(|d| *d > 0.0)
         .map(|d| d * f64::from(SAMPLE_RATE) * 2.0);
 
+    count_analysis_decode();
     let args = analysis_decode_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
@@ -2419,27 +2326,29 @@ where
     Ok(pcm)
 }
 
-/// Decode to 16 kHz mono PCM, classify + group with the core, promote the
-/// sermon block, and map to UI segments — cached next to the recording so a
-/// reopen is free.
+/// The sermon search: classify + group with the core, promote the sermon block, and map to UI
+/// segments — cached next to the recording so a reopen is free.
+///
+/// B4a: the 16 kHz PCM it works on is not decoded here. It comes from the open round
+/// ([`open`]), the one read of the file that the waveform, the channel diagnosis and «Tale» share,
+/// and the search runs on its own thread right after that read. If the waveform asked first, the
+/// search is already under way or done when this is called.
 ///
 /// `force` skips the cache READ (the explicit «Analyser opptak» button: the user
-/// asked for the work to be done again) but still writes the result, so the next
-/// automatic open is fast again.
+/// asked for the work to be done again) and starts a read that carries the search,
+/// but still writes the result, so the next automatic open is fast again.
 ///
 /// A P3 fix lives in the cache: detection is a second full pass over the whole
-/// recording and it auto-fired on every single open. The decode itself (and its
-/// memory behaviour) is [`decode_analysis_pcm`].
+/// recording and it auto-fired on every single open.
 ///
-/// `on_progress` receives the pass's 0..1 fraction from the decode, which is
-/// capped at 0.99 because the tail — feature extraction and classification —
-/// is not covered by it; the caller only sees 1.0 once the segments exist.
-/// «Analyser opptak» was the last button in the editor that could run for
+/// `on_progress` receives the read's 0..1 fraction, capped at 0.99 because the tail —
+/// feature extraction and classification — is not covered by it; the caller only sees 1.0 once
+/// the segments exist. «Analyser opptak» was the last button in the editor that could run for
 /// minutes with nothing but a spinner.
 ///
 /// The second return value is the analysis BEHIND those segments, and it is
-/// `Some` only on a pass that actually ran. [`EditorSegment`] is a lossy
-/// projection — it keeps the bounds and the class but drops `confidence` and
+/// `Some` only on a pass that actually ran, and only for the first caller. [`EditorSegment`] is a
+/// lossy projection — it keeps the bounds and the class but drops `confidence` and
 /// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
 /// cache hit can hand back segments but not the analysis, and `None` says so
 /// rather than reconstructing values that were never on disk.
@@ -2459,54 +2368,38 @@ pub async fn segments<F>(
 where
     F: Fn(f32),
 {
-    use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
-
     let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
         return Err(AppError::Validation("file_not_found".into()));
     };
     if !force {
+        // The waveform may have started the read, and the search with it: the sidecar can
+        // already be written, but the analysis behind it has not been handed out yet, and the
+        // shadow pass and the review queue want it. A read that carried the search answers first.
+        if let Some(detected) = match open::peek(input_path) {
+            Some(opened) => opened.detected().await.transpose()?,
+            None => None,
+        } {
+            on_progress(1.0);
+            return Ok((detected.segments.clone(), detected.take_detection()));
+        }
         if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
             return Ok((cached, None));
         }
     }
 
-    let pcm = decode_analysis_pcm(input_path, &on_progress).await?;
-
-    // ONE detector for both consumers (E9). `HeuristicScorer` is the seam: the
-    // frame scorer is the only thing a VAD model replaces, and it is chosen
-    // here and nowhere else.
-    let detection =
-        sundayrec_core::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &HeuristicScorer);
-    drop(pcm);
-    // The editor displays a projection of that one detection: bounds, class and
-    // confidence, with the offered sermon block promoted. `detection` itself
-    // keeps what the projection drops — `avg_rms_db` and the attention reasons —
-    // and is handed on whole, because this is the only moment in the app's life
-    // when those exist.
-    let segments: Vec<EditorSegment> = sundayrec_core::detect::promote_sermon(&detection)
-        .into_iter()
-        .map(|d| EditorSegment {
-            start: d.start,
-            end: d.end,
-            duration: d.duration,
-            label: d.label,
-            kind: d.kind,
-            confidence: Some(d.confidence),
-        })
-        .collect();
-
-    // Best-effort cache write — a forced re-analysis refreshes it too.
-    let cache = SegmentsCache {
-        version: EDITOR_CACHE_VERSION,
-        size_bytes,
-        mtime_ms,
-        segments: segments.clone(),
-    };
-    if let Ok(json) = serde_json::to_string(&cache) {
-        let _ = write_sidecar_raw(input_path, EditorSidecar::Segments, &json);
+    let engine = ExportEngine::new();
+    let mut opened = open::opened(&engine, input_path, force, &on_progress).await?;
+    if !opened.has_detection() {
+        // Joined a read that was started when the segments sidecar still counted as fresh (or
+        // by a consumer that did not need the search): start one that carries it.
+        opened = open::opened(&engine, input_path, true, &on_progress).await?;
     }
+    let detected = opened
+        .detected()
+        .await
+        .ok_or_else(|| AppError::Recording("analysis carried no search".into()))??;
     on_progress(1.0);
-    Ok((segments, Some(detection)))
+    Ok((detected.segments.clone(), detected.take_detection()))
 }
 
 /// Map a core [`ChannelRepair`](sundayrec_core::processing::ChannelRepair) to the
@@ -2529,44 +2422,13 @@ fn core_repair_to_dto(r: sundayrec_core::processing::ChannelRepair) -> EditorCha
     }
 }
 
-/// Run `astats` over the whole file to a null sink and return ffmpeg's stderr
-/// (the per-channel + overall summary). Shared by channel diagnosis and the
-/// one-click auto-process so a single pass yields both the levels and the noise
-/// floor. HARDWARE-UNVERIFIED.
+/// Build the channel diagnosis from the measured levels.
 #[cfg(feature = "editor")]
-async fn run_astats_stderr(input_path: &str) -> AppResult<String> {
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let args = [
-        "-nostdin",
-        "-hide_banner",
-        "-i",
-        input_path,
-        "-af",
-        "astats=metadata=0",
-        "-f",
-        "null",
-        "-",
-    ];
-    // A full-file read to a null sink — timed against the media length, so a
-    // wedged ffmpeg can't hang «Diagnostiser» / one-click auto-enhance forever.
-    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
-    let owned: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-    let out = ffmpeg_output_timed(&owned, timeout, "astats").await?;
-    Ok(String::from_utf8_lossy(&out.stderr).into_owned())
-}
-
-/// Build the channel diagnosis from a parsed astats summary.
-#[cfg(feature = "editor")]
-fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
-    use sundayrec_core::levels::parse_levels;
+fn diagnosis_from_levels(levels: sundayrec_core::levels::ChannelLevels) -> EditorChannelDiagnosis {
     use sundayrec_core::processing::{diagnose_channels as core_diagnose, ChannelLevelsDb};
 
-    let levels = parse_levels(stderr)
-        .ok_or_else(|| AppError::Recording("astats produced no channel levels".into()))?;
     let pl = levels.peak_db_left;
-    Ok(match levels.peak_db_right {
+    match levels.peak_db_right {
         // Mono source — nothing to balance.
         None => EditorChannelDiagnosis {
             code: "mono".into(),
@@ -2576,10 +2438,10 @@ fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
             recommended: core_repair_to_dto(sundayrec_core::processing::ChannelRepair::None),
         },
         Some(pr) => {
-            // The RMS values come from the SAME astats summary we already have
-            // in hand. Passing `None` here (what this did) made the core decide
-            // on peaks alone, which cannot tell a crackling cable from a healthy
-            // channel — see the threshold note in `processing::diagnose_channels`.
+            // The RMS values come from the SAME measurement we already have in hand. Passing
+            // `None` here (what this did) made the core decide on peaks alone, which cannot tell
+            // a crackling cable from a healthy channel — see the threshold note in
+            // `processing::diagnose_channels`.
             let d = core_diagnose(ChannelLevelsDb {
                 peak_left_db: pl,
                 peak_right_db: pr,
@@ -2594,19 +2456,21 @@ fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
                 recommended: core_repair_to_dto(d.recommended),
             }
         }
-    })
+    }
 }
 
-/// Analyse a recording's stereo channel balance: run `astats` over the whole
-/// file, parse the per-channel peaks, and ask the core for a recommended repair
-/// (swap / duplicate-good-channel / per-channel makeup). HARDWARE-UNVERIFIED.
+/// Analyse a recording's stereo channel balance: the peaks and RMS of each channel, measured over
+/// the whole file in the open round (B4a: they used to be an `astats` round of their own), and
+/// the core's recommended repair (swap / duplicate-good-channel / per-channel makeup).
+/// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagnosis> {
-    let stderr = run_astats_stderr(input_path).await?;
-    diagnosis_from_stderr(&stderr)
+    let engine = ExportEngine::new();
+    let opened = open::opened(&engine, input_path, false, &|_| {}).await?;
+    Ok(diagnosis_from_levels(opened.channel_levels()?))
 }
 
-/// One-click "auto-improve": ONE astats pass yields both the channel diagnosis
+/// One-click "auto-improve": ONE measurement yields both the channel diagnosis
 /// AND the noise floor, so we recommend channel repair + a NOISE-AWARE vocal
 /// chain (the heavier `voice-noisy-room` when the floor is high, else
 /// `voice-podcast`). The renderer applies the result in one click.
@@ -2618,9 +2482,10 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
 /// explicit choice in the export modal, where its loudness target is the point.
 #[cfg(feature = "editor")]
 pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
-    let stderr = run_astats_stderr(input_path).await?;
-    let diagnosis = diagnosis_from_stderr(&stderr)?;
-    let noise_floor = sundayrec_core::levels::parse_noise_floor_db(&stderr);
+    let engine = ExportEngine::new();
+    let opened = open::opened(&engine, input_path, false, &|_| {}).await?;
+    let diagnosis = diagnosis_from_levels(opened.channel_levels()?);
+    let noise_floor = opened.levels.noise_floor_db;
     let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
 
     // F2-I18N-R2: the summary is an ENGLISH RESERVE, and the DATA is the
@@ -2666,7 +2531,7 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     })
 }
 
-/// Auto-process needs ffmpeg (astats) — disabled in the default build.
+/// Auto-process needs ffmpeg — disabled in the default build.
 #[cfg(not(feature = "editor"))]
 pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
     disabled("autoProcess")
@@ -2680,13 +2545,11 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
 /// M2R #10: the analysis can be ended. A newer ask (another recording opened in the sound
 /// step), an export and a starting recording all supersede it; it then answers «not analysed»,
 /// which the page shows as nothing, and its ffmpeg dies with the dropped future. An analysis
-/// the preview or the export is waiting on is taken over by them ([`TALE_BOOK`]).
+/// the preview or the export is waiting on is taken over by them ([`open::OPEN_BOOK`]).
 pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
     let work = async {
-        let info = load_recording(input_path).await.ok();
         let engine = ExportEngine::new();
-        let clean =
-            tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
+        let clean = tale_clean_for(&engine, input_path).await?;
         Ok::<_, AppError>(tale_said_from(clean.as_ref()))
     };
     match until_superseded(tale_epoch(), work).await {
@@ -2841,7 +2704,7 @@ async fn listen_plan(
     let channels = info.as_ref().and_then(|i| i.channels);
     let params = req.audio_params(channels)?;
     let fmt = pcm::pcm_format(info.as_ref().and_then(|i| i.sample_rate), channels);
-    let chain = pre_chain_for(engine, input_path, channels, &params).await?;
+    let chain = pre_chain_for(engine, input_path, &params).await?;
     let plan = match &params.preset {
         Some(preset) => {
             let cuts: Vec<sundayrec_core::editor::CutRegion> = req
@@ -2996,7 +2859,7 @@ async fn program_plan(
 ///
 /// One computation per key, however many callers ask: «Etter» and the background
 /// preparation ([`prepare_listen`]) both come to [`PLAN_BOOK`], and the sound step's
-/// sentence, the preview and the export all come to [`TALE_BOOK`]; whoever arrives second
+/// sentence, the preview and the export all come to [`open::OPEN_BOOK`]; whoever arrives second
 /// waits for the first instead of running a second full pass over the same file. If the
 /// computing caller goes away (a superseded preparation is dropped), a waiter takes over and
 /// computes itself — the cell is only ever filled by a computation that finished.
@@ -3013,15 +2876,15 @@ struct Book<V, const CAP: usize> {
 #[cfg(any(feature = "editor", test))]
 type PlanBook = Book<sundayrec_core::loudness::GainPlan, 8>;
 
-/// What «Tale»'s analysis decided: one per file (path, size, mtime). `None` = not analysed.
+/// The shape «Tale»'s decision was kept in before the open round (B4a) took over its reading
+/// ([`open::OPEN_BOOK`]). The book's rules do not depend on what it holds, so the tests of its
+/// dedupe and of its «not kept» predicate keep using this instantiation.
 #[cfg(any(feature = "editor", test))]
+#[cfg_attr(not(test), allow(dead_code))]
 type TaleBook = Book<Option<sundayrec_core::tale::SpeechClean>, 4>;
 
 #[cfg(feature = "editor")]
 static PLAN_BOOK: PlanBook = PlanBook::new();
-
-#[cfg(feature = "editor")]
-static TALE_BOOK: TaleBook = TaleBook::with_keep(|c| c.is_some());
 
 #[cfg(any(feature = "editor", test))]
 impl PlanBook {
@@ -3044,6 +2907,14 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
     fn cached(&self, key: &str) -> Option<V> {
         let done = self.done.lock().unwrap_or_else(|e| e.into_inner());
         done.iter().find(|(k, _)| k == key).map(|(_, p)| p.clone())
+    }
+
+    /// Drop the finished value for `key`, so the next ask computes it again (the operator asked
+    /// for the analysis to be done afresh).
+    #[cfg(feature = "editor")]
+    fn forget(&self, key: &str) {
+        let mut done = self.done.lock().unwrap_or_else(|e| e.into_inner());
+        done.retain(|(k, _)| k != key);
     }
 
     /// The value for `key`: from the cache, from the computation already running, or from
@@ -3100,7 +2971,19 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
 #[cfg(feature = "editor")]
 const TALE_PRESET_ID: &str = "speech-clear";
 
-/// What the analysis decided, kept per file ([`TALE_BOOK`]) so the preview, the loudness
+/// How many times a whole recording has been decoded for ANALYSIS in this process (B4a). The
+/// open round counts one; the tests read it to prove that opening a recording reads the file
+/// once, not once per consumer.
+#[cfg(feature = "editor")]
+pub(crate) static ANALYSIS_DECODES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(feature = "editor")]
+fn count_analysis_decode() {
+    ANALYSIS_DECODES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// What the analysis decided, kept per file ([`open::OPEN_BOOK`]) so the preview, the loudness
 /// figure, the sentence in the sound step and the export of the same recording read the
 /// file once, not once each, and not twice at once (M2R #10). Keyed on path, size and mtime,
 /// so an edited or replaced file is read again.
@@ -3119,82 +3002,29 @@ fn tale_cache_key(path: &str) -> Option<TaleKey> {
     Some((path.to_string(), m.len(), mtime))
 }
 
-/// B3a: read the recording once at 16 kHz and decide what «Tale» takes along
-/// ([`sundayrec_core::tale`]). `None` when the file cannot be analysed: the profile then
-/// runs as before, and the export is never lost to an analysis that failed. A cancel or a
-/// stall still ends the export.
+/// B3a: what «Tale» takes along ([`sundayrec_core::tale`]), decided from the measurements of the
+/// open round (B4a: the recording is read once for the waveform, the sermon search, the
+/// channel diagnosis and this, see [`open`]). `None` when the file cannot be analysed: the
+/// profile then runs as before, and the export is never lost to an analysis that failed. A cancel
+/// or a stall still ends the export.
 ///
-/// Asked by several callers at once (the sentence and the «Etter» preview open together),
-/// the file is still read once: the second waits for the first ([`TALE_BOOK`]).
+/// Asked by several callers at once (the sentence and the «Etter» preview open together), the
+/// file is still read once: the second waits for the first ([`open::OPEN_BOOK`]).
 #[cfg(feature = "editor")]
 async fn tale_clean_for(
     engine: &ExportEngine,
     input_path: &str,
-    channels: Option<u32>,
 ) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
-    let key = tale_cache_key(input_path).map(|k| format!("{k:?}|{channels:?}"));
-    TALE_BOOK
-        .get_or_measure(key, || analyse_for_tale(engine, input_path, channels))
-        .await
-}
-
-/// The analysis itself: one read of the file. See [`tale_clean_for`].
-#[cfg(feature = "editor")]
-async fn analyse_for_tale(
-    engine: &ExportEngine,
-    input_path: &str,
-    channels: Option<u32>,
-) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
-    use sundayrec_core::pcm_stream::{output_args, PcmFormat};
-    use sundayrec_core::tale::{analyze_stream, ANALYSIS_RATE};
-
-    let fmt = PcmFormat {
-        sample_rate: ANALYSIS_RATE,
-        channels: if channels == Some(1) { 1 } else { 2 },
-    };
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        input_path.to_string(),
-        "-vn".into(),
-    ];
-    args.extend(output_args(fmt));
-    let res = pcm::run_chain(
-        engine,
-        &args,
-        0,
-        export_stall_ms(),
-        (0.0, 0.0),
-        EXPORT_PHASE_MEASURING,
-        &|_, _| {},
-        move |r, done| {
-            analyze_stream(r, fmt, |n| {
-                done.store(n, std::sync::atomic::Ordering::Relaxed)
-            })
-        },
-    )
-    .await;
-    let analysis = match res {
-        Ok(a) => a,
+    match open::opened(engine, input_path, false, &|_| {}).await {
+        Ok(opened) => Ok(Some(opened.analysis.decide())),
         Err(AppError::Recording(code)) if code == "cancelled" || code == "timeout" => {
-            return Err(AppError::Recording(code));
+            Err(AppError::Recording(code))
         }
         Err(e) => {
             tracing::warn!(error = %e, "tale analysis failed — the profile runs without it");
-            return Ok(None);
+            Ok(None)
         }
-    };
-    let clean = analysis.decide();
-    tracing::info!(
-        floor_db = analysis.noise_floor_db,
-        speech_db = analysis.speech_db,
-        rt60_s = ?analysis.rt60_s,
-        clicks_per_min = analysis.clicks_per_min,
-        did = ?clean.said(),
-        "tale analysis"
-    );
-    Ok(Some(clean))
+    }
 }
 
 /// What the volunteer chose in the sound step, as the export request and the preview request
@@ -3330,11 +3160,10 @@ fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppR
 async fn pre_chain_for(
     engine: &ExportEngine,
     source: &str,
-    channels: Option<u32>,
     params: &AudioParams,
 ) -> AppResult<sundayrec_core::chain::Chain> {
     let clean = if params.tale {
-        tale_clean_for(engine, source, channels).await?
+        tale_clean_for(engine, source).await?
     } else {
         None
     };
@@ -3615,13 +3444,7 @@ where
     if params.tale {
         on_progress(0.0, EXPORT_PHASE_MEASURING);
     }
-    let pre_chain = pre_chain_for(
-        engine,
-        &inputs.source,
-        probed.as_ref().and_then(|i| i.channels),
-        &params,
-    )
-    .await?;
+    let pre_chain = pre_chain_for(engine, &inputs.source, &params).await?;
     let preset = params.preset;
 
     // The stall budget for EACH ffmpeg pass: no progress for this long = wedged.
@@ -4350,36 +4173,6 @@ async fn duration_hint(input_path: &str) -> Option<f64> {
     .await
     .ok()
     .flatten()
-}
-
-/// Spawn ffmpeg with `args`, wait for it under `timeout`, and return its
-/// collected output. A non-zero exit is the caller's to interpret (the astats
-/// pass reads its answer out of stderr and doesn't care about the exit code);
-/// the timeout is not.
-///
-/// On timeout the `wait_with_output` future is dropped, and `spawn_ffmpeg` sets
-/// `kill_on_drop(true)` — so the wedged ffmpeg is killed and reaped rather than
-/// left behind holding the stalled volume open. The error carries the bare
-/// `timeout` code the renderer already maps to a calm Norwegian sentence.
-#[cfg(feature = "editor")]
-async fn ffmpeg_output_timed(
-    args: &[String],
-    timeout: std::time::Duration,
-    what: &str,
-) -> AppResult<std::process::Output> {
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(r) => r.map_err(|e| AppError::Recording(format!("{what} wait: {e}"))),
-        Err(_elapsed) => {
-            tracing::warn!(
-                what,
-                timeout_ms = timeout.as_millis() as u64,
-                "editor ffmpeg op exceeded its kill-timer"
-            );
-            Err(AppError::Recording(format!("timeout: {what}")))
-        }
-    }
 }
 
 /// Run ffmpeg like [`run_ffmpeg`], but with `-progress` on stdout parsed into an
@@ -7980,9 +7773,9 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let engine = ExportEngine::new();
             let (h, c, again) = rt.block_on(async {
-                let h = tale_clean_for(&engine, &hum_path, Some(1)).await;
-                let c = tale_clean_for(&engine, &clean_path, Some(1)).await;
-                let again = tale_clean_for(&engine, &hum_path, Some(1)).await;
+                let h = tale_clean_for(&engine, &hum_path).await;
+                let c = tale_clean_for(&engine, &clean_path).await;
+                let again = tale_clean_for(&engine, &hum_path).await;
                 (h, c, again)
             });
             unsafe {
@@ -7999,6 +7792,124 @@ mod tests {
             );
             assert!(!c.declick && c.dereverb.is_none(), "{c:?}");
             assert_eq!(again.unwrap(), Some(h));
+        }
+
+        /// B4a: the clock for opening a long recording and exporting it. NOT part of the suite:
+        /// it needs a real, long file (`SUNDAYREC_BENCH_FILE`, read-only; its sidecars are written
+        /// next to it, so point it at a symlink in a scratch folder) and prints what it measured.
+        ///
+        /// Runs the calls in the order the editor makes them (load, waveform, segments, the sound
+        /// step's channel diagnosis and sentence), then a «Tale» mp3 export of the whole file.
+        /// `cargo test -p sundayrec --lib bench_open_to_export -- --ignored --nocapture`
+        #[test]
+        #[ignore = "needs SUNDAYREC_BENCH_FILE: a long real recording"]
+        fn bench_open_to_export() {
+            let Ok(file) = std::env::var("SUNDAYREC_BENCH_FILE") else {
+                eprintln!("SKIP: SUNDAYREC_BENCH_FILE is not set");
+                return;
+            };
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let out_dir = std::env::var("SUNDAYREC_BENCH_OUT")
+                .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let t0 = std::time::Instant::now();
+            let lap = |what: &str| {
+                eprintln!(
+                    "BENCH {what:<28} {:>7.2} s since start, {} analysis decodes",
+                    t0.elapsed().as_secs_f64(),
+                    ANALYSIS_DECODES.load(std::sync::atomic::Ordering::Relaxed)
+                );
+            };
+            rt.block_on(async {
+                let info = load_recording(&file).await.expect("load");
+                lap("load_recording");
+                let pk = peaks(&file, |_| {}).await.expect("peaks");
+                let sum: f64 = pk.peaks.iter().map(|p| f64::from(*p)).sum();
+                eprintln!(
+                    "BENCH peaks n={} sum={sum:.3} max={:.4}",
+                    pk.peaks.len(),
+                    pk.peaks.iter().cloned().fold(0.0f32, f32::max)
+                );
+                lap("peaks");
+                let (segs, _) = segments(&file, true, |_| {}).await.expect("segments");
+                for sg in &segs {
+                    eprintln!(
+                        "BENCH segment {:>8.2} {:>8.2} {:<8} conf={:?}",
+                        sg.start, sg.end, sg.kind, sg.confidence
+                    );
+                }
+                lap("segments");
+                let auto = auto_process(&file).await.expect("auto_process");
+                eprintln!(
+                    "BENCH auto_process {:?} preset={}",
+                    auto.diagnosis, auto.vocal_chain_preset
+                );
+                lap("auto_process");
+                let said = tale_said(&file).await.expect("tale_said");
+                eprintln!("BENCH tale_said {said:?}");
+                lap("tale_said");
+                let engine = ExportEngine::new();
+                let clean = tale_clean_for(&engine, &file).await;
+                eprintln!("BENCH tale decision {clean:?}");
+                lap("tale decision (cached)");
+
+                let req = EditorExportRequest {
+                    source_token: "t".into(),
+                    cut_regions: Vec::new(),
+                    duration: info.duration_sec,
+                    format: "mp3".into(),
+                    output_folder_token: None,
+                    bitrate: Some(128),
+                    bit_depth: None,
+                    master_preset: Some("speech-clear".into()),
+                    use_intro: false,
+                    use_outro: false,
+                    gain_db: None,
+                    title: Some("bench".into()),
+                    speaker: None,
+                    description: None,
+                    album: None,
+                    date: None,
+                    vocal_chain_preset: None,
+                    processing: None,
+                    channel_repair: None,
+                    video_codec: None,
+                };
+                let inputs = ResolvedExport {
+                    source: file.clone(),
+                    intro: None,
+                    outro: None,
+                    folder: ExportFolder::Picked(out_dir.clone()),
+                };
+                let before_export = t0.elapsed();
+                let res = export(&engine, &req, &inputs, false, |_, _| {}).await;
+                eprintln!(
+                    "BENCH export {:>7.2} s",
+                    (t0.elapsed() - before_export).as_secs_f64()
+                );
+                lap("export done");
+                match res {
+                    Ok(r) => {
+                        eprintln!("BENCH export result {r:?}");
+                        let _ = std::fs::remove_file(&r.output_path);
+                    }
+                    Err(e) => eprintln!("BENCH export FAILED {e}"),
+                }
+            });
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
         }
 
         /// M2R #3c: the preview is levelled like the EXPORT, i.e. by the programme and not by

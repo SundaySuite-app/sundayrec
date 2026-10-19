@@ -73,6 +73,7 @@ pub mod levels;
 pub mod loudness;
 pub mod mastering;
 pub mod notify;
+pub mod open_read;
 pub mod pcm_stream;
 pub mod preflight;
 pub mod preroll;
