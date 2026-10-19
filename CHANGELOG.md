@@ -5,7 +5,7 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
-- **Et langt opptak åpnes nesten fire ganger så fort.** Før ble fila lest fire
+- **Analysen av et langt opptak er over tre ganger så rask.** Før ble fila lest fire
   ganger fra du åpnet den til alt var analysert: for bølgeformen, for å finne
   prekenen, for å sjekke kanalene og for «Tale»s analyse. Nå leses den én gang,
   og alle fire får det de trenger fra den ene lesingen. På en 90 minutter lang
