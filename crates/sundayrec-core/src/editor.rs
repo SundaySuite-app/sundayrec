@@ -1314,8 +1314,8 @@ pub const EXPORT_STALL_MS: u64 = MAX_EDIT_MS;
 pub const EDITOR_OP_FLOOR: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// The kill-timer for a whole-file editor ffmpeg op that is NOT the export:
-/// the waveform decode, the playback-proxy transcode, the `astats` channel
-/// diagnosis, the mastering loudness measure.
+/// the waveform decode, the playback-proxy transcode, the mastering
+/// loudness measure.
 ///
 /// None of these had a timer at all, so a wedged ffmpeg (a stalled network
 /// volume, a half-mounted share) hung `editor_peaks` / the proxy / «Diagnostiser»
@@ -1599,30 +1599,6 @@ pub fn parse_max_volume_db(stderr: &str) -> Option<f64> {
 /// sweep before writing a fresh one. Mirrors [`crate::mastering::is_preview_temp_name`].
 pub fn is_playback_proxy_temp_name(name: &str) -> bool {
     name.starts_with(PLAYBACK_PROXY_PREFIX) && name.ends_with(".m4a")
-}
-
-/// ffmpeg arguments to decode `input_path` to 16 kHz mono signed-16 PCM on stdout
-/// for the [`crate::audio_analysis`] classifier (it expects 16 kHz). `-f s16le`
-/// to a pipe so the seam reads raw samples without a WAV header. Mirrors the
-/// analysis-decode the Electron `audio-analysis.ts` ran.
-pub fn analysis_decode_args(input_path: &str) -> Vec<String> {
-    [
-        "-nostdin",
-        "-hide_banner",
-        "-i",
-        input_path,
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-f",
-        "s16le",
-        "-",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
 }
 
 /// Down-sample `samples` to `buckets` peak amplitudes (max-abs per bucket), the
@@ -3747,16 +3723,6 @@ mod tests {
             "sundayrec-playback-proxy-1.wav"
         ));
         assert!(!is_playback_proxy_temp_name("service.m4a"));
-    }
-
-    #[test]
-    fn analysis_decode_args_pipe_16khz_s16le() {
-        let args = analysis_decode_args("/rec/a.mp4");
-        let joined = args.join(" ");
-        assert!(joined.contains("-ar 16000"));
-        assert!(joined.contains("-f s16le"));
-        // raw stream to stdout
-        assert_eq!(args.last().unwrap(), "-");
     }
 
     // ── peak down-sampling ──────────────────────────────────────────────────────
