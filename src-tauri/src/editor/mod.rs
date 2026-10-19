@@ -2389,13 +2389,15 @@ where
     if !force {
         // The waveform may have started the read, and the search with it: the sidecar can
         // already be written, but the analysis behind it has not been handed out yet, and the
-        // shadow pass and the review queue want it. A read that carried the search answers first.
-        if let Some(detected) = match open::peek(input_path) {
-            Some(opened) => opened.detected().await.transpose()?,
-            None => None,
-        } {
-            on_progress(1.0);
-            return Ok((detected.segments.clone(), detected.take_detection()));
+        // shadow pass and the review queue want it. A read that carried the search answers first,
+        // once; after that the sidecar answers, as it always did.
+        if let Some(opened) = open::peek(input_path) {
+            if let Some(detected) = opened.detected().await.transpose()? {
+                if let Some(detection) = detected.take_detection() {
+                    on_progress(1.0);
+                    return Ok((detected.segments.clone(), Some(detection)));
+                }
+            }
         }
         if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
             return Ok((cached, None));

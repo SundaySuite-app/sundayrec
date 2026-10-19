@@ -12,9 +12,13 @@
 //!    ([`super::diagnose_channels`], [`super::auto_process`]) and «Tale» ([`super::tale_clean_for`],
 //!    behind the sound step's sentence, the preview and the export).
 //! 2. [`read_once`] is the read: ffmpeg decodes (no `-af`, no resampling there) to raw f32 on
-//!    stdout, [`OpenFold`] folds every block into the waveform peaks, the channel levels, «Tale»'s
-//!    analysis and, when the sermon search needs it, the 16 kHz mono PCM. Cancel, the stall
-//!    budget and progress are [`pcm::run_chain`]'s, as for the export.
+//!    stdout; one thread cuts the pipe into one-second blocks, and two more take every block:
+//!    the level meter ([`LevelMeter`]: peak, RMS and the noise floor at the file's own rate) and
+//!    the 16 kHz half ([`Pass16`]: resampling, «Tale»'s analysis, the waveform peaks and, when the
+//!    sermon search is wanted, the 16 kHz mono PCM). The read costs the slowest of the three, not
+//!    their sum. Cancel, the stall budget and progress are [`pcm::run_chain`]'s, as for the
+//!    export. Whether a read carries the search is the caller's [`Search`]: the editor's open
+//!    wants it, the export's and the preview's ask for «Tale» only.
 //! 3. The sermon search ([`detect`](sundayrec_core::detect)) runs on its own blocking thread
 //!    AFTER the read, so the waveform and the sentence do not wait for it. It writes the
 //!    `.segments.json` sidecar itself and publishes the result on a watch; [`Opened::detected`]
@@ -24,8 +28,8 @@
 //! sidecar still means no read at all for that consumer. What is NOT cached on disk, the channel
 //! levels and «Tale»'s decision, is kept per file for the life of the process, as «Tale»'s was.
 //!
-//! The recording is decoded once however many of these ask. [`super::analysis_decodes_of`] counts the
-//! reads so a test can say so.
+//! The recording is decoded once however many of these ask. [`super::analysis_decodes_of`] counts
+//! the reads so a test can say so.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
