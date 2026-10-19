@@ -24,16 +24,18 @@
 //! sidecar still means no read at all for that consumer. What is NOT cached on disk, the channel
 //! levels and «Tale»'s decision, is kept per file for the life of the process, as «Tale»'s was.
 //!
-//! The recording is decoded once however many of these ask. [`super::ANALYSIS_DECODES`] counts the
+//! The recording is decoded once however many of these ask. [`super::analysis_decodes_of`] counts the
 //! reads so a test can say so.
 
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
 use sundayrec_core::detect::Detection;
 use sundayrec_core::levels::ChannelLevels;
-use sundayrec_core::open_read::{OpenFold, SourceLevels};
+use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16, SourceLevels};
 use sundayrec_core::pcm_stream::{for_each_block, output_args};
 use sundayrec_core::tale::SpeechAnalysis;
 use tokio::sync::watch;
@@ -44,6 +46,10 @@ use super::{
     EXPORT_PHASE_MEASURING,
 };
 use crate::error::{AppError, AppResult};
+
+/// Blocks (one second of audio each) that may wait for a worker. Bounds the memory the read can
+/// run ahead by, and makes the pipe, not the heap, the thing that waits.
+const BLOCKS_IN_FLIGHT: usize = 4;
 
 /// What one read of a recording found, kept per file ([`OPEN_BOOK`]).
 pub(super) struct Opened {
@@ -221,7 +227,7 @@ async fn read_once(
         .filter(|d| d.is_finite() && *d > 0.0)
         .map_or(0, |d| (d * f64::from(fmt.sample_rate)) as u64);
 
-    count_analysis_decode();
+    count_analysis_decode(path);
     let tx = progress.clone();
     let read = pcm::run_chain(
         engine,
@@ -234,15 +240,65 @@ async fn read_once(
             tx.send_replace((pct / 100.0).clamp(0.0, 0.99));
         },
         move |r, done| {
-            let mut fold = OpenFold::new(fmt.sample_rate, fmt.channels, carry_detect);
-            let mut frames = 0u64;
-            for_each_block(r, fmt.channels, |block| {
-                frames += block.first().map_or(0, Vec::len) as u64;
-                fold.push(block);
-                done.store(frames, Ordering::Relaxed);
-                Ok(())
-            })?;
-            Ok(fold.finish())
+            // Three threads: this one reads the pipe and cuts it into blocks; the level meter
+            // (the sliding window of the noise floor) and the 16 kHz half (resampling, «Tale»'s
+            // analysis, the waveform) each get every block on a thread of their own. The slowest
+            // of them, not their sum, is what the read costs on top of ffmpeg's decode.
+            let (rate, channels) = (fmt.sample_rate, fmt.channels);
+            std::thread::scope(|scope| {
+                let (to_meter, meter_in) =
+                    mpsc::sync_channel::<Arc<Vec<Vec<f32>>>>(BLOCKS_IN_FLIGHT);
+                let (to_p16, p16_in) = mpsc::sync_channel::<Arc<Vec<Vec<f32>>>>(BLOCKS_IN_FLIGHT);
+                let meter = scope.spawn(move || {
+                    let mut busy = Duration::ZERO;
+                    let mut m = LevelMeter::new(rate, channels);
+                    for block in meter_in {
+                        let t = Instant::now();
+                        m.push(&block);
+                        busy += t.elapsed();
+                    }
+                    (m.finish(), busy)
+                });
+                let p16 = scope.spawn(move || {
+                    let mut busy = Duration::ZERO;
+                    let mut p = Pass16::new(rate, channels, carry_detect);
+                    for block in p16_in {
+                        let t = Instant::now();
+                        p.push(&block);
+                        busy += t.elapsed();
+                    }
+                    let t = Instant::now();
+                    let out = p.finish();
+                    (out, busy + t.elapsed())
+                });
+                let mut frames = 0u64;
+                let fed = for_each_block(r, channels, |block| {
+                    frames += block.first().map_or(0, Vec::len) as u64;
+                    let shared = Arc::new(block.to_vec());
+                    // A worker that died takes the whole read with it (below); stop feeding it.
+                    if to_meter.send(shared.clone()).is_err() || to_p16.send(shared).is_err() {
+                        return Err(io::Error::other("analysis worker ended"));
+                    }
+                    done.store(frames, Ordering::Relaxed);
+                    Ok(())
+                });
+                drop(to_meter);
+                drop(to_p16);
+                let levels = meter.join();
+                let read16 = p16.join();
+                fed?;
+                match (levels, read16) {
+                    (Ok((levels, meter_busy)), Ok((read16, p16_busy))) => {
+                        tracing::info!(
+                            level_meter_s = meter_busy.as_secs_f64(),
+                            pass16_s = p16_busy.as_secs_f64(),
+                            "open round: time spent per half"
+                        );
+                        Ok(OpenRead { levels, read16 })
+                    }
+                    _ => Err(io::Error::other("analysis worker panicked")),
+                }
+            })
         },
     )
     .await?;

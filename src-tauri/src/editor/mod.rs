@@ -2251,7 +2251,7 @@ where
         .filter(|d| *d > 0.0)
         .map(|d| d * f64::from(SAMPLE_RATE) * 2.0);
 
-    count_analysis_decode();
+    count_analysis_decode(input_path);
     let args = analysis_decode_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
@@ -2971,16 +2971,27 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
 #[cfg(feature = "editor")]
 const TALE_PRESET_ID: &str = "speech-clear";
 
-/// How many times a whole recording has been decoded for ANALYSIS in this process (B4a). The
-/// open round counts one; the tests read it to prove that opening a recording reads the file
+/// How many times each recording has been decoded for ANALYSIS in this process (B4a), by path.
+/// The open round counts one; the tests read it to prove that opening a recording reads the file
 /// once, not once per consumer.
 #[cfg(feature = "editor")]
-pub(crate) static ANALYSIS_DECODES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static ANALYSIS_DECODES: std::sync::Mutex<Vec<(String, u64)>> = std::sync::Mutex::new(Vec::new());
 
 #[cfg(feature = "editor")]
-fn count_analysis_decode() {
-    ANALYSIS_DECODES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+fn count_analysis_decode(path: &str) {
+    let mut all = ANALYSIS_DECODES.lock().unwrap_or_else(|e| e.into_inner());
+    match all.iter_mut().find(|(p, _)| p == path) {
+        Some((_, n)) => *n += 1,
+        None => all.push((path.to_string(), 1)),
+    }
+}
+
+/// Whole-file analysis decodes of `path` so far in this process.
+#[cfg(feature = "editor")]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn analysis_decodes_of(path: &str) -> u64 {
+    let all = ANALYSIS_DECODES.lock().unwrap_or_else(|e| e.into_inner());
+    all.iter().find(|(p, _)| p == path).map_or(0, |(_, n)| *n)
 }
 
 /// What the analysis decided, kept per file ([`open::OPEN_BOOK`]) so the preview, the loudness
@@ -7794,13 +7805,410 @@ mod tests {
             assert_eq!(again.unwrap(), Some(h));
         }
 
+        // ── B4a: the open round ──────────────────────────────────────────────────────────────
+
+        /// A stereo 32-bit float WAV in `dir`: speech-like syllables in noise, a 50 Hz hum on the
+        /// left channel only, the right 6 dB lower and without hum. Odd rate on purpose (44.1
+        /// kHz): the round resamples it to 16 kHz with the rational ratio 160/441. Float, because
+        /// `astats` (which the round replaced, and which the comparison test still runs) loses its
+        /// noise floor on 16-bit samples this quiet: its queue of window maxima breaks on the many
+        /// equal values a quantised room tone has.
+        fn open_fixture(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            rate: u32,
+            secs: f64,
+        ) -> String {
+            let n = (secs * f64::from(rate)) as usize;
+            let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+            let mut noise = move || {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed >> 11) as f32 / (1u64 << 53) as f32 * 2.0 - 1.0
+            };
+            let mut raw = Vec::with_capacity(n * 8);
+            let (mut lp_l, mut lp_r) = (0.0f32, 0.0f32);
+            for i in 0..n {
+                let t = i as f32 / rate as f32;
+                let phase = t % 1.9;
+                let on =
+                    phase < 0.25 || (0.4..0.65).contains(&phase) || (0.8..1.05).contains(&phase);
+                let level = if on { 0.25 } else { 0.0 };
+                let (a, b) = (noise(), noise());
+                lp_l = 0.6 * lp_l + 0.4 * a;
+                lp_r = 0.6 * lp_r + 0.4 * b;
+                let hum = 0.02 * (2.0 * std::f32::consts::PI * 50.0 * t).sin();
+                raw.extend_from_slice(&(lp_l * level + a * 0.0006 + hum).to_le_bytes());
+                raw.extend_from_slice(&(0.5 * (lp_r * level + b * 0.0006)).to_le_bytes());
+            }
+            let raw_path = dir.join(format!("{name}.raw"));
+            std::fs::write(&raw_path, raw).unwrap();
+            let out = dir.join(name);
+            let made = std::process::Command::new(ffmpeg)
+                .args([
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "f32le",
+                ])
+                .args(["-ar", &rate.to_string(), "-ac", "2", "-i"])
+                .arg(&raw_path)
+                .args(["-c:a", "pcm_f32le", "-y"])
+                .arg(&out)
+                .output()
+                .expect("ffmpeg runs");
+            assert!(
+                made.status.success(),
+                "{}",
+                String::from_utf8_lossy(&made.stderr)
+            );
+            out.to_string_lossy().into_owned()
+        }
+
+        /// Point the ffmpeg lookups at the sidecars for the length of `f`, under ENV_LOCK.
+        fn with_sidecars<T>(
+            ffmpeg: &std::path::Path,
+            ffprobe: &std::path::Path,
+            f: impl FnOnce(&tokio::runtime::Runtime) -> T,
+        ) -> T {
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let out = f(&rt);
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            out
+        }
+
+        /// THE claim of B4a: opening a recording and asking everything the editor asks (the
+        /// waveform, the sermon search, the channel diagnosis, the one-click vocal chain, «Tale»'s
+        /// sentence and its decision) reads the file ONCE. Before: four reads (waveform, search,
+        /// `astats`, «Tale»).
+        #[test]
+        fn opening_a_recording_reads_it_once_for_every_consumer_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "open.wav", 44_100, 30.0);
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let engine = ExportEngine::new();
+                    load_recording(&src).await.expect("load");
+                    let pk = peaks(&src, |_| {}).await.expect("peaks");
+                    assert!(
+                        (2999..=3001).contains(&pk.peaks.len()),
+                        "100 a second: {}",
+                        pk.peaks.len()
+                    );
+                    assert_eq!(pk.sample_rate, 8000);
+                    let (segs, analysis) = segments(&src, false, |_| {}).await.expect("segments");
+                    assert!(!segs.is_empty());
+                    assert!(
+                        analysis.is_some(),
+                        "the first ask after the read that ran the search gets the analysis behind it"
+                    );
+                    let diag = diagnose_channels(&src).await.expect("diagnosis");
+                    assert!(
+                        diag.peak_right_db.is_some_and(|r| r < diag.peak_left_db - 3.0),
+                        "{diag:?}"
+                    );
+                    let auto = auto_process(&src).await.expect("auto process");
+                    assert_eq!(auto.diagnosis, diag, "one measurement behind both");
+                    let said = tale_said(&src).await.expect("sentence");
+                    assert!(said.analysed && said.said.contains(&"hum".to_string()), "{said:?}");
+                    let clean = tale_clean_for(&engine, &src).await.unwrap().unwrap();
+                    assert_eq!(clean.hum, Some(sundayrec_core::tale::Mains::Hz50));
+                    // A second ask for the segments is a cache hit in all but name: no second
+                    // analysis to hand out, and no second read.
+                    let (again, none) = segments(&src, false, |_| {}).await.expect("again");
+                    assert_eq!(again, segs);
+                    assert!(none.is_none());
+                    let pk2 = peaks(&src, |_| {}).await.expect("peaks again");
+                    assert_eq!(pk2.peaks.len(), pk.peaks.len());
+                });
+            });
+            assert_eq!(
+                analysis_decodes_of(&src),
+                1,
+                "every consumer must be served from the one read"
+            );
+        }
+
+        /// The consumers do not have to ask politely one after the other: asked all at once (the
+        /// sound step opens the sentence and the preview together), they still share the read.
+        #[test]
+        fn consumers_asking_at_once_share_one_read_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "once.wav", 48_000, 20.0);
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let engine = ExportEngine::new();
+                    let (pk, seg, diag, auto, said, clean) = tokio::join!(
+                        peaks(&src, |_| {}),
+                        segments(&src, false, |_| {}),
+                        diagnose_channels(&src),
+                        auto_process(&src),
+                        tale_said(&src),
+                        tale_clean_for(&engine, &src),
+                    );
+                    pk.expect("peaks");
+                    seg.expect("segments");
+                    diag.expect("diagnosis");
+                    auto.expect("auto process");
+                    assert!(said.expect("sentence").analysed);
+                    assert!(clean.unwrap().is_some());
+                });
+            });
+            assert_eq!(analysis_decodes_of(&src), 1);
+        }
+
+        /// A warm sidecar still means no read for what it answers; what is not on disk (the
+        /// channel levels and «Tale»'s decision) costs ONE read together, not one each. And the
+        /// «Analyser opptak» button (`force`) really starts the analysis again.
+        #[test]
+        fn sidecars_answer_themselves_and_force_reads_again_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "warm.wav", 44_100, 20.0);
+            let key = format!("{:?}", tale_cache_key(&src).unwrap());
+            with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    peaks(&src, |_| {}).await.expect("peaks");
+                    let (segs, first) = segments(&src, false, |_| {}).await.expect("segments");
+                    assert!(first.is_some());
+                    assert_eq!(analysis_decodes_of(&src), 1);
+
+                    // A new process: the book is empty, the sidecars are on disk.
+                    open::OPEN_BOOK.forget(&key);
+                    let pk = peaks(&src, |_| {}).await.expect("warm peaks");
+                    assert!(!pk.peaks.is_empty());
+                    let (warm, none) = segments(&src, false, |_| {}).await.expect("warm segments");
+                    assert_eq!((warm, none.is_none()), (segs.clone(), true));
+                    assert_eq!(analysis_decodes_of(&src), 1, "warm sidecars read nothing");
+
+                    // The sound step: the diagnosis, the vocal chain and «Tale» share one read.
+                    tokio::join!(diagnose_channels(&src), auto_process(&src), tale_said(&src))
+                        .0
+                        .expect("diagnosis");
+                    assert_eq!(analysis_decodes_of(&src), 2);
+
+                    // force: the analysis is done again and the operator gets its analysis.
+                    let (forced, analysis) = segments(&src, true, |_| {}).await.expect("forced");
+                    assert!(analysis.is_some());
+                    assert_eq!(forced.len(), segs.len());
+                    assert_eq!(analysis_decodes_of(&src), 3);
+                });
+            });
+        }
+
+        /// The round against the four reads it replaced, on the same file: the rate-converted
+        /// analysis must reach the same decisions and the same numbers. The old routes are run
+        /// here exactly as the app ran them (`-ar 16000` in ffmpeg, `astats`, the 8 kHz mono
+        /// pipe), the new one through [`open::opened`].
+        #[test]
+        fn the_round_agrees_with_the_four_reads_it_replaced_or_skips() {
+            use sundayrec_core::editor::{
+                analysis_decode_args, peaks_pipe_args, PeakAccumulator, PEAKS_BUCKET_SAMPLES,
+            };
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = open_fixture(&ffmpeg, dir.path(), "same.wav", 44_100, 90.0);
+            let run = |args: Vec<String>| {
+                let out = std::process::Command::new(&ffmpeg)
+                    .args(&args)
+                    .output()
+                    .expect("ffmpeg runs");
+                assert!(out.status.success());
+                out
+            };
+
+            // The old reads.
+            let mut tale_args: Vec<String> = ["-nostdin", "-hide_banner", "-i", &src, "-vn"]
+                .map(String::from)
+                .to_vec();
+            tale_args.extend(sundayrec_core::pcm_stream::output_args(
+                sundayrec_core::pcm_stream::PcmFormat {
+                    sample_rate: 16_000,
+                    channels: 2,
+                },
+            ));
+            let tale_bytes = run(tale_args).stdout;
+            let old_analysis = sundayrec_core::tale::analyze_stream(
+                &mut tale_bytes.as_slice(),
+                sundayrec_core::pcm_stream::PcmFormat {
+                    sample_rate: 16_000,
+                    channels: 2,
+                },
+                |_| {},
+            )
+            .unwrap();
+            let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
+            acc.push_bytes(&run(peaks_pipe_args(&src)).stdout);
+            let old_peaks = acc.finish();
+            let old_pcm: Vec<f32> = run(analysis_decode_args(&src))
+                .stdout
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+                .collect();
+            let old_detection = sundayrec_core::detect::analyse_pcm(
+                &old_pcm,
+                sundayrec_core::audio_analysis::SAMPLE_RATE,
+                sundayrec_core::audio_analysis::FRAME_MS,
+                &sundayrec_core::audio_analysis::HeuristicScorer,
+            );
+            let old_stats = String::from_utf8_lossy(
+                &run([
+                    "-nostdin",
+                    "-hide_banner",
+                    "-i",
+                    &src,
+                    "-af",
+                    "astats=metadata=0",
+                    "-f",
+                    "null",
+                    "-",
+                ]
+                .map(String::from)
+                .to_vec())
+                .stderr,
+            )
+            .into_owned();
+            let old_levels =
+                sundayrec_core::levels::parse_levels(&old_stats).expect("astats levels");
+            let old_floor =
+                sundayrec_core::levels::parse_noise_floor_db(&old_stats).expect("floor");
+
+            // The new one.
+            let new = with_sidecars(&ffmpeg, &ffprobe, |rt| {
+                rt.block_on(async {
+                    let engine = ExportEngine::new();
+                    let opened = open::opened(&engine, &src, true, &|_| {})
+                        .await
+                        .expect("round");
+                    let detected = opened.detected().await.unwrap().expect("search");
+                    (opened, detected)
+                })
+            });
+            let (opened, detected) = new;
+
+            // «Tale»: the same decision, the same numbers to within the histogram's step.
+            assert_eq!(
+                opened.analysis.decide().said(),
+                old_analysis.decide().said()
+            );
+            assert_eq!(opened.analysis.decide().hum, old_analysis.decide().hum);
+            assert_eq!(
+                opened.analysis.hum.map(|h| h.0),
+                old_analysis.hum.map(|h| h.0)
+            );
+            assert!(
+                (opened.analysis.noise_floor_db - old_analysis.noise_floor_db).abs() <= 0.5,
+                "floor {} vs {}",
+                opened.analysis.noise_floor_db,
+                old_analysis.noise_floor_db
+            );
+            assert!(
+                (opened.analysis.speech_db - old_analysis.speech_db).abs() <= 0.5,
+                "speech {} vs {}",
+                opened.analysis.speech_db,
+                old_analysis.speech_db
+            );
+            assert_eq!(
+                opened.analysis.channel_crackle,
+                old_analysis.channel_crackle
+            );
+
+            // The waveform: same length (±1 bucket), the same shape.
+            assert!(
+                opened.peaks.len().abs_diff(old_peaks.len()) <= 1,
+                "{} vs {}",
+                opened.peaks.len(),
+                old_peaks.len()
+            );
+            let worst = opened
+                .peaks
+                .iter()
+                .zip(&old_peaks)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(worst < 0.02, "worst peak difference {worst}");
+
+            // The channel diagnosis: measured on the same samples, so the same numbers.
+            let new_levels = opened.channel_levels().unwrap();
+            assert!((new_levels.peak_db_left - old_levels.peak_db_left).abs() < 0.01);
+            assert!(
+                (new_levels.peak_db_right.unwrap() - old_levels.peak_db_right.unwrap()).abs()
+                    < 0.01
+            );
+            assert!(
+                (new_levels.rms_db_left.unwrap() - old_levels.rms_db_left.unwrap()).abs() < 0.01
+            );
+            assert!(
+                (new_levels.rms_db_right.unwrap() - old_levels.rms_db_right.unwrap()).abs() < 0.01
+            );
+            // The noise floor: the exact sliding-window maximum (the core tests pin it against a
+            // brute force). `astats` computes the same thing with a queue of its own that is
+            // exact on most recordings (the 90-minute service in docs/LYDMOTOR.md agrees to
+            // 0.01 dB) and drifts on others (here 0.4 dB: a steady hum plus room tone), so the
+            // claim kept is the one the app acts on: the same side of the noisy-room threshold,
+            // and within a dB.
+            let new_floor = opened.levels.noise_floor_db.expect("floor");
+            assert!(
+                (new_floor - old_floor).abs() < 1.0,
+                "noise floor {new_floor} vs astats {old_floor}"
+            );
+            assert_eq!(
+                sundayrec_core::processing::recommend_vocal_preset(Some(new_floor)),
+                sundayrec_core::processing::recommend_vocal_preset(Some(old_floor))
+            );
+
+            // The sermon search: the same segments, to within a frame or two.
+            let old_segments = &old_detection.segments;
+            let new_segments = &detected.take_detection().expect("analysis").segments;
+            assert_eq!(new_segments.len(), old_segments.len());
+            for (n, o) in new_segments.iter().zip(old_segments) {
+                assert_eq!(n.kind, o.kind);
+                assert!(
+                    (n.start_sec - o.start_sec).abs() < 0.1 && (n.end_sec - o.end_sec).abs() < 0.1,
+                    "{n:?} vs {o:?}"
+                );
+            }
+        }
+
         /// B4a: the clock for opening a long recording and exporting it. NOT part of the suite:
         /// it needs a real, long file (`SUNDAYREC_BENCH_FILE`, read-only; its sidecars are written
         /// next to it, so point it at a symlink in a scratch folder) and prints what it measured.
         ///
         /// Runs the calls in the order the editor makes them (load, waveform, segments, the sound
         /// step's channel diagnosis and sentence), then a «Tale» mp3 export of the whole file.
-        /// `cargo test -p sundayrec --lib bench_open_to_export -- --ignored --nocapture`
+        /// `SUNDAYREC_BENCH_NO_EXPORT=1` stops after the open.
+        /// `cargo test --release -p sundayrec --lib bench_open_to_export -- --ignored --nocapture`
         #[test]
         #[ignore = "needs SUNDAYREC_BENCH_FILE: a long real recording"]
         fn bench_open_to_export() {
@@ -7813,6 +8221,10 @@ mod tests {
             else {
                 return;
             };
+            let _ = tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .with_env_filter("sundayrec_lib=info")
+                .try_init();
             let out_dir = std::env::var("SUNDAYREC_BENCH_OUT")
                 .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
             let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -7827,7 +8239,7 @@ mod tests {
                 eprintln!(
                     "BENCH {what:<28} {:>7.2} s since start, {} analysis decodes",
                     t0.elapsed().as_secs_f64(),
-                    ANALYSIS_DECODES.load(std::sync::atomic::Ordering::Relaxed)
+                    analysis_decodes_of(&file)
                 );
             };
             rt.block_on(async {
@@ -7841,7 +8253,7 @@ mod tests {
                     pk.peaks.iter().cloned().fold(0.0f32, f32::max)
                 );
                 lap("peaks");
-                let (segs, _) = segments(&file, true, |_| {}).await.expect("segments");
+                let (segs, _) = segments(&file, false, |_| {}).await.expect("segments");
                 for sg in &segs {
                     eprintln!(
                         "BENCH segment {:>8.2} {:>8.2} {:<8} conf={:?}",
@@ -7861,7 +8273,16 @@ mod tests {
                 let engine = ExportEngine::new();
                 let clean = tale_clean_for(&engine, &file).await;
                 eprintln!("BENCH tale decision {clean:?}");
+                if let Some(o) = open::peek(&file) {
+                    eprintln!(
+                        "BENCH levels {:?} noise floor {:?}",
+                        o.levels.levels, o.levels.noise_floor_db
+                    );
+                }
                 lap("tale decision (cached)");
+                if std::env::var_os("SUNDAYREC_BENCH_NO_EXPORT").is_some() {
+                    return;
+                }
 
                 let req = EditorExportRequest {
                     source_token: "t".into(),

@@ -35,8 +35,6 @@
 //!
 //! No process, no clock, no file here: the shell owns the pipe.
 
-use std::collections::VecDeque;
-
 use crate::editor::{PeakAccumulator, PEAKS_BUCKET_SAMPLES, PEAKS_SAMPLE_RATE};
 use crate::levels::{ChannelLevels, SILENCE_FLOOR_DB};
 use crate::tale::{SpeechAnalysis, SpeechAnalyzer, ANALYSIS_RATE};
@@ -245,58 +243,120 @@ impl Resampler {
 const FLOOR_WINDOW_S: f64 = 0.05;
 
 /// One channel's peak, mean square and noise floor (module docs).
+///
+/// The floor is the minimum, over every position whose window is full, of the largest absolute
+/// sample in the last `window` samples. The sliding maximum is the van Herk / Gil-Werman one: the
+/// stream is cut into segments of exactly `window` samples; a window ending in segment *k* is the
+/// tail of segment *k-1* plus the head of segment *k*, so its maximum is
+/// `max(suffix_max(k-1)[j+1], prefix_max(k)[j])`. Three plain passes over each segment, no queue:
+/// a 90-minute stereo file costs about a second, where a deque of running maxima cost six.
 #[derive(Debug, Clone)]
 pub struct ChannelMeter {
-    window: u64,
+    window: usize,
     count: u64,
     peak: f32,
     sumsq: f64,
-    /// Indices and values of the window's running maxima, largest first.
-    queue: VecDeque<(u64, f32)>,
+    /// Absolute values of the segment being filled.
+    seg: Vec<f32>,
+    /// Suffix maxima of the previous full segment (empty before the first one is complete).
+    prev_suffix: Vec<f32>,
+    /// Scratch for the finished segment's prefix and suffix maxima.
+    prefix: Vec<f32>,
+    suffix: Vec<f32>,
     floor: f32,
+}
+
+/// Largest value and sum of squares of `a` (all finite, non-negative), in fixed-width lanes.
+fn peak_and_sumsq(a: &[f32]) -> (f32, f64) {
+    let mut pk = [0.0f32; LANES];
+    let mut sq = [0.0f32; LANES];
+    let mut chunks = a.chunks_exact(LANES);
+    for c in &mut chunks {
+        for ((p, s), x) in pk.iter_mut().zip(sq.iter_mut()).zip(c) {
+            *p = p.max(*x);
+            *s += x * x;
+        }
+    }
+    let mut peak = pk.iter().copied().fold(0.0, f32::max);
+    let mut sumsq: f64 = sq.iter().map(|v| f64::from(*v)).sum();
+    for &x in chunks.remainder() {
+        peak = peak.max(x);
+        sumsq += f64::from(x) * f64::from(x);
+    }
+    (peak, sumsq)
 }
 
 impl ChannelMeter {
     pub fn new(sample_rate: u32) -> Self {
+        // astats: `FFMAX(time_constant * rate + .5, 1)`
+        let window =
+            (((FLOOR_WINDOW_S * f64::from(sample_rate) + 0.5) as usize).max(1)).min(1 << 24);
         Self {
-            // astats: `FFMAX(time_constant * rate + .5, 1)`
-            window: ((FLOOR_WINDOW_S * f64::from(sample_rate) + 0.5) as u64).max(1),
+            window,
             count: 0,
             peak: 0.0,
             sumsq: 0.0,
-            queue: VecDeque::new(),
+            seg: Vec::with_capacity(window),
+            prev_suffix: Vec::new(),
+            prefix: vec![0.0; window],
+            suffix: vec![0.0; window],
             floor: f32::INFINITY,
         }
     }
 
+    /// The segment is full: score the windows that end in it, and keep its suffix maxima.
+    fn close_segment(&mut self) {
+        let w = self.window;
+        let mut run = 0.0f32;
+        for (g, &x) in self.prefix.iter_mut().zip(&self.seg) {
+            run = run.max(x);
+            *g = run;
+        }
+        let mut run = 0.0f32;
+        for (h, &x) in self.suffix.iter_mut().rev().zip(self.seg.iter().rev()) {
+            run = run.max(x);
+            *h = run;
+        }
+        // The window ending at the last sample of the segment is the segment itself.
+        let mut best = self.prefix[w - 1];
+        if !self.prev_suffix.is_empty() {
+            let mixed = self.prev_suffix[1..]
+                .iter()
+                .zip(&self.prefix[..w - 1])
+                .fold(f32::INFINITY, |m, (h, g)| m.min(h.max(*g)));
+            best = best.min(mixed);
+        }
+        self.floor = self.floor.min(best);
+        std::mem::swap(&mut self.prev_suffix, &mut self.suffix);
+        if self.suffix.len() != w {
+            self.suffix.resize(w, 0.0);
+        }
+        self.seg.clear();
+    }
+
     pub fn push(&mut self, samples: &[f32]) {
-        for &x in samples {
+        let mut rest = samples;
+        while !rest.is_empty() {
+            let room = self.window - self.seg.len();
+            let (now, later) = rest.split_at(room.min(rest.len()));
+            let start = self.seg.len();
             // A NaN or infinite sample has no level; call it silence rather than poison the sums.
-            let a = if x.is_finite() { x.abs() } else { 0.0 };
-            if a > self.peak {
-                self.peak = a;
-            }
-            self.sumsq += f64::from(a) * f64::from(a);
-            let i = self.count;
-            while self.queue.back().is_some_and(|&(_, v)| v <= a) {
-                self.queue.pop_back();
-            }
-            self.queue.push_back((i, a));
-            while self
-                .queue
-                .front()
-                .is_some_and(|&(j, _)| j + self.window <= i)
-            {
-                self.queue.pop_front();
-            }
-            self.count += 1;
-            if self.count >= self.window {
-                if let Some(&(_, top)) = self.queue.front() {
-                    if top < self.floor {
-                        self.floor = top;
-                    }
+            self.seg.extend(now.iter().map(|&x| {
+                let a = x.abs();
+                if a <= f32::MAX {
+                    a
+                } else {
+                    0.0
                 }
+            }));
+            let (peak, sumsq) = peak_and_sumsq(&self.seg[start..]);
+            self.peak = self.peak.max(peak);
+            self.sumsq += sumsq;
+            self.count += now.len() as u64;
+            if self.seg.len() == self.window {
+                self.close_segment();
             }
+            rest = later;
         }
     }
 
@@ -316,7 +376,16 @@ impl ChannelMeter {
 
     /// The noise floor, linear; `None` when the recording was shorter than one window.
     pub fn noise_floor(&self) -> Option<f64> {
-        self.floor.is_finite().then(|| f64::from(self.floor))
+        let mut best = self.floor;
+        // The windows that end in the segment still being filled.
+        if !self.prev_suffix.is_empty() && !self.seg.is_empty() {
+            let mut run = 0.0f32;
+            for (&x, h) in self.seg.iter().zip(&self.prev_suffix[1..]) {
+                run = run.max(x);
+                best = best.min(h.max(run));
+            }
+        }
+        best.is_finite().then(|| f64::from(best))
     }
 }
 
@@ -704,12 +773,44 @@ mod tests {
             .collect();
         let w = 37usize;
         let mut m = ChannelMeter::new(740); // 0.05 s * 740 + .5 = 37
-        assert_eq!(m.window as usize, w);
+        assert_eq!(m.window, w);
         m.push(&x);
         let brute = (w - 1..x.len())
             .map(|t| x[t + 1 - w..=t].iter().fold(0.0f32, |a, v| a.max(v.abs())))
             .fold(f32::INFINITY, f32::min);
         assert_eq!(m.noise_floor(), Some(f64::from(brute)));
+    }
+
+    #[test]
+    fn the_floor_is_exact_for_every_length_and_every_way_of_cutting_the_stream() {
+        let mut s = 99u32;
+        let x: Vec<f32> = (0..400)
+            .map(|_| {
+                s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+                ((s >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * 0.8
+            })
+            .collect();
+        // 140 Hz → 0.05 s * 140 + .5 = 7.5 → 7
+        for len in 0..=x.len() {
+            let w = 7usize;
+            let brute = if len < w {
+                None
+            } else {
+                Some(f64::from(
+                    (w - 1..len)
+                        .map(|t| x[t + 1 - w..=t].iter().fold(0.0f32, |a, v| a.max(v.abs())))
+                        .fold(f32::INFINITY, f32::min),
+                ))
+            };
+            for chunk in [len.max(1), 1, 3, 7, 8, 50] {
+                let mut m = ChannelMeter::new(140);
+                assert_eq!(m.window, w);
+                for c in x[..len].chunks(chunk) {
+                    m.push(c);
+                }
+                assert_eq!(m.noise_floor(), brute, "len {len}, chunks of {chunk}");
+            }
+        }
     }
 
     #[test]
@@ -772,5 +873,67 @@ mod tests {
         assert_eq!(mono.len(), 16_000);
         // L alone at 0.4, R silent: the mix is half of L
         assert!((rms(&mono[2_000..14_000]) - 0.2 / 2f64.sqrt()).abs() < 0.002);
+    }
+
+    /// Where the time goes, per component, on a minute of 48 kHz stereo noise. Not part of the
+    /// suite: `cargo test --release -p sundayrec-core bench_components -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a clock, not a test"]
+    fn bench_components() {
+        let mut s = 1u32;
+        let mut block = |n: usize| -> Vec<f32> {
+            (0..n)
+                .map(|_| {
+                    s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+                    ((s >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * 0.4
+                })
+                .collect()
+        };
+        let blocks: Vec<Vec<Vec<f32>>> = (0..60)
+            .map(|_| vec![block(48_000), block(48_000)])
+            .collect();
+        let time = |what: &str, f: &mut dyn FnMut()| {
+            let t = std::time::Instant::now();
+            f();
+            eprintln!(
+                "BENCH {what:<28} {:>6.2} s per 60 s of stereo 48 kHz",
+                t.elapsed().as_secs_f64()
+            );
+        };
+        time("level meter", &mut || {
+            let mut m = LevelMeter::new(48_000, 2);
+            for b in &blocks {
+                m.push(b);
+            }
+            std::hint::black_box(m.finish());
+        });
+        time("resample 2 ch to 16 kHz", &mut || {
+            let mut rs = [
+                Resampler::new(48_000, 16_000),
+                Resampler::new(48_000, 16_000),
+            ];
+            let mut out = Vec::new();
+            for b in &blocks {
+                for (r, c) in rs.iter_mut().zip(b) {
+                    out.clear();
+                    r.process(c, &mut out);
+                }
+            }
+        });
+        time("pass16 (all of it)", &mut || {
+            let mut p = Pass16::new(48_000, 2, true);
+            for b in &blocks {
+                p.push(b);
+            }
+            std::hint::black_box(p.finish());
+        });
+        time("tale analyzer alone", &mut || {
+            let mut a = SpeechAnalyzer::new(2);
+            let x: Vec<Vec<f32>> = vec![block(16_000), block(16_000)];
+            for _ in 0..60 {
+                a.push(&x);
+            }
+            std::hint::black_box(a.finish());
+        });
     }
 }
