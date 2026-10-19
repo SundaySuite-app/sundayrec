@@ -1011,9 +1011,9 @@ hopp tok, og til slutt `underruns`, `xruns` og sanntidsfaktoren.
       ved fortsett (skal være en kort, myk inn/ut-toning, 8 ms); hakk eller
       hull i lyden mellom hendelsene; og ved kuttene (ca. 6 s og 13 s ut i
       manuset) at skjøten er en myk overgang uten klikk og uten et hørbart
-      «hull» (20 ms konstant-effekt-overgang). **Forventet:** `underruns 0
-  xruns 0` på siste linje, og hvert hopp «heard after» godt under 0,3 s
-      (målt på Macen: 95–160 ms).
+      «hull» (20 ms konstant-effekt-overgang).
+      **Forventet:** siste linje sier `underruns 0` og `xruns 0`, og hvert
+      hopp «heard after» godt under 0,3 s (målt på Macen: 80–160 ms).
 - [ ] **Samme med lydkjeden.** Legg til `--profile speech-clear`, og én gang
       `--profile voice-noisy-room` (den tyngste kjeden). **Lytt etter:** det
       samme, pluss at lyden ikke «pumper» rett etter et hopp (kjeden får 1 s
