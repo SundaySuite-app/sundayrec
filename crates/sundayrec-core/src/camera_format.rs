@@ -180,6 +180,128 @@ pub fn qpc_ticks_to_ns(ticks: i64, frequency: i64) -> Option<u64> {
     u64::try_from(ticks as u128 * 1_000_000_000 / frequency as u128).ok()
 }
 
+// ── Windows: capture time of a camera frame (M3R #5) ─────────────────────────
+
+/// A sample time in Media Foundation / DirectShow units (100 ns) as nanoseconds.
+/// `None` for a negative value (`MF_E_NO_SAMPLE_TIMESTAMP`-style garbage, or a
+/// time before the stream start) — the camera crates cast the `i64` to `u64`
+/// before they make a `Duration` of it, so see also [`duration_to_sample_ns`].
+pub fn hns_to_ns(hns: i64) -> Option<u64> {
+    u64::try_from(hns).ok()?.checked_mul(100)
+}
+
+/// A camera crate's `timestamp` (a `Duration` made from `sample_time as u64 / 10`
+/// microseconds) as nanoseconds. A negative sample time wraps to ~1.8e13 s
+/// there; anything past [`MAX_PLAUSIBLE_SAMPLE_TIME`] is treated as no time.
+pub fn duration_to_sample_ns(d: Duration) -> Option<u64> {
+    if d > MAX_PLAUSIBLE_SAMPLE_TIME {
+        return None;
+    }
+    u64::try_from(d.as_nanos()).ok()
+}
+
+/// Ten years. A real sample time (stream-relative, or `QueryPerformanceCounter`
+/// since boot) is far below it; a wrapped negative is far above it.
+pub const MAX_PLAUSIBLE_SAMPLE_TIME: Duration = Duration::from_secs(10 * 365 * 24 * 3600);
+
+/// How far *behind* arrival a sample time may lie and still be taken as the
+/// camera's capture time on the host clock. USB/MJPEG pipelines deliver 30–150
+/// ms late, a busy machine more; one second is generous.
+const TRUSTED_MAX_LATENESS_NS: i64 = 1_000_000_000;
+/// How far *ahead* of arrival it may lie (a time cannot be captured in the
+/// future; this only absorbs counter rounding).
+const TRUSTED_MAX_AHEAD_NS: i64 = 50_000_000;
+/// In relative mode the offset estimate may creep up by this much per frame, so
+/// a sample clock that runs slightly slower than the host clock is followed
+/// (50 µs per frame is ~1500 ppm at 30 fps).
+const OFFSET_DRIFT_NS_PER_FRAME: i64 = 50_000;
+
+/// How [`FrameStamper`] stamped the last frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StampSource {
+    /// The sample's own capture time, which is on the host clock.
+    SampleTime,
+    /// The sample's time is relative (its epoch is not the host clock); stamped
+    /// as `sample time + offset`, the offset learned as the smallest
+    /// `arrival − sample time` seen. Removes delivery jitter, but not the
+    /// camera's fixed latency.
+    Anchored,
+    /// No usable sample time: the arrival time itself (the old behaviour).
+    Arrival,
+}
+
+/// Which host time a Windows camera frame gets (M3R #5). The audio side stamps
+/// each block with WASAPI's QPC position of the **capture**; a frame stamped
+/// with the time its callback ran is late by the camera's whole pipeline (50–150
+/// ms on USB/MJPEG), which the conformer turns into a picture 1–4 frames behind
+/// the sound.
+///
+/// Media Foundation's capture engine and DirectShow hand over the driver's own
+/// sample time. Whether it is on the QPC clock is the driver's business (UVC
+/// cameras behind the Windows Frame Server stamp the capture on QPC; a
+/// DirectShow filter stamps stream time, relative to the graph start; a capture
+/// card or a virtual camera may do either), so the stamper decides from the
+/// numbers, per frame:
+///
+/// 1. `arrival − sample time` within `−50 ms … +1 s` → the sample time **is**
+///    a host-clock capture time ([`StampSource::SampleTime`]); use it as is.
+/// 2. Otherwise the sample time is relative (or garbage). Frames are stamped
+///    `sample time + offset` ([`StampSource::Anchored`]), `offset` = the smallest
+///    `arrival − sample time` so far (it only drifts up slowly). Jitter-free,
+///    never later than arrival, but it still carries the camera's minimum
+///    latency — only a clap test can measure that (RIG-DAY c3b-win).
+/// 3. No sample time at all (`None`, or not increasing): the arrival time.
+///
+/// The stamp never goes backwards and never lies after arrival.
+#[derive(Debug, Default)]
+pub struct FrameStamper {
+    offset_ns: Option<i64>,
+    last_sample_ns: Option<u64>,
+    last_stamp_ns: u64,
+    last_source: Option<StampSource>,
+}
+
+impl FrameStamper {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// How the most recent [`FrameStamper::stamp`] call decided.
+    pub fn last_source(&self) -> Option<StampSource> {
+        self.last_source
+    }
+
+    /// The host time (ns) for a frame that arrived at `arrival_ns` (host clock)
+    /// carrying `sample_ns` (see [`duration_to_sample_ns`]).
+    pub fn stamp(&mut self, arrival_ns: u64, sample_ns: Option<u64>) -> u64 {
+        let (raw, source) = match sample_ns {
+            Some(s) if self.last_sample_ns.is_none_or(|l| s > l) => {
+                self.last_sample_ns = Some(s);
+                let lateness = arrival_ns as i128 - s as i128;
+                if (-(TRUSTED_MAX_AHEAD_NS as i128)..=TRUSTED_MAX_LATENESS_NS as i128)
+                    .contains(&lateness)
+                {
+                    (s, StampSource::SampleTime)
+                } else {
+                    let lateness = lateness.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+                    let offset = match self.offset_ns {
+                        None => lateness,
+                        Some(o) => lateness.min(o.saturating_add(OFFSET_DRIFT_NS_PER_FRAME)),
+                    };
+                    self.offset_ns = Some(offset);
+                    let t = (s as i128 + offset as i128).max(0) as u64;
+                    (t, StampSource::Anchored)
+                }
+            }
+            _ => (arrival_ns, StampSource::Arrival),
+        };
+        let stamp = raw.min(arrival_ns).max(self.last_stamp_ns);
+        self.last_stamp_ns = stamp;
+        self.last_source = Some(source);
+        stamp
+    }
+}
+
 /// What a camera-shaped device really is (C1c). Windows gets this from Cap's
 /// own name patterns; macOS has no such classifier, so the shell asks here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -421,6 +543,120 @@ mod tests {
         assert_eq!(qpc_ticks_to_ns(5, 0), None);
         assert_eq!(qpc_ticks_to_ns(-5, 10_000_000), None);
         assert_eq!(qpc_ticks_to_ns(i64::MAX, 1), None);
+    }
+
+    const MS: u64 = 1_000_000;
+
+    #[test]
+    fn sample_time_units_convert_and_reject_negative_and_wrapped() {
+        assert_eq!(hns_to_ns(10_000_000), Some(1_000_000_000));
+        assert_eq!(hns_to_ns(1), Some(100));
+        assert_eq!(hns_to_ns(0), Some(0));
+        assert_eq!(hns_to_ns(-1), None);
+        assert_eq!(hns_to_ns(i64::MAX), None); // overflows u64 ns
+        assert_eq!(
+            duration_to_sample_ns(Duration::from_micros(1_500_000)),
+            Some(1_500_000_000)
+        );
+        // What the camera crates build from a negative i64 sample time.
+        let wrapped = Duration::from_micros((-5i64) as u64 / 10);
+        assert_eq!(duration_to_sample_ns(wrapped), None);
+    }
+
+    #[test]
+    fn a_sample_time_on_the_host_clock_is_used_as_is() {
+        let mut s = FrameStamper::new();
+        let boot = 5_000_000 * MS; // 5000 s uptime
+        for i in 0..100u64 {
+            let capture = boot + i * 33 * MS;
+            let arrival = capture + 80 * MS + (i % 3) * MS; // 80 ms pipeline
+            assert_eq!(s.stamp(arrival, Some(capture)), capture);
+            assert_eq!(s.last_source(), Some(StampSource::SampleTime));
+        }
+    }
+
+    #[test]
+    fn a_relative_sample_clock_is_anchored_and_jitter_free() {
+        let mut s = FrameStamper::new();
+        let boot = 5_000_000 * MS;
+        let mut prev = 0;
+        for i in 0..200u64 {
+            let sample = i * 33 * MS; // stream time from 0
+            let jitter = if i % 5 == 3 { 20 * MS } else { 0 };
+            let arrival = boot + sample + 60 * MS + jitter;
+            let t = s.stamp(arrival, Some(sample));
+            assert_eq!(s.last_source(), Some(StampSource::Anchored));
+            assert!(t <= arrival && t >= prev);
+            if i > 0 {
+                // Spacing follows the sample clock, not the jittery arrivals.
+                // (the offset may creep by the drift allowance, no more)
+                assert!(t.abs_diff(prev + 33 * MS) <= 100_000, "step {}", t - prev);
+            }
+            prev = t;
+        }
+    }
+
+    #[test]
+    fn anchoring_follows_a_slightly_slow_sample_clock() {
+        let mut s = FrameStamper::new();
+        let boot = 5_000_000 * MS;
+        let mut last_gap = 0;
+        for i in 0..3000u64 {
+            let host = boot + i * 33_333_333; // host time of frame i
+            let sample = i * 33_333_333 - i * 20_000; // sample clock 600 ppm slow
+            let t = s.stamp(host + 40 * MS, Some(sample));
+            last_gap = host + 40 * MS - t;
+        }
+        // The estimate never lets the stamp run far ahead of the real arrival
+        // minus latency, and never past arrival.
+        assert!(last_gap < 5 * MS, "gap {last_gap}");
+    }
+
+    #[test]
+    fn missing_or_standing_sample_times_fall_back_to_arrival() {
+        let mut s = FrameStamper::new();
+        assert_eq!(s.stamp(100 * MS, None), 100 * MS);
+        assert_eq!(s.last_source(), Some(StampSource::Arrival));
+        assert_eq!(s.stamp(133 * MS, Some(120 * MS)), 120 * MS);
+        assert_eq!(s.last_source(), Some(StampSource::SampleTime));
+        // A sample time that does not advance is not a clock.
+        let a = s.stamp(166 * MS, Some(120 * MS));
+        assert_eq!(a, 166 * MS);
+        assert_eq!(s.last_source(), Some(StampSource::Arrival));
+    }
+
+    #[test]
+    fn the_stamp_is_monotone_and_never_after_arrival() {
+        let mut s = FrameStamper::new();
+        let boot = 9_000_000 * MS;
+        let mut prev = 0;
+        // Sample times that lurch around, plus bad ones.
+        let samples = [
+            Some(boot),
+            Some(boot + 10 * MS),
+            None,
+            Some(boot + 5 * MS),
+            Some(boot + 50 * MS),
+            Some(u64::MAX),
+            Some(0),
+            Some(boot + 90 * MS),
+        ];
+        for (i, sample) in samples.into_iter().enumerate() {
+            let arrival = boot + 100 * MS + i as u64 * 33 * MS;
+            let t = s.stamp(arrival, sample);
+            assert!(t <= arrival, "after arrival at {i}");
+            assert!(t >= prev, "backwards at {i}");
+            prev = t;
+        }
+    }
+
+    #[test]
+    fn a_sample_time_in_the_future_is_not_trusted() {
+        let mut s = FrameStamper::new();
+        let arrival = 5_000 * MS;
+        let t = s.stamp(arrival, Some(arrival + 400 * MS));
+        assert!(t <= arrival);
+        assert_ne!(s.last_source(), Some(StampSource::SampleTime));
     }
 
     #[test]
