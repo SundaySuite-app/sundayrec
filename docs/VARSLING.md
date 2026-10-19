@@ -52,14 +52,14 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
 .getNotificationSettings` (`objc2-user-notifications`, samme objc2-familie
   som resten av appen). `notify::permission` avgjør slik:
 
-  | Systemet sier                                           | Kortet viser |
-  | ------------------------------------------------------- | ------------ |
-  | Utenfor en `.app`-bundle (dev, `cargo run`, tester)     | `unknown`    |
-  | Kallet svarer ikke innen 1,5 s (`MAC_SETTINGS_TIMEOUT`) | `unknown`    |
-  | `notDetermined` (appen har aldri bedt om tillatelse)    | `unknown`    |
-  | `denied`                                                | `denied`     |
-  | Tillatt, men bannerstil «Ingen» (`alertSetting` av)     | `denied`     |
-  | Tillatt (authorized/provisional/ephemeral), banner på   | `granted`    |
+  | Systemet sier                                              | Kortet viser |
+  | ---------------------------------------------------------- | ------------ |
+  | Utenfor en `.app`-bundle (dev, `cargo run`, tester)        | `unknown`    |
+  | Kallet svarer ikke innen 1,5 s (`MAC_SETTINGS_TIMEOUT`)    | `unknown`    |
+  | `notDetermined` (ikke spurt ennå — «Send testvarsel» spør) | `unknown`    |
+  | `denied`                                                   | `denied`     |
+  | Tillatt, men bannerstil «Ingen» (`alertSetting` av)        | `denied`     |
+  | Tillatt (authorized/provisional/ephemeral), banner på      | `granted`    |
 
 - **Vakter:** bundlen sjekkes FØR noe UserNotifications-kall (kallet kan avbryte
   prosessen utenfor en bundle; `NSBundle.mainBundle`-stien må ende på `.app` og ha
@@ -70,6 +70,28 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
   (testen panikker hvis det gjøres) og svaret er `unknown`; en stand-in som
   aldri svarer ender som `unknown` innen tidsgrensen; en ekte testprosess gir
   `unknown` uten krasj.
+- **Appen ber om tillatelse (D2b):** første gang brukeren trykker «Send
+  testvarsel» — og bare da, aldri ved oppstart. Rekkefølgen er:
+  `notification_request_permission` → kortet oppdateres med svaret →
+  `notification_send_test`.
+
+  | Status når «Send testvarsel» trykkes            | Hva skjer                                                     |
+  | ----------------------------------------------- | ------------------------------------------------------------- |
+  | Utenfor en `.app`-bundle                        | Ingenting kalles; `unknown`                                   |
+  | Statusen kan ikke leses (1,5 s)                 | Ingen forespørsel; `unknown`                                  |
+  | `notDetermined`                                 | macOS-dialogen vises (alert + lyd), så leses statusen på nytt |
+  | `granted` / `denied` (inkl. bannerstil «Ingen») | Ingen forespørsel (macOS viser aldri dialogen to ganger)      |
+  | Windows / Linux                                 | Uendret: bare status                                          |
+
+  Dialogen blir stående til brukeren svarer, så ventetiden har egen, romslig
+  grense (`MAC_REQUEST_TIMEOUT`, 120 s) og går på blokkeringspoolen, aldri
+  hovedtråden. Svares det ikke i tide, leses statusen som den da er (fortsatt
+  `unknown`), og testvarselet sendes likevel. Forespørselen bruker
+  `requestAuthorizationWithOptions` (alert + sound) med samme vakter som
+  lesingen (bundle først, tidsgrense, ObjC-unntak fanges). Svaret hentes fra
+  systemets status, ikke fra completion-flagget, slik at bannerstil teller med.
+  Bannerstil «Ingen» = `denied` er bekreftet riktig av eier.
+
 - **Ikke bevist:** at denne tillatelsen speiler veien pluginen faktisk viser
   varsler gjennom (eldre `NSUserNotification`), og at `notDetermined` er riktig
   for en app som aldri ber om tillatelse. Eierens prøve med varsler av og på:

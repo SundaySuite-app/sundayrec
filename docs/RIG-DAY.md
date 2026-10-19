@@ -977,9 +977,16 @@ Bygg bundelen (uten signering): `npm run tauri build -- --debug --bundles app
 - [ ] **Bannerstil «Ingen».** Slå varsler på igjen, men velg bannerstil
       «Ingen». **Forventet:** rødt (vi regner uten banner som ikke varslet).
       Er du uenig, noter det som funn.
-- [ ] **Aldri spurt.** (Kun om SundayRec ikke står i lista under Varsler.)
-      **Forventet:** «vet ikke» — appen ber ikke selv om tillatelse. Noter om
-      testvarselet likevel vises.
+- [ ] **Aldri spurt (D2b).** Gjør dette på en Mac der SundayRec aldri har bedt
+      om tillatelse: fjern SundayRec selv fra lista under Systeminnstillinger →
+      Varsler (eller bruk en Mac/bruker som aldri har kjørt appen) — Claude
+      rører ikke dette. Start `SundayRec.app`, åpne «Varsler». **Forventet:**
+      «vet ikke», og ingen dialog ved oppstart. Trykk «Send testvarsel».
+      **Forventet:** macOS-dialogen «SundayRec vil sende deg varsler» kommer
+      FØR testvarselet. «Tillat» ⇒ kortet blir grønt og testvarselet vises.
+      Gjenta på en ny, tilbakestilt Mac med «Ikke tillat» ⇒ rødt «av». Trykk
+      «Send testvarsel» en gang til: ingen ny dialog. Noter om dialogen kom
+      bak andre vinduer, og om appen ble stående frossen mens den sto oppe.
 - [ ] **Speiler innstillingen pluginens vei?** I «Varsler AV»-trinnet: vises
       testvarselet likevel? Da lyver kortet, og D2 må ikke strykes fra PLAN.md.
       Noter hva som skjedde i hvert trinn.

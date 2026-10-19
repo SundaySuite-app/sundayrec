@@ -726,6 +726,7 @@ pub fn run() {
             commands::notice::notice_email_removed_dismiss,
             // OS notifications: does the OS show them, a test, its settings page.
             commands::notification::notification_permission,
+            commands::notification::notification_request_permission,
             commands::notification::notification_send_test,
             commands::notification::notification_open_settings,
             commands::scheduler::scheduler_reschedule,

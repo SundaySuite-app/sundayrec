@@ -963,6 +963,10 @@ const api: Record<string, unknown> = {
     call<
       import("../../legacy/bindings/NotificationPermission").NotificationPermission
     >("notification_permission", undefined, "unknown"),
+  notificationRequestPermission: async () =>
+    call<
+      import("../../legacy/bindings/NotificationPermission").NotificationPermission
+    >("notification_request_permission", undefined, "unknown"),
   notificationSendTest: async () => {
     try {
       await invoke("notification_send_test");
