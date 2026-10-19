@@ -259,6 +259,7 @@ pub fn run() {
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
         .manage(editor::ExportEngine::new())
+        .manage(editor::listen::ListenEngine::new())
         // Places by session token (A2/A3, commands/chosen_paths.rs): the folders
         // and files the operator picked in a dialog Rust opened, the recordings
         // Rust opened from a history row or a drop, and the exports
@@ -728,6 +729,10 @@ pub fn run() {
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
             commands::editor::editor_prepare_listen,
+            commands::editor::editor_listen_open,
+            commands::editor::editor_listen_chain,
+            commands::editor::editor_listen_transport,
+            commands::editor::editor_listen_close,
             commands::editor::editor_master_cancel,
             // The one-time "e-mail alerts were removed" banner.
             commands::notice::notice_email_removed_pending,
