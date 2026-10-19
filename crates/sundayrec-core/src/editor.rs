@@ -384,6 +384,26 @@ pub fn video_codec_args(
     a
 }
 
+/// The codec args of a video export whose PICTURE is copied (B6): `-c:v copy`, the AAC track as
+/// in [`video_codec_args`], and the `hvc1` tag a copied HEVC picture needs for QuickTime. The
+/// picture is already in the file; only the sound is encoded.
+pub fn video_copy_codec_args(
+    container: &str,
+    codec: VideoCodec,
+    source_rate: Option<u32>,
+) -> Vec<String> {
+    let s = |v: &str| v.to_string();
+    let mut a = vec![s("-c:v"), s("copy")];
+    if codec == VideoCodec::H265 && matches!(container, "mp4" | "mov" | "m4v") {
+        a.extend([s("-tag:v"), s("hvc1")]);
+    }
+    a.extend(video_audio_codec_args(source_rate));
+    if matches!(container, "mp4" | "mov" | "m4v") {
+        a.extend([s("-movflags"), s("+faststart")]);
+    }
+    a
+}
+
 /// The encoder backend for a video output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VideoEncoder {
