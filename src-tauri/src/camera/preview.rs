@@ -649,6 +649,7 @@ pub fn stop() -> Option<PreviewStats> {
 /// Close whatever is open, a recording's session included. Used when a new
 /// session replaces the old one (never while a recording runs: [`start`]
 /// refuses that first).
+#[cfg(test)]
 fn stop_all() {
     let taken = lock(&SESSION).take();
     CHANGED.notify_all();
