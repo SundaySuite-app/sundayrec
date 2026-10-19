@@ -505,10 +505,32 @@ async fn start_video_track(
             }
             Some(capture)
         }
-        Ok(Ok(Err(e))) => {
-            tracing::error!(camera = %plan.camera_name, "video track: the camera did not open ({e}) — recording black, the sound is unaffected");
-            None
-        }
+        Ok(Ok(Err(e))) => match crate::camera::remembered_for(&plan.camera_name) {
+            // A camera this recording (or the page) has run on, gone now — at a
+            // fragment boundary during an outage: the fragment still tries to
+            // connect to it (the same stable id) and reports the outcome (M3R #4).
+            Some(remembered) => {
+                tracing::warn!(camera = %plan.camera_name, "video track: the camera is not there ({e}) — recording black, and connecting to it when it is back; the sound is unaffected");
+                let capture = crate::camera::start_resilient_lost(
+                    &remembered,
+                    crate::recorder::native_capture::video::QUEUE_FRAMES,
+                );
+                spec = lost_start_spec(&remembered.format, plan);
+                if own_camera {
+                    crate::camera::preview::adopt_for_recording(
+                        key,
+                        capture.frames(),
+                        &spec,
+                        carried.take(),
+                    );
+                }
+                Some(Box::new(capture) as Box<dyn VideoSource>)
+            }
+            None => {
+                tracing::error!(camera = %plan.camera_name, "video track: the camera did not open ({e}) — recording black, the sound is unaffected");
+                None
+            }
+        },
         _ => {
             tracing::error!(camera = %plan.camera_name, "video track: the camera did not open in time — recording black, the sound is unaffected");
             None
@@ -548,6 +570,23 @@ async fn start_video_track(
     }
 }
 
+/// The track's spec for a camera that is not running yet: what
+/// `video::open_camera` would have made of its `format`.
+pub(crate) fn lost_start_spec(
+    format: &crate::camera::VideoFormat,
+    plan: &NativeVideoPlan,
+) -> sundayrec_core::video_track::VideoTrackSpec {
+    sundayrec_core::video_track::VideoTrackSpec {
+        width: format.width,
+        height: format.height,
+        fps_num: plan.fps.num,
+        fps_den: plan.fps.den,
+        input: crate::recorder::native_capture::video::raw_format_of(format.pixel_format)
+            .unwrap_or(sundayrec_core::video_track::RawPixelFormat::Nv12),
+        flip: plan.flip,
+    }
+}
+
 /// Tear down a stack that must not record (a failed spawn, or a reconnect that
 /// came back at an incompatible rate), and remove the WAV when it holds no
 /// audio so the next attempt starts from a clean capture dir (and its MKV with
@@ -561,6 +600,31 @@ pub(crate) async fn abort_native_segment(seg: &mut NativeSegment, output_path: &
         ))
         .await;
     }
+}
+
+/// The camera at the end of a fragment: keep it running for the page that
+/// watches it (returned, to be given back once the track has finished), or stop
+/// it — and in that case also end the preview's recording session on it.
+///
+/// M3R #2: an unwatched camera used to be stopped and nothing more. The
+/// preview's `Session::Recording` stayed behind, so the next `camera_preview_start`
+/// found a session that "had" its camera, returned Ok, and never made a
+/// picture; another camera was refused with "a recording is using the camera".
+async fn stop_camera(source: Box<dyn VideoSource>) -> Option<Box<dyn VideoSource>> {
+    if crate::camera::preview::keeps_camera(source.as_ref()) {
+        source.frames().close();
+        return Some(source);
+    }
+    let queue = source.frames();
+    // A camera that is lost as it is let go of hands its outage to the next
+    // fragment's camera (M3R #4).
+    crate::camera::note_source_stopped(source.health().lost_for);
+    let stop = tokio::task::spawn_blocking(move || source.stop());
+    if tokio::time::timeout(CAMERA_TIMEOUT, stop).await.is_err() {
+        tracing::warn!("video track: the camera did not stop in time — continuing");
+    }
+    crate::camera::preview::end_recording_session(&queue);
+    None
 }
 
 /// Stop the stack in order — the CAPTURES first (audio stream, then camera:
@@ -588,18 +652,10 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
     // and only the track's queue closes — exactly what stopping would have done
     // to the track — so Stopp and every fragment boundary leave the picture
     // alone. It goes back to the preview once the track has finished.
-    let mut parked: Option<Box<dyn VideoSource>> = None;
-    if let Some(source) = seg.video.as_mut().and_then(VideoTrack::take_source) {
-        if crate::camera::preview::keeps_camera(source.as_ref()) {
-            source.frames().close();
-            parked = Some(source);
-        } else {
-            let stop = tokio::task::spawn_blocking(move || source.stop());
-            if tokio::time::timeout(CAMERA_TIMEOUT, stop).await.is_err() {
-                tracing::warn!("video track: the camera did not stop in time — continuing");
-            }
-        }
-    }
+    let parked = match seg.video.as_mut().and_then(VideoTrack::take_source) {
+        Some(source) => stop_camera(source).await,
+        None => None,
+    };
     seg.writer_stop.store(true, Ordering::Relaxed);
     if let Some(h) = seg.writer_join.take() {
         let join = tokio::task::spawn_blocking(move || h.join());

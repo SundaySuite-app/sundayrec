@@ -95,6 +95,14 @@ pub enum Cause {
 /// What the user-facing side may say (C5b): the camera is delivering, or has
 /// been gone since `since_ms` (the clock of the caller; the time of the last
 /// frame it saw).
+///
+/// **Lost holds until a picture has come back.** A session that was opened again
+/// is not yet a camera that delivers: a listed camera with no signal (an HDMI
+/// card whose source is off, a phone that locked) opens fine and then says
+/// nothing. The health stays `Lost`, with the SAME `since_ms`, through every
+/// such open, and turns `Live` at the first frame — so the time lost is counted
+/// from the last picture to the next one, however many times the session was
+/// closed and opened in between.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
     Live,
@@ -109,6 +117,9 @@ enum State {
         last_frame_ms: u64,
         /// Has this session delivered anything at all?
         delivered: bool,
+        /// An outage this session was opened to mend: since when, and why. It
+        /// ends at the first frame, not at the open.
+        lost: Option<(u64, Cause)>,
     },
     Lost {
         since_ms: u64,
@@ -137,9 +148,26 @@ impl CameraWatch {
                 frames,
                 last_frame_ms: now_ms,
                 delivered: false,
+                lost: None,
             },
             streak: 0,
             outages: 0,
+        }
+    }
+
+    /// A watch for a camera that is already gone when it is created (a new
+    /// fragment of a recording that starts while the camera is out): lost since
+    /// `since_ms`, and the SAME id is opened as soon as the list shows it.
+    pub fn new_lost(since_ms: u64, now_ms: u64) -> Self {
+        Self {
+            state: State::Lost {
+                since_ms,
+                cause: Cause::Gone,
+                next_try_ms: now_ms,
+                attempts: 0,
+            },
+            streak: 0,
+            outages: 1,
         }
     }
 
@@ -150,8 +178,12 @@ impl CameraWatch {
 
     pub fn health(&self) -> Health {
         match self.state {
-            State::Live { .. } => Health::Live,
-            State::Lost {
+            State::Live { lost: None, .. } => Health::Live,
+            State::Live {
+                lost: Some((since_ms, cause)),
+                ..
+            }
+            | State::Lost {
                 since_ms, cause, ..
             } => Health::Lost { since_ms, cause },
         }
@@ -178,17 +210,20 @@ impl CameraWatch {
                 frames: seen,
                 last_frame_ms,
                 delivered,
+                lost,
             } => {
-                let (last_frame_ms, delivered) = if frames > seen {
+                let (last_frame_ms, delivered, lost) = if frames > seen {
                     self.streak = 0;
-                    (now_ms, true)
+                    // The first picture after an outage ends it.
+                    (now_ms, true, None)
                 } else {
-                    (last_frame_ms, delivered)
+                    (last_frame_ms, delivered, lost)
                 };
                 self.state = State::Live {
                     frames,
                     last_frame_ms,
                     delivered,
+                    lost,
                 };
                 let silent = now_ms.saturating_sub(last_frame_ms);
                 let limit = if delivered { STALL_MS } else { FIRST_FRAME_MS };
@@ -206,10 +241,19 @@ impl CameraWatch {
                 match cause {
                     None => Action::Nothing,
                     Some(cause) => {
-                        self.outages += 1;
+                        // A session that was opened to mend an outage and has
+                        // not yet delivered is the SAME outage, not a new one:
+                        // it keeps its start (the last picture) and its count.
+                        let (since_ms, cause) = match lost {
+                            Some(carried) => carried,
+                            None => {
+                                self.outages += 1;
+                                (last_frame_ms, cause)
+                            }
+                        };
                         let attempts = if delivered { 0 } else { self.streak };
                         self.state = State::Lost {
-                            since_ms: last_frame_ms,
+                            since_ms,
                             cause,
                             // A stalled-but-listed camera is tried again after
                             // the back-off for its streak; a gone one as soon
@@ -236,12 +280,21 @@ impl CameraWatch {
 
     /// The session [`Action::OpenSession`] asked for is running (`frames` = the
     /// queue's counter now). It must deliver within [`FIRST_FRAME_MS`].
+    ///
+    /// The camera stays `Lost` (see [`Health`]) until its first frame.
     pub fn opened(&mut self, now_ms: u64, frames: u64) {
         self.streak += 1;
+        let lost = match self.state {
+            State::Lost {
+                since_ms, cause, ..
+            } => Some((since_ms, cause)),
+            State::Live { lost, .. } => lost,
+        };
         self.state = State::Live {
             frames,
             last_frame_ms: now_ms,
             delivered: false,
+            lost,
         };
     }
 
@@ -420,9 +473,21 @@ mod tests {
         r.run(2_000, false, Presence::Unlisted);
         let (t, _) = r.run(5_000, false, Presence::Listed).unwrap();
         r.w.opened(t, r.frames);
-        assert_eq!(r.w.health(), Health::Live);
+        // Open is not delivering: still lost, from the last picture.
+        assert!(matches!(
+            r.w.health(),
+            Health::Lost {
+                since_ms: 2_000,
+                ..
+            }
+        ));
         // It delivers; later it drops out again and gets the quick first retry.
         assert_eq!(r.run(10_000, true, Presence::Listed), None);
+        assert_eq!(
+            r.w.health(),
+            Health::Live,
+            "the first frame ends the outage"
+        );
         r.run(5_000, false, Presence::Unlisted);
         let (t0, a) = r.run(1_000, false, Presence::Listed).unwrap();
         assert_eq!(a, Action::OpenSession);
@@ -454,6 +519,71 @@ mod tests {
             .collect();
         assert!(waits.windows(2).all(|p| p[1] >= p[0]), "{waits:?}");
         assert!(waits.last().unwrap() > waits.first().unwrap(), "{waits:?}");
+    }
+
+    /// M3R #3: a camera that is listed but says nothing (an HDMI card with no
+    /// signal) opens, stays silent for 10 s, is closed, opens again … The outage
+    /// is one outage, counted from the last picture, for as long as it lasts.
+    #[test]
+    fn a_listed_camera_that_never_delivers_is_lost_from_its_last_picture_for_ever() {
+        let mut r = Rig::new();
+        r.run(5_000, true, Presence::Listed);
+        let last_picture = r.now;
+        let mut opens = 0;
+        let mut longest = 0u64;
+        // 75 s of silence, the shell doing what it does: close, open, close …
+        let end = r.now + 75_000;
+        while r.now < end {
+            r.now += 100;
+            if r.w.step(r.now, r.frames, Presence::Listed) == Action::OpenSession {
+                opens += 1;
+                r.w.opened(r.now, r.frames);
+            }
+            if let Health::Lost { since_ms, .. } = r.w.health() {
+                assert_eq!(since_ms, last_picture, "counted from the last picture");
+                longest = longest.max(r.now - since_ms);
+            }
+        }
+        assert!(opens >= 3, "it kept trying: {opens}");
+        assert!(longest >= 60_000, "lost for {longest} ms");
+        assert_eq!(r.w.outages(), 1, "one outage, not one per open");
+        // The signal comes back: the next open delivers, and the first picture
+        // ends the outage.
+        for _ in 0..1_000 {
+            r.now += 100;
+            if r.w.step(r.now, r.frames, Presence::Listed) == Action::OpenSession {
+                r.w.opened(r.now, r.frames);
+                break;
+            }
+        }
+        r.frames += 3;
+        r.now += 100;
+        assert_eq!(r.w.step(r.now, r.frames, Presence::Listed), Action::Nothing);
+        assert_eq!(r.w.health(), Health::Live);
+    }
+
+    #[test]
+    fn a_watch_born_lost_opens_the_id_when_listed_and_keeps_its_start() {
+        let mut w = CameraWatch::new_lost(1_000, 9_000);
+        assert!(matches!(
+            w.health(),
+            Health::Lost {
+                since_ms: 1_000,
+                ..
+            }
+        ));
+        assert_eq!(w.step(9_100, 0, Presence::Unlisted), Action::Nothing);
+        assert_eq!(w.step(9_200, 0, Presence::Listed), Action::OpenSession);
+        w.opened(9_200, 0);
+        assert!(matches!(
+            w.health(),
+            Health::Lost {
+                since_ms: 1_000,
+                ..
+            }
+        ));
+        w.step(9_400, 3, Presence::Listed);
+        assert_eq!(w.health(), Health::Live);
     }
 
     #[test]

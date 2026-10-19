@@ -708,6 +708,21 @@ pub fn release_after_recording(source: Box<dyn VideoSource>) {
     }
 }
 
+/// A recording that did not leave its camera running has stopped it: end the
+/// session that was holding it (the preview on its queue). Without this a
+/// `Session::Recording` outlived the camera it described (M3R #2). A session of
+/// another camera is left alone.
+pub fn end_recording_session(queue: &Arc<FrameQueue<Frame>>) {
+    let mut guard = lock(&SESSION);
+    match guard.take() {
+        Some(Session::Recording { preview, .. }) if preview.taps(queue) => {
+            drop(guard);
+            preview.stop();
+        }
+        other => *guard = other,
+    }
+}
+
 fn close(s: Session) -> PreviewStats {
     match s {
         Session::Idle {
