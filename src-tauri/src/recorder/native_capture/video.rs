@@ -65,6 +65,7 @@ use sundayrec_core::video_track::{
 
 use crate::camera::queue::FrameQueue;
 use crate::camera::{CaptureStats, Frame, PixelFormat};
+use crate::recorder::engine::VideoProblem;
 use crate::recorder::native_capture::stream::ClockPair;
 use crate::util::lock_recover;
 
@@ -134,7 +135,8 @@ pub struct VideoCounters {
     rejected: AtomicU64,
     early: AtomicU64,
     encoder_failed: AtomicBool,
-    encoder_fallback: AtomicBool,
+    /// The hardware encoder that was refused (see [`VideoTrackStats`]).
+    encoder_fallback: Mutex<Option<VideoEncoder>>,
     conform: Mutex<ConformStats>,
 }
 
@@ -158,10 +160,14 @@ pub struct VideoTrackStats {
     pub rejected: u64,
     /// Frames before the first audio pair, or too far ahead of the audio.
     pub early: u64,
-    /// The encoder died (or could not start) during this fragment.
+    /// The encoder died (or could not start) during this fragment and the
+    /// fragment has no (or a cut-short) picture. The audio is unaffected.
     pub encoder_failed: bool,
-    /// The hardware encoder failed at the start and libx264 took over.
-    pub encoder_fallback: bool,
+    /// The hardware encoder that was REFUSED by this machine: it failed
+    /// before it had produced any output. libx264 took over from the first
+    /// slot when the track could still do so (the MKV is whole); the caller
+    /// must forget the choice so the next recording does not repeat it.
+    pub encoder_fallback_from: Option<VideoEncoder>,
 }
 
 /// Everything a track needs, fixed at spawn.
@@ -187,6 +193,8 @@ pub struct VideoTrack {
     /// fragment (C4b: the live picture keeps it) hands the same queue to the
     /// next track, so a fragment reports only what happened during itself.
     queue_base: crate::camera::queue::QueueStats,
+    /// The camera did not open: every slot is black (M3R #6).
+    no_camera: bool,
     pub mkv_path: PathBuf,
 }
 
@@ -216,6 +224,7 @@ impl VideoTrack {
         make_sink: SinkFactory,
         child: Arc<Mutex<Option<Child>>>,
     ) -> std::io::Result<Self> {
+        let no_camera = source.is_none();
         let queue = match &source {
             Some(s) => s.frames(),
             None => {
@@ -244,6 +253,7 @@ impl VideoTrack {
             child,
             counters,
             queue_base,
+            no_camera,
             mkv_path,
         })
     }
@@ -281,6 +291,21 @@ impl VideoTrack {
         self.source.as_ref().and_then(|s| s.health().lost_for)
     }
 
+    /// Why this fragment has no picture RIGHT NOW (M3R), for the progress
+    /// heartbeat; `None` while the video works. The mirror of the audio
+    /// writer's death («device_disconnected»): the sound goes on, and the
+    /// volunteer is told the picture does not. A camera that is only gone for
+    /// a while is [`Self::lost_for`], not this.
+    pub fn problem(&self) -> Option<VideoProblem> {
+        if self.counters.encoder_failed.load(Ordering::Relaxed) {
+            Some(VideoProblem::EncoderStopped)
+        } else if self.no_camera {
+            Some(VideoProblem::CameraNotOpened)
+        } else {
+            None
+        }
+    }
+
     pub fn stats(&self) -> VideoTrackStats {
         let q = self.queue.stats();
         let c = *lock_recover(&self.counters.conform);
@@ -295,7 +320,7 @@ impl VideoTrack {
             rejected: self.counters.rejected.load(Ordering::Relaxed),
             early: self.counters.early.load(Ordering::Relaxed),
             encoder_failed: self.counters.encoder_failed.load(Ordering::Relaxed),
-            encoder_fallback: self.counters.encoder_fallback.load(Ordering::Relaxed),
+            encoder_fallback_from: *lock_recover(&self.counters.encoder_fallback),
         }
     }
 }
@@ -351,6 +376,7 @@ fn run_track(
         last: None,
         black: None,
         dead: false,
+        mkv: cfg.mkv_path.clone(),
         counters: Arc::clone(&counters),
     };
 
@@ -423,6 +449,8 @@ struct TrackWriter {
     black: Option<Vec<u8>>,
     /// The encoder failed for good: slots are no longer written.
     dead: bool,
+    /// The fragment's MKV: a non-empty file is proof the encoder opened.
+    mkv: PathBuf,
     counters: Arc<VideoCounters>,
 }
 
@@ -470,22 +498,24 @@ impl TrackWriter {
                 self.counters.slots_written.fetch_add(1, Ordering::Relaxed);
             }
             Some(Err(e)) => {
-                // A hardware encoder that refuses its very first frame (C0a's
-                // class of failure): fall to libx264 once, from the start of
-                // the file. Later failures are not retried — the file already
-                // holds video, and restarting would overwrite it.
-                if written == 0 && self.encoder != VideoEncoder::Software {
+                // The encoder broke the pipe. ffmpeg reads the first frames
+                // BEFORE it opens its encoder, so a refused hardware encoder
+                // (C0a's class of failure) has already taken a few writes: how
+                // many writes succeeded says nothing. What says it is whether
+                // the encoder ever produced output — the MKV is empty until
+                // the encoder has opened and the header is written. Let the
+                // dead ffmpeg exit first, so the file is final when we look.
+                if let Some(s) = self.sink.take() {
+                    let _ = s.finish();
+                }
+                if self.encoder != VideoEncoder::Software && !self.mkv_has_video() {
                     tracing::warn!(
                         encoder = self.encoder.h264_name(),
-                        "video track: the encoder failed at the first frame ({e}) — falling back to libx264"
+                        written,
+                        "video track: the encoder never produced output ({e}) — falling back to libx264"
                     );
-                    if let Some(s) = self.sink.take() {
-                        let _ = s.finish();
-                    }
+                    *lock_recover(&self.counters.encoder_fallback) = Some(self.encoder);
                     self.encoder = VideoEncoder::Software;
-                    self.counters
-                        .encoder_fallback
-                        .store(true, Ordering::Relaxed);
                     let retry = make(spec, self.encoder);
                     let bytes: &[u8] = match (&self.last, &self.black) {
                         (Some(b), _) | (None, Some(b)) => b,
@@ -493,7 +523,12 @@ impl TrackWriter {
                     };
                     match retry {
                         Ok(mut s) => {
-                            if s.write_frame(bytes).is_ok() {
+                            // The slots the dead encoder swallowed are gone;
+                            // the MKV must still hold one frame per slot, so
+                            // the new one starts with that many copies of
+                            // this picture (the first slots of a fragment,
+                            // well under a second).
+                            if (0..=written).all(|_| s.write_frame(bytes).is_ok()) {
                                 self.counters.slots_written.fetch_add(1, Ordering::Relaxed);
                                 self.sink = Some(s);
                                 return;
@@ -503,6 +538,8 @@ impl TrackWriter {
                         Err(e) => tracing::error!("video track: libx264 could not start: {e}"),
                     }
                 } else {
+                    // The file already holds video (or this IS libx264):
+                    // restarting would overwrite what there is.
                     tracing::error!(
                         written,
                         "video track: the encoder stopped taking frames ({e}) — the audio goes on"
@@ -512,6 +549,11 @@ impl TrackWriter {
             }
             None => {}
         }
+    }
+
+    /// Has the encoder written anything to the MKV?
+    fn mkv_has_video(&self) -> bool {
+        std::fs::metadata(&self.mkv).is_ok_and(|m| m.len() > 0)
     }
 
     fn slots(&self) -> u64 {
@@ -534,6 +576,12 @@ impl TrackWriter {
             if let Err(e) = s.finish() {
                 tracing::warn!("video track: the encoder did not close cleanly: {e}");
                 self.counters.encoder_failed.store(true, Ordering::Relaxed);
+                // A short fragment fits in the pipe: every write "worked" and
+                // the refusal only shows at EOF, too late to start over. The
+                // choice is still wrong and must not be repeated.
+                if self.encoder != VideoEncoder::Software && !self.mkv_has_video() {
+                    *lock_recover(&self.counters.encoder_fallback) = Some(self.encoder);
+                }
             }
         }
     }
@@ -585,9 +633,18 @@ impl FfmpegSink {
         slot: Arc<Mutex<Option<Child>>>,
     ) -> std::io::Result<Box<dyn SlotSink>> {
         let args = video_track_args(spec, encoder, &mkv.to_string_lossy());
+        Self::spawn_args(&args, slot)
+    }
+
+    /// [`Self::spawn`] with the argument list made by the caller (tests build
+    /// an ffmpeg whose encoder refuses to open).
+    fn spawn_args(
+        args: &[String],
+        slot: Arc<Mutex<Option<Child>>>,
+    ) -> std::io::Result<Box<dyn SlotSink>> {
         tracing::info!(?args, "video track: starting the encoder");
         let mut child = crate::util::hidden_std_command(crate::media::ffmpeg::ffmpeg_path())
-            .args(&args)
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -1090,6 +1147,245 @@ mod tests {
         assert_eq!(written.load(Ordering::Relaxed), 60);
         assert_eq!(stats.black, 60);
         assert_eq!(stats.new, 0);
+    }
+
+    // ── Real ffmpeg: an encoder that refuses to open (M3R #1) ───────────────
+
+    /// The fetched ffmpeg/ffprobe, or `None` → the caller SKIPs. Under
+    /// `SUNDAYREC_REQUIRE_SIDECAR=1` a missing sidecar PANICS instead.
+    fn sidecar_or_skip() -> Option<()> {
+        let have = crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg").is_some()
+            && crate::media::ffmpeg::tests::fetched_sidecar("ffprobe").is_some();
+        if have {
+            return Some(());
+        }
+        assert!(
+            std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+            "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable ffmpeg/ffprobe sidecar — run `npm run ffmpeg`"
+        );
+        eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+        None
+    }
+
+    /// A factory whose HARDWARE encoder is a real ffmpeg that fails when it
+    /// opens its encoder (4:4:4 into baseline H.264) — after it has already
+    /// read the first frames from stdin, which is exactly how a refused
+    /// VideoToolbox / NVENC / Media Foundation session looks from outside. The
+    /// software encoder is the real, working one.
+    fn refusing_hardware_factory(
+        mkv: PathBuf,
+        child: Arc<Mutex<Option<Child>>>,
+        opened: Arc<Mutex<Vec<VideoEncoder>>>,
+    ) -> SinkFactory {
+        Box::new(move |spec, encoder| {
+            lock_recover(&opened).push(encoder);
+            let mut args = video_track_args(spec, VideoEncoder::Software, &mkv.to_string_lossy());
+            if encoder != VideoEncoder::Software {
+                let at = args.iter().position(|a| a == "-an").expect("-an");
+                args.splice(
+                    at..at,
+                    ["-profile:v", "baseline", "-pix_fmt", "yuv444p"].map(String::from),
+                );
+            }
+            FfmpegSink::spawn_args(&args, Arc::clone(&child))
+        })
+    }
+
+    fn video_frames_in(mkv: &std::path::Path) -> u64 {
+        let out = std::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+            .args([
+                "-v",
+                "error",
+                "-count_frames",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=nb_read_frames",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(mkv)
+            .output()
+            .expect("run ffprobe");
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0)
+    }
+
+    /// Records until `slots_written` reaches `want` (a deadline, not a pause),
+    /// then finishes the way the stop path does.
+    fn run_real_track(
+        encoder: VideoEncoder,
+        want: u64,
+        mkv: PathBuf,
+        opened: Arc<Mutex<Vec<VideoEncoder>>>,
+    ) -> (VideoTrackStats, u64) {
+        let (prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
+        let child = Arc::new(Mutex::new(None));
+        let make = refusing_hardware_factory(mkv.clone(), Arc::clone(&child), opened);
+        // 720p NV12: a frame is bigger than the pipe, so ffmpeg has read the
+        // first frames before its encoder opens.
+        let source = SyntheticSource::start(1280, 720, 30.0, QUEUE_FRAMES);
+        let mut track = VideoTrack::spawn_with_child(
+            VideoTrackConfig {
+                mkv_path: mkv,
+                spec: VideoTrackSpec {
+                    width: 1280,
+                    height: 720,
+                    ..spec()
+                },
+                encoder,
+                sample_rate: RATE,
+            },
+            Some(Box::new(source)),
+            cons,
+            make,
+            child,
+        )
+        .expect("spawn track");
+        let feed_stop = Arc::new(AtomicBool::new(false));
+        let feeder = audio_feeder(prod, Arc::clone(&feed_stop));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        // …or until the track has given up, so a failure reads as a failed
+        // assertion on the stats below, not as a timeout.
+        while track.stats().slots_written < want && track.problem().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "the track never reached {want} slots: {:?}",
+                track.stats()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = track.take_source().map(|s| s.stop());
+        feed_stop.store(true, Ordering::Relaxed);
+        let total = feeder.join().unwrap();
+        track.request_finish(total);
+        track.take_join().unwrap().join().unwrap();
+        let slots = sundayrec_core::video_conform::slot_count(total, RATE, Fps::new(30, 1));
+        (track.stats(), slots)
+    }
+
+    /// M3R #1. ffmpeg reads the first frames BEFORE it opens the encoder, so by
+    /// the time a refused hardware encoder breaks the pipe, two or three writes
+    /// have already "succeeded". The old rule («fall back only when nothing
+    /// was written») never fired: a 0-byte MKV, no fallback flag, and the
+    /// stored hardware choice stayed. Now the track falls back to libx264 and
+    /// the MKV still holds exactly one frame per slot.
+    #[test]
+    fn a_hardware_encoder_that_fails_after_ffmpeg_read_the_first_frames_falls_back() {
+        if sidecar_or_skip().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mkv = dir.path().join("hw.mkv");
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let (stats, slots) = run_real_track(
+            VideoEncoder::VideoToolbox,
+            45,
+            mkv.clone(),
+            Arc::clone(&opened),
+        );
+        assert_eq!(
+            stats.encoder_fallback_from,
+            Some(VideoEncoder::VideoToolbox),
+            "{stats:?}"
+        );
+        assert!(!stats.encoder_failed, "{stats:?}");
+        assert_eq!(
+            *lock_recover(&opened),
+            vec![VideoEncoder::VideoToolbox, VideoEncoder::Software]
+        );
+        assert!(
+            std::fs::metadata(&mkv).map(|m| m.len()).unwrap_or(0) > 0,
+            "an empty MKV is a recording without picture"
+        );
+        assert_eq!(video_frames_in(&mkv), slots, "{stats:?}");
+        assert_eq!(stats.slots_written, slots, "{stats:?}");
+    }
+
+    /// M3R: an encoder that dies in the middle of a fragment (here: killed,
+    /// like a crashed ffmpeg) says so — `problem()` is what the heartbeat
+    /// carries to the overlay — and the file keeps the pictures it had.
+    #[test]
+    fn an_encoder_that_dies_mid_fragment_is_reported_and_keeps_its_file() {
+        if sidecar_or_skip().is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mkv = dir.path().join("sw.mkv");
+        let (prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
+        let child = Arc::new(Mutex::new(None));
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let make = refusing_hardware_factory(mkv.clone(), Arc::clone(&child), opened);
+        let source = SyntheticSource::start(320, 240, 30.0, QUEUE_FRAMES);
+        let mut track = VideoTrack::spawn_with_child(
+            VideoTrackConfig {
+                mkv_path: mkv.clone(),
+                spec: spec(),
+                encoder: VideoEncoder::Software,
+                sample_rate: RATE,
+            },
+            Some(Box::new(source)),
+            cons,
+            make,
+            child,
+        )
+        .expect("spawn track");
+        let feed_stop = Arc::new(AtomicBool::new(false));
+        let feeder = audio_feeder(prod, Arc::clone(&feed_stop));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while track.stats().slots_written < 30 {
+            assert!(Instant::now() < deadline, "{:?}", track.stats());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(track.problem(), None, "a working track has no problem");
+        track.kill_encoder();
+        while track.problem().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "the dead encoder was never noticed: {:?}",
+                track.stats()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(track.problem(), Some(VideoProblem::EncoderStopped));
+        let _ = track.take_source().map(|s| s.stop());
+        feed_stop.store(true, Ordering::Relaxed);
+        let total = feeder.join().unwrap();
+        track.request_finish(total);
+        track.take_join().unwrap().join().unwrap();
+        let stats = track.stats();
+        assert!(stats.encoder_failed, "{stats:?}");
+        assert_eq!(stats.encoder_fallback_from, None, "{stats:?}");
+    }
+
+    /// M3R #6: a camera that did not open is a fragment of black. Said out
+    /// loud from the first heartbeat; the track itself is healthy.
+    #[test]
+    fn a_camera_that_never_opened_is_a_reported_problem_not_silence() {
+        let (_prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
+        let make: SinkFactory = Box::new(|_, _| {
+            Ok(Box::new(GatedSink {
+                open: Arc::new(AtomicBool::new(true)),
+                frames: Arc::new(AtomicU64::new(0)),
+            }) as Box<dyn SlotSink>)
+        });
+        let mut track = VideoTrack::spawn(
+            VideoTrackConfig {
+                mkv_path: PathBuf::from("unused.mkv"),
+                spec: spec(),
+                encoder: VideoEncoder::Software,
+                sample_rate: RATE,
+            },
+            None,
+            cons,
+            make,
+        )
+        .expect("spawn track");
+        assert_eq!(track.problem(), Some(VideoProblem::CameraNotOpened));
+        track.request_finish(0);
+        track.take_join().unwrap().join().unwrap();
     }
 
     #[test]

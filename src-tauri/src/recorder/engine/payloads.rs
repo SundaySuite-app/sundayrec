@@ -188,6 +188,26 @@ pub struct RecordingProgress {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub video_lost_ms: Option<u64>,
+    /// Why this fragment has no picture while the sound is still recorded
+    /// (M3R): the video encoder stopped, or the camera never opened. `null`
+    /// while the picture works and for audio-only sessions. The mirror of a
+    /// dead WAV writer, which says `device_disconnected`; the overlay says it
+    /// in words for as long as it is set.
+    #[serde(default)]
+    pub video_problem: Option<VideoProblem>,
+}
+
+/// Why a video session has no picture (see [`RecordingProgress::video_problem`]).
+/// Wire values are snake_case.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[ts(export, export_to = "VideoProblem.ts")]
+#[serde(rename_all = "snake_case")]
+pub enum VideoProblem {
+    /// The video encoder (ffmpeg) died or could not start. The MKV is missing
+    /// or cut short; the sound is whole.
+    EncoderStopped,
+    /// The camera did not open at the start of the fragment: black picture.
+    CameraNotOpened,
 }
 
 /// Live per-channel peak audio levels (dBFS) sent to the renderer, parsed from
@@ -252,6 +272,7 @@ mod tests {
             bytes_written: 2_097_152,
             video_frames_dropped: 7,
             video_lost_ms: Some(61_000),
+            video_problem: Some(VideoProblem::EncoderStopped),
         };
         let json = serde_json::to_string(&p).unwrap();
         let back: RecordingProgress = serde_json::from_str(&json).unwrap();

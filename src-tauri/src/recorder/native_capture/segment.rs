@@ -60,8 +60,8 @@ use crate::error::AppResult;
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::engine::{
     emit_error, emit_warning, error_code_str, now_ms, RecordingLevels, RecordingOpts,
-    RecordingProgress, SegmentOutcome, StateWriter, LEVELS_EVENT, PROGRESS_EVENT, SILENCE_EVENT,
-    STARTED_EVENT,
+    RecordingProgress, SegmentOutcome, StateWriter, VideoProblem, LEVELS_EVENT, PROGRESS_EVENT,
+    SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
     build_input_stream_typed, classify_stream_error_counting, find_device_exact_typed,
@@ -530,7 +530,9 @@ async fn start_video_track(
         VideoTrackConfig {
             mkv_path,
             spec,
-            encoder: plan.encoder,
+            // A hardware encoder an earlier fragment of this run saw refused
+            // is not tried again (the plan was made before that).
+            encoder: crate::media::video_encoder::without_refused(plan.encoder),
             sample_rate,
         },
         source,
@@ -810,6 +812,11 @@ pub(crate) trait SegmentSignals {
     fn video_lost_for(&self) -> Option<Duration> {
         None
     }
+    /// Why the picture is not being recorded (M3R) while the sound is: read at
+    /// the same tick; `None` while it works and for audio-only.
+    fn video_problem(&self) -> Option<VideoProblem> {
+        None
+    }
 }
 
 impl SegmentSignals for NativeSegment {
@@ -877,6 +884,10 @@ impl SegmentSignals for NativeSegment {
     fn video_lost_for(&self) -> Option<Duration> {
         self.video.as_ref().and_then(VideoTrack::lost_for)
     }
+
+    fn video_problem(&self) -> Option<VideoProblem> {
+        self.video.as_ref().and_then(VideoTrack::problem)
+    }
 }
 
 /// Where the runner's user-visible output goes.
@@ -906,12 +917,22 @@ pub(crate) trait EventSink {
     fn silence(&self, code: &str, message: &str);
     /// `recording://progress` — the 1 Hz byte counter, plus the session's
     /// running count of dropped camera frames (0 without video) and, while the
-    /// camera is gone, for how long (C5b).
-    fn progress(&self, bytes_written: u64, video_frames_dropped: u64, video_lost_ms: Option<u64>);
+    /// camera is gone, for how long (C5b), and why there is no picture when the
+    /// video track is dead or never had a camera (M3R).
+    fn progress(&self, p: &ProgressTick);
     /// `recording://levels` — the 33 ms meters.
     fn levels(&self, peak_db_left: f64, peak_db_right: Option<f64>);
     /// `recording://state` — re-stamped when the auto-stop deadline moves.
     fn state(&self, scheduled_stop_ms: Option<u64>);
+}
+
+/// One 1 Hz progress heartbeat, as the runner reads it off the segment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ProgressTick {
+    pub bytes_written: u64,
+    pub video_frames_dropped: u64,
+    pub video_lost_ms: Option<u64>,
+    pub video_problem: Option<VideoProblem>,
 }
 
 /// The ambient facts the runner reads that are neither a signal nor an event:
@@ -967,13 +988,14 @@ impl EventSink for AppEventSink<'_> {
             },
         );
     }
-    fn progress(&self, bytes_written: u64, video_frames_dropped: u64, video_lost_ms: Option<u64>) {
+    fn progress(&self, p: &ProgressTick) {
         let _ = self.app.emit(
             PROGRESS_EVENT,
             RecordingProgress {
-                bytes_written,
-                video_frames_dropped,
-                video_lost_ms,
+                bytes_written: p.bytes_written,
+                video_frames_dropped: p.video_frames_dropped,
+                video_lost_ms: p.video_lost_ms,
+                video_problem: p.video_problem,
             },
         );
     }
@@ -1042,8 +1064,8 @@ pub(crate) async fn run_native_segment(
     // C0a, through the video track (C3b): a hardware encoder that failed at
     // the first frame made the track fall back to libx264 — forget the stored
     // choice so the next recording does not try it again.
-    if seg.video_stats.is_some_and(|v| v.encoder_fallback) {
-        crate::media::video_encoder::note_encoder_fallback(&ctx.app);
+    if let Some(refused) = seg.video_stats.and_then(|v| v.encoder_fallback_from) {
+        crate::media::video_encoder::note_encoder_fallback(&ctx.app, refused);
     }
     outcome
 }
@@ -1382,12 +1404,15 @@ where
                 let b = seg.bytes();
                 segment_bytes.store(b, Ordering::Relaxed);
                 if started_seen {
-                    sink.progress(
-                        b,
-                        video_dropped_before.saturating_add(seg.video_frames_dropped()),
-                        seg.video_lost_for()
+                    sink.progress(&ProgressTick {
+                        bytes_written: b,
+                        video_frames_dropped: video_dropped_before
+                            .saturating_add(seg.video_frames_dropped()),
+                        video_lost_ms: seg
+                            .video_lost_for()
                             .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
-                    );
+                        video_problem: seg.video_problem(),
+                    });
                 }
             }
             // 33 ms level meters over the routed banks.
@@ -1658,6 +1683,8 @@ mod tests {
         VideoDropped(u64),
         /// The camera has been gone this many ms (C5b).
         CameraLost(u64),
+        /// The picture is not being recorded (M3R).
+        VideoProblem(VideoProblem),
         Levels(f64, Option<f64>),
         State(Option<u64>),
     }
@@ -1692,13 +1719,16 @@ mod tests {
         fn silence(&self, _c: &str, _m: &str) {
             self.push(Ev::Silence);
         }
-        fn progress(&self, b: u64, dropped: u64, lost_ms: Option<u64>) {
-            self.push(Ev::Progress(b));
-            if dropped > 0 {
-                self.push(Ev::VideoDropped(dropped));
+        fn progress(&self, p: &ProgressTick) {
+            self.push(Ev::Progress(p.bytes_written));
+            if p.video_frames_dropped > 0 {
+                self.push(Ev::VideoDropped(p.video_frames_dropped));
             }
-            if let Some(ms) = lost_ms {
+            if let Some(ms) = p.video_lost_ms {
                 self.push(Ev::CameraLost(ms));
+            }
+            if let Some(why) = p.video_problem {
+                self.push(Ev::VideoProblem(why));
             }
         }
         fn levels(&self, l: f64, r: Option<f64>) {
@@ -1724,6 +1754,9 @@ mod tests {
         /// How long the (pretend) camera has been gone, in ms; `u64::MAX` = it
         /// delivers.
         video_lost_ms: Arc<AtomicU64>,
+        /// Why the (pretend) picture is not recorded: 0 = it is, 1 = the encoder
+        /// stopped, 2 = the camera never opened.
+        video_problem: Arc<AtomicU64>,
     }
 
     impl SegmentSignals for Scripted {
@@ -1764,6 +1797,13 @@ mod tests {
                 ms => Some(Duration::from_millis(ms)),
             }
         }
+        fn video_problem(&self) -> Option<VideoProblem> {
+            match self.video_problem.load(Ordering::Relaxed) {
+                1 => Some(VideoProblem::EncoderStopped),
+                2 => Some(VideoProblem::CameraNotOpened),
+                _ => None,
+            }
+        }
         fn video_stats(&self) -> Option<VideoTrackStats> {
             let queue_dropped = self.video_dropped.load(Ordering::Relaxed);
             (queue_dropped > 0).then(|| VideoTrackStats {
@@ -1785,6 +1825,7 @@ mod tests {
         stops: Arc<AtomicU64>,
         video_dropped: Arc<AtomicU64>,
         video_lost_ms: Arc<AtomicU64>,
+        video_problem: Arc<AtomicU64>,
         sink: Recorder,
     }
 
@@ -1797,6 +1838,7 @@ mod tests {
         let stops = Arc::new(AtomicU64::new(0));
         let video_dropped = Arc::new(AtomicU64::new(0));
         let video_lost_ms = Arc::new(AtomicU64::new(u64::MAX));
+        let video_problem = Arc::new(AtomicU64::new(0));
         Rig {
             seg: Scripted {
                 rx,
@@ -1812,6 +1854,7 @@ mod tests {
                 stops: Arc::clone(&stops),
                 video_dropped: Arc::clone(&video_dropped),
                 video_lost_ms: Arc::clone(&video_lost_ms),
+                video_problem: Arc::clone(&video_problem),
             },
             tx,
             bytes,
@@ -1821,6 +1864,7 @@ mod tests {
             stops,
             video_dropped,
             video_lost_ms,
+            video_problem,
             sink: Recorder::default(),
         }
     }
@@ -2942,6 +2986,62 @@ mod tests {
             last_lost + 1 < last_progress,
             "cleared after return: {seen:?}"
         );
+    }
+
+    /// M3R: the mirror of a dead WAV writer. A video track that died (encoder
+    /// gone) or never had a camera is on the heartbeat for as long as it is so,
+    /// while the audio side keeps reporting and the session keeps recording.
+    #[tokio::test(start_paused = true)]
+    async fn a_dead_video_track_rides_the_progress_event_and_the_sound_goes_on() {
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        let problem = Arc::clone(&r.video_problem);
+        let bytes = Arc::clone(&r.bytes);
+        let ender = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            problem.store(1, Ordering::Relaxed);
+            bytes.store(5_000, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            problem.store(0, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            stop_tx.send(()).await.unwrap();
+        });
+        let outcome = drive(
+            &mut r,
+            &test_opts("/tmp/x.wav"),
+            counters(),
+            Some(u64::MAX / 2),
+            FakeClock::default().handle(),
+            &mut stop_rx,
+            &mut w_rx,
+        )
+        .await;
+        ender.await.unwrap();
+        assert!(
+            matches!(outcome, SegmentOutcome::GracefulStop),
+            "the sound was recorded to its own stop: {outcome:?}"
+        );
+        let seen = r.sink.seen();
+        let problems = seen
+            .iter()
+            .filter(|e| matches!(e, Ev::VideoProblem(VideoProblem::EncoderStopped)))
+            .count();
+        assert_eq!(problems, 2, "two heartbeats while it was dead: {seen:?}");
+        assert!(
+            !r.sink.has(&Ev::Error("video_capture_failed".into())),
+            "a dead picture is no terminal error: {seen:?}"
+        );
+        let last_progress = seen
+            .iter()
+            .rposition(|e| matches!(e, Ev::Progress(_)))
+            .unwrap();
+        let last_problem = seen
+            .iter()
+            .rposition(|e| matches!(e, Ev::VideoProblem(_)))
+            .unwrap();
+        assert!(last_problem + 1 < last_progress, "cleared again: {seen:?}");
     }
 
     /// An audio-only fragment, or a video one that lost nothing, leaves no
