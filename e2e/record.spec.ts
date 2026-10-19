@@ -1595,6 +1595,60 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await expect(note).toHaveCount(0);
   });
 
+  test("bildet mangler: koderen stoppet eller kameraet åpnet aldri, og meldingen sier det", async ({
+    page,
+  }) => {
+    // M3R: speilbildet av en død lydskriver. Opptaket går videre med lyd, så
+    // det er en rolig status, ikke en alarm; hvert hjerteslag er fasit.
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await pushColorFrame(page, "#ff0000");
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+    const note = page.getByTestId("overlay-video-problem");
+    await emit(page, "recording-progress", {
+      bytes_written: 1_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+      video_problem: null,
+    });
+    await expect(note).toHaveCount(0);
+
+    await emit(page, "recording-progress", {
+      bytes_written: 2_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+      video_problem: "encoder_stopped",
+    });
+    await expect(note).toHaveText("Bildet stoppet — lyden tas fortsatt opp");
+    await expect(page.locator('[role="alert"]')).toHaveCount(0);
+
+    await emit(page, "recording-progress", {
+      bytes_written: 3_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+      video_problem: "camera_not_opened",
+    });
+    await expect(note).toHaveText(
+      "Kameraet åpnet ikke — lyden tas opp, men uten bilde",
+    );
+
+    await emit(page, "recording-progress", {
+      bytes_written: 4_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+      video_problem: null,
+    });
+    await expect(note).toHaveCount(0);
+  });
+
   test("uten kamera i dette opptaket er det ingen ramme", async ({ page }) => {
     await spyEvents(page);
     await boot(page, {

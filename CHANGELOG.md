@@ -7,6 +7,15 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 - **Videoen på Windows ligger ikke lenger etter lyden.** Kamerabildene ble stemplet med tiden de kom fram til appen, ikke tiden de ble tatt – på et USB-kamera 50–150 ms senere, så bildet kunne ligge 1–4 bilder bak lyden. Nå brukes kameraets egen fangsttid (som på Mac). Må prøves på en ekte Windows-PC (klappetest).
 
+- **Maskinvarekoderen for video faller nå trygt tilbake, og et opptak uten bilde
+  sier fra.** Feilet skjermkortets videokoder (VideoToolbox, NVENC, Media
+  Foundation) rett etter start, ble det før en video uten bilde, og samme valg ble
+  gjentatt ved hvert opptak. Nå tar programvarekoderen over fra første bilde, og
+  valget prøves ikke igjen. Står bildet stille midt i et opptak (koderen døde), eller
+  åpnet kameraet aldri, står det i opptaksvinduet: «Bildet stoppet — lyden tas
+  fortsatt opp» eller «Kameraet åpnet ikke — lyden tas opp, men uten bilde». Lyden
+  berøres ikke. Teksten finnes på alle sju språk.
+
 - **Mikserens støyfjerning skåner nå musikken.** «Støyfjerning» i den avanserte
   mikseren er blitt like varsom som i «Tale»: den virker på tale og på rommets
   stillhet i pausene, men lar en holdt akkord eller en pad stå urørt (før kunne den

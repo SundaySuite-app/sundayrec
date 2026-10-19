@@ -624,6 +624,8 @@
       "autoStop": "Stoppt von selbst in {left}",
       "videoSkipped": "Die Kamera kommt nicht ganz mit, daher wurden einige Bilder übersprungen. Der Ton ist nicht betroffen.",
       "cameraLost": "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen",
+      "videoStopped": "Das Bild ist ausgefallen — der Ton wird weiter aufgenommen",
+      "cameraNotOpened": "Die Kamera ließ sich nicht öffnen — der Ton wird ohne Bild aufgenommen",
       "finalizingHint": "Die Aufnahme wird auf die Festplatte geschrieben. Das dauert ein paar Sekunden, und die Datei ist derweil sicher."
     },
     "done": {

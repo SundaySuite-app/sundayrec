@@ -70,6 +70,24 @@ pub fn active() -> Option<VideoEncoder> {
     *ACTIVE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Har en maskinvarekoder blitt avvist i denne appkjøringen
+/// ([`note_encoder_fallback`])? Da bruker alle nye fragmenter `libx264`.
+pub fn demoted() -> bool {
+    DEMOTED.load(Ordering::Relaxed)
+}
+
+/// Koderen et fragment faktisk skal bruke: den planlagte, med mindre en
+/// maskinvarekoder er avvist siden planen ble laget. Planen er laget én gang
+/// per økt; uten dette ville hvert fragment (ny splitt, gjenkobling) prøve den
+/// avviste koderen på nytt.
+pub fn without_refused(planned: VideoEncoder) -> VideoEncoder {
+    if demoted() {
+        VideoEncoder::Software
+    } else {
+        planned
+    }
+}
+
 fn set_active(encoder: Option<VideoEncoder>) {
     *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = encoder;
 }
@@ -242,23 +260,31 @@ pub fn spawn_background_probe(app: AppHandle) {
     );
 }
 
-/// Videosporet falt til `libx264` fordi maskinvarekoderen feilet på første
-/// bilde (`VideoTrackStats::encoder_fallback`). Neste opptak i denne
-/// appkjøringen starter på `libx264` (det leser [`active`] når planen lages),
-/// og det lagrede valget nullstilles. Resten av DENNE økta har planen sin
-/// allerede: hvert nytt fragment prøver den planlagte koderen og faller selv
-/// til `libx264` på første bilde, slik sporet alltid gjør. Returnerer `true`
-/// når det faktisk endret noe.
+/// Maskinvarekoderen `refused` ble avvist av denne maskinen: den ga ingen
+/// utdata før den døde (`VideoTrackStats::encoder_fallback_from`; M3R #1 — den
+/// gamle regelen «feilet på første bilde» traff aldri, fordi ffmpeg leser de
+/// første bildene før koderen åpnes). Alle nye fragmenter, også resten av
+/// DENNE økta ([`without_refused`]), og neste opptak i denne appkjøringen bruker
+/// `libx264`, og det lagrede valget nullstilles. Neste oppstart prøver på nytt.
+/// Returnerer `true` når det faktisk endret noe.
 ///
 /// (Til C3b var det ffmpeg-fangstens uventede avslutning som avgjorde dette,
 /// gjennom kjernens skyldregel. Videosporet vet selv at det var koderen.)
-pub fn note_encoder_fallback(app: &AppHandle) -> bool {
-    let Some(encoder) = active() else {
-        return false;
-    };
-    if !encoder.is_windows_hardware() {
+pub fn note_encoder_fallback(app: &AppHandle, refused: VideoEncoder) -> bool {
+    if refused == VideoEncoder::Software {
         return false;
     }
+    // VideoToolbox er aldri lagret eller prøvd (macOS har ingen prøve), men
+    // planen velger den ved hver økt: «avvist» er det eneste som stopper det.
+    if !refused.is_windows_hardware() {
+        tracing::warn!(
+            encoder = refused.h264_name(),
+            "video encoder refused during a recording — libx264 for the rest of this run"
+        );
+        DEMOTED.store(true, Ordering::Relaxed);
+        return true;
+    }
+    let encoder = refused;
     tracing::warn!(
         encoder = encoder.h264_name(),
         "video encoder failed during a recording — falling back to libx264 and forgetting the choice"

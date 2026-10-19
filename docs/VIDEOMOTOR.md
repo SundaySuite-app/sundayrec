@@ -310,11 +310,31 @@ preview_jpg)`: `scale=720:-2,fps=12`, `-update 1`, til
   `camera::formats` (virker nå også på Windows), preflightens «finnes enheten»
   fra cpal/ASIO-lista, diagnosens kamerasjekk åpner kameraet med videosporets
   egen `open_camera` og venter på ett bilde.
-- **C0a-koderen:** en maskinvarekoder som feiler på første bilde gjør at
-  videosporet bytter til `libx264` (som i C3a), og nå glemmes også det lagrede
-  valget (`media::video_encoder::note_encoder_fallback`). Resten av den økta
-  prøver fortsatt den planlagte koderen først per fragment; neste opptak
-  starter på `libx264`.
+- **C0a-koderen (rettet i M3R #1):** en maskinvarekoder som ikke gir utdata
+  gjør at videosporet bytter til `libx264` (som i C3a), og valget glemmes
+  (`media::video_encoder::note_encoder_fallback`). Avgjørelsen er IKKE «første
+  skriving feilet»: ffmpeg leser de første bildene før koderen åpnes, så to–tre
+  skrivinger har allerede lyktes når røret brytes. Det som avgjør er om MKV-en
+  har innhold (den er tom til koderen har åpnet og headeren er skrevet).
+  `libx264` starter fra første plass og får like mange kopier av dagens bilde
+  som den døde koderen svelget, så MKV-en fortsatt har ett bilde per plass. Er
+  fragmentet så kort at alt fikk plass i røret og feilen først vises ved EOF,
+  er det for sent å begynne på nytt, men valget glemmes likevel. Avvist koder
+  brukes ikke igjen av noe senere fragment i appkjøringen (`without_refused`),
+  heller ikke på macOS, der VideoToolbox ellers velges på nytt hver økt.
+  Testet med ekte ffmpeg som får en koder som feiler ved åpning.
+- **Bildet mangler (M3R #1 #6):** `RecordingProgress.video_problem`
+  (`encoder_stopped` | `camera_not_opened`, ts-rs `VideoProblem`) følger
+  1 Hz-hjerteslaget, som `video_lost_ms`: speilbildet av en død WAV-skriver.
+  `VideoTrack::problem()` sier `encoder_stopped` når koderen døde (eller ikke
+  kunne starte) og fragmentet er uten bilde, og `camera_not_opened` når sporet
+  ble startet uten kamera (alle plasser svarte). Hvert hjerteslag er fasit, og
+  et nytt fragment med friskt bilde fjerner meldingen. Overlegget bruker samme
+  rolige `role="status"` som C5b («Bildet stoppet — lyden tas fortsatt opp»,
+  «Kameraet åpnet ikke — lyden tas opp, men uten bilde»), ikke en alarm og
+  ikke et systemvarsel. Et kamera som er borte en stund er fortsatt
+  `video_lost_ms` (C5b). Ikke dekket: økta uten kamera i lista ved Start (blir
+  et rent lydopptak) og kameraet som er borte ved en fragmentgrense (økt B).
 - **Gamle data:** `classicDirectshow` i en gammel database eller profil leses
   uten feil og skrives ikke tilbake (testet); telemetrifeltet er frosset til
   `false` (Workeren krever det). Et krasjmanifest fra en eldre versjon med

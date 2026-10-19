@@ -624,6 +624,8 @@
       "autoStop": "Stopper af sig selv om {left}",
       "videoSkipped": "Kameraet halter lidt bagud, så nogle billeder er sprunget over. Lyden er upåvirket.",
       "cameraLost": "Kameraet faldt ud — lyden optages stadig",
+      "videoStopped": "Billedet stoppede — lyden optages stadig",
+      "cameraNotOpened": "Kameraet kunne ikke åbnes — lyden optages uden billede",
       "finalizingHint": "Optagelsen skrives til disken. Det tager nogle sekunder, og filen er tryg i mellemtiden."
     },
     "done": {

@@ -79,6 +79,16 @@ export const sessionVideoDropped = signal(0);
  */
 export const sessionCameraLost = signal(false);
 
+/**
+ * Hvorfor opptaket ikke har bilde akkurat nå, mens lyden tas opp (M3R): koderen
+ * stoppet midt i, eller kameraet åpnet aldri. Speilbildet av en død
+ * WAV-skriver, som sier `device_disconnected`. Fra `recording://progress`s
+ * `video_problem`; hvert hjerteslag er fasit (verdi = nå, `null` = i orden),
+ * som `sessionCameraLost`. `null` også uten video.
+ */
+export type VideoProblem = "encoder_stopped" | "camera_not_opened";
+export const sessionVideoProblem = signal<VideoProblem | null>(null);
+
 /** Motorens auto-stopp-frist (absolutt epoke-ms), eller `null` for ingen. */
 export const scheduledStopMs = signal<number | null>(null);
 
@@ -143,6 +153,7 @@ export function endSessionLocally(): void {
   sessionBytes.value = null;
   sessionVideoDropped.value = 0;
   sessionCameraLost.value = false;
+  sessionVideoProblem.value = null;
   scheduledStopMs.value = null;
   reconnecting.value = false;
   clearSilence();
@@ -160,6 +171,7 @@ export function markSessionStarted(): void {
   sessionBytes.value = null;
   sessionVideoDropped.value = 0;
   sessionCameraLost.value = false;
+  sessionVideoProblem.value = null;
   reconnecting.value = false;
   clearSilence();
   exitFinalizing();
@@ -541,6 +553,7 @@ export function initRecording(): () => void {
             bytes_written?: number;
             video_frames_dropped?: number;
             video_lost_ms?: number | null;
+            video_problem?: VideoProblem | null;
           }
         | undefined;
       const bytes = d?.bytes ?? d?.bytes_written;
@@ -556,6 +569,10 @@ export function initRecording(): () => void {
       if (d && "video_lost_ms" in d) {
         const gone = typeof d.video_lost_ms === "number";
         if (sessionCameraLost.peek() !== gone) sessionCameraLost.value = gone;
+      }
+      if (d && "video_problem" in d) {
+        const why = d.video_problem ?? null;
+        if (sessionVideoProblem.peek() !== why) sessionVideoProblem.value = why;
       }
     }),
   ];

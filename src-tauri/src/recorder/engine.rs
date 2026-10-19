@@ -67,7 +67,7 @@ mod supervisor; // run_session, its one spawn site and its panic guard
 pub(crate) use self::emit::{emit_error, emit_failure, emit_warning, error_code_str};
 pub use self::payloads::{
     RecorderStatePayload, RecordingEvent, RecordingFinished, RecordingLevels, RecordingOpts,
-    RecordingProgress,
+    RecordingProgress, VideoProblem,
 };
 use self::supervisor::spawn_supervisor;
 pub(crate) use self::supervisor::{capture_host, SegmentOutcome};
