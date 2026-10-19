@@ -42,12 +42,11 @@ import { RadioCards, type RadioOption } from "../ui/RadioCards/RadioCards";
 import { Toggle } from "../ui/Toggle/Toggle";
 import { timecode } from "./editor-core";
 import { MixerPanel } from "./MixerPanel";
-import { playbackSource } from "./model";
 import {
   analyzingSound,
   channelCode,
   ensureSoundAnalysis,
-  listenBusy,
+  listenAt,
   listenError,
   listenPreparing,
   listenPlaying,
@@ -197,22 +196,24 @@ function TaleSaid() {
 }
 
 /**
- * «Lytt: Før | Etter», og tjue sekunder fra midten av prekenen.
+ * «Lytt: Før | Etter», fra midten av prekenen.
  *
- * «Etter» er en EKTE gjengivelse gjennom profilens kjede — `editor_master_preview`
- * med det samme presettet eksporten kommer til å bruke, rendret til en temp-fil.
- * Ikke en simulering, og ikke `_mastert`-fila: den skrives aldri av dette
- * skallet.
+ * Lyttingen spilles av avspillingsmotoren (B5b), ikke av et `<audio>`-element: Rust spiller
+ * opptaket med kuttene på lydkortet og har både originalen («Før») og lyden gjennom profilens
+ * kjede («Etter») klare. Å trykke «Før» eller «Etter» er derfor et bytte, ikke en gjengivelse
+ * — og det går også mens det spiller. Bytter man profil eller mikser underveis, kommer den nye
+ * lyden inn av seg selv, uten klikk.
  *
- * «Før» spiller originalen fra det samme sekundet. Går ikke avspilling i det
- * hele tatt (atlasets forbehold: i en ren nettleser er `asset://` død), sier
- * kortet det med legacys egen setning i stedet for å la knappen stå og ikke
- * gjøre noe.
+ * «Etter» er en EKTE gjengivelse gjennom det samme presettet og den samme kjeden eksporten
+ * kommer til å bruke, på det samme nivået. Ikke en simulering, og ikke `_mastert`-fila: den
+ * skrives aldri av dette skallet.
+ *
+ * Det eneste som kan vente er målingen av programmet («Gjør klar lytting …»), første gang for
+ * et valg: den er nivået eksporten vil gi, og uten den ville «Etter» vært et annet nivå enn
+ * filen man får.
  */
 function ListenCard() {
   const side = listenSide.value;
-  const dead = playbackSource.value === "none";
-  const beforeDead = side === "before" && dead;
 
   return (
     <Card testId="editor-listen">
@@ -241,15 +242,10 @@ function ListenCard() {
           type="button"
           class={styles.play}
           data-testid="editor-listen-play"
-          aria-disabled={beforeDead ? "true" : undefined}
           aria-label={
             listenPlaying.value ? t("app.editor.pause") : t("tooltip.play")
           }
-          title={beforeDead ? t("editor.qualityFallback") : undefined}
-          onClick={() => {
-            if (beforeDead) return;
-            void toggleListen();
-          }}
+          onClick={() => void toggleListen()}
         >
           {listenPlaying.value ? (
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -263,20 +259,18 @@ function ListenCard() {
           )}
         </button>
         <span data-testid="editor-listen-at" class={styles.hint}>
-          {tf("app.editor.sample", { at: timecode(listenStart.value) })}
+          {tf("app.editor.sample", {
+            at: timecode(listenAt.value ?? listenStart.value),
+          })}
         </span>
       </div>
-      {listenBusy.value ? (
+      {listenPreparing.value ? (
         <p data-testid="editor-listen-busy" class={styles.hint}>
-          {listenPreparing.value
-            ? t("app.editor.listenPreparing")
-            : t("app.editor.rendering")}
+          {t("app.editor.listenPreparing")}
         </p>
       ) : listenError.value ? (
         <p data-testid="editor-listen-error" class={styles.hint}>
-          {beforeDead
-            ? t("editor.qualityFallback")
-            : t("app.editor.listenFailed")}
+          {t("app.editor.listenFailed")}
         </p>
       ) : null}
     </Card>

@@ -112,6 +112,24 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       (window.__E2E_PREPARES__ ||= []).push(args.request);
       return true;
     }`),
+    // B5b: lyttingen på avspillingsmotoren. Fixturene logger hva som ble bedt om i
+    // `window.__E2E_LISTEN__`; motoren selv (lydkortet) finnes ikke i en nettleser.
+    editor_listen_open: fn(`(args) => {
+      (window.__E2E_LISTEN__ ||= []).push({ cmd: "open", request: args.request });
+      return { programSecs: ${DURATION} };
+    }`),
+    editor_listen_chain: fn(`(args) => {
+      (window.__E2E_LISTEN__ ||= []).push({ cmd: "chain", request: args.request });
+      return true;
+    }`),
+    editor_listen_transport: fn(`(args) => {
+      (window.__E2E_LISTEN__ ||= []).push({ cmd: "transport", action: args.action });
+      return null;
+    }`),
+    editor_listen_close: fn(`() => {
+      (window.__E2E_LISTEN__ ||= []).push({ cmd: "close" });
+      return null;
+    }`),
     editor_export: EXPORT_OK,
     editor_cancel_export: fn(`() => {
       (window.__E2E_CANCELS__ ||= []).push(1);

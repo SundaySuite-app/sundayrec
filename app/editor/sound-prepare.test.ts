@@ -16,7 +16,6 @@ import { isRecording } from "../state/recording";
 import { E, resetFileState } from "./model";
 import {
   PREPARE_DEBOUNCE_MS,
-  listenBusy,
   listenPreparing,
   listenSide,
   listenStart,
@@ -27,29 +26,16 @@ import {
   useMixer,
   watchListenPrepare,
 } from "./sound";
+import { fakeListen, type FakeListen } from "./test-support/fake-listen-api";
 
 const TOKEN = "22222222-2222-4222-8222-222222222222";
 
 type Req = Record<string, unknown>;
 let prepareCalls: Req[];
-let previewCalls: Req[];
+let engine: FakeListen;
 /** Når satt, venter `prepareListen` på at testen åpner porten. */
 let gate: Promise<boolean> | null;
 let stop: (() => void) | null;
-
-class FakeAudio {
-  src = "";
-  readyState = 4;
-  currentTime = 0;
-  preload = "";
-  addEventListener(): void {}
-  removeAttribute(): void {}
-  load(): void {}
-  pause(): void {}
-  play(): Promise<void> {
-    return Promise.resolve();
-  }
-}
 
 /** La tidtakerne og lovnadene kjøre ferdig; `ms` er fakeklokka, ikke veggklokka. */
 const settle = async (ms = 0): Promise<void> => {
@@ -59,27 +45,22 @@ const settle = async (ms = 0): Promise<void> => {
 beforeEach(() => {
   vi.useFakeTimers();
   prepareCalls = [];
-  previewCalls = [];
+  engine = fakeListen();
   gate = null;
   stop = null;
   resetFileState();
   isRecording.value = false;
   const g = globalThis as unknown as Record<string, unknown>;
-  g.Audio = FakeAudio;
   g.window = {
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clearTimeout: (id: number) => clearTimeout(id),
     api: {
+      ...engine.api,
       editorAutoProcess: () => Promise.resolve({ diagnosis: null }),
       editorTaleSaid: () => Promise.resolve(null),
-      toAssetUrl: (p: string) => p,
       prepareListen: (_token: string, listen: Req) => {
         prepareCalls.push(listen);
         return gate ?? Promise.resolve(true);
-      },
-      masterPreview: (_token: string, listen: Req) => {
-        previewCalls.push(listen);
-        return Promise.resolve({ ok: true, previewPath: "/tmp/p.mp3" });
       },
     },
   };
@@ -102,7 +83,6 @@ afterEach(() => {
   vi.useRealTimers();
   const g = globalThis as unknown as Record<string, unknown>;
   delete g.window;
-  delete g.Audio;
 });
 
 describe("lyttingen gjøres klar i bakgrunnen", () => {
@@ -187,39 +167,47 @@ describe("lyttingen gjøres klar i bakgrunnen", () => {
     expect(prepareCalls).toHaveLength(0);
   });
 
-  it("«Etter» venter på målingen som pågår, og sier hva den venter på", async () => {
-    let open!: (ready: boolean) => void;
-    gate = new Promise<boolean>((r) => (open = r));
+  it("«Etter» venter på kjeden mens programmet måles, og sier hva den venter på", async () => {
+    const release = engine.holdChain();
     stop = watchListenPrepare();
     await settle();
 
     const playing = toggleListen();
     await settle();
-    expect(listenBusy.value).toBe(true);
     expect(listenPreparing.value).toBe(true);
-    expect(previewCalls).toHaveLength(0); // venter, ber ikke om en gjengivelse ved siden av
+    // Venter på kjeden: ingenting spilles og «Etter» er ikke valgt i motoren ennå.
+    expect(engine.actions().some((a) => a.kind === "play")).toBe(false);
+    expect(engine.actions().some((a) => a.kind === "side")).toBe(false);
 
-    open(true);
+    release(true);
     await playing;
-    expect(previewCalls).toHaveLength(1);
-    expect(listenBusy.value).toBe(false);
     expect(listenPreparing.value).toBe(false);
+    expect(engine.actions()).toEqual([
+      { kind: "side", after: true },
+      { kind: "play" },
+    ]);
+  });
+
+  it("«Før» venter ikke på noe: det spiller mens kjeden gjøres klar", async () => {
+    const release = engine.holdChain();
+    listenSide.value = "before";
+    stop = watchListenPrepare();
+    await settle();
+
+    await toggleListen();
+    expect(engine.actions().some((a) => a.kind === "play")).toBe(true);
+    // …og «Etter» sies ikke å vente mens «Før» er valgt.
+    expect(listenPreparing.value).toBe(false);
+    release(true);
+    await settle();
   });
 
   it("er programmet allerede målt, sier «Etter» ikke at den gjør klar", async () => {
     stop = watchListenPrepare();
     await settle(); // forberedelsen svarer «klar» med en gang
 
-    const seen: boolean[] = [];
-    (
-      globalThis as unknown as { window: { api: { masterPreview: unknown } } }
-    ).window.api.masterPreview = (_t: string, listen: Req) => {
-      seen.push(listenPreparing.value);
-      previewCalls.push(listen);
-      return Promise.resolve({ ok: true, previewPath: "/tmp/p.mp3" });
-    };
     await toggleListen();
-    expect(previewCalls).toHaveLength(1);
-    expect(seen).toEqual([false]);
+    expect(listenPreparing.value).toBe(false);
+    expect(engine.chains()).toHaveLength(1);
   });
 });

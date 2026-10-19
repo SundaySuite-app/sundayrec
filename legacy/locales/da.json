@@ -682,10 +682,9 @@
       "listenAria": "Hør lyden før eller efter forbedringen",
       "before": "Før",
       "after": "Efter",
-      "sample": "{at} — 20 sekunder fra prædikenen",
-      "rendering": "Laver smagsprøven …",
+      "sample": "{at} — fra prædikenen",
       "listenPreparing": "Gør lytningen klar – første gang tager det lidt tid …",
-      "listenFailed": "Kunne ikke lave smagsprøven. Eksporten kører som normalt.",
+      "listenFailed": "Kunne ikke starte lytningen. Eksporten kører som normalt.",
       "said": {
         "hum": "Vi fjernede brum fra elnettet",
         "noise": "Vi dæmpede baggrundsstøjen",

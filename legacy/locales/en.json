@@ -682,10 +682,9 @@
       "listenAria": "Hear the sound before or after the improvement",
       "before": "Before",
       "after": "After",
-      "sample": "{at} — 20 seconds from the sermon",
-      "rendering": "Preparing the sample …",
+      "sample": "{at} — from the sermon",
       "listenPreparing": "Getting the listening ready – the first time takes a little while …",
-      "listenFailed": "Could not prepare the sample. The export still runs.",
+      "listenFailed": "Could not start the listening. The export still runs.",
       "said": {
         "hum": "We removed mains hum",
         "noise": "We reduced background noise",

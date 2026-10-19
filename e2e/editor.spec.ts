@@ -772,41 +772,69 @@ test.describe("editor", () => {
     );
   });
 
-  test("«Etter» ber om en ekte gjengivelse av de samme tjue sekundene", async ({
+  test("«Etter» spilles av motoren, og Før/Etter er et bytte — ingenting gjengis", async ({
     page,
   }) => {
+    // Posisjonen er motorens egen hendelse, så spionen må stå FØR oppstarten.
+    await spyEvents(page);
     await openEditor(page);
     await waitForSuggestion(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    // Prekenen er SEGMENTS[3], 210–420 → midten er 315, og utsnittet begynner
-    // 20 sekunder bredt rundt den: 305 = 0:05:05.
+    // Prekenen er SEGMENTS[3], 210–420 → midten er 315, og lyttingen begynner
+    // 10 sekunder før den: 305 = 0:05:05.
     await expect(page.getByTestId("editor-listen-at")).toContainText("0:05:05");
 
     await page.getByTestId("editor-listen-play").click();
     await expect
-      .poll(() => previewRequests(page).then((r) => r.length))
-      .toBeGreaterThan(0);
-    expect((await previewRequests(page))[0]).toMatchObject({
+      .poll(() => listenCalls(page).then((c) => c.map((x) => x.cmd)))
+      .toEqual(expect.arrayContaining(["open", "chain", "transport"]));
+    const calls = await listenCalls(page);
+    expect(calls.find((c) => c.cmd === "open")?.request).toMatchObject({
       // A2: opptaket er lappen Rust ga det, ikke en sti.
+      sourceToken: OPENED.token,
+      startSec: 305,
+    });
+    expect(calls.find((c) => c.cmd === "chain")?.request).toMatchObject({
       sourceToken: OPENED.token,
       // Det SAMME presettet eksporten kommer til å bruke — ellers er «Etter»
       // en lyd fila aldri får.
       presetId: "speech-clear",
-      startSec: 305,
-      durationSec: 20,
     });
-
-    // «Før» spør ikke bakenden om noe: det er originalen, fra det samme
-    // sekundet. I en ren nettleser er `asset://` død — atlasets eget forbehold
-    // — så knappen står SPERRET med grunn i stedet for å ikke gjøre noe, og
-    // ingen ny gjengivelse bestilles.
-    await page.getByTestId("editor-listen-before").click();
     await expect(page.getByTestId("editor-listen-play")).toHaveAttribute(
-      "aria-disabled",
-      "true",
+      "aria-label",
+      "Pause",
     );
-    expect(await previewRequests(page)).toHaveLength(1);
+
+    // Spillehodet er motorens: en `Position`-hendelse flytter tidspunktet.
+    await emit(page, "editor-listen", {
+      kind: "position",
+      gen: 1,
+      programSecs: 120,
+      sourceSecs: 400,
+    });
+    await expect(page.getByTestId("editor-listen-at")).toContainText("0:06:40");
+
+    // Før/Etter er en melding til motoren — ikke en gjengivelse, ikke en ny
+    // kjede, ikke en pause. (I en ren nettleser er `asset://` død, og det
+    // spiller ingen rolle lenger: Rust leser fila selv.)
+    const before = (await listenCalls(page)).length;
+    await page.getByTestId("editor-listen-before").click();
+    await page.getByTestId("editor-listen-after").click();
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.length))
+      .toBe(before + 2);
+    expect((await listenCalls(page)).slice(before)).toEqual([
+      { cmd: "transport", action: { kind: "side", after: false } },
+      { cmd: "transport", action: { kind: "side", after: true } },
+    ]);
+    expect(await previewRequests(page)).toHaveLength(0);
+
+    // Å forlate steget lukker økta: lydkortet har én eier.
+    await page.getByTestId("editor-steps-row-cut").click();
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.at(-1)?.cmd))
+      .toBe("close");
   });
 
   test("eksportsteget er ærlig om hvor filen havner", async ({ page }) => {
@@ -1191,6 +1219,28 @@ async function exportPayloads(
           __E2E_EXPORTS__?: Array<Record<string, unknown>>;
         }
       ).__E2E_EXPORTS__ ?? [],
+  );
+}
+
+/** Hva lyttingen bad avspillingsmotoren om, i rekkefølge (`editor_listen_*`). */
+async function listenCalls(page: Page): Promise<
+  Array<{
+    cmd: string;
+    request?: Record<string, unknown>;
+    action?: Record<string, unknown>;
+  }>
+> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __E2E_LISTEN__?: Array<{
+            cmd: string;
+            request?: Record<string, unknown>;
+            action?: Record<string, unknown>;
+          }>;
+        }
+      ).__E2E_LISTEN__ ?? [],
   );
 }
 

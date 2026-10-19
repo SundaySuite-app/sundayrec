@@ -35,6 +35,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
+import type { EditorListenAction } from "../../legacy/bindings/EditorListenAction";
 import type { Settings } from "../../legacy/bindings/Settings";
 import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
@@ -349,6 +350,8 @@ const EVENT_MAP: Record<string, string> = {
   "recording-device-substituted": "recording://device-substituted",
   "master-progress": "editor-master-progress",
   "editor-export-progress": "editor://export-progress",
+  // B5b: what the playback engine tells the sound step (position, end, underrun, …).
+  "editor-listen": "editor://listen",
   // Fase 9: the three editor passes that used to run for minutes behind a
   // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
   // separate channels only because they drive separate surfaces (the loading
@@ -1697,6 +1700,47 @@ const api: Record<string, unknown> = {
       );
     } catch {
       return false;
+    }
+  },
+
+  // ── Listening on the playback engine (B5b) ───────────────────────────────
+  // The sound step's Før/Etter: Rust plays the recording with its cuts and tells the window
+  // where it is (`editor-listen`). Nothing is rendered to a file.
+  /** Open the session, paused, «Før» chosen, no chain. `{ ok: true, programSecs }`. */
+  editorListenOpen: async (sourceToken: string, listen: MasterPreviewParams) =>
+    editorCall("editor_listen_open", {
+      request: { sourceToken, ...listen },
+    }),
+  /** Install the chain of this choice in the open session. Measures the programme first if
+   *  that has not been done. `true` = it went in. */
+  editorListenChain: async (
+    sourceToken: string,
+    listen: MasterPreviewParams,
+  ) => {
+    try {
+      return (
+        (await invoke<boolean>("editor_listen_chain", {
+          request: { sourceToken, ...listen },
+        })) === true
+      );
+    } catch {
+      return false;
+    }
+  },
+  /** Play, pause, jump or choose Før/Etter. Never rejects: the step may be left as it lands. */
+  editorListenTransport: async (action: EditorListenAction) => {
+    try {
+      await invoke("editor_listen_transport", { action });
+    } catch {
+      /* a transport click with nothing to act on */
+    }
+  },
+  /** Stop the listening and let go of the sound card. Never rejects. */
+  editorListenClose: async () => {
+    try {
+      await invoke("editor_listen_close");
+    } catch {
+      /* already closed */
     }
   },
 

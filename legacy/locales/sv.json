@@ -682,10 +682,9 @@
       "listenAria": "Hör ljudet före eller efter förbättringen",
       "before": "Före",
       "after": "Efter",
-      "sample": "{at} — 20 sekunder från predikan",
-      "rendering": "Förbereder smakprovet …",
+      "sample": "{at} — från predikan",
       "listenPreparing": "Gör lyssningen redo – första gången tar det en stund …",
-      "listenFailed": "Kunde inte skapa smakprovet. Exporten går som vanligt.",
+      "listenFailed": "Kunde inte starta lyssningen. Exporten går som vanligt.",
       "said": {
         "hum": "Vi tog bort brum från elnätet",
         "noise": "Vi dämpade bakgrundsbruset",
