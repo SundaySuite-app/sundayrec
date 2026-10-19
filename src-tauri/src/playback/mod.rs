@@ -233,7 +233,7 @@ impl Player {
             device_rate,
             device_channels,
         };
-        p.seek_program(0.0);
+        let _ = p.seek_program(0.0);
         Ok(p)
     }
 
@@ -259,7 +259,8 @@ impl Player {
 
     /// Jump to `secs` of programme time. The callback fades out, drops the old audio and fades
     /// the new in; a pause stays a pause.
-    pub fn seek_program(&self, secs: f64) {
+    /// Returns the new generation: position events of older generations are stale.
+    pub fn seek_program(&self, secs: f64) -> u64 {
         let frame = (secs.max(0.0) * f64::from(self.plan.rate())).round() as u64;
         let gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
         // The command first: the callback, seeing the new generation, discards everything up to
@@ -269,11 +270,12 @@ impl Player {
             program_frame: frame,
         });
         self.shared.requested_gen.store(gen, Ordering::Release);
+        gen
     }
 
     /// Jump to `secs` of SOURCE time (a click on the waveform). Inside a cut: the next keep.
-    pub fn seek_source(&self, secs: f64) {
-        self.seek_program(self.plan.source_to_program_secs(secs));
+    pub fn seek_source(&self, secs: f64) -> u64 {
+        self.seek_program(self.plan.source_to_program_secs(secs))
     }
 
     /// The programme position the device was last handed, seconds.

@@ -145,6 +145,8 @@ impl<O: PcmOpener> Job<O> {
 
 /// Lay planar `src` out in the device's `dev_ch` channels: mono goes to the first two, stereo to
 /// left and right, a mono device gets the mean, extra device channels stay silent.
+// `i` indexes a different channel per device channel; an iterator does not read clearer.
+#[allow(clippy::needless_range_loop)]
 pub(crate) fn interleave(src: &[Vec<f32>], dev_ch: usize, out: &mut Vec<f32>) {
     let frames = src.iter().map(Vec::len).min().unwrap_or(0);
     out.reserve(frames * dev_ch);

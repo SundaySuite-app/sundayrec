@@ -194,6 +194,15 @@ impl CutPlan {
         self.total as f64 / f64::from(self.rate)
     }
 
+    /// Programme seconds of every join between two keeps (where a cut is heard).
+    pub fn join_secs(&self) -> Vec<f64> {
+        self.starts
+            .iter()
+            .skip(1)
+            .map(|s| *s as f64 / f64::from(self.rate))
+            .collect()
+    }
+
     /// Number of joins that are crossfaded.
     pub fn crossfaded_joins(&self) -> usize {
         self.halves.iter().filter(|h| **h > 0).count()
@@ -579,6 +588,7 @@ mod tests {
         let plan = CutPlan::new(&keeps(&[(1.0, 3.0), (5.0, 6.5)]), 10.0, SR);
         assert_eq!(plan.program_frames(), (3.5 * f64::from(SR)) as u64);
         assert_eq!(plan.crossfaded_joins(), 1);
+        assert_eq!(plan.join_secs(), vec![2.0]);
         // Before the join: the first keep. At the join: the second keep's start.
         assert_eq!(plan.program_to_source(0), SR as u64);
         assert_eq!(plan.program_to_source(2 * SR as u64 - 1), 3 * SR as u64 - 1);
