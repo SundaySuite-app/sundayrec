@@ -985,6 +985,55 @@ Bygg bundelen (uten signering): `npm run tauri build -- --debug --bundles app
       Noter hva som skjedde i hvert trinn.
       **Rødt funn:** kortet og testvarselet er uenige.
 
+## (a) Avspillingsmotoren (B5a)
+
+Motoren som skal erstatte `<audio>` i Rediger (B5b/B5c) finnes, men har ikke noe
+skjermbilde ennå. Den kjøres fra terminalen med kjøreren `examples/playback.rs`,
+på maskinens standard lydutgang. Ca. 15 min på Macen; samme kommandoer på
+Windows-boksen. Hodetelefoner gjør klikk lettere å høre.
+
+Fra repoets rot (bygg én gang, tar et par minutter):
+
+```bash
+cargo build --release --example playback
+P=target/release/examples/playback
+```
+
+Uten `--at` kjører et fast manus: avspilling fra start, hopp til 2 s før første
+kutt (kuttet høres 2 s senere), pause ved 8 s og videre ved 9 s, hopp til 2 s
+før andre kutt, og hopp INN i et kutt ved 15 s (skal lande på starten av neste
+del). Terminalen skriver hvor spillehodet er hvert sekund, hvor lang tid hvert
+hopp tok, og til slutt `underruns`, `xruns` og sanntidsfaktoren.
+
+- [ ] **Avspilling og hopp, fila som den er.** Et ekte opptak, to kutt:
+      `$P ~/Downloads/2026.01.04.mp3 --cut 600-1500 --cut 1800-1830`
+      **Lytt etter:** klikk eller smell ved start, ved hvert hopp, ved pause og
+      ved fortsett (skal være en kort, myk inn/ut-toning, 8 ms); hakk eller
+      hull i lyden mellom hendelsene; og ved kuttene (ca. 6 s og 13 s ut i
+      manuset) at skjøten er en myk overgang uten klikk og uten et hørbart
+      «hull» (20 ms konstant-effekt-overgang). **Forventet:** `underruns 0
+  xruns 0` på siste linje, og hvert hopp «heard after» godt under 0,3 s
+      (målt på Macen: 95–160 ms).
+- [ ] **Samme med lydkjeden.** Legg til `--profile speech-clear`, og én gang
+      `--profile voice-noisy-room` (den tyngste kjeden). **Lytt etter:** det
+      samme, pluss at lyden ikke «pumper» rett etter et hopp (kjeden får 1 s
+      forkjøring før hoppet). **Forventet:** `underruns 0`. Sanntidsfaktoren
+      målt på Macen (M1 Pro, 2026-10-19): `speech-clear` ca. 16–22×,
+      `voice-noisy-room` ca. 9–10× (produsenten jobber i korte støt og
+      kjører da på lav klokke; samme kjede i én lang strekk går 36–118×).
+- [ ] **En fil med en annen frekvens.** En 44,1 kHz-fil (eller en hvilken som
+      helst `.wav`/`.m4a` fra en telefon): `$P <fil> --cut 20-40`.
+      **Lytt etter:** riktig tonehøyde og tempo (ikke «Mikke Mus»), ingen
+      hakk. **Forventet:** det samme som over; linja `device:` viser enhetens
+      frekvens, og kildens står på første linje.
+- [ ] **Eget manus.** `--at T:seek=P` (programsekunder), `--at T:src=S`
+      (sekunder i fila), `--at T:pause`, `--at T:play`, `--for S`. Prøv mange
+      hopp tett: `--at 2:seek=100 --at 2.3:seek=200 --at 2.6:seek=300`.
+      **Forventet:** spillehodet ender på 300 s, ingen klikk, ingen henging.
+- [ ] **Windows-boksen (Riggen).** Samme tre første punkter. **Rødt funn:**
+      `underruns` over 0 i et løp uten hopp, `xruns` som teller mens du ikke
+      gjør noe annet, eller et klikk ved hopp/pause.
+
 ## Etterpå
 
 - [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det

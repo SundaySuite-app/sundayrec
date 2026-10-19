@@ -359,6 +359,47 @@ Hørbarheten er ikke prøvd (Ørene, RIG-DAY (B3b)).
   på Mac og Windows, og spillehodet holder seg i synk gjennom en hel
   gudstjeneste (RIG-DAY, ny sjekk).
 
+**Gjort i B5a: motoren** (`src-tauri/src/playback/`, kjernen i `sundayrec_core::playback`).
+Ingen UI ennå; kjøreren `examples/playback.rs` spiller på Macens høyttaler (RIG-DAY «(a)
+Avspillingsmotoren»).
+
+- **Tre tråder og en ring.** En produsenttråd gjør alt som allokerer: ffmpeg-dekoding fra en
+  posisjon (`-ss` før `-i`, én prosess per bevart del), kutt-planen, lydkjeden fra B2a, og
+  resampling til enhetens frekvens (Kaiser-sinc fra B4a). Ferdige samples går i en låsfri
+  SPSC-ring (`ringbuf`, 0,75 s) sammen med en markørring (hvor en start/et hopp begynner og
+  hvor programmet slutter). Lydtråden (cpal-callbacken) kopierer fra ringen, legger på en
+  forsterkningsrampe, teller frames og publiserer posisjonen i atomics. En rapporttråd leser
+  dem ~30 ganger i sekundet og sender hendelser til UI-et.
+- **Hvorfor kjeden kjører før ringen.** `BuiltChain::process_block` og resampleren allokerer
+  (blokker som `Vec<Vec<f32>>`, køer i talegaten). Å gjøre dem allokeringsfrie ville endret koden
+  eksporten kjører. Valget beholder én implementasjon for lytting og eksport. Prisen: en ny kjede
+  midt i avspilling (B5b) når øret etter det som allerede ligger i ringen, med mindre den
+  brukes som et hopp til samme posisjon.
+- **Lydkortet er klokka.** Posisjonen regnes i callbacken av frames enheten faktisk har tatt;
+  rapporttråden bare leser. Står enheten, står spillehodet (testet). Enhetens egen
+  utgangsforsinkelse (5–20 ms) trekkes ikke fra.
+- **Klikkfritt.** Start, pause, fortsett og hopp toner 8 ms (hevet sinus) i callbacken. Et
+  hopp toner ut det gamle, kaster resten av den gamle generasjonen fra ringen, venter til 0,1 s
+  av den nye ligger klar, og toner inn. Kuttene er 20 ms konstant-effekt-overganger
+  (`cos`/`sin`) i kutt-planen, og programmets slutt tones ut 10 ms. Etter et hopp får kjeden
+  1 s forkjøring som kastes, så kompressor og støyport har satt seg.
+- **Bevist i tester:** callbacken allokerer ikke (en tellende global allokator i lib-testbinæren,
+  kjørt gjennom alle tilstander), og en skralle leser callback-koden og avviser lås, `Vec`,
+  `Box`, logging og I/O. Konstant effekt over en skjøt (kortvindu-RMS innenfor 1 dB mellom to
+  ukorrelerte signaler), intet sprang over en skjøt eller et hopp større enn signalets eget,
+  utdata uavhengig av blokkstørrelse og startpunkt, og at posisjonshendelsene flytter seg med
+  frames enheten tar og ikke med veggklokka. Ekte ffmpeg (sidecaren) gjennom hele motoren.
+- **Målt på Macen** (M1 Pro, `2026.01.04.mp3`, 48 kHz-enhet): `underruns 0 xruns 0` gjennom
+  manuset med hopp, pause og to kutt; hopp hørt etter 95–160 ms; produsentens sanntidsfaktor
+  `speech-clear` 16–22×, `voice-noisy-room` 9–10×, uten kjede ~200–300×. **Merk:** kjeden alene,
+  i én lang strekk, går 118× (`speech-clear`) og 36× (`voice-noisy-room`) på samme maskin;
+  produsenten jobber i korte støt (ringen er full nesten hele tiden), og da gir macOS den lav
+  klokke. Det er likevel 10× margin på den tyngste kjeden. Å heve trådens QoS
+  (`USER_INTERACTIVE`) endret ingenting målbart og ble tatt ut igjen.
+- **Ikke gjort ennå:** eksporten bruker fortsatt 15 ms ut/inn-toning ved kutt
+  (`editor::join_fades`), ikke kutt-planens overganger. Det du hører ved et kutt er derfor ikke
+  helt det du får før eksporten leser samme plan.
+
 ### Fase 6 — rask videoeksport
 
 - Opptaket setter et nøkkelbilde hvert 2. sekund (`-g`, eller

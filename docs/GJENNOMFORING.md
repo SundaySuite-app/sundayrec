@@ -1588,6 +1588,14 @@ viser at lydtråden ikke allokerer.
 > skriv en test som viser det. UI-arbeidet hører til B5b og B5c; her bygges bare
 > motoren, med en liten kjører som beviser den.
 
+**Gjort i B5a:** motoren i `src-tauri/src/playback/` (kutt-planen i
+`sundayrec_core::playback`) og kjøreren `examples/playback.rs`. Arkitektur, bevis og
+målinger: `docs/LYDMOTOR.md` §Fase 5 «Gjort i B5a»; lytteprøven: RIG-DAY «(a)
+Avspillingsmotoren». To ting B5b/B5c arver: (1) lydkjeden kjører i produsenttråden før
+ringen (den allokerer), så et profilbytte midt i avspilling bør gjøres som et hopp til
+samme posisjon for å høres med en gang; (2) eksporten bruker fortsatt 15 ms ut/inn-toning
+ved kutt, ikke kutt-planens 20 ms konstant-effekt-overganger.
+
 ## B5b — Før/Etter blir et øyeblikkelig bytte
 
 **Modell:** Sonnet · **Gren:** `ombygging/b5b-for-etter` · **Pakke:** B5
