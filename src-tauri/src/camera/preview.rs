@@ -491,6 +491,12 @@ pub struct SessionKey {
 }
 
 enum Session {
+    /// The page asked for the camera and it is being opened (seconds, for a
+    /// Continuity camera). Nothing else may open the same camera meanwhile: a
+    /// recording that starts now WAITS for it ([`take_for_recording`]) instead
+    /// of opening a second session on the same device. `token` tells this
+    /// opening from a later one.
+    Opening { key: SessionKey, token: u64 },
     /// The Opptak page is looking at the camera; nothing records.
     Idle {
         key: SessionKey,
@@ -511,6 +517,25 @@ enum Session {
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 
+/// Signalled whenever an opening ends (with a session, or cancelled).
+static CHANGED: Condvar = Condvar::new();
+
+/// Numbers the openings.
+static OPENINGS: AtomicU64 = AtomicU64::new(0);
+
+/// How long a recording waits for a camera the page is opening, and a second
+/// page for the first page's opening (the recorder's own `CAMERA_TIMEOUT`,
+/// plus a little).
+const OPEN_WAIT: Duration = Duration::from_secs(8);
+
+fn wait_changed(guard: MutexGuard<'static, Option<Session>>, limit: Duration) -> bool {
+    let (guard, result) = CHANGED
+        .wait_timeout(guard, limit)
+        .unwrap_or_else(PoisonError::into_inner);
+    drop(guard);
+    !result.timed_out()
+}
+
 /// A camera opened for the preview.
 pub type Opened = (Box<dyn VideoSource>, VideoTrackSpec);
 
@@ -525,8 +550,8 @@ pub fn start(
     open: impl FnOnce() -> Result<Opened, String>,
     sink: Sink,
 ) -> Result<(), String> {
-    {
-        let guard = lock(&SESSION);
+    let (token, replaced) = loop {
+        let mut guard = lock(&SESSION);
         match guard.as_ref() {
             Some(Session::Recording {
                 key: k, preview, ..
@@ -543,23 +568,66 @@ pub fn start(
                 preview.set_sink(Some(sink));
                 return Ok(());
             }
+            // The same camera is being opened by an earlier call: wait for it
+            // and join it, instead of opening it a second time.
+            Some(Session::Opening { key: k, .. }) if k == &key => {
+                if !wait_changed(guard, OPEN_WAIT) {
+                    return Err("the camera is still opening".into());
+                }
+                continue;
+            }
             _ => {}
         }
+        // Any other session is closed (a camera opens once), and this opening
+        // is written down BEFORE the slow open, so a recording that starts now
+        // can see it (M3R #14).
+        let token = OPENINGS.fetch_add(1, Ordering::Relaxed);
+        let replaced = guard.replace(Session::Opening {
+            key: key.clone(),
+            token,
+        });
+        break (token, replaced);
+    };
+    if let Some(s) = replaced {
+        close(s);
     }
-    stop_all();
-    let (source, spec) = open()?;
+    let opened = open();
+    let mine =
+        |g: &Option<Session>| matches!(g, Some(Session::Opening { token: t, .. }) if *t == token);
+    let (source, spec) = match opened {
+        Ok(o) => o,
+        Err(e) => {
+            let mut guard = lock(&SESSION);
+            if mine(&guard) {
+                *guard = None;
+            }
+            CHANGED.notify_all();
+            return Err(e);
+        }
+    };
     let queue = source.frames();
     let fps = f64::from(spec.fps_num) / f64::from(spec.fps_den.max(1));
     let preview = Preview::attach(&queue, fps, Some(sink));
     let drain = Drain::start(queue);
-    *lock(&SESSION) = Some(Session::Idle {
+    let session = Session::Idle {
         key,
         source,
         spec,
         preview,
         drain,
-    });
-    Ok(())
+    };
+    let mut guard = lock(&SESSION);
+    if mine(&guard) {
+        *guard = Some(session);
+        CHANGED.notify_all();
+        return Ok(());
+    }
+    // A recording (or another page) took the opening over while the camera was
+    // opening: this camera is not wanted any more.
+    CHANGED.notify_all();
+    drop(guard);
+    close(session);
+    Err("the camera was needed by something else while it opened".into())
 }
 
 /// The page stopped looking. An idle camera is released; a camera a recording
@@ -573,14 +641,18 @@ pub fn stop() -> Option<PreviewStats> {
     }
     let taken = guard.take();
     drop(guard);
+    // A page that leaves while its camera is opening cancels the opening.
+    CHANGED.notify_all();
     taken.map(close)
 }
 
 /// Close whatever is open, a recording's session included. Used when a new
 /// session replaces the old one (never while a recording runs: [`start`]
 /// refuses that first).
+#[cfg(test)]
 fn stop_all() {
     let taken = lock(&SESSION).take();
+    CHANGED.notify_all();
     if let Some(s) = taken {
         close(s);
     }
@@ -601,7 +673,28 @@ pub struct Taken {
 /// otherwise a session on another camera/format is closed — the recording then
 /// opens its own.
 pub fn take_for_recording(key: &SessionKey) -> Taken {
+    let deadline = std::time::Instant::now() + OPEN_WAIT;
     let mut guard = lock(&SESSION);
+    loop {
+        // The page is opening this very camera: wait for it and record from
+        // THAT session. Opening it again here would put two sessions on one
+        // device (Windows: the second open fails, and the recording is black).
+        // It is waited for only so long; then the opening is cancelled (its
+        // camera is stopped when it arrives) and the recording opens its own.
+        if let Some(Session::Opening { key: k, .. }) = guard.as_ref() {
+            if k.camera == key.camera {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                if !left.is_zero() {
+                    let (g, _) = CHANGED
+                        .wait_timeout(guard, left)
+                        .unwrap_or_else(PoisonError::into_inner);
+                    guard = g;
+                    continue;
+                }
+            }
+        }
+        break;
+    }
     match guard.take() {
         Some(Session::Idle {
             key: k,
@@ -623,10 +716,12 @@ pub fn take_for_recording(key: &SessionKey) -> Taken {
         }
         Some(other) => {
             drop(guard);
+            CHANGED.notify_all();
             let carried = match &other {
                 Session::Idle { preview, .. } | Session::Recording { preview, .. } => {
                     preview.take_sink()
                 }
+                Session::Opening { .. } => None,
             };
             close(other);
             Taken {
@@ -708,6 +803,21 @@ pub fn release_after_recording(source: Box<dyn VideoSource>) {
     }
 }
 
+/// A recording that did not leave its camera running has stopped it: end the
+/// session that was holding it (the preview on its queue). Without this a
+/// `Session::Recording` outlived the camera it described (M3R #2). A session of
+/// another camera is left alone.
+pub fn end_recording_session(queue: &Arc<FrameQueue<Frame>>) {
+    let mut guard = lock(&SESSION);
+    match guard.take() {
+        Some(Session::Recording { preview, .. }) if preview.taps(queue) => {
+            drop(guard);
+            preview.stop();
+        }
+        other => *guard = other,
+    }
+}
+
 fn close(s: Session) -> PreviewStats {
     match s {
         Session::Idle {
@@ -723,6 +833,7 @@ fn close(s: Session) -> PreviewStats {
             stats
         }
         Session::Recording { preview, .. } => preview.stop(),
+        Session::Opening { .. } => PreviewStats::default(),
     }
 }
 
@@ -730,6 +841,9 @@ fn close(s: Session) -> PreviewStats {
 pub fn current_key() -> Option<SessionKey> {
     match lock(&SESSION).as_ref()? {
         Session::Idle { key, .. } | Session::Recording { key, .. } => Some(key.clone()),
+        // An opening is not a camera yet (the command's "is a recording
+        // without a preview holding the camera?" asks this).
+        Session::Opening { .. } => None,
     }
 }
 
@@ -753,6 +867,7 @@ pub fn keeps_camera(source: &dyn VideoSource) -> bool {
 pub fn current_stats() -> Option<PreviewStats> {
     match lock(&SESSION).as_ref()? {
         Session::Idle { preview, .. } | Session::Recording { preview, .. } => Some(preview.stats()),
+        Session::Opening { .. } => None,
     }
 }
 
@@ -1331,6 +1446,151 @@ mod tests {
         release_after_recording(source);
         assert!(current_key().is_none());
         assert!(queue.is_closed());
+    }
+
+    /// M3R #2: the REAL stop path (`segment::stop_camera`, what
+    /// `stop_native_bounded` runs), not `release_after_recording` called by the
+    /// test. A recording whose camera nobody watched used to leave the session
+    /// `Recording` behind: the page's next `start` got `Ok` and never a picture,
+    /// another camera got "a recording is using the camera".
+    #[test]
+    fn stopping_a_recording_nobody_watches_leaves_no_session_behind() {
+        let _serial = serial();
+        let key = synthetic_key();
+        let source = SyntheticSource::start(640, 360, 30.0, QUEUE_FRAMES);
+        let queue = source.frames();
+        adopt_for_recording(key.clone(), &queue, &synthetic_spec(), None);
+        assert!(is_recording());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let parked = rt.block_on(crate::recorder::native_capture::segment::stop_camera(
+            Box::new(source),
+        ));
+        assert!(parked.is_none(), "nobody watches: the camera is stopped");
+        assert!(queue.is_closed());
+
+        assert!(
+            current_key().is_none(),
+            "no session for a camera that is gone"
+        );
+        // The page comes back: the camera is OPENED (not "Ok" with nothing),
+        // and another camera is not refused.
+        let opened = Arc::new(AtomicBool::new(false));
+        let (sink, got) = counting_sink();
+        let flag = Arc::clone(&opened);
+        start(
+            key,
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                open_synthetic()
+            },
+            sink,
+        )
+        .unwrap();
+        assert!(opened.load(Ordering::SeqCst), "the camera was reopened");
+        wait_for("a picture", || got.load(Ordering::Relaxed) >= 1);
+        let mut other = synthetic_key();
+        other.width = 1280;
+        let (sink, _) = counting_sink();
+        start(other, open_synthetic, sink).expect("another camera is not refused");
+    }
+
+    /// M3R #14: the page is opening the camera (seconds, for a Continuity
+    /// camera) when a recording starts. The recording used to find no session,
+    /// open the camera itself and adopt it — and then the page's `start`
+    /// finished and wrote its own session over the recording's: two sessions on
+    /// one device. Now the recording waits for the opening and records from it.
+    #[test]
+    fn a_recording_that_starts_while_the_page_opens_the_camera_waits_for_it() {
+        let _serial = serial();
+        let key = synthetic_key();
+        let (opening_tx, opening_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let opens = Arc::new(AtomicU64::new(0));
+        let page = {
+            let (key, opens) = (key.clone(), Arc::clone(&opens));
+            let (sink, _) = counting_sink();
+            std::thread::spawn(move || {
+                start(
+                    key,
+                    move || {
+                        opens.fetch_add(1, Ordering::SeqCst);
+                        opening_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        open_synthetic()
+                    },
+                    sink,
+                )
+            })
+        };
+        opening_rx.recv().unwrap(); // the camera is opening
+
+        let (taken_tx, taken_rx) = std::sync::mpsc::channel();
+        let recording = {
+            let key = key.clone();
+            std::thread::spawn(move || taken_tx.send(take_for_recording(&key)).unwrap())
+        };
+        // The recording has not been handed "no camera": it is waiting.
+        if let Ok(taken) = taken_rx.recv_timeout(Duration::from_millis(300)) {
+            panic!(
+                "the recording did not wait for the opening (opened: {})",
+                taken.opened.is_some()
+            );
+        }
+        release_tx.send(()).unwrap();
+        page.join().unwrap().expect("the page's camera opened");
+        let taken = taken_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the recording got its answer");
+        recording.join().unwrap();
+        let (source, _) = taken.opened.expect("it records from the page's camera");
+        assert_eq!(opens.load(Ordering::SeqCst), 1, "one camera session");
+        assert!(is_recording());
+        source.frames().close();
+        release_after_recording(source);
+        stop_all();
+    }
+
+    /// The recording wants ANOTHER camera: the opening is cancelled, and the
+    /// camera it opens is stopped when it arrives (nobody writes a session over
+    /// the recording's).
+    #[test]
+    fn an_opening_for_another_camera_is_cancelled_by_a_recording() {
+        let _serial = serial();
+        let key = synthetic_key();
+        let (opening_tx, opening_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let queue_slot: Arc<Mutex<Option<Arc<FrameQueue<Frame>>>>> = Arc::new(Mutex::new(None));
+        let page = {
+            let (key, slot) = (key.clone(), Arc::clone(&queue_slot));
+            let (sink, _) = counting_sink();
+            std::thread::spawn(move || {
+                start(
+                    key,
+                    move || {
+                        opening_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        let o = open_synthetic()?;
+                        *lock(&slot) = Some(o.0.frames());
+                        Ok(o)
+                    },
+                    sink,
+                )
+            })
+        };
+        opening_rx.recv().unwrap();
+        let mut wanted = key.clone();
+        wanted.camera = "Another".into();
+        let taken = take_for_recording(&wanted);
+        assert!(taken.opened.is_none());
+        release_tx.send(()).unwrap();
+        assert!(page.join().unwrap().is_err(), "the page's start is refused");
+        let queue = lock(&queue_slot).clone().expect("the camera had opened");
+        assert!(queue.is_closed(), "and its camera is stopped");
+        assert!(current_key().is_none());
     }
 
     #[test]

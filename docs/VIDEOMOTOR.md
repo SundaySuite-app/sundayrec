@@ -560,6 +560,45 @@ the_camera_outage_rides_the_progress_event_and_clears_on_return` (helse →
   klokke: varigheten er en verdi testen setter.
 - **Ikke prøvd:** ekte Continuity-kamera (RIG-DAY (v9)), og Windows.
 
+**Rettet etter M3-gjennomgangen (M3R #2, #3, #4, #14, #18).** Det som endret seg
+i beskrivelsene over:
+
+- **«Borte» telles fra siste bilde til første bilde etter åpningen** (var: til
+  åpningen). `Health::Lost` i `camera_reconnect` holder gjennom hver åpning som
+  ikke leverer, med samme `since_ms`, og blir `Live` først når et bilde har
+  kommet. Et kamera som er listet men stumt (HDMI uten signal, låst iPhone)
+  åpner og stanser hvert tiende sekund, men er hele tiden borte fra det siste
+  bildet: 60 s-varselet kommer, og meldingen blinker ikke. En slik runde er
+  samme utfall (`outages` teller ikke hver åpning). Tilsynet publiserer
+  `lost_since` fra klokkens helse etter hvert blikk, og lukker ikke økta mens
+  det holder `backend`-låsen (`describe`/`stats`/`stop` ventet før i opptil 3 s).
+  `CameraPlatform::now()` er klokken tilsynet og helsen leser; testene skrur den
+  fram i stedet for å vente.
+- **Et fragment som starter mens kameraet er borte** får likevel en kamera-økt
+  (`camera::start_resilient_lost`): ingen OS-økt, tapt fra start, og tilsynet
+  åpner samme id når den står i lista. Navnet løses fra `camera::remembered_for`:
+  kameraer som har kjørt i denne prosessen (id + format, fylt av
+  `start_with`; navnene fra hver `camera::list()`). Utfallet regnes fra siste
+  bilde når det forrige fragmentets kamera var borte da det ble sluppet
+  (`note_source_stopped`, gyldig i 30 s). Uten dette ble `source` `None` og
+  `video_lost_ms` `null`, så UI-et sa at alt var i orden resten av opptaket.
+  Et kamera som aldri har kjørt i prosessen (første fragment, kabelen ute) er
+  fortsatt «svart uten melding» (funn 6, ikke rettet her).
+- **Stopp uten seer** avslutter forhåndsvisningens `Session::Recording`
+  (`preview::end_recording_session`, kalt fra `segment::stop_camera`), så neste
+  `camera_preview_start` åpner kameraet i stedet for å få `Ok` uten bilder, og et
+  annet kamera ikke blir nektet.
+- **Siden åpner kameraet mens opptaket starter** (`Session::Opening`): åpningen er
+  skrevet ned før den trege `open()`. `take_for_recording` på samme kamera
+  VENTER (opptil 8 s, i `spawn_blocking`) og tar økta som kommer; på et annet
+  kamera avbrytes åpningen, og kameraet den åpnet stoppes når det kommer. `start`
+  skriver aldri over en økt det ikke selv eier lenger.
+- **Bevis:** `camera::reconnect::tests` (stumt kamera 120 s på injisert klokke;
+  fragment uten kamera; navnet slått opp), `camera_reconnect::tests` (rene),
+  `camera::preview::tests::stopping_a_recording_nobody_watches_…` (den ekte
+  stoppstien), `…while_the_page_opens_the_camera_waits_for_it`,
+  `an_opening_for_another_camera_is_cancelled_…`.
+
 ## Notert, ikke planlagt
 
 - **Helt native koding.** filmcrafts VideoToolbox- og NVENC-kodere (MIT/Apache)

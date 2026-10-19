@@ -96,6 +96,12 @@ pub(crate) trait CameraPlatform: Send + Sync + 'static {
     fn same_picture_as(&self, id: &str, wanted: &VideoFormat) -> Result<VideoFormat, CameraError>;
     /// The "a camera came or went" signal.
     fn changes(&self) -> Arc<CameraChanges>;
+    /// The clock the supervisor and the health read. A test's platform
+    /// overrides it with one it can wind forward, so a 75 s outage takes no
+    /// 75 s.
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 /// The operating system's cameras.
@@ -158,20 +164,50 @@ pub(super) struct Shared {
     /// Counters of sessions closed by an outage (so a total survives them).
     carried: Mutex<BackendCounters>,
     stopped: AtomicBool,
-    /// Since when the camera has been lost (the supervisor's clock).
+    /// Since when the camera has been lost: the time of its LAST PICTURE (the
+    /// supervisor publishes it from the watch's health, so it holds through
+    /// every open that delivers nothing and ends at the first frame).
     lost_since: Mutex<Option<Instant>>,
     outages: AtomicU32,
+    /// Where "now" comes from (see [`CameraPlatform::now`]).
+    clock: Option<Arc<dyn CameraPlatform>>,
 }
 
 impl Shared {
     pub(super) fn new(backend: Box<dyn BackendHandle>) -> Arc<Self> {
-        Arc::new(Self {
-            backend: Mutex::new(Some(backend)),
+        Arc::new(Self::build(Some(backend), None, None))
+    }
+
+    /// A shared state whose clock is the platform's.
+    pub(super) fn with_clock(
+        backend: Box<dyn BackendHandle>,
+        clock: Arc<dyn CameraPlatform>,
+    ) -> Arc<Self> {
+        Arc::new(Self::build(Some(backend), None, Some(clock)))
+    }
+
+    /// For a camera that is already gone: no session, lost since `since`.
+    pub(super) fn lost_from_start(since: Instant, clock: Arc<dyn CameraPlatform>) -> Arc<Self> {
+        Arc::new(Self::build(None, Some(since), Some(clock)))
+    }
+
+    fn build(
+        backend: Option<Box<dyn BackendHandle>>,
+        lost_since: Option<Instant>,
+        clock: Option<Arc<dyn CameraPlatform>>,
+    ) -> Self {
+        Self {
+            backend: Mutex::new(backend),
             carried: Mutex::new(BackendCounters::default()),
             stopped: AtomicBool::new(false),
-            lost_since: Mutex::new(None),
-            outages: AtomicU32::new(0),
-        })
+            lost_since: Mutex::new(lost_since),
+            outages: AtomicU32::new(u32::from(lost_since.is_some())),
+            clock,
+        }
+    }
+
+    fn now(&self) -> Instant {
+        self.clock.as_ref().map_or_else(Instant::now, |c| c.now())
     }
 
     pub(super) fn describe(&self) -> String {
@@ -192,7 +228,7 @@ impl Shared {
 
     pub(super) fn health(&self) -> CaptureHealth {
         CaptureHealth {
-            lost_for: lock(&self.lost_since).map(|t| t.elapsed()),
+            lost_for: lock(&self.lost_since).map(|t| self.now().saturating_duration_since(t)),
             outages: self.outages.load(Ordering::Relaxed),
         }
     }
@@ -246,18 +282,23 @@ fn close_bounded(backend: Box<dyn BackendHandle>) -> BackendCounters {
 
 /// Start the supervisor for a capture that is running (`shared` holds its
 /// session). It ends when the capture stops.
+///
+/// `lost_since`: the camera is not running — the session starts out lost, since
+/// that time, and the first thing the supervisor does is to wait for the id to
+/// be listed and open it.
 pub(super) fn supervise(
     platform: Arc<dyn CameraPlatform>,
     shared: &Arc<Shared>,
     camera_id: &str,
     format: &VideoFormat,
     queue: &Arc<FrameQueue<Frame>>,
+    lost_since: Option<Instant>,
 ) {
     let (shared, queue) = (Arc::clone(shared), Arc::clone(queue));
     let (id, format) = (camera_id.to_owned(), format.clone());
     let spawned = std::thread::Builder::new()
         .name("camera-reconnect".into())
-        .spawn(move || run(platform, shared, id, format, queue));
+        .spawn(move || run(platform, shared, id, format, queue, lost_since));
     if let Err(e) = spawned {
         tracing::warn!("camera reconnect: could not start the supervisor: {e}");
     }
@@ -269,13 +310,32 @@ fn run(
     id: String,
     mut format: VideoFormat,
     queue: Arc<FrameQueue<Frame>>,
+    lost_since: Option<Instant>,
 ) {
-    let epoch = Instant::now();
-    let ms = || epoch.elapsed().as_millis() as u64;
+    // The clock's zero is the earlier of "now" and the start of the outage.
+    let now0 = platform.now();
+    let epoch = lost_since.map_or(now0, |t| t.min(now0));
+    let ms = || platform.now().saturating_duration_since(epoch).as_millis() as u64;
     let changes = platform.changes();
     let mut seen = changes.generation();
-    let mut watch = CameraWatch::new(ms(), queue.stats().pushed);
+    let mut watch = match lost_since {
+        Some(t) => {
+            CameraWatch::new_lost(t.saturating_duration_since(epoch).as_millis() as u64, ms())
+        }
+        None => CameraWatch::new(ms(), queue.stats().pushed),
+    };
     let mut failures = 0u32;
+    // The watch's health is the one truth about "lost since"; it is published
+    // after every look (see `publish`).
+    let publish = |watch: &CameraWatch| {
+        let since = match watch.health() {
+            Health::Live => None,
+            Health::Lost { since_ms, .. } => Some(epoch + Duration::from_millis(since_ms)),
+        };
+        *lock(&shared.lost_since) = since;
+        shared.outages.store(watch.outages(), Ordering::Relaxed);
+    };
+    publish(&watch);
 
     loop {
         let lost = matches!(watch.health(), Health::Lost { .. });
@@ -314,10 +374,12 @@ fn run(
                     "camera reconnect: the camera has dropped out — closing its session; \
                      the recording goes on"
                 );
-                *lock(&shared.lost_since) = Some(Instant::now());
-                shared.outages.store(watch.outages(), Ordering::Relaxed);
                 failures = 0;
-                if let Some(old) = lock(&shared.backend).take() {
+                // Take the session out and let go of the lock BEFORE closing
+                // it: closing may take up to `CLOSE_LIMIT`, and `describe`,
+                // `counters` and `stop` of the Capture wait on the same lock.
+                let old = lock(&shared.backend).take();
+                if let Some(old) = old {
                     let c = close_bounded(old);
                     let mut carried = lock(&shared.carried);
                     *carried = add(*carried, c);
@@ -339,7 +401,8 @@ fn run(
                         );
                         *slot = Some(backend);
                         drop(slot);
-                        *lock(&shared.lost_since) = None;
+                        // Open is not delivering: the camera stays lost (from
+                        // its last picture) until the first frame.
                         watch.opened(ms(), queue.stats().pushed);
                     }
                     Err(e) => {
@@ -357,6 +420,7 @@ fn run(
                 }
             }
         }
+        publish(&watch);
     }
 }
 

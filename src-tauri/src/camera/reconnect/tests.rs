@@ -323,3 +323,124 @@ fn real_camera_comes_back_on_the_same_id() {
         cam.id
     );
 }
+
+// ── M3R #3: a camera that is listed but says nothing ─────────────────────────
+
+/// An HDMI card whose source is off, a phone that locked: listed, opens, and
+/// delivers nothing. It used to be "lost" for ≤ 5 s at a time (the clock was
+/// reset by every open, not by a picture), so the 60 s alert never came and the
+/// message flickered. Time is the world's wound-forward clock, not a wait.
+#[test]
+fn a_listed_camera_that_delivers_nothing_is_lost_for_as_long_as_it_is_silent() {
+    let world = FakeWorld::new("cam-A", 64, 48, 60.0);
+    let cap = open(&world);
+    wait_for_frames(&world, "frames at the start");
+    assert_eq!(cap.health().lost_for, None);
+
+    world.frozen.store(true, Ordering::SeqCst);
+    let mut longest = Duration::ZERO;
+    let mut shortest_after_noticed: Option<Duration> = None;
+    let mut alert = sundayrec_core::notify::CameraOutageWatch::default();
+    let mut alerted = false;
+    for _ in 0..120 {
+        world.advance(Duration::from_secs(1));
+        let lost = cap.health().lost_for;
+        if let Some(d) = lost {
+            longest = longest.max(d);
+            // Once noticed it never flips back to "fine" while it is silent.
+            shortest_after_noticed = Some(shortest_after_noticed.map_or(d, |s| s.min(d)));
+        } else {
+            assert!(
+                shortest_after_noticed.is_none(),
+                "the message blinked: lost, then fine, with no picture in between"
+            );
+        }
+        if alert.observe(lost) {
+            alerted = true;
+            break;
+        }
+    }
+    assert!(longest >= Duration::from_secs(60), "lost for {longest:?}");
+    assert!(alerted, "the 60 s alert never came");
+    assert!(
+        world.opens.load(Ordering::SeqCst) >= 3,
+        "it kept trying to open the camera"
+    );
+    assert_eq!(cap.health().outages, 1, "one outage, not one per open");
+
+    // The signal comes back: the first picture ends the outage.
+    world.frozen.store(false, Ordering::SeqCst);
+    wait_for("the first picture ends the outage", || {
+        world.advance(Duration::from_millis(500));
+        cap.health().lost_for.is_none()
+    });
+    let _ = cap.stop();
+}
+
+// ── M3R #4: the camera is out when a fragment starts ─────────────────────────
+
+/// A fragment boundary while the camera is out and nobody watches: the old
+/// capture is let go of, the next fragment's camera cannot open. It used to
+/// have no camera at all for the rest of the recording, and the message said
+/// everything was fine. Now it is a capture that is lost from the start, says
+/// so, and opens the SAME id when it is back.
+#[test]
+fn a_fragment_that_starts_while_the_camera_is_out_connects_when_it_is_back() {
+    let world = FakeWorld::new("cam-A", 64, 48, 60.0);
+    let cap = open(&world);
+    wait_for_frames(&world, "frames at the start");
+    world.unplug(true);
+    wait_for("the outage is noticed", || cap.health().lost_for.is_some());
+    // The fragment ends: the unwatched camera is let go of, as `stop_camera` does.
+    crate::camera::note_source_stopped(cap.health().lost_for);
+    let _ = cap.stop();
+    assert_eq!(world.live_sessions.load(Ordering::SeqCst), 0);
+
+    // The next fragment: the camera is not there.
+    let next = crate::camera::start_lost_with(world.clone(), &world.id, &world.format(), 30);
+    let health = next.health();
+    assert!(health.lost_for.is_some(), "it says the camera is out");
+    assert_eq!(health.outages, 1);
+    assert_eq!(next.describe(), "", "no session yet");
+
+    world.replug(true);
+    wait_for("the same id is opened", || {
+        world.live_sessions.load(Ordering::SeqCst) == 1
+    });
+    let queue = Arc::clone(next.frames());
+    wait_for("pictures arrive in the new fragment's queue", || {
+        queue.stats().pushed >= 5
+    });
+    wait_for("the outage is over", || next.health().lost_for.is_none());
+    assert_eq!(
+        world.opened_ids.lock().unwrap().last().map(String::as_str),
+        Some("cam-A")
+    );
+    let _ = next.stop();
+    assert_eq!(world.live_sessions.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_camera_that_has_run_is_found_again_by_name_when_it_is_no_longer_listed() {
+    use crate::camera::{CameraInfo, CameraKind};
+    let info = CameraInfo {
+        id: "m3r-test-cam-id".into(),
+        name: "M3R Test Cam".into(),
+        model_id: None,
+        kind: CameraKind::Camera,
+    };
+    let other = CameraInfo {
+        id: "m3r-test-other-id".into(),
+        name: "M3R Test Other".into(),
+        model_id: None,
+        kind: CameraKind::Camera,
+    };
+    crate::camera::remember_seen_for_test(&[info.clone(), other]);
+    // Listed but never started: not a camera the recording could have run on.
+    assert!(crate::camera::remembered_for("M3R Test Cam").is_none());
+    crate::camera::remember_started_for_test(&info.id, &FakeWorld::new("x", 64, 48, 30.0).format());
+    let found = crate::camera::remembered_for("m3r test cam").expect("remembered");
+    assert_eq!(found.id, "m3r-test-cam-id");
+    assert!(crate::camera::remembered_for("M3R Test Other").is_none());
+    assert!(crate::camera::remembered_for("Something Else").is_none());
+}

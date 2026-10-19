@@ -486,18 +486,121 @@ pub fn host_now_ns() -> u64 {
 /// without it; opening is what asks). Blocks briefly: on Windows it enumerates
 /// through Media Foundation and DirectShow on the camera worker thread.
 pub fn list() -> Result<Vec<CameraInfo>, CameraError> {
-    #[cfg(target_os = "macos")]
-    {
-        Ok(macos_backend::list())
+    // Typed: on Linux the block is only an `Err`, which names no `Ok` type.
+    let cameras: Result<Vec<CameraInfo>, CameraError> = {
+        #[cfg(target_os = "macos")]
+        {
+            Ok(macos_backend::list())
+        }
+        #[cfg(windows)]
+        {
+            windows_backend::list()
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            Err(CameraError::Unsupported)
+        }
+    };
+    let cameras = cameras?;
+    remember_seen(&cameras);
+    Ok(cameras)
+}
+
+// ── What was seen, for a camera that is gone when it is wanted ──────────────
+
+/// A camera a resilient capture ran on: its stable id and the format it ran on.
+#[derive(Clone, Debug)]
+pub struct Remembered {
+    pub id: String,
+    pub format: VideoFormat,
+}
+
+#[derive(Default)]
+struct Memory {
+    /// Every camera any [`list`] has shown, by id (name and kind).
+    seen: Vec<CameraInfo>,
+    /// The format each id was last started on.
+    started: Vec<Remembered>,
+    /// When a camera that was lost was last let go of, and since when it had
+    /// been lost.
+    lost_hint: Option<(std::time::Instant, std::time::Instant)>,
+}
+
+static MEMORY: std::sync::Mutex<Memory> = std::sync::Mutex::new(Memory {
+    seen: Vec::new(),
+    started: Vec::new(),
+    lost_hint: None,
+});
+
+fn memory() -> std::sync::MutexGuard<'static, Memory> {
+    MEMORY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn remember_seen(cameras: &[CameraInfo]) {
+    let mut m = memory();
+    for c in cameras {
+        match m.seen.iter_mut().find(|s| s.id == c.id) {
+            Some(slot) => *slot = c.clone(),
+            None => m.seen.push(c.clone()),
+        }
     }
-    #[cfg(windows)]
-    {
-        windows_backend::list()
+}
+
+fn remember_started(id: &str, format: &VideoFormat) {
+    let mut m = memory();
+    let entry = Remembered {
+        id: id.to_owned(),
+        format: format.clone(),
+    };
+    match m.started.iter_mut().find(|r| r.id == id) {
+        Some(slot) => *slot = entry,
+        None => m.started.push(entry),
     }
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        Err(CameraError::Unsupported)
-    }
+}
+
+/// The camera a recording asked for by `name`, as a camera that has run in this
+/// process before — for when the camera is not in the list NOW (a recording's
+/// next fragment starts while the cable is out). The name is matched with the
+/// recorder's own rule over the cameras that have run, so a camera that was
+/// only ever listed is never taken for it.
+pub fn remembered_for(name: &str) -> Option<Remembered> {
+    let m = memory();
+    let ran: Vec<CameraInfo> = m
+        .seen
+        .iter()
+        .filter(|c| m.started.iter().any(|r| r.id == c.id))
+        .cloned()
+        .collect();
+    let found = crate::recorder::native_capture::video::find_camera(&ran, name)?;
+    m.started.iter().find(|r| r.id == found.id).cloned()
+}
+
+#[cfg(test)]
+pub(crate) fn remember_seen_for_test(cameras: &[CameraInfo]) {
+    remember_seen(cameras);
+}
+
+#[cfg(test)]
+pub(crate) fn remember_started_for_test(id: &str, format: &VideoFormat) {
+    remember_started(id, format);
+}
+
+/// A capture is being let go of: if its camera was lost, say since when, so the
+/// next fragment's camera carries the outage on instead of starting a new one.
+pub fn note_source_stopped(lost_for: Option<std::time::Duration>) {
+    let now = std::time::Instant::now();
+    memory().lost_hint = lost_for.and_then(|d| now.checked_sub(d)).map(|s| (now, s));
+}
+
+/// How long after a lost camera was let go of the next one may take over its
+/// outage: a fragment boundary, not a new recording.
+const LOST_HINT_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn take_lost_hint() -> Option<std::time::Instant> {
+    let (noted, since) = memory().lost_hint.take()?;
+    (noted.elapsed() <= LOST_HINT_MAX_AGE).then_some(since)
 }
 
 /// The capture formats of one camera. Opens nothing for capture (Windows opens
@@ -564,12 +667,59 @@ pub(crate) fn start_with(
 ) -> Result<Capture, CameraError> {
     let queue: Arc<FrameQueue<Frame>> = Arc::new(FrameQueue::new(queue_frames));
     let backend = platform.open(camera_id, format, Arc::clone(&queue))?;
+    remember_started(camera_id, format);
     let capture = Capture {
-        shared: reconnect::Shared::new(backend),
+        shared: reconnect::Shared::with_clock(backend, Arc::clone(&platform)),
         queue,
     };
-    reconnect::supervise(platform, &capture.shared, camera_id, format, &capture.queue);
+    reconnect::supervise(
+        platform,
+        &capture.shared,
+        camera_id,
+        format,
+        &capture.queue,
+        None,
+    );
     Ok(capture)
+}
+
+/// A capture of a camera that is NOT there: no session, lost from the start,
+/// and the supervisor opens `camera_id` — the same stable id, nothing else —
+/// as soon as it is listed (M3R #4). For a recording's next fragment starting
+/// while the camera is out: the track records black and says so, instead of
+/// having no camera at all for the rest of the recording. The outage is counted
+/// from the last picture when the camera that was let go of was lost
+/// ([`note_source_stopped`]), else from now.
+pub fn start_resilient_lost(remembered: &Remembered, queue_frames: usize) -> Capture {
+    start_lost_with(
+        Arc::new(reconnect::OsPlatform),
+        &remembered.id,
+        &remembered.format,
+        queue_frames,
+    )
+}
+
+pub(crate) fn start_lost_with(
+    platform: Arc<dyn reconnect::CameraPlatform>,
+    camera_id: &str,
+    format: &VideoFormat,
+    queue_frames: usize,
+) -> Capture {
+    let queue: Arc<FrameQueue<Frame>> = Arc::new(FrameQueue::new(queue_frames));
+    let since = take_lost_hint().unwrap_or_else(|| platform.now());
+    let capture = Capture {
+        shared: reconnect::Shared::lost_from_start(since, Arc::clone(&platform)),
+        queue,
+    };
+    reconnect::supervise(
+        platform,
+        &capture.shared,
+        camera_id,
+        format,
+        &capture.queue,
+        Some(since),
+    );
+    capture
 }
 
 #[cfg(test)]

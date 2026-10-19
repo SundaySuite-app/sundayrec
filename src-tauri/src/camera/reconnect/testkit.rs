@@ -35,6 +35,12 @@ pub(crate) struct FakeWorld {
     pub original_format_gone: AtomicBool,
     /// The ids every session was opened for.
     pub opened_ids: Mutex<Vec<String>>,
+    /// Time wound forward on the supervisor's and the health's clock, so a
+    /// 75 s outage takes no 75 s ([`FakeWorld::advance`]).
+    skew: Mutex<Duration>,
+    /// How many times the device list has been read (a look of the supervisor
+    /// that a test can wait for).
+    pub list_reads: AtomicU64,
     pub fps: f64,
     pub size: (u32, u32),
     /// Frames the fake sessions pushed, over all sessions.
@@ -56,6 +62,8 @@ impl FakeWorld {
             fail_opens: AtomicU32::new(0),
             opened_formats: Mutex::new(Vec::new()),
             original_format_gone: AtomicBool::new(false),
+            skew: Mutex::new(Duration::ZERO),
+            list_reads: AtomicU64::new(0),
             opened_ids: Mutex::new(Vec::new()),
             fps,
             size: (width, height),
@@ -71,6 +79,20 @@ impl FakeWorld {
             PixelFormat::Nv12,
             "420v",
         )
+    }
+
+    /// Wind the clock forward by `by` and wake the supervisor so it looks at
+    /// once; returns when it has read the device list (a look on the new time).
+    pub(crate) fn advance(&self, by: Duration) {
+        *lock(&self.skew) += by;
+        let reads = self.list_reads.load(Ordering::SeqCst);
+        self.changes.poke();
+        let t = std::time::Instant::now();
+        while self.list_reads.load(Ordering::SeqCst) == reads
+            && t.elapsed() < Duration::from_secs(10)
+        {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Pull the cable. `signal`: the OS tells us (otherwise only the missing
@@ -121,7 +143,12 @@ impl BackendHandle for FakeSession {
 }
 
 impl CameraPlatform for FakeWorld {
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now() + *lock(&self.skew)
+    }
+
     fn camera_ids(&self) -> Result<Vec<String>, CameraError> {
+        self.list_reads.fetch_add(1, Ordering::SeqCst);
         let mut ids = lock(&self.others).clone();
         if self.attached.load(Ordering::SeqCst) {
             ids.push(self.id.clone());
