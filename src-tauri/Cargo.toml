@@ -341,6 +341,16 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSNotification",
     "NSOperation",
     "block2",
+    # D2: `NSBundle.mainBundle` — «are we an .app?» before touching UserNotifications.
+    "NSBundle",
+] }
+# D2: `UNUserNotificationCenter.getNotificationSettings` (notify::permission),
+# only ever called from inside an `.app` bundle. Already in Cargo.lock.
+objc2-user-notifications = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "UNUserNotificationCenter",
+    "UNNotificationSettings",
 ] }
 # The block type the notification observer takes (`RcBlock::new`). Already in
 # Cargo.lock through objc2-foundation/tauri; declared so this crate can name it.
