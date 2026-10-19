@@ -30,6 +30,7 @@
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
 //!   - [`av_clock`]     — the audio clock (C2): host-clock instant → audio sample position, a sliding least-squares fit that follows sound-card drift and restarts when the host clock jumps (sleep)
 //!   - [`video_conform`] — the conformer (C2): camera frames → a fixed frame rate locked to the audio clock (newest frame per slot, repeat, 2 s hold then black), proptested over 3 simulated hours
+//!   - [`video_copy`]   — cut-only video export (B6): which keyframes and clean splits the cuts snap to so the picture can be copied, the concat list, and the refusals that send the export back to a re-encode
 //!   - [`video_encoder`] — which video encoder a recording gets: the Windows hardware probe order (nvenc → qsv → amf → mf → libx264), the golden-tested argv per encoder, and the fall-back-on-failure decision (C0a)
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
@@ -99,6 +100,7 @@ pub mod tuning;
 pub mod update;
 pub mod vad;
 pub mod video_conform;
+pub mod video_copy;
 pub mod video_encoder;
 pub mod video_track;
 pub mod wake;

@@ -1248,6 +1248,21 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      the «Maskinvare-koding» toggle — it guarded nothing). If VideoToolbox
      refuses, the log shows a warning and the export completes in software
      anyway — a failed hardware render must never cost the user the export.
+     5c2. **Video that is only cut is copied (B6).** Open a video recording from
+     v0.26 or later (a keyframe every 2 s), keep the sermon with **Klipp** and
+     leave **Lyd** on no profile, then export with video.
+   - **Expected:** it finishes in seconds, not minutes (the picture is not
+     re-encoded); the log says «cut-only video export: the picture is copied»;
+     the start of each kept part may sit up to 2 s earlier than you set it
+     (the picture can only begin on a keyframe; the sound begins at the same
+     place), and sound and picture stay together at every cut. An old
+     recording (keyframes far apart) or a cut shorter than 2 s is exported the
+     slow, exact way, and the log says why.
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_only_video_export_copies_the_picture_and_keeps_every_cut_in_sync_or_skips
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_source_that_starts_late_is_copied_in_sync_too_or_skips
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_recording_with_far_apart_keyframes_is_re_encoded_exactly_or_skips
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_shorter_than_the_keyframe_gap_is_not_swallowed_or_skips
+   - VERIFIED-BY: crates/sundayrec-core/src/video_copy.rs::a_start_snaps_back_to_the_keyframe_and_the_end_to_a_clean_split
      5d. **A power cut mid-export, to a folder you picked.** Pick a destination
      that is neither the save folder nor a recording's folder (a USB stick is
      the real case), start a long export, and pull the power — or force-quit —

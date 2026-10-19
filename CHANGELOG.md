@@ -5,6 +5,17 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Behold bare prekenen» på en video går flere ganger raskere.** Når videoen bare
+  kuttes (ingen annen bildebehandling), kopieres bildet rett fra opptaket i stedet for
+  å kodes om, og lyden lages over nøyaktig de samme stykkene. Lyd og bilde følger
+  hverandre ved hvert kutt (målt med klapp og blink: innenfor ett bilde). En preken på
+  30 minutter fra en 90 minutters video tok 20 sekunder i stedet for 83 (51 i stedet for
+  121 med «Tale») på testmaskinen. Prisen: et
+  kopiert stykke kan bare begynne på et nøkkelbilde, så starten kan ligge opptil
+  2 sekunder tidligere enn du satte den (aldri senere, så ingen ord forsvinner). Eldre
+  opptak med få nøkkelbilder, og kutt kortere enn to sekunder, eksporteres som før:
+  langsomt, men nøyaktig.
+
 - **Analysen av et langt opptak er over tre ganger så rask.** Før ble fila lest fire
   ganger fra du åpnet den til alt var analysert: for bølgeformen, for å finne
   prekenen, for å sjekke kanalene og for «Tale»s analyse. Nå leses den én gang,
