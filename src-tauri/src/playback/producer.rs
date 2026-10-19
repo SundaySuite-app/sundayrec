@@ -180,7 +180,7 @@ impl Lane {
 
 /// A chain being warmed up in a helper thread, and the input read meanwhile.
 struct Warm {
-    rx: Receiver<Result<BuiltChain, String>>,
+    rx: Receiver<(Result<BuiltChain, String>, u64)>,
     /// The input frame the reader stood at when the warm-up began.
     from: u64,
     history: Vec<Vec<Vec<f32>>>,
@@ -311,7 +311,9 @@ where
         let spawned = std::thread::Builder::new()
             .name("playback-warm".into())
             .spawn(move || {
-                let _ = tx.send(warmed_chain(&chain, &plan, opener, in_ch, from));
+                let t = Instant::now();
+                let built = warmed_chain(&chain, &plan, opener, in_ch, from);
+                let _ = tx.send((built, t.elapsed().as_millis() as u64));
             });
         if spawned.is_ok() {
             self.warm = Some(Warm {
@@ -323,18 +325,19 @@ where
         }
     }
 
-    /// Take the warmed chain in when the helper has finished. Returns an error to tell, if any.
-    fn poll_warm(&mut self) -> Option<String> {
+    /// Take the warmed chain in when the helper has finished. `Some(Ok(ms))` = it came in, after
+    /// that many milliseconds of warming up; `Some(Err(..))` = it could not be built.
+    fn poll_warm(&mut self) -> Option<Result<u64, String>> {
         let w = self.warm.as_mut()?;
         match w.rx.try_recv() {
-            Ok(Ok(chain)) => {
+            Ok((Ok(chain), ms)) => {
                 let w = self.warm.take()?;
                 self.join(chain, w);
-                None
+                Some(Ok(ms))
             }
-            Ok(Err(e)) => {
+            Ok((Err(e), _)) => {
                 self.warm = None;
-                Some(e)
+                Some(Err(e))
             }
             Err(TryRecvError::Empty) => {
                 if w.frames as f64 > WARM_GIVE_UP_SEC * f64::from(self.rate) {
@@ -612,11 +615,15 @@ where
             }
             // A new chain starts warming up as soon as the last one is in.
             if let Some(j) = job.as_mut() {
-                if let Some(e) = j.poll_warm() {
-                    tracing::warn!("playback: {e}");
-                    if let Ok(mut slot) = self.error.lock() {
-                        *slot = Some(e);
+                match j.poll_warm() {
+                    Some(Ok(ms)) => self.shared.warm_ms.store(ms, Ordering::Relaxed),
+                    Some(Err(e)) => {
+                        tracing::warn!("playback: {e}");
+                        if let Ok(mut slot) = self.error.lock() {
+                            *slot = Some(e);
+                        }
                     }
+                    None => {}
                 }
                 if j.warm.is_none() && j.incoming.is_none() && !j.exhausted {
                     if let Some(c) = want_chain.take() {

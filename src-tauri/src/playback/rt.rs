@@ -107,6 +107,8 @@ pub struct Shared {
     /// Which layer the ear gets: `f32::to_bits` of 0.0 («Før», the programme as it is) … 1.0
     /// («Etter», through the chain). Only read when the ring has two layers.
     pub wet_target: AtomicU32,
+    /// How long the last new chain took to warm up in its helper thread, milliseconds.
+    pub warm_ms: AtomicU64,
 }
 
 impl Shared {
@@ -702,9 +704,9 @@ pub(crate) mod tests {
         );
         // After `fade` frames the ear has the wet layer exactly.
         let wet_at = |i: usize| sine(2.0)((8_000 + i) as u64);
-        for i in (fade + 2)..b.len() {
+        for (i, v) in b.iter().enumerate().skip(fade + 2) {
             assert!(
-                (b[i] - wet_at(i)).abs() < 1e-6,
+                (v - wet_at(i)).abs() < 1e-6,
                 "frame {i} is not the wet layer"
             );
         }

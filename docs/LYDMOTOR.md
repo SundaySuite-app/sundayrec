@@ -400,6 +400,53 @@ Avspillingsmotoren»).
   (`editor::join_fades`), ikke kutt-planens overganger. Det du hører ved et kutt er derfor ikke
   helt det du får før eksporten leser samme plan.
 
+**Gjort i B5b: Før/Etter og profilbytte** (`playback/{rt,producer}.rs`, `editor/listen.rs`,
+`app/editor/sound.ts`). Lyd-steget lytter nå på motoren; ingen mp3 gjengis for steget
+(`master_preview` står igjen til B5c).
+
+- **Før og Etter er to lag i ringen.** Produsenten lager BÅDE programmet slik det er («dry»)
+  og programmet gjennom kjeden («wet») for de samme frame-ene, og ringen bærer begge
+  (`[dry | wet]` per frame). Lydtråden velger med en bryter den glir mot på 20 ms
+  (smoothstep, gainene summerer til 1: lagene er det samme signalet, så lik gain, ikke lik
+  effekt; ellers ville to like lag hevet seg 3 dB midt i overgangen). Bryteren er derfor
+  hørt innen 20 ms uansett hva som ligger i ringen, og koster lydtråden én multiplikasjon
+  per sample. Under stillhet (pause, mellom generasjoner) hopper den rett til målet.
+- **Tidsjustert på indeks, ikke på forsinkelseslinjer.** Hver kø (`Stereo`) vet hvilken
+  programframe første sample er, kjedens latens er bare hvor køen begynner, og et uttak tar
+  samme programframes fra alle køer. En kjede med 240 samples look-ahead gir klikket på
+  samme frame som originalen (`dry_and_wet_are_the_same_frames`); en preset-kjede ligger på
+  lag 0 mot originalen.
+- **Profilbytte: parameterendring i den levende kjeden gikk ikke.** To grunner. (1) En profil
+  er en annen mengde trinn (støyport, de-noiser, en annen kompressor), ikke en verdi på de som
+  kjører: filmcrafts parametre glattes per sample (30 ms), men bare innen ett trinn. (2) Kjeden
+  står FØR ringen, så en endring høres uansett etter det som ligger i ringen; en
+  parameterendring ville ikke vært raskere. Løsningen er den andre veien: en ny kjede bygges og
+  varmes opp i en hjelpetråd (den leser sekundet før leseren står og kjører det gjennom den nye
+  kjeden, som en seeks forkjøring) mens produsenten fyller ringen som før; input som leses i
+  mellomtiden spares og mates inn når kjeden er klar. Så ser begge kjeder samme input, og wet er
+  en 40 ms krysstoning fra den gamle kjedens frames til den nyes (samme programframes, samme
+  smoothstep med gainsum 1). Deretter slippes den gamle. Dry berøres ikke (en test sammenligner
+  det med kilden bit for bit gjennom et bytte).
+- **Ringen holdes 0,5 s foran, ikke full** (`LEAD_SEC`; ringen er fortsatt 0,75 s): en ny kjede
+  høres etter det som ligger i ringen, altså høyst 0,5 s. Første gang for et valg måles hele
+  programmet først (nivået eksporten vil gi; `listen_plan`, delt med forhåndsmålingen og
+  eksporten), og det kan ta et minutt: den gamle lyden spiller videre og kortet sier at det
+  gjøres klar. Nivået er det samme som i eksporten: `Chain::with_gain_plan` legger planens
+  forsterkning og limiter bakerst i kjeden (en test holder den lik `GainStage`).
+- **Kommandoer:** `editor_listen_open` (åpner økta uten å vente på noe, «Før» valgt, ingen
+  kjede), `editor_listen_chain` (setter kjeden for et valg inn; nyere forespørsel vinner over en
+  eldre som blir ferdig senere), `editor_listen_transport` (spill, pause, hopp i kildesekunder,
+  side) og `editor_listen_close`; hendelsene går som `editor://listen`.
+- **Bevist i tester:** callbacken allokerer ikke heller med to lag og bryteren i bevegelse
+  (`render_never_allocates`, og skrallen over RT-koden); intet sprang over et side- eller
+  kjedebytte større enn signalets eget pluss krysstoningens stigning; to like lag forblir like
+  gjennom et bytte; et bytte under en lydenhet som spør i sanntid (480 frames hver 10 ms, bytte
+  av side hver 300 ms og av kjede hvert 0,5 s) gir `underruns 0`; et bytte som kappløper med et
+  hopp eller programmets slutt henger ikke. UI-logikken (vitest) og kommandoene i e2e.
+- **Målt på Macen** (M1 Pro, `2026.01.04.mp3`, 48 kHz-enhet, kjøreren): 13–17 s med side- og
+  profilbytter (`speech-clear` ↔ `voice-noisy-room`) ga `underruns 0 xruns 0`; en ny kjede var
+  varm etter 75–77 ms; produsentens sanntidsfaktor med begge lag 12–16× (B5a, ett lag: 9–22×).
+
 ### Fase 6 — rask videoeksport
 
 - Opptaket setter et nøkkelbilde hvert 2. sekund (`-g`, eller

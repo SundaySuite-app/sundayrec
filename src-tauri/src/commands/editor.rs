@@ -1178,9 +1178,7 @@ pub async fn editor_listen_transport(
 
 /// Stop the listening and let go of the sound card.
 #[tauri::command]
-pub async fn editor_listen_close(
-    listen: State<'_, editor::listen::ListenEngine>,
-) -> AppResult<()> {
+pub async fn editor_listen_close(listen: State<'_, editor::listen::ListenEngine>) -> AppResult<()> {
     // The engine fades out and joins its threads: not on the async runtime.
     if let Some(session) = listen.detach() {
         off_runtime(move || session.close()).await?;

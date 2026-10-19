@@ -81,7 +81,9 @@ impl From<PlaybackEvent> for EditorListenEvent {
             PlaybackEvent::Underrun { total } => Self::Underrun {
                 total: total as u32,
             },
-            PlaybackEvent::Xrun { total } => Self::Xrun { total: total as u32 },
+            PlaybackEvent::Xrun { total } => Self::Xrun {
+                total: total as u32,
+            },
             PlaybackEvent::Error { message } => Self::Error { message },
         }
     }
@@ -95,16 +97,22 @@ pub enum EditorListenAction {
     Play,
     Pause,
     /// Jump to this many seconds of SOURCE time (inside a cut: the next part that stays).
-    SeekSource { secs: f64 },
+    SeekSource {
+        secs: f64,
+    },
     /// «Etter» (`true`, through the chain) or «Før» (`false`, the programme as it is).
-    Side { after: bool },
+    Side {
+        after: bool,
+    },
 }
 
 struct Session {
     player: Player,
     /// Chain asks handed out, and the newest one installed: a slow ask that finishes after a
     /// newer one must not put its older chain over it.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     asked: AtomicU64,
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     installed: u64,
 }
 
@@ -335,8 +343,10 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(EditorListenEvent::from(PlaybackEvent::Underrun { total: 2 }))
-                .unwrap(),
+            serde_json::to_value(EditorListenEvent::from(PlaybackEvent::Underrun {
+                total: 2
+            }))
+            .unwrap(),
             serde_json::json!({ "kind": "underrun", "total": 2 })
         );
     }
@@ -346,7 +356,8 @@ mod tests {
         let a: EditorListenAction =
             serde_json::from_str(r#"{"kind":"seekSource","secs":12.5}"#).unwrap();
         assert_eq!(a, EditorListenAction::SeekSource { secs: 12.5 });
-        let a: EditorListenAction = serde_json::from_str(r#"{"kind":"side","after":true}"#).unwrap();
+        let a: EditorListenAction =
+            serde_json::from_str(r#"{"kind":"side","after":true}"#).unwrap();
         assert_eq!(a, EditorListenAction::Side { after: true });
         assert!(serde_json::from_str::<EditorListenAction>(r#"{"kind":"burn"}"#).is_err());
     }

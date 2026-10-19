@@ -5,6 +5,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Før» og «Etter» i steget Lyd er et bytte, ikke en ventetid.** Lyttingen spilles
+  nå av avspillingsmotoren i stedet for en tjue sekunders mp3 som ble laget for hvert
+  valg: ingen fil lages, og både originalen og lyden gjennom profilen ligger klare.
+  Å trykke «Før» eller «Etter» er hørt innen 20 ms, også mens det spiller, og
+  lyttingen stopper ikke etter tjue sekunder: den fortsetter fra midten av prekenen
+  til du trykker pause eller forlater steget. Bytter du profil eller mikserinnstilling
+  mens det spiller, krysstoner motoren over til den nye lyden uten pause, og den nye
+  høres etter høyst et halvt sekund (første gang for et valg tar det lengre, fordi
+  nivået for hele opptaket måles først, som før). På en Mac (M1 Pro, en 90 minutters
+  mp3) ga 13–17 sekunder med ti–femten bytter av side og profil `underruns 0
+xruns 0`, og en ny kjede var klar til å krysstones inn etter 75 ms. Må prøves ved
+  å lytte etter klikk, ekko og pumping når du bytter mens det spiller (RIG-DAY).
+
 - **På Mac sier «Hvem får beskjed?» nå om varsler faktisk er slått på for SundayRec.**
   Før sto det «vet ikke» og en knapp for testvarsel. Nå leser appen systemets
   varselinnstilling og viser grønt når varsler er på, og rødt når de er av for

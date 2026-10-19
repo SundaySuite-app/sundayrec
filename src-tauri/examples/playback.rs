@@ -11,7 +11,8 @@
 //!   vocal chain (`voice-podcast`, …). Default: none (the file as it is, so what you hear at a
 //!   join or a seek is the engine, not a filter).
 //! * `--at T:<action>` at T seconds of wall time: `seek=P` (programme seconds), `src=S` (source
-//!   seconds), `pause`, `play`. Without any `--at`, a demo script runs (see [`demo`]): the start,
+//!   seconds), `pause`, `play`, and (B5b) `side=before|after` (Før/Etter: the programme as it is,
+//!   or through the chain) and `chain=<id>` (change the profile while it plays). Without any `--at`, a demo script runs (see [`demo`]): the start,
 //!   a seek to 2 s before each of the first two joins (you hear the cut 2 s later), a pause and a
 //!   resume, and a seek into a cut (it lands on the next keep).
 //! * `--for S` stops after S seconds (default 20).
@@ -65,6 +66,10 @@ enum Action {
     Src(f64),
     Pause,
     Play,
+    /// «Etter» (`true`) or «Før» (`false`).
+    Side(bool),
+    /// A new profile, crossfaded in while it plays.
+    Chain(String),
 }
 
 fn parse_action(s: &str) -> Result<(f64, Action), String> {
@@ -73,6 +78,9 @@ fn parse_action(s: &str) -> Result<(f64, Action), String> {
     let a = match a.split_once('=') {
         Some(("seek", v)) => Action::Seek(v.parse().map_err(|_| format!("--at {s}"))?),
         Some(("src", v)) => Action::Src(v.parse().map_err(|_| format!("--at {s}"))?),
+        Some(("side", "before")) => Action::Side(false),
+        Some(("side", "after")) => Action::Side(true),
+        Some(("chain", id)) => Action::Chain(id.to_string()),
         None if a == "pause" => Action::Pause,
         None if a == "play" => Action::Play,
         _ => return Err(format!("--at {s}: unknown action")),
@@ -212,6 +220,11 @@ fn run() -> Result<(), String> {
                 Action::Src(s) => seeking = Some((player.seek_source(s), Instant::now())),
                 Action::Pause => player.pause(),
                 Action::Play => player.play(),
+                Action::Side(wet) => player.set_wet(wet),
+                Action::Chain(id) => match chain_for(&id) {
+                    Ok(c) => player.set_chain(c),
+                    Err(e) => eprintln!("{e}"),
+                },
             }
         }
         for e in rx.try_iter() {
@@ -245,12 +258,14 @@ fn run() -> Result<(), String> {
     let s = player.stats();
     player.close();
     println!(
-        "underruns {}  xruns {}  device frames {}  real-time factor {}",
+        "underruns {}  xruns {}  device frames {}  real-time factor {}  last chain warm-up {}",
         s.underruns,
         s.xruns,
         s.device_frames,
         s.realtime_factor
-            .map_or("–".to_string(), |f| format!("{f:.1}×"))
+            .map_or("–".to_string(), |f| format!("{f:.1}×")),
+        s.chain_warm_ms
+            .map_or("–".to_string(), |ms| format!("{ms} ms"))
     );
     Ok(())
 }

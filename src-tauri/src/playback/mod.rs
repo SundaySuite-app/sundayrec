@@ -8,9 +8,10 @@
 //!  ───────────────                                 ───────────────────────────
 //!  ffmpeg -ss … f32le ─▶ ProgramReader               RtRenderer::render
 //!     (cut plan, constant-power joins)                 pop finished samples
-//!  ─▶ BuiltChain (B2a)                                 fade gain (start/stop/seek)
+//!  ├▶ dry                                               Før/Etter mix (B5b)
+//!  └▶ BuiltChain (B2a) ─▶ wet                           fade gain (start/stop/seek)
 //!  ─▶ Resampler → device rate          ══ SPSC ring ══▶  count frames = THE CLOCK
-//!  ─▶ device channels, interleaved     ══ markers  ══▶  publish position (atomics)
+//!  ─▶ device channels, `[dry | wet]`   ══ markers  ══▶  publish position (atomics)
 //!
 //!  reporter thread: reads the atomics ~30×/s and hands PlaybackEvents to the sink (the UI)
 //! ```
@@ -31,8 +32,14 @@
 //! thread), one producer, one reporter. [`Player`] itself is `Send` and holds only channels,
 //! atomics and join handles.
 //!
-//! UI and Tauri commands are B5b/B5c. The runner `examples/playback.rs` drives this module on
-//! the Mac's speakers (RIG-DAY «Avspillingsmotoren»).
+//! **Før and Etter (B5b).** Both the programme as it is and the programme through the chain are
+//! in the ring, time-aligned; the callback crossfades between them in 20 ms
+//! ([`Player::set_wet`]). A chain change while it plays ([`Player::set_chain`]) is built and
+//! warmed up beside the one that runs and crossfaded in by the producer ([`producer`]).
+//!
+//! The sound step drives this through the commands in `editor::listen` (B5b); the Klipp step
+//! comes in B5c. The runner `examples/playback.rs` drives this module on the Mac's speakers
+//! (RIG-DAY «Avspillingsmotoren», «Før/Etter og profilbytte»).
 
 pub mod producer;
 pub mod rt;
@@ -82,6 +89,8 @@ pub struct PlaybackStats {
     pub xruns: u64,
     /// Programme seconds made per second of producer work (decode + chain + resampling).
     pub realtime_factor: Option<f64>,
+    /// How long the last chain change took to warm up before it could be crossfaded in (ms).
+    pub chain_warm_ms: Option<u64>,
 }
 
 /// How often the reporter looks at the atomics.
@@ -317,6 +326,7 @@ impl Player {
             xruns: self.shared.xruns.load(Ordering::Relaxed),
             realtime_factor: (ns > 0 && frames > 0)
                 .then(|| (frames as f64 / f64::from(self.plan.rate())) / (ns as f64 / 1e9)),
+            chain_warm_ms: Some(self.shared.warm_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
         }
     }
 
