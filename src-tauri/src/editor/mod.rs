@@ -3310,6 +3310,23 @@ where
     // the token on the spot and the guard would be a no-op that still compiles.
     // It is held across the journal clean-up below too, so the next export
     // cannot start until this one's row is dealt with.
+    export_inner(engine, req, inputs, hw_first, true, on_progress).await
+}
+
+/// [`export`] with the B6 copy path switchable: `allow_copy == false` is the re-encode the
+/// export always had (the speed benchmark's «before», and the fallback below).
+#[cfg(feature = "editor")]
+async fn export_inner<F>(
+    engine: &ExportEngine,
+    req: &EditorExportRequest,
+    inputs: &ResolvedExport,
+    hw_first: bool,
+    allow_copy: bool,
+    on_progress: F,
+) -> AppResult<EditorExportResult>
+where
+    F: Fn(f32, &str),
+{
     let _slot = engine
         .try_begin()
         .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
@@ -3320,10 +3337,121 @@ where
     // long-lived managed state, the flag is per-export.
     engine.reset_cancel();
 
-    let result = export_claimed(engine, req, inputs, hw_first, on_progress).await;
+    let mut result = export_claimed(engine, req, inputs, hw_first, allow_copy, &on_progress).await;
+    // B6: a copy that did not come out right (ffmpeg refused it, or the picture and the sound
+    // disagree in length) is thrown away and the export runs again as a re-encode. The user
+    // only asked to keep the sermon; they must not lose the export over a speed-up.
+    if allow_copy && matches!(&result, Err(AppError::Recording(m)) if m == COPY_FALLBACK) {
+        result = export_claimed(engine, req, inputs, hw_first, false, &on_progress).await;
+    }
     engine.forget_render_temp().await;
     result
 }
+
+/// The internal «this copy must be redone as a re-encode» marker `export_claimed` returns;
+/// [`export_inner`] consumes it and it never reaches the renderer.
+#[cfg(feature = "editor")]
+const COPY_FALLBACK: &str = "copy_export_fallback";
+
+/// The cut-only video export's plan and its concat list on disk (B6). The list is removed
+/// when this is dropped, on every way out of the export.
+#[cfg(feature = "editor")]
+struct CopyExport {
+    plan: sundayrec_core::video_copy::CopyPlan,
+    list: std::path::PathBuf,
+}
+
+#[cfg(feature = "editor")]
+impl Drop for CopyExport {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.list);
+    }
+}
+
+/// Ask whether the picture of `source` can be copied for these `keeps`, and plan it (B6). Two
+/// header-only ffprobe runs; the answer is a plan or the reason there is none (a string for
+/// the log, since the caller only re-encodes).
+#[cfg(feature = "editor")]
+async fn plan_video_copy(
+    source: &str,
+    keeps: &[sundayrec_core::editor::KeepSegment],
+    container: &str,
+    want_hevc: bool,
+) -> Result<CopyExport, String> {
+    use sundayrec_core::video_copy as vc;
+
+    // A packet list of a 90-minute file is ~160 000 lines out of the container's own index;
+    // it is capped all the same, because a stalled volume must not hang the export here.
+    const PROBE_CAP: std::time::Duration = std::time::Duration::from_secs(60);
+    async fn run(args: Vec<String>) -> Result<String, String> {
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = tokio::time::timeout(
+            PROBE_CAP,
+            crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
+                .args(&arg_refs)
+                .output(),
+        )
+        .await
+        .map_err(|_| "ffprobe timed out".to_string())?
+        .map_err(|e| format!("ffprobe spawn: {e}"))?;
+        if !out.status.success() {
+            return Err("ffprobe failed".into());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    if !vc::path_fits_concat_list(source) {
+        return Err("the path cannot be written into a concat list".into());
+    }
+    let probe = vc::parse_copy_probe(&run(vc::copy_probe_args(source)).await?);
+    vc::copy_is_possible(&probe, container, want_hevc).map_err(|r| r.to_string())?;
+    let packets = vc::parse_packets(&run(vc::packet_args(source)).await?);
+    let plan = vc::plan_copy_cut(&packets, probe.start_time, keeps).map_err(|r| r.to_string())?;
+
+    let list = std::env::temp_dir().join(format!(
+        "sundayrec-concat-{}.ffconcat",
+        uuid::Uuid::now_v7().simple()
+    ));
+    std::fs::write(&list, vc::concat_list(source, &plan, cfg!(windows)))
+        .map_err(|e| format!("write concat list: {e}"))?;
+    Ok(CopyExport { plan, list })
+}
+
+/// The video and audio stream lengths of a finished file, seconds: `(video, audio)`.
+#[cfg(feature = "editor")]
+async fn stream_durations(path: &str) -> Option<(f64, f64)> {
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,duration",
+                "-of",
+                "csv=p=0",
+                path,
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let pick = |kind: &str| -> Option<f64> {
+        text.lines().find_map(|l| {
+            let (k, d) = l.split_once(',')?;
+            (k.trim() == kind).then(|| d.trim().parse::<f64>().ok())?
+        })
+    };
+    Some((pick("video")?, pick("audio")?))
+}
+
+/// How far the copied picture's length may differ from the sound's before the copy is thrown
+/// away (B6). The two are cut to the same intervals, so they agree to a few milliseconds; two
+/// frames is the room for a muxer's rounding and no more.
+#[cfg(feature = "editor")]
+const COPY_LENGTH_TOLERANCE_SECS: f64 = 0.07;
 
 /// The body of [`export`], run with the engine already claimed and the cancel
 /// flag cleared. Every `?` in here returns to [`export`], which drops the
@@ -3334,7 +3462,8 @@ async fn export_claimed<F>(
     req: &EditorExportRequest,
     inputs: &ResolvedExport,
     hw_first: bool,
-    on_progress: F,
+    allow_copy: bool,
+    on_progress: &F,
 ) -> AppResult<EditorExportResult>
 where
     F: Fn(f32, &str),
@@ -3379,10 +3508,6 @@ where
     if keeps.is_empty() {
         return Err(AppError::Validation("no_audio_remaining".into()));
     }
-    // How much media the render actually produces — the denominator for the
-    // progress percentage AND the basis of the kill-timer (an export of the
-    // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
-    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
     // 1b. One probe, two answers: the source's sample rate (so the encoder can
     //     be pinned to it — the old level filter ran at 192 kHz, and a
@@ -3412,6 +3537,38 @@ where
         sample_rate: source_rate,
         channels: probed.as_ref().and_then(|i| i.channels),
     };
+
+    // 1b2. B6: a VIDEO export that only cuts copies the picture instead of encoding it. The
+    //      cuts then snap to the keyframes the copy can start at, and those snapped intervals
+    //      REPLACE `keeps` from here on: the sound is rendered over exactly them, so the
+    //      picture and the sound are cut at the same instants. The plan refuses (and the
+    //      export re-encodes, as it always did) whenever the copy could not be exact.
+    let want_hevc = matches!(req.video_codec.as_deref(), Some("h265") | Some("hevc"));
+    let mut copy: Option<CopyExport> = None;
+    if allow_copy && is_video && probed.as_ref().is_some_and(|i| i.has_video && i.has_audio) {
+        bail_if_cancelled(engine)?;
+        match plan_video_copy(&inputs.source, &keeps, fmt, want_hevc).await {
+            Ok(c) => {
+                tracing::info!(
+                    segments = c.plan.segments.len(),
+                    max_shift_back_secs = c.plan.max_shift_back,
+                    "cut-only video export: the picture is copied"
+                );
+                copy = Some(c);
+            }
+            Err(why) => {
+                tracing::info!(%why, "video export re-encodes: the picture cannot be copied");
+            }
+        }
+    }
+    let keeps: Vec<sundayrec_core::editor::KeepSegment> = match &copy {
+        Some(c) => c.plan.keeps.clone(),
+        None => keeps,
+    };
+    // How much media the render actually produces — the denominator for the
+    // progress percentage AND the basis of the kill-timer (an export of the
+    // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
+    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
     // 1c. WHERE it lands, and whether there is room for it.
     //
@@ -3516,7 +3673,9 @@ where
     // The levelled PCM the encoder will be fed, once processed. `None` for an export that
     // changes nothing (just the cut).
     let mut master: Option<pcm::MasteredPcm> = None;
-    if !pre_chain.is_empty() || preset.is_some() {
+    // A copied picture takes its sound from the Rust path too, even when nothing changes the
+    // sound: that path renders exactly the snapped intervals.
+    if !pre_chain.is_empty() || preset.is_some() || copy.is_some() {
         // A full-file measure on a long service takes a while with NOTHING to show for it; say
         // so instead of leaving the bar at 0.
         on_progress(0.0, EXPORT_PHASE_MEASURING);
@@ -3530,7 +3689,7 @@ where
             kept_duration,
             pcm::pcm_format(source_rate, probed.as_ref().and_then(|i| i.channels)),
             timeout_ms,
-            &on_progress,
+            on_progress,
         )
         .await?;
         if let (Some(p), false) = (&preset, m.levelled) {
@@ -3624,7 +3783,7 @@ where
     // probed ONLY when the hardware path is actually taken. An unreadable size
     // falls back to the 1080p rung rather than to a nonsense `0k`.
     bail_if_cancelled(engine)?;
-    let want_hw = is_video && hw_first && cfg!(target_os = "macos");
+    let want_hw = is_video && hw_first && cfg!(target_os = "macos") && copy.is_none();
     let hw_bitrate_kbps = if want_hw {
         let (w, h) = probe_video_size(&inputs.source)
             .await
@@ -3665,7 +3824,26 @@ where
             // The audio of a mastered AUDIO export is the levelled PCM on stdin, already cut
             // and processed: it takes the main input's place.
             Some(m) if !is_video => args.extend(sundayrec_core::pcm_stream::input_args(m.fmt)),
-            _ => args.extend(["-i".into(), inputs.source.clone()]),
+            // B6: the picture comes from the concat list. `-copyts` keeps the list's own
+            // timestamps (otherwise the CLI re-bases the input on its container start, which
+            // the concat demuxer reports 80 ms early because of the AAC priming, and the
+            // picture lands that much late against the sound). `-itsoffset` gives back the
+            // microseconds the inpoints are nudged past their keyframes: without it the
+            // first picture sits a hair before zero and the player drops it.
+            _ => match &copy {
+                Some(c) => args.extend([
+                    "-itsoffset".into(),
+                    format!("{:.6}", sundayrec_core::video_copy::IN_NUDGE),
+                    "-copyts".into(),
+                    "-f".into(),
+                    "concat".into(),
+                    "-safe".into(),
+                    "0".into(),
+                    "-i".into(),
+                    c.list.to_string_lossy().into_owned(),
+                ]),
+                None => args.extend(["-i".into(), inputs.source.clone()]),
+            },
         }
         if let (Some(m), true) = (&master, is_video) {
             // …on a mastered VIDEO export the source stays input 0 for its picture and the
@@ -3682,7 +3860,14 @@ where
             // `req.duration` (the SOURCE length) is what tells the core which
             // segment edges are interior cuts and therefore need the de-click
             // fade — the same argument the audio graph above already gets.
-            if master.is_some() {
+            if copy.is_some() {
+                args.extend(["-map".into(), "0:v:0".into(), "-map".into(), "1:a".into()]);
+                args.extend(sundayrec_core::editor::video_copy_codec_args(
+                    fmt,
+                    video_codec,
+                    source_rate,
+                ));
+            } else if master.is_some() {
                 let (fc, v_out) = video_only_filter_complex(0, &keeps);
                 args.extend(["-filter_complex".into(), fc]);
                 args.extend(["-map".into(), v_out, "-map".into(), "1:a".into()]);
@@ -3692,16 +3877,18 @@ where
                 args.extend(["-filter_complex".into(), fc]);
                 args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             }
-            args.extend(if use_hw {
-                sundayrec_core::editor::videotoolbox_codec_args(
-                    fmt,
-                    video_codec,
-                    hw_bitrate_kbps,
-                    source_rate,
-                )
-            } else {
-                sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
-            });
+            if copy.is_none() {
+                args.extend(if use_hw {
+                    sundayrec_core::editor::videotoolbox_codec_args(
+                        fmt,
+                        video_codec,
+                        hw_bitrate_kbps,
+                        source_rate,
+                    )
+                } else {
+                    sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
+                });
+            }
         } else if is_simple_audio_export(audio_keeps, &proc_filters, has_intro, has_outro) {
             // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
             // for a video source exported to an audio format (see the core fn). The
@@ -3783,7 +3970,7 @@ where
         &build_args(want_hw),
         total_sec,
         timeout_ms,
-        &on_progress,
+        on_progress,
         EXPORT_PHASE_ENCODING,
         span,
         feed.as_ref(),
@@ -3805,7 +3992,7 @@ where
             &build_args(false),
             total_sec,
             timeout_ms,
-            &on_progress,
+            on_progress,
             EXPORT_PHASE_ENCODING,
             span,
             feed.as_ref(),
@@ -3814,6 +4001,27 @@ where
     }
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
+    }
+    if copy.is_some() && !is_hard_abort(&result) {
+        // A copy ffmpeg refused is redone as a re-encode (`export_inner`). So is one whose
+        // picture and sound came out different lengths: the intervals are the same list, so
+        // a difference means the copy did something this plan did not foresee.
+        let mismatch = if result.is_ok() {
+            match stream_durations(&tmp_path).await {
+                Some((v, a)) if (v - a).abs() > COPY_LENGTH_TOLERANCE_SECS => Some((v, a)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if result.is_err() || mismatch.is_some() {
+            tracing::warn!(
+                error = %result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
+                mismatch = ?mismatch,
+                "the copied video export is not usable — redoing it as a re-encode"
+            );
+            return Err(AppError::Recording(COPY_FALLBACK.into()));
+        }
     }
     result?;
     if !Path::new(&tmp_path).exists() {
@@ -8702,6 +8910,399 @@ mod tests {
             );
             assert_monotonic(&ticks);
             eprintln!("editor export smoke: video landed as {dur:.2}s mp4 ({streams:?})");
+        }
+
+        // ── B6: the cut-only video export copies the picture ─────────────────────────────
+
+        /// A `secs`-long 30 fps A/V source that CLAPS once a second: the picture flashes for
+        /// exactly one frame and the sound beeps for 50 ms at the same instant `k`. Keyframes
+        /// every `gop` frames (no scene-cut keyframes), B-frames on (x264's `veryfast` has
+        /// them, as the recorder's encoder does). Where the flash and the beep land in an
+        /// export is the A/V sync at that point, to the frame.
+        fn clap_source(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            gop: u32,
+            secs: u32,
+        ) -> String {
+            let src = dir.join(name);
+            let video = format!(
+                "color=c=black:s=320x240:r=30:d={secs},\
+                 geq=lum='if(lt(mod(T+0.005,1),0.02),235,16)':cb=128:cr=128"
+            );
+            let audio = format!(
+                "aevalsrc='if(lt(mod(t,1),0.05),0.8*sin(2*PI*1000*t),0)|\
+                 if(lt(mod(t,1),0.05),0.8*sin(2*PI*1000*t),0)':s=48000:d={secs}"
+            );
+            let gen = std::process::Command::new(ffmpeg)
+                .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"])
+                .arg(video)
+                .args(["-f", "lavfi", "-i"])
+                .arg(audio)
+                .args([
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-g",
+                    &gop.to_string(),
+                    "-keyint_min",
+                    "30",
+                    "-sc_threshold",
+                    "0",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the clap source");
+            assert!(
+                gen.status.success(),
+                "clap source generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+            src.to_string_lossy().into_owned()
+        }
+
+        /// The start time of the first `kind` (`v`/`a`) stream.
+        fn stream_start_secs(ffprobe: &std::path::Path, path: &std::path::Path, kind: &str) -> f64 {
+            let out = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    &format!("{kind}:0"),
+                    "-show_entries",
+                    "stream=start_time",
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run");
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse()
+                .unwrap_or(0.0)
+        }
+
+        /// When the picture flashes and when the sound beeps in `path`, seconds on the file's
+        /// own timeline. Decodes both, so it measures what a player would show.
+        fn claps(
+            ffmpeg: &std::path::Path,
+            ffprobe: &std::path::Path,
+            path: &std::path::Path,
+        ) -> (Vec<f64>, Vec<f64>) {
+            let raw = |args: &[&str]| -> Vec<u8> {
+                let out = std::process::Command::new(ffmpeg)
+                    .args(["-v", "error", "-i"])
+                    .arg(path)
+                    .args(args)
+                    .output()
+                    .expect("ffmpeg should decode the export");
+                assert!(out.status.success(), "decode failed");
+                out.stdout
+            };
+            // 4×4 gray per frame: the mean says flash or not.
+            let frames = raw(&[
+                "-map",
+                "0:v:0",
+                "-vf",
+                "scale=4:4:flags=area,format=gray",
+                "-fps_mode",
+                "passthrough",
+                "-f",
+                "rawvideo",
+                "-",
+            ]);
+            let v0 = stream_start_secs(ffprobe, path, "v");
+            let mut flashes = Vec::new();
+            let mut prev = false;
+            for (i, f) in frames.chunks_exact(16).enumerate() {
+                let lit = f.iter().map(|b| u32::from(*b)).sum::<u32>() / 16 > 100;
+                if lit && !prev {
+                    flashes.push(v0 + i as f64 / 30.0);
+                }
+                prev = lit;
+            }
+            let pcm = raw(&[
+                "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "s16le", "-",
+            ]);
+            let a0 = stream_start_secs(ffprobe, path, "a");
+            let mut beeps: Vec<f64> = Vec::new();
+            let mut last_loud: Option<usize> = None;
+            for (i, s) in pcm.chunks_exact(2).enumerate() {
+                if i16::from_le_bytes([s[0], s[1]]).unsigned_abs() > 8000 {
+                    if last_loud.is_none_or(|l| i - l > 960) {
+                        beeps.push(a0 + i as f64 / 48_000.0);
+                    }
+                    last_loud = Some(i);
+                }
+            }
+            (flashes, beeps)
+        }
+
+        /// The sizes of the first video stream's packets, in file order: the fingerprint of a
+        /// bitstream. A re-encode cannot reproduce them; a copy carries them over.
+        fn video_packet_sizes(ffprobe: &std::path::Path, path: &std::path::Path) -> Vec<u64> {
+            let out = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "packet=size",
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run");
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter_map(|l| l.trim().parse().ok())
+                .collect()
+        }
+
+        /// Every flash has its beep within one frame, and every clap is where the cuts put
+        /// it (within `slack`).
+        fn assert_claps_in_sync(
+            what: &str,
+            flashes: &[f64],
+            beeps: &[f64],
+            expected: &[f64],
+            slack: f64,
+        ) {
+            const FRAME: f64 = 1.0 / 30.0;
+            assert_eq!(
+                flashes.len(),
+                expected.len(),
+                "{what}: flashes at {flashes:?}, expected {expected:?}"
+            );
+            assert_eq!(
+                beeps.len(),
+                expected.len(),
+                "{what}: beeps at {beeps:?}, expected {expected:?}"
+            );
+            for ((f, b), e) in flashes.iter().zip(beeps).zip(expected) {
+                assert!(
+                    (f - b).abs() <= FRAME,
+                    "{what}: the flash at {f:.3} s and the beep at {b:.3} s are more than a frame \
+                     apart (flashes {flashes:?}, beeps {beeps:?})"
+                );
+                assert!(
+                    (f - e).abs() <= slack && (b - e).abs() <= slack,
+                    "{what}: the clap expected at {e:.3} s came at flash {f:.3} / beep {b:.3} \
+                     (flashes {flashes:?}, beeps {beeps:?})"
+                );
+            }
+        }
+
+        /// The codec of the first video stream.
+        fn video_codec_name(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let out = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run");
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+
+        /// B6: «Behold bare prekenen» on a video copies the picture. Three keeps (3.3–9.5, 13.7–21.5, 25.1–33.5), none of
+        /// whose starts is on a keyframe (3.3, 13.7 and 25.1 s; keyframes every 2 s): each
+        /// start snaps BACK to the keyframe before it, each end to the next clean split, and
+        /// the sound is rendered over exactly those intervals. The clap source puts a flash
+        /// and a beep at every whole second, so the sync is measured at every cut: within one
+        /// frame, and each clap where the snapped cuts put it.
+        #[test]
+        fn a_cut_only_video_export_copies_the_picture_and_keeps_every_cut_in_sync_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = clap_source(&ffmpeg, dir.path(), "claps.mp4", 60, 40);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.0, 3.3), (9.5, 13.7), (21.5, 25.1), (33.5, 40.0)],
+                40.0,
+            );
+            let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a cut-only video export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            assert_monotonic(&ticks);
+
+            // The picture was COPIED: the output starts with the source's packets, in size
+            // and order, from the keyframe at 2.0 s (3.3 s snapped back). A re-encode cannot
+            // reproduce a bitstream.
+            let source_sizes = video_packet_sizes(&ffprobe, std::path::Path::new(&src));
+            let out_sizes = video_packet_sizes(&ffprobe, path);
+            assert!(out_sizes.len() > 100, "{} packets", out_sizes.len());
+            // (Not the keyframe packet itself: the muxer repeats the parameter sets in it.)
+            let head = &out_sizes[1..45];
+            // (The source is searched from packet 40: the early GOPs look alike by size.)
+            let at = 40
+                + source_sizes[40..]
+                    .windows(head.len())
+                    .position(|w| w == head)
+                    .expect("the first segment's packets should be a run of the source's")
+                - 1;
+            assert!(
+                (58..=62).contains(&at),
+                "the copy starts at packet {at}, not ~60"
+            );
+            assert_eq!(video_codec_name(&ffprobe, path), "h264");
+
+            // The claps, where the snapped cuts put them: segment 1 is 2.0–9.5 (claps 2…9),
+            // segment 2 starts at the keyframe 12.0 (claps 12…21), segment 3 at 24.0 (24…33).
+            let (seg1, seg2) = (9.5 - 2.0, 21.5 - 12.0);
+            let mut expected: Vec<f64> = (2..=9).map(|c| f64::from(c) - 2.0).collect();
+            expected.extend((12..=21).map(|c| seg1 + f64::from(c) - 12.0));
+            expected.extend((24..=33).map(|c| seg1 + seg2 + f64::from(c) - 24.0));
+            let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
+            // A clean split may run a few frames past the requested end (B-frames), which
+            // moves every later segment by that much: room for it in the position, none in the
+            // flash-to-beep distance, which is the claim.
+            assert_claps_in_sync("cut-only copy", &flashes, &beeps, &expected, 0.4);
+            let skew_ms = flashes
+                .iter()
+                .zip(&beeps)
+                .map(|(f, b)| (f - b).abs() * 1000.0)
+                .fold(0.0_f64, f64::max);
+            eprintln!(
+                "B6 sync: {} claps over 3 copied cuts, worst flash-to-beep distance {skew_ms:.1} ms \
+                 (one frame is 33.3 ms)",
+                flashes.len()
+            );
+        }
+
+        /// B6: a source whose timestamps start at 100 s (a container that does not start at
+        /// zero) is cut at the same claps: the plan works on `pts - start_time`, as the audio
+        /// side does, and the concat list on the container's own times.
+        #[test]
+        fn a_source_that_starts_late_is_copied_in_sync_too_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let plain = clap_source(&ffmpeg, dir.path(), "plain.mp4", 60, 40);
+            let late = dir.path().join("late.mp4");
+            let remux = std::process::Command::new(&ffmpeg)
+                .args(["-v", "error", "-i"])
+                .arg(&plain)
+                .args(["-c", "copy", "-output_ts_offset", "100.37", "-y"])
+                .arg(&late)
+                .output()
+                .unwrap();
+            assert!(remux.status.success());
+            let req = export_request(
+                &late.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.0, 5.3), (11.5, 40.0)],
+                40.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a copy of a late-starting source should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            let source_sizes = video_packet_sizes(&ffprobe, &late);
+            let out_sizes = video_packet_sizes(&ffprobe, path);
+            assert!(
+                source_sizes[40..]
+                    .windows(30)
+                    .any(|w| w == &out_sizes[1..31]),
+                "a late-starting source should still be copied, not re-encoded"
+            );
+            // Keep 5.3–11.5 snapped back to 4.0 (claps 4…11 ⇒ 0…7).
+            let expected: Vec<f64> = (4..=11).map(|c| f64::from(c) - 4.0).collect();
+            let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
+            assert_claps_in_sync("late-starting source", &flashes, &beeps, &expected, 0.4);
+        }
+
+        /// B6: a cut-only export of a recording whose keyframes are too far apart (an old
+        /// recording, 10 s groups) cannot be copied exactly, so it is re-encoded as before:
+        /// the cut lands on the requested second, and the sync holds.
+        #[test]
+        fn a_recording_with_far_apart_keyframes_is_re_encoded_exactly_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = clap_source(&ffmpeg, dir.path(), "sparse.mp4", 300, 40);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.0, 14.0), (22.0, 40.0)],
+                40.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("the re-encode fallback should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            let source_sizes = video_packet_sizes(&ffprobe, std::path::Path::new(&src));
+            let out_sizes = video_packet_sizes(&ffprobe, path);
+            assert!(
+                !source_sizes.windows(30).any(|w| w == &out_sizes[1..31]),
+                "keyframes 10 s apart cannot be copied at 14.0 s: this must have been re-encoded"
+            );
+            // The cut is where it was asked for: claps 14…21 only, exactly.
+            let expected: Vec<f64> = (14..22).map(|c| f64::from(c) - 14.0).collect();
+            let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
+            assert_claps_in_sync("re-encode fallback", &flashes, &beeps, &expected, 0.05);
+        }
+
+        /// B6: a cut that is shorter than the snap (0.6 s between two keeps, keyframes 2 s
+        /// apart) would vanish in a copy, so the export is re-encoded and the cut is honoured.
+        #[test]
+        fn a_cut_shorter_than_the_keyframe_gap_is_not_swallowed_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = clap_source(&ffmpeg, dir.path(), "claps.mp4", 60, 20);
+            // Cut 8.7–9.3 (contains no clap, but the beep at 9.0 starts inside it).
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.0, 4.0), (8.7, 9.3), (14.0, 20.0)],
+                20.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("the fallback should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
+            // Kept: 4.0–8.7 (claps 4…8 ⇒ 0…4) and 9.3–14.0 (claps 10…13 ⇒ 5.4…8.4): the
+            // clap at 9 is the cut, and it is gone.
+            let expected: Vec<f64> = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.4, 6.4, 7.4, 8.4];
+            assert_claps_in_sync("short cut", &flashes, &beeps, &expected, 0.08);
+            let video = video_codec_name(&ffprobe, path);
+            assert_eq!(video, "h264");
         }
 
         /// F2-8: the video path's AAC track lands at the pinned rate.
