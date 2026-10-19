@@ -140,6 +140,7 @@ use std::io::{self, Read};
 
 use filmcraft_audio_dsp::{create_effect, AudioEffect};
 
+use crate::loudness::GainPlan;
 use crate::mastering::MasterPreset;
 use crate::processing::{
     finite_or, ChannelRepair, VocalChain, COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB,
@@ -309,6 +310,31 @@ impl Chain {
         if let Some(g) = gain_db.filter(|g| g.is_finite() && g.abs() > f64::EPSILON) {
             self.stages
                 .insert(0, Stage::fx("amplify", &[("gain", g as f32)]));
+        }
+        self
+    }
+
+    /// The loudness plan the export applies after the chain ([`GainPlan`]: a linear gain, then
+    /// the true-peak limiter when the peaks need one), as stages at the END of this chain.
+    ///
+    /// The export runs the plan as its own stage over the chain's output
+    /// ([`crate::loudness::GainStage`]); the listening engine (B5b) has one chain, so the same
+    /// two effects, with the same settings, go on the end of it. `chain.with_gain_plan(plan)`
+    /// through [`BuiltChain::process_offline`] is the export's output (a test holds it to that).
+    pub fn with_gain_plan(mut self, plan: &GainPlan) -> Chain {
+        if plan.gain_db.is_finite() && plan.gain_db.abs() > f64::EPSILON {
+            self.stages
+                .push(Stage::fx("amplify", &[("gain", plan.gain_db as f32)]));
+        }
+        if let Some(l) = plan.limiter {
+            self.stages.push(Stage::fx(
+                "limiter",
+                &[
+                    ("input_gain", 0.0),
+                    ("ceiling", l.ceiling_dbtp as f32),
+                    ("true_peak", 1.0),
+                ],
+            ));
         }
         self
     }
@@ -958,6 +984,66 @@ mod tests {
     use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
+
+    /// B5b: the plan as stages at the end of the chain is the export's `GainStage` (gain, then
+    /// the limiter) — the same samples, so «Etter» in the listening engine has the level the
+    /// export gives.
+    #[test]
+    fn the_gain_plan_as_stages_is_the_export_gain_stage() {
+        use crate::loudness::{apply_planar, GainPlan, LimiterPlan};
+        let sig: Vec<f32> = (0..48_000)
+            .map(|i| {
+                let t = i as f32 / SR;
+                // Loud enough that gain +9 dB drives the limiter, with a burst of peaks.
+                let burst = if (20_000..20_400).contains(&i) {
+                    2.5
+                } else {
+                    1.0
+                };
+                0.25 * burst * (2.0 * std::f32::consts::PI * 220.0 * t).sin()
+            })
+            .collect();
+        for plan in [
+            GainPlan {
+                gain_db: 9.0,
+                limiter: Some(LimiterPlan { ceiling_dbtp: -1.5 }),
+                target_lufs: -16.0,
+                ceiling_dbtp: -1.0,
+                peak_overshoot_db: 3.0,
+                measurable: true,
+            },
+            GainPlan {
+                gain_db: -4.0,
+                limiter: None,
+                target_lufs: -16.0,
+                ceiling_dbtp: -1.0,
+                peak_overshoot_db: 0.0,
+                measurable: true,
+            },
+        ] {
+            let mut want = vec![sig.clone(), sig.clone()];
+            apply_planar(&plan, 48_000, &mut want);
+            let mut chain = Chain::default().with_gain_plan(&plan).build(SR, 2).unwrap();
+            let got = chain.process_offline(&[sig.clone(), sig.clone()]);
+            assert_eq!(got[0].len(), want[0].len());
+            let worst = got[0]
+                .iter()
+                .zip(&want[0])
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f32::max);
+            assert!(worst < 1e-4, "worst difference {worst} for {plan:?}");
+        }
+        // A plan that does nothing adds nothing.
+        let none = GainPlan {
+            gain_db: 0.0,
+            limiter: None,
+            target_lufs: -16.0,
+            ceiling_dbtp: -1.0,
+            peak_overshoot_db: 0.0,
+            measurable: false,
+        };
+        assert!(Chain::default().with_gain_plan(&none).is_empty());
+    }
 
     fn rms_db(x: &[f32]) -> f64 {
         let e: f64 = x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / x.len().max(1) as f64;
