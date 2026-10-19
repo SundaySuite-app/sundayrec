@@ -1,10 +1,9 @@
 //! Shadow mode's I/O half (E9) — decode, score, compare, write, log.
 //!
 //! Every decision here belongs to [`sundayrec_core::shadow`]; what is left is a
-//! second ffmpeg decode, a thread that will be busy for minutes, one sidecar
-//! write and a log line. The model is loaded once per process
-//! ([`SHARED_MODEL`]) and a fresh backend is built per file, which is what
-//! [`SileroVadModel`]'s `Send + Sync` guarantee exists for.
+//! second ffmpeg decode, a thread that will be busy for a few seconds, one sidecar
+//! write and a log line. There is no model to load: a fresh [`EarshotVad`] is
+//! built per file, which is allocation only.
 //!
 //! # What the operator experiences: nothing
 //!
@@ -29,30 +28,13 @@
 //! ffmpeg read is seconds, and holding ~345 MB of f32 alive for the length of
 //! the inference to save them is the worse trade.
 
-use std::sync::Arc;
-
 use sundayrec_core::audio_analysis::{FRAME_MS, SAMPLE_RATE};
 use sundayrec_core::detect::Detection;
 use sundayrec_core::feedback::build_shadow_observation;
 use sundayrec_core::shadow::{compare, shadow_detection, ShadowSettings, VadScorer};
-use sundayrec_core::vad::{VadBackend, VadError};
+use sundayrec_core::vad::VadBackend;
 
-use super::{SileroVad, SileroVadModel};
-
-/// The loaded graph, shared across every recording this process shadows.
-///
-/// Loading is ~2.8 MB of SHA-256 plus a tract optimize; per file that would be
-/// paid for nothing, since the weights are immutable. The RECURRENT state is
-/// what must not be shared, and it lives in [`SileroVad`], one per file.
-static SHARED_MODEL: std::sync::OnceLock<Result<Arc<SileroVadModel>, String>> =
-    std::sync::OnceLock::new();
-
-fn shared_model() -> Result<Arc<SileroVadModel>, VadError> {
-    SHARED_MODEL
-        .get_or_init(|| SileroVadModel::load().map_err(|e| e.to_string()))
-        .clone()
-        .map_err(|detail| VadError::Backend { detail })
-}
+use super::EarshotVad;
 
 /// Run the model over one recording and record how its answer differed from the
 /// one the app just acted on.
@@ -74,14 +56,8 @@ pub async fn observe<F>(
 where
     F: Fn(f32) + Send + Sync + 'static,
 {
-    // Fail before the decode when the model is unavailable — otherwise a broken
-    // build burns a full ffmpeg pass per recording to discover it every time.
-    if let Err(e) = shared_model() {
-        tracing::warn!(error = %e, "shadow: VAD model unavailable — skipping");
-        return false;
-    }
-
-    // The decode is the cheap tenth of this pass; the inference is the rest.
+    // The decode is the larger part of this pass now that inference is cheap;
+    // the split keeps the reported fraction honest all the same.
     // Splitting the reported fraction the same way keeps the bar honest instead
     // of parking it at 100 % for two minutes.
     const DECODE_SHARE: f32 = 0.10;
@@ -96,12 +72,12 @@ where
         }
     };
 
-    // Minutes of sequential inference: `spawn_blocking`, or it starves the async
-    // runtime this app records and streams on.
+    // Sequential inference over the whole file: `spawn_blocking`, or it starves
+    // the async runtime this app records and streams on.
     let scored = tauri::async_runtime::spawn_blocking(move || {
         let report = |f: f32| on_progress(DECODE_SHARE + f * (1.0 - DECODE_SHARE));
         let scorer = VadScorer::new(
-            || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+            || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
             settings,
         )
         .with_progress(&report);
@@ -142,7 +118,7 @@ mod tests {
     use sundayrec_core::audio_analysis::HeuristicScorer;
     use sundayrec_core::detect::analyse_pcm;
     use sundayrec_core::shadow::PoolingRule;
-    use sundayrec_core::vad::VadStream;
+    use sundayrec_core::vad::{VadError, VadStream};
 
     /// The same synthetic utterance the backend tests score, so the numbers
     /// below come from the real model rather than a stub.
@@ -172,16 +148,6 @@ mod tests {
     }
 
     #[test]
-    fn the_shared_model_loads_once_and_is_reusable() {
-        let a = shared_model().expect("the embedded model must load");
-        let b = shared_model().expect("and again");
-        assert!(
-            Arc::ptr_eq(&a, &b),
-            "a per-file load would pay for a tract optimize per recording"
-        );
-    }
-
-    #[test]
     fn the_real_model_scores_the_detector_seam_end_to_end() {
         // The whole composition, with tract in it: PCM → VadScorer → analyse_pcm
         // → a Detection. What is asserted is the SHAPE of the contract (one
@@ -189,7 +155,7 @@ mod tests {
         // backend tests' business.
         let pcm = speech(3.0);
         let scorer = VadScorer::new(
-            || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+            || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
             ShadowSettings::default(),
         );
         let shadow = shadow_detection(&pcm, SAMPLE_RATE, FRAME_MS, &scorer)
@@ -222,7 +188,7 @@ mod tests {
         // only kept disagreements would have no denominator to divide by.
         let pcm = speech(3.0);
         let scorer = VadScorer::new(
-            || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+            || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
             ShadowSettings::default(),
         );
         let shadow = shadow_detection(&pcm, SAMPLE_RATE, FRAME_MS, &scorer).unwrap();
@@ -253,7 +219,7 @@ mod tests {
         );
 
         let scorer = VadScorer::new(
-            || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+            || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
             ShadowSettings::default(),
         );
         let shadow = shadow_detection(&pcm, SAMPLE_RATE, FRAME_MS, &scorer).unwrap();
@@ -299,7 +265,7 @@ mod tests {
                 ..ShadowSettings::default()
             };
             let scorer = VadScorer::new(
-                || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+                || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
                 settings,
             );
             let d = shadow_detection(&pcm, SAMPLE_RATE, FRAME_MS, &scorer).unwrap();
@@ -324,13 +290,12 @@ mod tests {
     fn a_stream_the_model_rejects_produces_no_observation() {
         // The failure contract, against the real backend: 44.1 kHz must fail at
         // the stream guard rather than be scored as if it were 16 kHz.
-        let model = shared_model().unwrap();
         assert!(matches!(
-            VadStream::new(SileroVad::new(model), 44_100),
+            VadStream::new(EarshotVad::new(), 44_100),
             Err(VadError::UnsupportedSampleRate { got: 44_100 })
         ));
         let scorer = VadScorer::new(
-            || Ok(Box::new(SileroVad::new(shared_model()?)) as Box<dyn VadBackend>),
+            || Ok(Box::new(EarshotVad::new()) as Box<dyn VadBackend>),
             ShadowSettings::default(),
         );
         assert!(shadow_detection(&[0.1f32; 44_100], 44_100, FRAME_MS, &scorer).is_err());

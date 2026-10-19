@@ -45,7 +45,7 @@
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick and the proposed trim — what to store, what counts as a correction, and what a later one replaces (E8)
 //!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
-//!   - [`vad`]         — the neural voice-activity seam (E9): the 576-sample framing + two-piece per-stream state a Silero-class model needs, and the `VadBackend` trait that keeps ONNX out of this crate. NOT wired into sermon detection yet
+//!   - [`vad`]         — the neural voice-activity seam (E9): the 256-sample (16 ms) framing and the `VadBackend` trait that keeps the engine (`earshot`) out of this crate. NOT wired into sermon detection yet
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 //!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
 

@@ -46,7 +46,6 @@ mod harness {
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::process::{Command, ExitCode, Stdio};
-    use std::sync::Arc;
 
     use sundayrec_core::ab_eval::{
         aggregate, evaluate_recording, ground_truths, parse_pooling_spec, render_summary, AbReport,
@@ -65,7 +64,7 @@ mod harness {
     };
     use sundayrec_core::shadow::{ShadowSettings, DEFAULT_FRAME_SPEECH_THRESHOLD};
     use sundayrec_core::vad::{score_pcm, VAD_SAMPLE_RATE};
-    use sundayrec_lib::vad::{SileroVad, SileroVadModel};
+    use sundayrec_lib::vad::EarshotVad;
 
     /// Extensions the recorder and the editor produce. A directory scan rather
     /// than the SQLite history on purpose: the harness has to be runnable
@@ -557,10 +556,8 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
         eprintln!("ffmpeg: {ffmpeg}");
         eprintln!("recordings: {}", recordings.len());
 
-        // One parse + optimize of the graph for the whole run; a fresh
-        // `SileroVad` per file, because the recurrent state must not carry from
-        // the end of one recording into the start of the next.
-        let model = SileroVadModel::load().map_err(|e| format!("VAD model: {e}"))?;
+        // A fresh `EarshotVad` per file, because the recurrent state must not
+        // carry from the end of one recording into the start of the next.
         let app_version = env!("CARGO_PKG_VERSION");
         let heuristic_scorer = HeuristicScorer;
 
@@ -587,7 +584,7 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
 
             // One inference pass over the file; every sweep row is arithmetic
             // over its output.
-            let hops = score_pcm(SileroVad::new(Arc::clone(&model)), VAD_SAMPLE_RATE, &pcm)
+            let hops = score_pcm(EarshotVad::new(), VAD_SAMPLE_RATE, &pcm)
                 .map_err(|e| format!("{id}: {e}"))?;
 
             let feedback = read_feedback(path);

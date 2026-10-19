@@ -113,7 +113,7 @@
 ///
 /// **Coupled:** the `src-tauri` shell passes this to ffmpeg's `-ar` when it
 /// decodes, and [`crate::vad::VAD_SAMPLE_RATE`] is independently pinned to the
-/// same 16 kHz because the Silero-class model requires it. Changing this one
+/// same 16 kHz because the neural VAD (`earshot`) requires it. Changing this one
 /// silently de-syncs the two and the VAD shadow comparison stops comparing like
 /// with like.
 ///

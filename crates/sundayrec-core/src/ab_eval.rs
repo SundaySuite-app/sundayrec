@@ -90,7 +90,7 @@ use crate::vad::VadFrame;
 /// to try a second hop threshold adds a ROW here; it does not add a variant to
 /// the enum, and the enum stays the one shadow mode stores.
 ///
-/// All three rows are seeded at 0.5 on both grids. That is Silero's own
+/// All three rows are seeded at 0.5 on both grids. That is the engine's own
 /// conventional speech bar, and using it is what makes this a sweep rather than
 /// a comparison of two things at once: the fraction rule is judged against the
 /// same bar as the other two, so a difference in the result is attributable to
@@ -1369,7 +1369,7 @@ mod tests {
         assert!(SWEEP
             .iter()
             .all(|s| s.hop_speech_threshold == SWEEP[0].hop_speech_threshold));
-        // Silero's own conventional operating point, on both grids.
+        // The engine's own conventional operating point, on both grids.
         assert_eq!(SWEEP[0].frame_speech_threshold, 0.5);
         assert_eq!(SWEEP[0].hop_speech_threshold, 0.5);
     }

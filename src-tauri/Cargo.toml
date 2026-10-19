@@ -81,7 +81,7 @@ asio = ["cpal/asio"]
 # no download UI, no cache directory, no "model missing" branch, and analysis
 # still works on a church PC with no internet. `sha2` re-verifies the embedded
 # bytes at load time; build.rs verifies the file on disk when this feature is on.
-vad = ["dep:tract-onnx"]
+vad = ["dep:earshot"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -227,6 +227,7 @@ tauri-plugin-autostart = "2"
 sha2 = "0.11"
 # E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
 # no system onnxruntime to ship or find. Only pulled under `--features vad`.
+earshot = { version = "1.2.2", optional = true }
 tract-onnx = { version = "0.23.4", optional = true }
 # R7 auto-update plugin (pull API). Pulled only under `--features updater`; a
 # real update needs a signed release + keypair, so it stays out of the default

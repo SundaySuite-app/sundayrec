@@ -55,10 +55,10 @@ use crate::vad::{score_pcm_with, VadBackend, VadError, VadFrame, VAD_HOP_SAMPLES
 
 /// How the model's per-hop probabilities become ONE score for an analysis frame.
 ///
-/// The two grids do not line up: Silero answers every [`VAD_HOP_SAMPLES`]
-/// samples (32 ms at 16 kHz) and [`crate::audio_analysis`] works in 100 ms
-/// frames, so roughly three model outputs land in each frame (3.125 on average —
-/// most frames get 3, every eighth gets 4). Something has to pool them, and
+/// The two grids do not line up: the engine answers every [`VAD_HOP_SAMPLES`]
+/// samples (16 ms at 16 kHz) and [`crate::audio_analysis`] works in 100 ms
+/// frames, so roughly six model outputs land in each frame (6.25 on average —
+/// most frames get 6, every fourth gets 7). Something has to pool them, and
 /// *which* something is a detection-quality decision, not a formatting one.
 ///
 /// All three honest candidates are implemented and unit-tested rather than one
@@ -95,7 +95,7 @@ pub enum PoolingRule {
 /// frames, and [`crate::audio_analysis::MIN_SEGMENT_SEC`] then dissolves any run
 /// shorter than five seconds into its neighbour. Both `Mean` and `FractionOver`
 /// average inside the frame *before* handing the result to that smoother — so a
-/// single confident 32 ms hop is diluted by its neighbours twice, once by the
+/// single confident 16 ms hop is diluted by its neighbours twice, once by the
 /// pooling and again by the median filter, and the first dilution happens where
 /// nothing downstream can undo it.
 ///
@@ -116,8 +116,9 @@ pub const DEFAULT_POOLING: PoolingRule = PoolingRule::Max;
 
 /// Pooled score at or above which a frame reads as speech, by default.
 ///
-/// Silero's own documented operating point for speech/non-speech, and the value
-/// the backend tests measure the fixture against. Kept as a named constant so
+/// The engine's own documented operating point for speech/non-speech
+/// (`earshot` and Silero both name 0.5), and the value the backend tests
+/// measure the fixture against. Kept as a named constant so
 /// the A/B harness has one place to move it.
 pub const DEFAULT_FRAME_SPEECH_THRESHOLD: f64 = 0.5;
 
@@ -279,10 +280,10 @@ where
         Ok(pool_onto_frames(&hops, input, self.settings))
     }
 
-    /// TRAP 2 reaches out this far: the analysis pipeline's rate is FORWARDED,
-    /// not replaced by the constant. Silero honours `sr` at run time, so a
-    /// pipeline that ever ran at something other than 16 kHz must make this pass
-    /// fail rather than score plausible nonsense — and `VadStream::new` is where
+    /// The 16 kHz guard reaches out this far: the analysis pipeline's rate is
+    /// FORWARDED, not replaced by the constant. The engine has no rate input, so
+    /// a pipeline that ever ran at something other than 16 kHz must make this
+    /// pass fail rather than score plausible nonsense — and `VadStream::new` is where
     /// it fails. Substituting `VAD_SAMPLE_RATE` here would make that guard
     /// unreachable while looking like a simplification.
     fn score_hops(&self, pcm: &[f32], sample_rate: u32) -> Result<Vec<VadFrame>, VadError> {
@@ -297,7 +298,7 @@ where
                 return;
             }
             // One tick per percent — the same guard the decode seams use, for the
-            // same reason: a 90-minute service is ~169 000 hops, and reporting
+            // same reason: a 90-minute service is ~340 000 hops, and reporting
             // each one would cost more than the inference it reports on.
             let fraction = (done as f32 / total as f32).clamp(0.0, 1.0);
             if fraction >= ticked + 0.01 {
@@ -760,31 +761,31 @@ mod tests {
 
     #[test]
     fn hops_land_in_the_frame_their_first_sample_falls_in() {
-        // 512-sample hops against 1600-sample frames: 3.125 hops per frame, so
-        // frame 0 gets FOUR (hop 3 starts at 1536 < 1600) and the next two get
-        // three. This is the assignment a float comparison of `start_sec`
+        // 256-sample hops against 1600-sample frames: 6.25 hops per frame, so
+        // frame 0 gets SEVEN (hop 6 starts at 1536 < 1600) and the next two get
+        // six. This is the assignment a float comparison of `start_sec`
         // against 0.1-second bounds gets wrong at the boundary.
-        let hops: Vec<VadFrame> = (0..10)
+        let hops: Vec<VadFrame> = (0..19)
             .map(|n| VadFrame {
-                start_sec: n as f64 * 0.032,
-                end_sec: (n + 1) as f64 * 0.032,
+                start_sec: n as f64 * 0.016,
+                end_sec: (n + 1) as f64 * 0.016,
                 speech_probability: n as f32 / 100.0,
             })
             .collect();
         let buckets = bucket_hops(&hops, 3, 1600);
-        assert_eq!(buckets[0].len(), 4, "hops 0..=3 start inside frame 0");
-        assert_eq!(buckets[1].len(), 3, "hops 4..=6");
-        assert_eq!(buckets[2].len(), 3, "hops 7..=9");
-        assert!((buckets[0][3] - 0.03).abs() < 1e-6);
-        assert!((buckets[1][0] - 0.04).abs() < 1e-6);
+        assert_eq!(buckets[0].len(), 7, "hops 0..=6 start inside frame 0");
+        assert_eq!(buckets[1].len(), 6, "hops 7..=12");
+        assert_eq!(buckets[2].len(), 6, "hops 13..=18");
+        assert!((buckets[0][6] - 0.06).abs() < 1e-6);
+        assert!((buckets[1][0] - 0.07).abs() < 1e-6);
     }
 
     #[test]
     fn hops_past_the_last_complete_frame_are_dropped() {
         let hops: Vec<VadFrame> = (0..10)
             .map(|n| VadFrame {
-                start_sec: n as f64 * 0.032,
-                end_sec: (n + 1) as f64 * 0.032,
+                start_sec: n as f64 * 0.016,
+                end_sec: (n + 1) as f64 * 0.016,
                 speech_probability: 0.5,
             })
             .collect();
@@ -792,25 +793,25 @@ mod tests {
         assert_eq!(buckets.len(), 1);
         assert_eq!(
             buckets[0].len(),
-            4,
-            "the other six have no frame to land in"
+            7,
+            "the other three have no frame to land in"
         );
     }
 
     #[test]
     fn every_hop_lands_in_exactly_one_frame_and_none_is_lost() {
         // The property the two counts above are instances of, over a span where
-        // the grids close: 400 hops of 512 samples and 128 frames of 1600 both
+        // the grids close: 800 hops of 256 samples and 128 frames of 1600 both
         // cover exactly 204 800 samples, so every hop has a frame and every
         // frame has hops. Each hop must then be counted ONCE — a gap silently
         // drops audio out of the pooling, a repeat silently weights it twice,
         // and neither shows up as anything but a slightly different boundary.
         let samples_per_frame = (SAMPLE_RATE as usize * FRAME_MS as usize) / 1000;
-        assert_eq!(400 * VAD_HOP_SAMPLES, 128 * samples_per_frame);
-        let hops: Vec<VadFrame> = (0..400)
+        assert_eq!(800 * VAD_HOP_SAMPLES, 128 * samples_per_frame);
+        let hops: Vec<VadFrame> = (0..800)
             .map(|n| VadFrame {
-                start_sec: n as f64 * 0.032,
-                end_sec: (n + 1) as f64 * 0.032,
+                start_sec: n as f64 * 0.016,
+                end_sec: (n + 1) as f64 * 0.016,
                 // The hop's own index, so a misplaced hop is identifiable and
                 // not just miscounted.
                 speech_probability: n as f32,
@@ -829,13 +830,13 @@ mod tests {
             "every hop exactly once: {placements:?}"
         );
         assert!(
-            buckets.iter().all(|b| (3..=4).contains(&b.len())),
-            "100 ms draws 3 or 4 hops of 32 ms, never fewer or more"
+            buckets.iter().all(|b| (6..=7).contains(&b.len())),
+            "100 ms draws 6 or 7 hops of 16 ms, never fewer or more"
         );
-        // 0.8 s is a whole number of both grids (8 frames, 25 hops), so hop 25
+        // 0.8 s is a whole number of both grids (8 frames, 50 hops), so hop 50
         // must OPEN frame 8. This is the boundary float seconds get wrong by one
         // ULP — a wrong answer that looks like a right one.
-        assert!((buckets[8][0] - 25.0).abs() < 1e-6);
+        assert!((buckets[8][0] - 50.0).abs() < 1e-6);
     }
 
     #[test]
@@ -845,10 +846,10 @@ mod tests {
         // that probability, whatever the heuristic thought of the tone.
         let pcm = tone(1.0);
         let frames = extract_features(&pcm, SAMPLE_RATE, FRAME_MS);
-        let hops: Vec<VadFrame> = (0..31)
+        let hops: Vec<VadFrame> = (0..62)
             .map(|n| VadFrame {
-                start_sec: n as f64 * 0.032,
-                end_sec: (n + 1) as f64 * 0.032,
+                start_sec: n as f64 * 0.016,
+                end_sec: (n + 1) as f64 * 0.016,
                 // Only hop 3 — inside frame 0 — is confident.
                 speech_probability: if n == 3 { 0.95 } else { 0.05 },
             })
@@ -944,7 +945,7 @@ mod tests {
         let pcm = vec![0.0f32; SAMPLE_RATE as usize / 10];
         let hops = [VadFrame {
             start_sec: 0.0,
-            end_sec: 0.032,
+            end_sec: 0.016,
             speech_probability: 0.02,
         }];
         let scored = pool_onto_frames(
@@ -982,8 +983,8 @@ mod tests {
     fn a_backend_that_cannot_even_be_built_is_the_same_quiet_failure() {
         let scorer = VadScorer::new(
             || {
-                Err(VadError::ModelIntegrity {
-                    detail: "swapped file".into(),
+                Err(VadError::Backend {
+                    detail: "engine would not start".into(),
                 })
             },
             ShadowSettings::default(),
@@ -991,13 +992,13 @@ mod tests {
         let pcm = tone(1.0);
         assert!(matches!(
             shadow_detection(&pcm, SAMPLE_RATE, FRAME_MS, &scorer),
-            Err(VadError::ModelIntegrity { .. })
+            Err(VadError::Backend { .. })
         ));
     }
 
     #[test]
     fn the_wrong_sample_rate_is_refused_rather_than_scored() {
-        // TRAP 2 reaches all the way out here: 44.1 kHz PCM must fail, not
+        // The 16 kHz guard reaches all the way out here: 44.1 kHz PCM must fail, not
         // produce plausible numbers against a 16 kHz model.
         let scorer = scorer_over(vec![0.9], ShadowSettings::default());
         let pcm = vec![0.1f32; 44_100];
