@@ -242,6 +242,23 @@ Det C3b og C3c må vite:
   `Frame::host_time_ns`. **ASIO** gir `timeGetTime`, en annen klokke; der
   stemples parene med vertsklokka i callbacken minus blokklengden
   (`CaptureTimeSource::HostNowMinusBlock`). Det er riggubevist.
+- **Bildets fangsttid på Windows (M3R #5).** Før stemplet Windows bildene med
+  `QueryPerformanceCounter` lest i kameraets callback, altså _ankomst_ (fangst +
+  kameraets pipeline, 50–150 ms på USB/MJPEG), mens lyden har WASAPIs fangsttid.
+  Bildet lå dermed 1–4 bilder etter lyden. Nå dømmer `FrameStamper`
+  (`sundayrec-core::camera_format`) driverens egen samplingstid
+  (`IMFSample::GetSampleTime`, DirectShow `GetTime`, 100 ns) mot ankomsttiden, per
+  bilde: ligger den 0–1 s _før_ ankomst, regnes den som fangsttid på QPC-klokka og
+  brukes rett av (UVC bak Windows Frame Server stempler slik); ligger den et helt
+  annet sted (strømtid fra 0, typisk DirectShow), forankres den
+  (`samplingstid + minste sett ankomst−samplingstid`): rolig og aldri etter ankomst,
+  men fortsatt med kameraets minste forsinkelse; mangler den, brukes ankomst (som før).
+  Stemplet går aldri bakover. Hvilken vei et gitt kamera tar, står i loggen
+  (`camera: frame time source`). **Ikke kjørt på Windows:** hvilken klokke
+  driverne bruker er ikke bekreftet fra Microsofts dokumentasjon (som ikke lover QPC
+  for `GetSampleTime`), derfor målingen i RIG-DAY (c3b-win-sync). Forankret modus
+  kan ikke fjerne en fast kameraforsinkelse; måler klappet den, legges den inn som
+  en konstant per kamera.
 - **Fast bildefrekvens:** videotråden skriver ett bilde per plass, i
   plassrekkefølge (gjentak = samme bilde igjen, svart = svart ramme). MKV-en
   har nøyaktig `slot_count(WAV-rammer)` bilder, bevist i testen.

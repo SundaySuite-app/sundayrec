@@ -30,7 +30,9 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use cap_camera_windows as cap;
-use sundayrec_core::camera_format::qpc_ticks_to_ns;
+use sundayrec_core::camera_format::{
+    duration_to_sample_ns, qpc_ticks_to_ns, FrameStamper, StampSource,
+};
 use sundayrec_mf_util::MediaFoundation;
 
 use super::queue::FrameQueue;
@@ -281,15 +283,34 @@ pub(super) fn start(
 
         // The callback does ONE thing: copy the bytes out of the driver's
         // buffer and put the frame in the bounded queue. `push` never waits.
+        //
+        // The frame's host time is its CAPTURE time, as the audio's is (M3R #5):
+        // `frame.perf_counter` is `QueryPerformanceCounter` read when the
+        // callback ran — arrival, 50–150 ms after the exposure on a USB/MJPEG
+        // camera — so it only serves as the reference the driver's own sample
+        // time (`GetSampleTime` / `IMediaSample::GetTime`) is judged against.
+        // `FrameStamper` decides, per frame, whether that sample time is on the
+        // QPC clock (use it) or relative (anchor it), or absent (arrival).
+        let mut stamper = FrameStamper::new();
+        let mut logged_source: Option<StampSource> = None;
         let callback = move |frame: cap::Frame| {
             let Ok(bytes) = frame.bytes() else {
                 cb_skipped.0.fetch_add(1, Ordering::Relaxed);
                 return;
             };
-            let Some(host_time_ns) = qpc_ticks_to_ns(frame.perf_counter, freq) else {
+            let Some(arrival_ns) = qpc_ticks_to_ns(frame.perf_counter, freq) else {
                 cb_skipped.0.fetch_add(1, Ordering::Relaxed);
                 return;
             };
+            let host_time_ns = stamper.stamp(arrival_ns, duration_to_sample_ns(frame.timestamp));
+            if logged_source != stamper.last_source() {
+                logged_source = stamper.last_source();
+                tracing::info!(
+                    source = ?logged_source,
+                    late_ms = arrival_ns.saturating_sub(host_time_ns) / 1_000_000,
+                    "camera: frame time source"
+                );
+            }
             queue.push(Frame::from_bytes(
                 host_time_ns,
                 frame.width as u32,

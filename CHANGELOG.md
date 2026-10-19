@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Videoen på Windows ligger ikke lenger etter lyden.** Kamerabildene ble stemplet med tiden de kom fram til appen, ikke tiden de ble tatt – på et USB-kamera 50–150 ms senere, så bildet kunne ligge 1–4 bilder bak lyden. Nå brukes kameraets egen fangsttid (som på Mac). Må prøves på en ekte Windows-PC (klappetest).
+
 - **Mikserens støyfjerning skåner nå musikken.** «Støyfjerning» i den avanserte
   mikseren er blitt like varsom som i «Tale»: den virker på tale og på rommets
   stillhet i pausene, men lar en holdt akkord eller en pad stå urørt (før kunne den
