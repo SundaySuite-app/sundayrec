@@ -69,6 +69,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { TrashEntry } from "@lib/pages/trash-core";
 import { trashedPaths, withoutTrashed } from "@lib/pages/trash-core";
 
+import { formatLufs } from "../../audio/lufs";
 import { confirmDiscard } from "../../editor/discard";
 import { openInEditor } from "../../editor/entry";
 import { openFile, pickAndOpen } from "../../editor/loader";
@@ -419,6 +420,13 @@ function Row({
           <span data-testid="library-row-span">
             {spanLabel(row.durationSec)}
           </span>
+          {formatLufs(row.loudnessLufs) !== null ? (
+            <span data-testid="library-row-lufs">
+              {tf("app.library.loudness", {
+                lufs: formatLufs(row.loudnessLufs) ?? "",
+              })}
+            </span>
+          ) : null}
           {row.hasVideo ? (
             <Chip tone="neutral" testId="library-row-video">
               {t("app.library.video")}

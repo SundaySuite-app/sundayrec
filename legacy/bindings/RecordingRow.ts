@@ -8,4 +8,11 @@ export type RecordingRow = { id: string, file_path: string, device_name: string 
 /**
  * Free-text user note (capped at [`NOTE_MAX_CHARS`] on write).
  */
-note: string | null, };
+note: string | null, 
+/**
+ * Integrated loudness (LUFS, BS.1770 gated) of the finished recording,
+ * measured while it was taken (D3). `None` = not measured: older rows,
+ * recovered recordings, anything under a few seconds. A recording that
+ * never rose above the meter's gate reads -120, not `None`.
+ */
+integrated_lufs: number | null, };

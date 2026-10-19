@@ -587,6 +587,128 @@ mod tests {
         }
     }
 
+    /// D3 — the loudness meter on this thread must not cost the capture
+    /// anything. The producer below is the RT callback's stand-in: it pushes a
+    /// block per tick into the real ring and counts what the callback would
+    /// count (`overrun` = samples that did not fit), and watches how full the
+    /// ring gets. The same 8-channel stream runs at 10x real time with and
+    /// without the meter, writing a real WAV each time.
+    ///
+    /// The CI bound is generous (no drops, ring never half full); the numbers
+    /// are printed for the PR.
+    #[test]
+    fn the_loudness_meter_does_not_cost_the_capture_a_sample() {
+        use ringbuf::traits::{Observer, Producer};
+
+        const CH: u16 = 8;
+        const RATE: u32 = 48_000;
+        const SPEEDUP: u64 = 10;
+        const WALL_SECS: f64 = 3.0;
+        // 480 frames = 10 ms of audio per «callback».
+        const BLOCK_FRAMES: usize = 480;
+
+        struct Run {
+            overrun: u64,
+            peak_fill_ms: f64,
+            frames: u64,
+            wall: Duration,
+            integrated: Option<f64>,
+        }
+
+        let run = |measure: bool| -> Run {
+            let spec = WavSpec {
+                channels: CH,
+                sample_rate: RATE,
+            };
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cap = crate::recorder::native_capture::stream::ring_capacity(RATE, CH);
+            let (mut prod, cons) = HeapRb::<f32>::new(cap).split();
+            let stop = Arc::new(AtomicBool::new(false));
+            let frames_written = Arc::new(AtomicU64::new(0));
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let slot = Arc::new(LoudnessSlot::new());
+            let mut cfg = test_cfg(dir.path().join("cap.wav"));
+            cfg.spec = spec;
+            // Production cadences: the bound being proven is the shipping one.
+            cfg.flush_every = FLUSH_EVERY;
+            cfg.sync_every = SYNC_EVERY;
+            cfg.silence = SilenceDetector::new(-50.0, RATE);
+            cfg.loudness = measure.then(|| Arc::clone(&slot));
+            let join = spawn_wav_writer(
+                cons,
+                cfg,
+                Arc::clone(&stop),
+                Arc::new(AtomicU64::new(0)),
+                Arc::clone(&frames_written),
+                tx,
+            )
+            .expect("spawn writer");
+
+            // A speech-like, non-trivial signal on every channel.
+            let block: Vec<f32> = (0..BLOCK_FRAMES * CH as usize)
+                .map(|i| 0.2 * ((i / CH as usize) as f32 * 0.07).sin())
+                .collect();
+            let tick = Duration::from_micros(10_000 / SPEEDUP);
+            let total_blocks = (WALL_SECS / tick.as_secs_f64()) as usize;
+            let t0 = Instant::now();
+            let mut overrun = 0u64;
+            let mut peak = 0usize;
+            for n in 0..total_blocks {
+                let pushed = prod.push_slice(&block);
+                overrun += (block.len() - pushed) as u64;
+                peak = peak.max(prod.occupied_len());
+                // Pace to the deadline (spin-wait the tail: sleeps are coarse).
+                let due = t0 + tick * (n as u32 + 1);
+                while Instant::now() < due {
+                    std::hint::spin_loop();
+                }
+            }
+            stop.store(true, Ordering::Relaxed);
+            let summary = join.join().expect("join").expect("clean finalize");
+            let wall = t0.elapsed();
+            Run {
+                overrun,
+                peak_fill_ms: peak as f64 / (f64::from(RATE) * f64::from(CH)) * 1e3,
+                frames: summary.frames,
+                wall,
+                integrated: slot.integrated(),
+            }
+        };
+
+        let without = run(false);
+        let with = run(true);
+        eprintln!(
+            "D3 writer, 8 ch @ 48 kHz, {SPEEDUP}x real time, {WALL_SECS} s wall:\n  \
+             without meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}\n  \
+             with    meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}",
+            without.overrun,
+            without.peak_fill_ms,
+            without.frames,
+            without.wall,
+            with.overrun,
+            with.peak_fill_ms,
+            with.frames,
+            with.wall,
+        );
+        assert_eq!(without.integrated, None, "no meter, no measurement");
+        let lufs = with.integrated.expect("the writer fed the meter");
+        assert!((-40.0..-5.0).contains(&lufs), "measured {lufs} LUFS");
+        assert_eq!(without.overrun, 0, "baseline must not drop");
+        assert_eq!(
+            with.overrun, 0,
+            "the meter must not cause a single dropped sample"
+        );
+        assert_eq!(
+            with.frames, without.frames,
+            "same frames on disk with and without"
+        );
+        assert!(
+            with.peak_fill_ms < 2_500.0,
+            "the ring never reached half full with the meter ({:.0} ms of 5000)",
+            with.peak_fill_ms
+        );
+    }
+
     #[test]
     fn classify_maps_enospc_to_disk_full() {
         #[cfg(unix)]

@@ -78,11 +78,13 @@ import {
   sessionStartedAtMs,
   silenceActive,
   sessionCameraLost,
+  sessionLufs,
   sessionVideoProblem,
   sessionVideoDropped,
   silenceDetail,
 } from "../../state/recording";
 import { settings } from "../../state/settings";
+import { formatLufs } from "../../audio/lufs";
 import { cancelAutostop, extendAutostop } from "./autostop";
 import { formatClock, spanOfMinutes } from "./record-core";
 import { recordingLevelsSource } from "./recording-levels";
@@ -220,6 +222,17 @@ function Overlay() {
           showNumbers
         />
       </div>
+
+      {/* D3: kortsiktig lydstyrke (3 s) ved siden av toppnivåene. Ingenting før
+          motoren har et fullt vindu. Rolig tekst, ikke et varsel: «Opptaket er
+          svært svakt» kommer som eget banner etter fem minutter under −40. */}
+      {formatLufs(sessionLufs.value) !== null ? (
+        <p data-testid="overlay-lufs" class={styles.hint}>
+          {tf("app.overlay.loudness", {
+            lufs: formatLufs(sessionLufs.value) ?? "",
+          })}
+        </p>
+      ) : null}
 
       {/* Kamerabildet, når kamera er en del av dette opptaket. Brikka under
           navngir enheten; bare BILDET kan si at det faktisk kommer noe fra

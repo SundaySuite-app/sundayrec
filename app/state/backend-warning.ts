@@ -86,6 +86,8 @@ export const WARNING_BANNER_KEYS: Record<string, BackendWarningKey> = {
   // F-W10: flyttingen av databasen til Local AppData (Windows) feilet.
   data_dir_move_failed: "backend-data-dir-move",
   data_left_in_old_dir: "backend-data-left-in-old-dir",
+  // D3: opptaket har vært svært svakt i over fem minutter — mikseren er dempet?
+  level_weak: "backend-level-weak",
 };
 
 /** Katalognøkkelens suffiks under `notify.*` for en kjent kode. */
@@ -99,6 +101,8 @@ export const WARNING_SUFFIXES: Record<string, string> = {
   // F-W10.
   data_dir_move_failed: "dataDirMoveFailed",
   data_left_in_old_dir: "dataLeftInOldDir",
+  // D3.
+  level_weak: "levelWeak",
 };
 
 /** Byte per GB, 1024³ — det samme tallet forhåndssjekken og disken bruker. */

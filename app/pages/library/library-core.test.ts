@@ -107,6 +107,20 @@ describe("isVideoPath", () => {
   });
 });
 
+describe("toLibraryRows: lydstyrke (D3)", () => {
+  it("bærer integrert LUFS fra raden, og null betyr ikke målt", () => {
+    const rows = toLibraryRows([
+      entry({ path: "/a/a.mp3", filename: "a.mp3", loudnessLufs: -21.7 }),
+      entry({ path: "/a/b.mp3", filename: "b.mp3", loudnessLufs: null }),
+      entry({ path: "/a/c.mp3", filename: "c.mp3" }),
+    ]);
+    const by = (f: string) => rows.find((r) => r.filename === f)?.loudnessLufs;
+    expect(by("a.mp3")).toBe(-21.7);
+    expect(by("b.mp3")).toBeNull();
+    expect(by("c.mp3")).toBeNull();
+  });
+});
+
 describe("toLibraryRows", () => {
   it("folder lyd + video fra samme økt til ÉN rad med Video-brikke", () => {
     const rows = toLibraryRows([

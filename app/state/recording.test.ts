@@ -33,6 +33,7 @@ import {
   scheduledStopMs,
   sessionCameraLost,
   sessionVideoDropped,
+  sessionLufs,
   sessionVideoProblem,
   silenceActive,
 } from "./recording";
@@ -565,6 +566,31 @@ describe("bildet mangler mens lyden tas opp (M3R)", () => {
     }
     expect(writes - base).toBe(1);
     off();
+    h.off();
+  });
+});
+
+describe("lydstyrke under opptak (D3)", () => {
+  it("hvert hjerteslag er fasit; ikke målt = null; ny økt arver ikke", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    expect(sessionLufs.value).toBe(null);
+    h.emit("recording-progress", { bytes_written: 1, short_term_lufs: null });
+    expect(sessionLufs.value).toBe(null);
+    h.emit("recording-progress", { bytes_written: 2, short_term_lufs: -23.4 });
+    expect(sessionLufs.value).toBe(-23.4);
+    // Et event uten feltet (eldre motor) rører det ikke.
+    h.emit("recording-progress", { bytes_written: 3 });
+    expect(sessionLufs.value).toBe(-23.4);
+    // Digital stillhet kommer som -120, et endelig tall.
+    h.emit("recording-progress", { bytes_written: 4, short_term_lufs: -120 });
+    expect(sessionLufs.value).toBe(-120);
+    // Alt som ikke er et endelig tall er «ikke målt».
+    h.emit("recording-progress", { bytes_written: 5, short_term_lufs: "x" });
+    expect(sessionLufs.value).toBe(null);
+    h.emit("recording-progress", { bytes_written: 6, short_term_lufs: -30 });
+    markSessionStarted();
+    expect(sessionLufs.value).toBe(null);
     h.off();
   });
 });

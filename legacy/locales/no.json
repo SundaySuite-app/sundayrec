@@ -49,6 +49,7 @@
       "noHitsDesc": "Søket ser i dato, filnavn og notat.",
       "video": "Video",
       "underMinute": "Under 1 min",
+      "loudness": "{lufs} LUFS",
       "delete": "Slett",
       "movedToTrash": "Flyttet til papirkurven",
       "autoDeleteOff": "Opptak slettes ikke automatisk",
@@ -624,6 +625,7 @@
       "autoStop": "Stopper av seg selv om {left}",
       "videoSkipped": "Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er ikke berørt.",
       "cameraLost": "Kameraet falt ut — lyden tas fortsatt opp",
+      "loudness": "Lydstyrke {lufs} LUFS",
       "videoStopped": "Bildet stoppet — lyden tas fortsatt opp",
       "cameraNotOpened": "Kameraet åpnet ikke — lyden tas opp, men uten bilde",
       "finalizingHint": "Opptaket skrives til disk. Det tar noen sekunder, og fila er trygg imens."
@@ -1152,6 +1154,7 @@
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
     "trashManifestUnreadable": "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, men appen vet ikke lenger hvor de kom fra.",
     "dataDirMoveFailed": "Historikken og innstillingene ble ikke flyttet til den nye mappen. Appen bruker den gamle denne gangen, og ingenting er slettet. Opptaksfilene dine ligger fortsatt i opptaksmappen. Start appen på nytt; hjelper det ikke, ta kontakt.",
-    "dataLeftInOldDir": "Historikk og innstillinger fra den eldre versjonen ligger igjen i den gamle mappen. Denne versjonen bruker den nye mappen, så det du la inn med den eldre versjonen vises ikke her. Opptaksfilene dine ligger fortsatt i opptaksmappen."
+    "dataLeftInOldDir": "Historikk og innstillinger fra den eldre versjonen ligger igjen i den gamle mappen. Denne versjonen bruker den nye mappen, så det du la inn med den eldre versjonen vises ikke her. Opptaksfilene dine ligger fortsatt i opptaksmappen.",
+    "levelWeak": "Opptaket er svært svakt — er mikseren dempet?"
   }
 }
