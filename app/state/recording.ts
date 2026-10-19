@@ -70,6 +70,15 @@ export const sessionBytes = signal<number | null>(null);
  */
 export const sessionVideoDropped = signal(0);
 
+/**
+ * Kameraet er borte akkurat nå, men lyden tas fortsatt opp (C5b). Fra
+ * `recording://progress`s `video_lost_ms`: satt så lenge kameraet uteblir,
+ * borte igjen når det er tilbake (til forskjell fra `sessionVideoDropped`, som
+ * bare går oppover). Meldingen vises med en gang; systemvarselet etter 60 s
+ * bestemmes i Rust (`CameraOutageWatch`) og har ingenting her å gjøre.
+ */
+export const sessionCameraLost = signal(false);
+
 /** Motorens auto-stopp-frist (absolutt epoke-ms), eller `null` for ingen. */
 export const scheduledStopMs = signal<number | null>(null);
 
@@ -133,6 +142,7 @@ export function endSessionLocally(): void {
   sessionStartedAtMs.value = null;
   sessionBytes.value = null;
   sessionVideoDropped.value = 0;
+  sessionCameraLost.value = false;
   scheduledStopMs.value = null;
   reconnecting.value = false;
   clearSilence();
@@ -149,6 +159,7 @@ export function markSessionStarted(): void {
   sessionStartedAtMs.value = Date.now();
   sessionBytes.value = null;
   sessionVideoDropped.value = 0;
+  sessionCameraLost.value = false;
   reconnecting.value = false;
   clearSilence();
   exitFinalizing();
@@ -529,6 +540,7 @@ export function initRecording(): () => void {
             bytes?: number;
             bytes_written?: number;
             video_frames_dropped?: number;
+            video_lost_ms?: number | null;
           }
         | undefined;
       const bytes = d?.bytes ?? d?.bytes_written;
@@ -538,6 +550,12 @@ export function initRecording(): () => void {
       const dropped = d?.video_frames_dropped;
       if (typeof dropped === "number" && dropped > sessionVideoDropped.peek()) {
         sessionVideoDropped.value = dropped;
+      }
+      // Hvert hjerteslag er fasit for kameraet: tall = borte, null = leverer.
+      // Et event UTEN feltet (lydopptak, eldre motor) sier ingenting.
+      if (d && "video_lost_ms" in d) {
+        const gone = typeof d.video_lost_ms === "number";
+        if (sessionCameraLost.peek() !== gone) sessionCameraLost.value = gone;
       }
     }),
   ];

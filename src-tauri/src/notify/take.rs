@@ -20,12 +20,17 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Listener, Runtime};
 
 use sundayrec_core::alerts::AlertText;
-use sundayrec_core::notify::{should_native_during_take, TakeAlert};
+use sundayrec_core::notify::{should_native_during_take, CameraOutageWatch, TakeAlert};
 
 use crate::util::lock_recover;
 
 /// The kinds already told natively during the current take.
 static SENT: Mutex<Option<HashSet<TakeAlert>>> = Mutex::new(None);
+
+/// The camera outage in progress, if any (C5b). Its own state and not part of
+/// [`SENT`]: that one is once per TAKE, this is once per OUTAGE, and it is
+/// re-armed by the camera coming back, not by a new fragment starting.
+static CAMERA: Mutex<CameraOutageWatch> = Mutex::new(CameraOutageWatch::new());
 
 /// A new take started: every kind may be said once again.
 fn reset() {
@@ -52,6 +57,7 @@ fn text(alert: TakeAlert, free_gb: Option<f64>) -> String {
         TakeAlert::Silence => AlertText::TakeSilence.text(lang),
         TakeAlert::Quality => AlertText::TakeQuality.text(lang),
         TakeAlert::Reconnecting => AlertText::TakeReconnecting.text(lang),
+        TakeAlert::CameraLost => AlertText::TakeCameraLost.text(lang),
         TakeAlert::DiskLow => {
             AlertText::TakeDiskLow.fill(lang, &[("gb", &format!("{:.1}", free_gb.unwrap_or(0.0)))])
         }
@@ -75,14 +81,48 @@ pub fn raise<R: Runtime>(app: &AppHandle<R>, alert: TakeAlert, free_gb: Option<f
     super::native(app, super::APP_TITLE, &text(alert, free_gb));
 }
 
+/// One `recording://progress` heartbeat: is the camera-lost notification due,
+/// and has the operator not got the window in front of them?
+///
+/// `true` means "raise it now". The outage is marked as told only then, so an
+/// outage that passes 60 s while the window is in view is still told when the
+/// window goes away (same rule as [`raise`]).
+fn camera_step(watch: &mut CameraOutageWatch, lost_ms: Option<u64>, window_in_view: bool) -> bool {
+    let due = watch.observe(lost_ms.map(std::time::Duration::from_millis));
+    if due && should_native_during_take(window_in_view, false) {
+        watch.mark_alerted();
+        return true;
+    }
+    false
+}
+
 /// Subscribe to the engine's own events. Call once, from `setup` (through
 /// `wire_failure_sources`).
 pub fn wire(app: &AppHandle) {
     use crate::recorder::engine::{
-        RecordingEvent, QUALITY_EVENT, RECONNECTING_EVENT, SILENCE_EVENT, STARTED_EVENT,
+        RecordingEvent, RecordingProgress, PROGRESS_EVENT, QUALITY_EVENT, RECONNECTING_EVENT,
+        SILENCE_EVENT, STARTED_EVENT,
     };
 
     app.listen(STARTED_EVENT, |_| reset());
+
+    // C5b: the camera is gone for over a minute while the audio goes on. The
+    // heartbeat carries how long; the decision is `CameraOutageWatch`.
+    let handle = app.clone();
+    app.listen(PROGRESS_EVENT, move |ev| {
+        let Ok(p) = serde_json::from_str::<RecordingProgress>(ev.payload()) else {
+            return;
+        };
+        let in_view = crate::window::main_window_in_view(&handle);
+        let raise_now = camera_step(&mut lock_recover(&CAMERA), p.video_lost_ms, in_view);
+        if raise_now {
+            let app = handle.clone();
+            tracing::info!("notify: camera has been gone for over a minute — told natively");
+            tauri::async_runtime::spawn(async move {
+                super::native(&app, super::APP_TITLE, &text(TakeAlert::CameraLost, None));
+            });
+        }
+    });
 
     let handle = app.clone();
     app.listen(SILENCE_EVENT, move |_| {
@@ -138,6 +178,36 @@ mod tests {
         );
         reset();
         assert!(!already_sent(TakeAlert::Silence));
+    }
+
+    fn ms(s: u64) -> Option<u64> {
+        Some(s * 1000)
+    }
+
+    #[test]
+    fn the_camera_notification_waits_for_60_s_and_comes_once_per_outage() {
+        let mut w = CameraOutageWatch::default();
+        // Window out of view throughout.
+        assert!(!camera_step(&mut w, None, false));
+        assert!(!camera_step(&mut w, ms(1), false));
+        assert!(!camera_step(&mut w, Some(59_999), false), "not at 59.999 s");
+        assert!(camera_step(&mut w, ms(60), false), "at 60 s");
+        for s in 61..90 {
+            assert!(!camera_step(&mut w, ms(s), false), "not again at {s} s");
+        }
+        // The camera comes back; a second outage is told again at its 60 s.
+        assert!(!camera_step(&mut w, None, false));
+        assert!(!camera_step(&mut w, ms(10), false));
+        assert!(camera_step(&mut w, ms(60), false));
+    }
+
+    #[test]
+    fn an_outage_seen_with_the_window_in_view_is_told_when_it_leaves() {
+        let mut w = CameraOutageWatch::default();
+        assert!(!camera_step(&mut w, ms(60), true), "the banner is enough");
+        assert!(!camera_step(&mut w, ms(75), true));
+        assert!(camera_step(&mut w, ms(76), false), "now nobody is looking");
+        assert!(!camera_step(&mut w, ms(77), false));
     }
 
     #[test]

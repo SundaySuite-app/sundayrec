@@ -18,6 +18,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   gang tar det litt tid …» (på alle sju språk). Appen starter ikke målingen mens
   det tas opp, og avbryter den hvis et opptak eller en eksport begynner.
 
+- **Du får vite at kameraet er borte, og at lyden går videre.** Faller kameraet
+  ut under et opptak, står det «Kameraet falt ut — lyden tas fortsatt opp» i
+  opptaksvinduet så lenge kameraet er borte, og meldingen forsvinner av seg selv
+  når bildet er tilbake. Er kameraet borte i over ett minutt og du ikke ser på
+  appen, kommer det i tillegg et varsel på maskinen, én gang per utfall. Teksten
+  finnes på alle sju språk.
+
 - **Forhåndslyttingen spiller det eksporten lager.** «Etter» i Rediger → Lyd er nå
   bygget av nøyaktig de samme valgene som eksporten: er den avanserte mikseren på,
   hører du mikserens lyd (ikke «Tale»), et opptak med en død kanal spilles reparert

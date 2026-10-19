@@ -181,6 +181,13 @@ pub struct RecordingProgress {
     #[serde(default)]
     #[ts(type = "number")]
     pub video_frames_dropped: u64,
+    /// How long the camera has been gone, in milliseconds, while the session
+    /// keeps recording audio (C5b); `null` while it delivers and for audio-only
+    /// sessions. The overlay says «Kameraet falt ut — lyden tas fortsatt opp»
+    /// for as long as this is set, and the notification waits for 60 s of it.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub video_lost_ms: Option<u64>,
 }
 
 /// Live per-channel peak audio levels (dBFS) sent to the renderer, parsed from
@@ -244,6 +251,7 @@ mod tests {
         let p = RecordingProgress {
             bytes_written: 2_097_152,
             video_frames_dropped: 7,
+            video_lost_ms: Some(61_000),
         };
         let json = serde_json::to_string(&p).unwrap();
         let back: RecordingProgress = serde_json::from_str(&json).unwrap();

@@ -85,6 +85,19 @@ hopper rett fra v0.22.0 eller eldre, beholder passordet ulest i nøkkelringen,
 som de andre pensjonerte oppføringene; lista over dem står i modulhodet til
 `settings::email_cleanup`.
 
+## ✅ Runde 5 — kameraet er borte (C5b)
+
+- Faller kameraet ut under et opptak, sier overlegget «Kameraet falt ut — lyden
+  tas fortsatt opp» så lenge det er borte (`recording://progress.video_lost_ms`).
+- Er det borte i **60 s**, går det i tillegg et systemvarsel med samme setning
+  (`AlertText::TakeCameraLost`, sju språk), når vinduet ikke er i fokus. **Én
+  gang per utfall**, ikke per opptak: gjenkobling re-armerer, så et nytt utfall
+  varsles på nytt (`notify::CameraOutageWatch`, `notify::take`). Beslutningen
+  er ren og testet på varigheter, uten klokke.
+- Feilvarsler kan fortsatt ikke slås av.
+
+Verifisering på rigg: `docs/RIG-DAY.md` (v9).
+
 ## Senere
 
 Hvert punkt har en betingelse for når det kan tas.

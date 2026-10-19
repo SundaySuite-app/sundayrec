@@ -623,6 +623,7 @@
       "reconnectAnon": "Ljudet försvann — försöker återansluta",
       "autoStop": "Stoppar av sig själv om {left}",
       "videoSkipped": "Kameran hänger lite efter, så några bilder har hoppats över. Ljudet påverkas inte.",
+      "cameraLost": "Kameran föll bort — ljudet spelas fortfarande in",
       "finalizingHint": "Inspelningen skrivs till disk. Det tar några sekunder, och filen är trygg under tiden."
     },
     "done": {

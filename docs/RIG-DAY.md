@@ -806,6 +806,28 @@ during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
       som aldri kommer tilbake, et annet kamera som tas over, Stopp som henger,
       eller på Windows at tilkoblingen tar flere sekunder (lytteren virker ikke).
 
+- [ ] **(v9) Melding og varsel når kameraet er borte (C5b, Continuity-kamera, Mac).**
+      Kjøres av eieren: Claudes Bash har ikke kameratilgang. Bruk
+      iPhone som Continuity-kamera (eller et USB-kamera) og en bygning med
+      C5b (`npm run tauri dev` fra repoet, eller betaen når den er ute). 1. Innstillinger: velg kameraet, og slå på «Varsel på maskinen»-tillatelsen
+      for SundayRec i macOS (Systeminnstillinger → Varsler) om den ikke er det. 2. Start et opptak med video. Bildet i overlegget skal stå. 3. **Utfall:** lås iPhonen og legg den bort fra Macen (eller dra ut USB-kabelen).
+      **Forventet:** i løpet av noen sekunder står linja «Kameraet falt ut —
+      lyden tas fortsatt opp» i overlegget, og tidtakeren og lydmåleren går
+      som før. Ingen alarm-banner. 4. **Gjenkobling før 60 s:** ta kameraet tilbake innen ~30 s.
+      **Forventet:** linja forsvinner av seg selv når bildet er tilbake;
+      **ingen** systemvarsel kom. 5. **Over 60 s:** gjør utfallet om igjen, men denne gangen **bytt til en
+      annen app (f.eks. lysbilder) så SundayRec-vinduet ikke er i fokus**, og
+      vent. **Forventet:** ved 60 s (ikke før; ta tiden) kommer ETT
+      systemvarsel «Kameraet falt ut — lyden tas fortsatt opp». Det kommer
+      ikke igjen mens kameraet er borte (vent to minutter til). 6. Ta kameraet tilbake: linja forsvinner. Gjør et tredje utfall over 60 s
+      i samme opptak: **Forventet:** nytt varsel (ett per utfall). 7. Stopp opptaket. Filen har lyd hele veien; bildet er svart over hullene.
+      (Et utfall mens vinduet er i fokus gir bare meldingen, ikke varsel; går du
+      vekk fra vinduet først etter 60 s, kommer varselet da.)
+      **Rødt funn:** varsel før 60 s; flere varsler for samme utfall; ingen
+      varsel etter 60 s med vinduet ute av fokus; meldingen blir stående etter
+      at bildet er tilbake; meldingen kommer ikke i det hele tatt (da leser ikke
+      sporet kamerahelsen; sjekk loggen for `camera reconnect:`-linjene fra (v8)).
+
 ## Ørene
 
 Lydkjede-funn som verken CI eller en sidecar-måling kan avgjøre alene — de

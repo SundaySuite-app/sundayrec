@@ -623,6 +623,7 @@
       "reconnectAnon": "Lyden forsvant — prøver å koble til igjen",
       "autoStop": "Stopper av seg selv om {left}",
       "videoSkipped": "Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er ikke berørt.",
+      "cameraLost": "Kameraet falt ut — lyden tas fortsatt opp",
       "finalizingHint": "Opptaket skrives til disk. Det tar noen sekunder, og fila er trygg imens."
     },
     "done": {

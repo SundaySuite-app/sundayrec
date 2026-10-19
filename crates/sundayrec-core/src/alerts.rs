@@ -185,6 +185,9 @@ pub enum AlertText {
     TakeQuality,
     /// The input device dropped out and the engine is reconnecting.
     TakeReconnecting,
+    /// The camera has been gone for over a minute; the audio is still being
+    /// recorded (C5b).
+    TakeCameraLost,
     /// Free space fell below the graduated warning threshold. `{gb}`
     TakeDiskLow,
 
@@ -248,6 +251,7 @@ impl AlertText {
         AlertText::TakeSilence,
         AlertText::TakeQuality,
         AlertText::TakeReconnecting,
+        AlertText::TakeCameraLost,
         AlertText::TakeDiskLow,
         AlertText::WakeNotArmed,
         AlertText::TestNotification,
@@ -1126,6 +1130,15 @@ impl AlertText {
                 "La source audio a disparu — SundayRec tente de se reconnecter."
             }
 
+            // ── TakeCameraLost ────────────────────────────────────────────────
+            (A::TakeCameraLost, L::No) => "Kameraet falt ut — lyden tas fortsatt opp",
+            (A::TakeCameraLost, L::En) => "The camera dropped out — the audio is still being recorded",
+            (A::TakeCameraLost, L::De) => "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen",
+            (A::TakeCameraLost, L::Sv) => "Kameran föll bort — ljudet spelas fortfarande in",
+            (A::TakeCameraLost, L::Da) => "Kameraet faldt ud — lyden optages stadig",
+            (A::TakeCameraLost, L::Pl) => "Kamera przestała działać — dźwięk nadal jest nagrywany",
+            (A::TakeCameraLost, L::Fr) => "La caméra s'est déconnectée — le son continue d'être enregistré",
+
             // ── TakeDiskLow ───────────────────────────────────────────────────
             (A::TakeDiskLow, L::No) => {
                 "Lite plass på disken — {gb} GB igjen. Opptaket stopper når disken er full."
@@ -1273,7 +1286,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            50,
+            51,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();

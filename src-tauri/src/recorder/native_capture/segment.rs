@@ -805,6 +805,11 @@ pub(crate) trait SegmentSignals {
     fn video_frames_dropped(&self) -> u64 {
         self.video_stats().map_or(0, |v| v.queue_dropped)
     }
+    /// How long the camera has been gone (C5b), read at the 1 Hz progress
+    /// tick; `None` while it delivers and for audio-only.
+    fn video_lost_for(&self) -> Option<Duration> {
+        None
+    }
 }
 
 impl SegmentSignals for NativeSegment {
@@ -868,6 +873,10 @@ impl SegmentSignals for NativeSegment {
             None => self.video_stats.map_or(0, |v| v.queue_dropped),
         }
     }
+
+    fn video_lost_for(&self) -> Option<Duration> {
+        self.video.as_ref().and_then(VideoTrack::lost_for)
+    }
 }
 
 /// Where the runner's user-visible output goes.
@@ -896,8 +905,9 @@ pub(crate) trait EventSink {
     /// `recording://silence` — the silence warning fired.
     fn silence(&self, code: &str, message: &str);
     /// `recording://progress` — the 1 Hz byte counter, plus the session's
-    /// running count of dropped camera frames (0 without video).
-    fn progress(&self, bytes_written: u64, video_frames_dropped: u64);
+    /// running count of dropped camera frames (0 without video) and, while the
+    /// camera is gone, for how long (C5b).
+    fn progress(&self, bytes_written: u64, video_frames_dropped: u64, video_lost_ms: Option<u64>);
     /// `recording://levels` — the 33 ms meters.
     fn levels(&self, peak_db_left: f64, peak_db_right: Option<f64>);
     /// `recording://state` — re-stamped when the auto-stop deadline moves.
@@ -957,12 +967,13 @@ impl EventSink for AppEventSink<'_> {
             },
         );
     }
-    fn progress(&self, bytes_written: u64, video_frames_dropped: u64) {
+    fn progress(&self, bytes_written: u64, video_frames_dropped: u64, video_lost_ms: Option<u64>) {
         let _ = self.app.emit(
             PROGRESS_EVENT,
             RecordingProgress {
                 bytes_written,
                 video_frames_dropped,
+                video_lost_ms,
             },
         );
     }
@@ -1374,6 +1385,8 @@ where
                     sink.progress(
                         b,
                         video_dropped_before.saturating_add(seg.video_frames_dropped()),
+                        seg.video_lost_for()
+                            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
                     );
                 }
             }
@@ -1643,6 +1656,8 @@ mod tests {
         Silence,
         Progress(u64),
         VideoDropped(u64),
+        /// The camera has been gone this many ms (C5b).
+        CameraLost(u64),
         Levels(f64, Option<f64>),
         State(Option<u64>),
     }
@@ -1677,10 +1692,13 @@ mod tests {
         fn silence(&self, _c: &str, _m: &str) {
             self.push(Ev::Silence);
         }
-        fn progress(&self, b: u64, dropped: u64) {
+        fn progress(&self, b: u64, dropped: u64, lost_ms: Option<u64>) {
             self.push(Ev::Progress(b));
             if dropped > 0 {
                 self.push(Ev::VideoDropped(dropped));
+            }
+            if let Some(ms) = lost_ms {
+                self.push(Ev::CameraLost(ms));
             }
         }
         fn levels(&self, l: f64, r: Option<f64>) {
@@ -1703,6 +1721,9 @@ mod tests {
         stops: Arc<AtomicU64>,
         /// Frames the (pretend) video track has dropped so far.
         video_dropped: Arc<AtomicU64>,
+        /// How long the (pretend) camera has been gone, in ms; `u64::MAX` = it
+        /// delivers.
+        video_lost_ms: Arc<AtomicU64>,
     }
 
     impl SegmentSignals for Scripted {
@@ -1737,6 +1758,12 @@ mod tests {
         async fn stop(&mut self) {
             self.stops.fetch_add(1, Ordering::Relaxed);
         }
+        fn video_lost_for(&self) -> Option<Duration> {
+            match self.video_lost_ms.load(Ordering::Relaxed) {
+                u64::MAX => None,
+                ms => Some(Duration::from_millis(ms)),
+            }
+        }
         fn video_stats(&self) -> Option<VideoTrackStats> {
             let queue_dropped = self.video_dropped.load(Ordering::Relaxed);
             (queue_dropped > 0).then(|| VideoTrackStats {
@@ -1757,6 +1784,7 @@ mod tests {
         xruns: Arc<AtomicU64>,
         stops: Arc<AtomicU64>,
         video_dropped: Arc<AtomicU64>,
+        video_lost_ms: Arc<AtomicU64>,
         sink: Recorder,
     }
 
@@ -1768,6 +1796,7 @@ mod tests {
         let xruns = Arc::new(AtomicU64::new(0));
         let stops = Arc::new(AtomicU64::new(0));
         let video_dropped = Arc::new(AtomicU64::new(0));
+        let video_lost_ms = Arc::new(AtomicU64::new(u64::MAX));
         Rig {
             seg: Scripted {
                 rx,
@@ -1782,6 +1811,7 @@ mod tests {
                 },
                 stops: Arc::clone(&stops),
                 video_dropped: Arc::clone(&video_dropped),
+                video_lost_ms: Arc::clone(&video_lost_ms),
             },
             tx,
             bytes,
@@ -1790,6 +1820,7 @@ mod tests {
             xruns,
             stops,
             video_dropped,
+            video_lost_ms,
             sink: Recorder::default(),
         }
     }
@@ -2847,6 +2878,70 @@ mod tests {
             .map(|c| c.value);
         assert_eq!(counted, Some(42));
         crate::telemetry::counters::set_active(false);
+    }
+
+    /// C5b: the camera's health reaches the 1 Hz progress event. While the
+    /// camera is gone the heartbeat says for how long (the overlay shows
+    /// «Kameraet falt ut — lyden tas fortsatt opp» for as long as that is set);
+    /// when it comes back the field is gone again. The audio side keeps
+    /// reporting throughout. No sleeping on a real clock: the "outage" is a
+    /// number the test moves between ticks, under tokio's paused time.
+    #[tokio::test(start_paused = true)]
+    async fn the_camera_outage_rides_the_progress_event_and_clears_on_return() {
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        let lost = Arc::clone(&r.video_lost_ms);
+        let ender = tokio::spawn(async move {
+            // Ticks at 1 s, 2 s, ... Delivering, then gone for 59.9 s then
+            // 60 s, then back.
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            lost.store(59_900, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            lost.store(60_000, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            lost.store(u64::MAX, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            stop_tx.send(()).await.unwrap();
+        });
+        drive(
+            &mut r,
+            &test_opts("/tmp/x.wav"),
+            counters(),
+            Some(u64::MAX / 2),
+            FakeClock::default().handle(),
+            &mut stop_rx,
+            &mut w_rx,
+        )
+        .await;
+        ender.await.unwrap();
+        let seen = r.sink.seen();
+        // Every progress tick is a Progress; the lost ones are interleaved.
+        let timeline: Vec<Option<u64>> = seen
+            .iter()
+            .filter_map(|e| match e {
+                Ev::CameraLost(ms) => Some(Some(*ms)),
+                Ev::Progress(_) => Some(None),
+                _ => None,
+            })
+            .collect();
+        let lost_values: Vec<u64> = timeline.iter().flatten().copied().collect();
+        assert_eq!(lost_values, vec![59_900, 60_000], "{seen:?}");
+        // …and ticks after the return carry no outage (Progress without a
+        // CameraLost before the next Progress).
+        let last_progress = seen
+            .iter()
+            .rposition(|e| matches!(e, Ev::Progress(_)))
+            .unwrap();
+        let last_lost = seen
+            .iter()
+            .rposition(|e| matches!(e, Ev::CameraLost(_)))
+            .unwrap();
+        assert!(
+            last_lost + 1 < last_progress,
+            "cleared after return: {seen:?}"
+        );
     }
 
     /// An audio-only fragment, or a video one that lost nothing, leaves no

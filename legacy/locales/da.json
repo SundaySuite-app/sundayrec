@@ -623,6 +623,7 @@
       "reconnectAnon": "Lyden forsvandt — prøver at genoprette forbindelsen",
       "autoStop": "Stopper af sig selv om {left}",
       "videoSkipped": "Kameraet halter lidt bagud, så nogle billeder er sprunget over. Lyden er upåvirket.",
+      "cameraLost": "Kameraet faldt ud — lyden optages stadig",
       "finalizingHint": "Optagelsen skrives til disken. Det tager nogle sekunder, og filen er tryg i mellemtiden."
     },
     "done": {
