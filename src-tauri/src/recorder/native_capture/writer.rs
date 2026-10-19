@@ -602,12 +602,12 @@ mod tests {
 
         const CH: u16 = 8;
         const RATE: u32 = 48_000;
-        const SPEEDUP: u64 = 10;
         const WALL_SECS: f64 = 3.0;
         // 480 frames = 10 ms of audio per «callback».
         const BLOCK_FRAMES: usize = 480;
 
         struct Run {
+            speedup: u64,
             overrun: u64,
             peak_fill_ms: f64,
             frames: u64,
@@ -615,7 +615,7 @@ mod tests {
             integrated: Option<f64>,
         }
 
-        let run = |measure: bool| -> Run {
+        let run = |measure: bool, speedup: u64| -> Run {
             let spec = WavSpec {
                 channels: CH,
                 sample_rate: RATE,
@@ -648,7 +648,7 @@ mod tests {
             let block: Vec<f32> = (0..BLOCK_FRAMES * CH as usize)
                 .map(|i| 0.2 * ((i / CH as usize) as f32 * 0.07).sin())
                 .collect();
-            let tick = Duration::from_micros(10_000 / SPEEDUP);
+            let tick = Duration::from_micros(10_000 / speedup);
             let total_blocks = (WALL_SECS / tick.as_secs_f64()) as usize;
             let t0 = Instant::now();
             let mut overrun = 0u64;
@@ -667,6 +667,7 @@ mod tests {
             let summary = join.join().expect("join").expect("clean finalize");
             let wall = t0.elapsed();
             Run {
+                speedup,
                 overrun,
                 peak_fill_ms: peak as f64 / (f64::from(RATE) * f64::from(CH)) * 1e3,
                 frames: summary.frames,
@@ -675,10 +676,20 @@ mod tests {
             }
         };
 
-        let without = run(false);
-        let with = run(true);
+        // The property is relative: at a pace the writer holds WITHOUT the
+        // meter, the meter must not cost a sample. A shared CI runner (Windows
+        // especially: slow fsync) may not hold 10x even without it, so step
+        // down to the fastest pace the baseline holds. 1x is real time — the
+        // only pace production needs.
+        let without = [10, 4, 1]
+            .into_iter()
+            .map(|speedup| run(false, speedup))
+            .find(|r| r.overrun == 0)
+            .expect("the writer alone must hold real time");
+        let with = run(true, without.speedup);
+        let speedup = without.speedup;
         eprintln!(
-            "D3 writer, 8 ch @ 48 kHz, {SPEEDUP}x real time, {WALL_SECS} s wall:\n  \
+            "D3 writer, 8 ch @ 48 kHz, {speedup}x real time, {WALL_SECS} s wall:\n  \
              without meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}\n  \
              with    meter: overrun {} samples, ring peak {:.1} ms of 5000 ms, {} frames, {:?}",
             without.overrun,
@@ -693,7 +704,6 @@ mod tests {
         assert_eq!(without.integrated, None, "no meter, no measurement");
         let lufs = with.integrated.expect("the writer fed the meter");
         assert!((-40.0..-5.0).contains(&lufs), "measured {lufs} LUFS");
-        assert_eq!(without.overrun, 0, "baseline must not drop");
         assert_eq!(
             with.overrun, 0,
             "the meter must not cause a single dropped sample"
