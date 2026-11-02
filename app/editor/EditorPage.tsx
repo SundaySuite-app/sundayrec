@@ -108,7 +108,7 @@ import {
   suggestion,
   type Step,
 } from "./model";
-import { stopPlay, togglePlay } from "./playback";
+import { teardownPlayback, togglePlay } from "./playback";
 import { candidatesFor, chooseSermon } from "./sermon";
 import { soundVisited } from "./sound";
 import { SoundStep } from "./SoundStep";
@@ -144,8 +144,9 @@ export function EditorPage() {
   // den andre halvdelen ikke skjer: å slippe topper, kutt og forslag ved et
   // sidebytte ga en tom bølgeform når man kom tilbake, og brukeren måtte lukke
   // og åpne fila på nytt for å se noe (rapportert feil, mai 2026). Uten den
-  // FØRSTE halvdelen ville lyden gått videre i bakgrunnen på en side ingen ser.
-  useEffect(() => stopPlay, []);
+  // FØRSTE halvdelen ville lyden gått videre i bakgrunnen på en side ingen ser. Motoren lukkes
+  // også: lydkortet har én eier om gangen, og den eieren er den siden som er synlig.
+  useEffect(() => teardownPlayback, []);
 
   return (
     <div
@@ -211,7 +212,7 @@ function CutStep() {
   // Å gå til et annet STEG stopper avspillingen, av nøyaktig samme grunn som å
   // gå til en annen SIDE gjør det: lyd som går videre på en skjerm ingen ser
   // er den ene formen for feil som ikke ser ut som en feil.
-  useEffect(() => stopPlay, []);
+  useEffect(() => teardownPlayback, []);
 
   return (
     <>
@@ -328,23 +329,18 @@ function Summary() {
 /**
  * Én ærlig setning om avspillingen, eller ingen.
  *
- * `original` sier ingenting — det er normaltilstanden. `proxy` og `none` er
- * legacys egne tekster, og de finnes derfor i alle sju språk. Atlasets
- * forbehold gjelder fortsatt: i en ren nettleser er `asset://` død, så
- * `none`-banneret er dét man ser der, og det er sant.
+ * `original` sier ingenting — det er normaltilstanden. `none` betyr at avspillingsmotoren ikke
+ * lot seg åpne (ingen lydenhet, eller fila lot seg ikke lese), og da står setningen her i
+ * stedet for at knappen ikke gjør noe. I en ren nettleser finnes ingen motor, så det er dét man
+ * ser der.
  */
 function PlaybackNotice() {
-  const source = playbackSource.value;
-  if (source === "original") return null;
+  if (playbackSource.value === "original") return null;
   return (
     <Banner
       tone="warn"
       testId="editor-playback-notice"
-      title={
-        source === "proxy"
-          ? t("editor.playbackViaProxy")
-          : t("editor.qualityFallback")
-      }
+      title={t("editor.qualityFallback")}
     />
   );
 }
@@ -404,7 +400,6 @@ function SuggestionCard() {
 function Transport() {
   const total = duration.value;
   const kept = keptSeconds(cuts.value, total);
-  const dead = playbackSource.value === "none";
 
   return (
     <div class={styles.transport}>
@@ -412,13 +407,8 @@ function Transport() {
         type="button"
         class={styles.play}
         data-testid="editor-play"
-        aria-disabled={dead ? "true" : undefined}
         aria-label={playing.value ? t("app.editor.pause") : t("tooltip.play")}
-        title={dead ? t("editor.qualityFallback") : undefined}
-        onClick={() => {
-          if (dead) return;
-          togglePlay();
-        }}
+        onClick={togglePlay}
       >
         {playing.value ? (
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

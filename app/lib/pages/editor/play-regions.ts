@@ -1,5 +1,3 @@
-import { PLAYER_EXTS } from "./state";
-
 // ── Extended-timeline region math (PURE — no DOM, no state) ─────────────────
 //
 // The editor plays three pieces of media back to back: the intro jingle, the
@@ -100,19 +98,4 @@ export function nextRegion(
   if (region === "intro") return "main";
   if (region === "main") return Math.max(0, tl.outroDur) > 0 ? "outro" : null;
   return null;
-}
-
-/**
- * How the MAIN recording is played back: straight from the original file
- * (`element` — the webview streams it via `asset://`, full fidelity, instant),
- * or through a transcoded AAC proxy (`proxy` — costs a transcode up front, so
- * only for containers the webview has no decoder for).
- *
- * Accepts `flac`, `.flac`, `.FLAC` alike: extensions reach us from filenames,
- * drag-and-drop payloads and settings, and the casing is not ours to trust.
- */
-export function routePlayback(ext: string): "element" | "proxy" {
-  const norm = ext.trim().toLowerCase();
-  const dotted = norm.startsWith(".") ? norm : `.${norm}`;
-  return PLAYER_EXTS.has(dotted) ? "element" : "proxy";
 }

@@ -87,6 +87,13 @@ pub enum Command {
         gen: u64,
         program_frame: u64,
     },
+    /// The same, under a new cut plan (the cuts were edited, B5c): the producer takes `plan` for
+    /// this and every later job. `program_frame` is a frame of the NEW programme.
+    SetPlan {
+        gen: u64,
+        plan: CutPlan,
+        program_frame: u64,
+    },
     /// From now on the wet layer is this chain, crossfaded in at the producer's head.
     SetChain(Chain),
     Shutdown,
@@ -280,7 +287,14 @@ where
             .build(plan.rate() as f32, channels)
             .map_err(|e| format!("the audio chain could not be built: {e}"))?;
         let start = start.min(plan.program_frames());
-        let preroll = (PREROLL_SEC * f64::from(plan.rate())) as u64;
+        // The pre-roll is for the chain's compressor, gate and de-noiser to settle. With no
+        // chain (the cut step listens to the recording as it is) there is nothing to settle, and
+        // a jump is heard a second of decoding sooner.
+        let preroll = if chain.is_empty() {
+            0
+        } else {
+            (PREROLL_SEC * f64::from(plan.rate())) as u64
+        };
         let from = start.saturating_sub(preroll);
         Ok(Self {
             gen,
@@ -568,7 +582,9 @@ where
                     Err(TryRecvError::Disconnected) => Some(Command::Shutdown),
                 }
             };
-            // Only the newest of a burst of seeks matters: the callback waits for the newest.
+            // Only the newest of a burst of seeks matters: the callback waits for the newest. A
+            // plan change is never dropped (a later seek was computed under it, but one made
+            // before it must not hide it), so a burst ends at one.
             let mut cmd = cmd;
             while matches!(cmd, Some(Command::Seek { .. })) {
                 match rx.try_recv() {
@@ -576,8 +592,19 @@ where
                     Err(_) => break,
                 }
             }
+            // A plan change is a seek too: the same restart, with the plan swapped first.
+            if let Some(Command::SetPlan {
+                gen,
+                plan,
+                program_frame,
+            }) = cmd
+            {
+                self.plan = plan;
+                cmd = Some(Command::Seek { gen, program_frame });
+            }
             match cmd {
                 Some(Command::Shutdown) => return,
+                Some(Command::SetPlan { .. }) => {}
                 Some(Command::SetChain(c)) => {
                     // Later jobs (a seek) start with it; the running one crossfades to it.
                     self.chain = c.clone();

@@ -1,106 +1,96 @@
 /**
- * Avspillingen — ett `<audio>`-element, og forhåndslyttingen som hopper over
- * kuttene.
+ * Avspillingen i Klipp-steget — en fjernkontroll for avspillingsmotoren i Rust.
  *
- * ## Elementet eies av modellen
+ * ## Det er ikke lenger et `<audio>`-element (B5c)
  *
- * `E.playerEl` er ETT element, laget første gang og gjenbrukt for hver fil.
- * Ikke JSX: et element i treet ville mistet `src`-en sin hver gang noe over
- * det rendret, og avspilling som stopper uten at noe feiler er den verste
- * formen for feil. Legacy gjør det samme, av samme grunn (`persistentPlayerEl`
- * — et nytt element per fil lekket en dekoder og et åpent filhåndtak hver
- * gang).
+ * Før spilte webviewen opptaket gjennom et medieelement på `asset://`, hoppet over kuttene med
+ * `currentTime` og tonet `volume` ned og opp rundt hvert hopp for å skjule klikket, og leste
+ * spillehodet av `currentTime`. Nå spiller Rust (`src-tauri/src/playback/`, B5a): ffmpeg
+ * dekoder opptaket, kutt-planen legger programmet ende mot ende med 20 ms konstant-effekt-
+ * overganger, og lydkortet er klokka. Denne fila sender bare meldinger (spill, pause, hopp,
+ * nye kutt) og lar spillehodet følge det motoren melder. Det finnes ingen volumrampe her, ingen
+ * hoppløkke og ingen mellomfil: kuttene er en del av programmet motoren spiller.
+ *
+ * Økta er den samme som Lyd-steget bruker (`sound.ts`, `openEngine`): én motor, ett lydkort.
+ * Den åpnes av første «spill» (eller første hopp mens den er åpen) og lukkes når steget
+ * forlates eller fila byttes. Klipp-steget ber ikke om noen kjede: det lytter til opptaket
+ * slik det er, med kuttene.
  *
  * ## Forhåndslytting er den eneste modusen
  *
- * Legacy har to knapper: «spill» (hele fila) og «forhåndslytt» (hopp over
- * kutt). En frivillig som nettopp har trykket «Behold bare prekenen» vil høre
- * RESULTATET; å måtte vite hvilken av to avspillingsknapper som viser det er
- * nøyaktig valget canvasens sett 4 fjerner. Så: én knapp, og den hopper alltid
- * over kuttene.
+ * Én knapp, og den hopper alltid over kuttene: en frivillig som nettopp har trykket «Behold
+ * bare prekenen» vil høre RESULTATET.
  *
- * ## De-klikket
+ * ## Spillehodet er det motoren sier
  *
- * Et hardt `currentTime`-hopp over et kutt lander midt i bølgeformen på begge
- * sider, og steget i signalet er et hørbart klikk på hvert eneste kutt. Legacys
- * rampe er portet ordrett: tone ned over tre frames, hopp, tone opp igjen.
- * `volume` er den eneste knappen et medieelement gir (0..1, altså bare
- * demping), og det er akkurat det et de-klikk trenger.
+ * Motoren melder posisjonen (kildesekunder) ~30 ganger i sekundet, regnet av frames lydkortet
+ * faktisk har tatt. `E.playStartSec` skrives herfra, og bare derfra mens det spiller. Tegningen
+ * skjer i `waveform.ts` og leser `E` direkte; det ENE signalet som skrives er `playheadSec`, og
+ * det skjer på husets tegne-kadens (`@lib/ui/frame-gate`) — tallet «0:21:08» endrer seg ett
+ * sekund om gangen.
  *
- * ## Spillehodet er frame-gatet
+ * ## Nye kutt mens det spiller
  *
- * Tegningen skjer i `waveform.ts` og leser `E` direkte. Det ENE signalet som
- * skrives fra løkka er `playheadSec`, og det skjer på husets tegne-kadens
- * (`@lib/ui/frame-gate`) — ikke per frame. Tallet «0:21:08» endrer seg ett
- * sekund om gangen, og seksti re-rendringer i sekundet for å vise det samme
- * tallet er den jank-en canvasen ellers ville fått skylda for.
+ * Kuttlista er en del av programmet. Når den endres (et nytt kutt, angre, en dratt grense), får
+ * motoren den nye planen og fortsetter fra samme sted i kilden som et hopp: nedtoning, nytt
+ * program, opptoning. Et kutt midt i avspilling koster altså et lite opphold, ikke et klikk.
+ * Endringene samles (`CUTS_DEBOUNCE_MS`) så en rekke angre-trykk ikke starter motoren på nytt
+ * for hvert.
+ *
+ * ## Video
+ *
+ * Klipp-steget viser ikke bildet (se `loader.ts`); det finnes derfor ingen `<video>` som må
+ * følge motoren. Lyden i en videofil spilles av motoren som alt annet. Den dagen bildet vises,
+ * er det en dempet `<video>` som følger posisjonen herfra og rettes når den driver mer enn ett
+ * bilde.
  */
 
 import { DRAW_INTERVAL_MS, nextDrawGate } from "@lib/ui/frame-gate";
+import type { EditorListenEvent } from "@legacy/bindings/EditorListenEvent";
+import { effect } from "@preact/signals";
 
 import { clampToFile } from "./geometry";
 import {
+  cuts,
   E,
   playbackSource,
   playheadSec,
   playing,
   type PlaybackSource,
 } from "./model";
+import { engineIsOpen, openEngine, stopListen, subscribeEngine } from "./sound";
 import { followPlayhead } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
-/** Hvor mange frames rampen bruker hver vei. Legacys eget tall. */
-const DUCK_FRAMES = 3;
+/** Hvor lenge nye kutt samles før motoren får dem. */
+export const CUTS_DEBOUNCE_MS = 120;
 
-/**
- * Hvor lenge play venter på at elementet blir klart før det gir opp.
- *
- * ## ⚠️ Spillehodet som frøs
- *
- * `startPlay` satte `isPlaying`/`playing` FØR den ventet på `canplay`, og hvis
- * det eventet aldri kom, kom heller ingenting annet: `el.play()` ble aldri
- * kalt, `currentSec()` svarte `playStartSec` så lenge `mainPlayPending` sto,
- * og `animate()` gikk i ring på en rAF som malte det samme tallet for alltid.
- * Skjermen viste «pause»-knappen over en teller som ikke beveget seg, og det
- * er en tilstand ingenting i appen kunne komme ut av uten et nytt klikk.
- *
- * Ti sekunder er lenge nok til at en 90-minutters FLAC på en treg disk rekker
- * å melde metadata, og kort nok til at ingen står og lurer. Den ekte
- * bakstopperen er lasteren, som setter `playbackSource = "none"` når den vet
- * at fila ikke lar seg spille; dette er beltet under den, for det den ikke
- * kan vite på forhånd.
- */
-export const PLAY_READY_TIMEOUT_MS = 10_000;
+/** Under dette fra slutten regnes fila som spilt ut, og neste «spill» begynner på nytt. */
+const AT_END_SEC = 0.05;
 
-/**
- * Hvert start/stopp øker denne. Regionoverganger er asynkrone (`canplay`,
- * `ended`), og en callback fra en AVLØST avspilling må ikke gjøre noe — å
- * trykke stopp og så play innenfor samme sekund lot ellers den gamle
- * `canplay`-en starte elementet på nytt oppå den nye.
- */
+/** Der programmet slutter i kilden: filas slutt, eller starten på et kutt som går ut fila. */
+function playableEnd(): number {
+  let end = E.duration;
+  for (const c of E.cuts) {
+    if (c.end >= E.duration - 0.001) end = Math.min(end, c.start);
+  }
+  return end;
+}
+
+/** Hvert start/stopp øker denne. Åpningen av lydkortet er asynkron, og en callback fra en
+ *  AVLØST avspilling må ikke starte motoren oppå en ny. */
 let playGen = 0;
 
-/** Vakten under `canplay`. Se `PLAY_READY_TIMEOUT_MS`. */
-let readyTimer: ReturnType<typeof setTimeout> | null = null;
+/** Siste posisjon motoren meldte (eller ble bedt om), kildesekunder. */
+let engineAt = 0;
 
-function clearReadyTimer(): void {
-  if (!readyTimer) return;
-  clearTimeout(readyTimer);
-  readyTimer = null;
-}
+/** Høyeste generasjon sett i en posisjon. Et «ferdig» fra en eldre generasjon (programmet ble
+ *  byttet rett før slutten) er forsinket og betyr ikke at det nye er spilt ut. */
+let maxGenSeen = 0;
 
-let persistentPlayerEl: HTMLAudioElement | null = null;
-
-/** Elementet, laget ved første behov. */
-export function ensurePlayerEl(): HTMLAudioElement {
-  if (!persistentPlayerEl) {
-    const el = new Audio();
-    el.preload = "auto";
-    persistentPlayerEl = el;
-  }
-  E.playerEl = persistentPlayerEl;
-  return persistentPlayerEl;
-}
+let unsubscribe: (() => void) | null = null;
+let stopCutWatch: (() => void) | null = null;
+let cutsTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Fortell modellen hvordan avspillingen faktisk går. */
 export function setPlaybackSource(source: PlaybackSource): void {
@@ -109,54 +99,16 @@ export function setPlaybackSource(source: PlaybackSource): void {
 }
 
 /**
- * Slipp den åpne filas transport: pause, dropp `src` så webviewen lukker
- * filhåndtaket (og en midlertidig mellomfil kan feies bort). Elementet
- * beholdes for gjenbruk.
+ * Slipp avspillingen: stopp, og lukk motoren så lydkortet frigis. Kalles når fila byttes eller
+ * lukkes, og når Klipp-steget forlates.
  */
 export function teardownPlayback(): void {
   stopPlay();
-  const el = E.playerEl;
-  E.playerEl = null;
+  stopCutWatch?.();
+  stopCutWatch = null;
+  cancelCutsTimer();
+  stopListen();
   setPlaybackSource("original");
-  if (!el) return;
-  try {
-    el.pause();
-  } catch {
-    /* allerede pauset */
-  }
-  el.volume = 1;
-  el.removeAttribute("src");
-  try {
-    el.load();
-  } catch {
-    /* ingen kilde å laste */
-  }
-}
-
-/**
- * Flytt et elements posisjon, og tål en ressurs som ikke er åpen ennå.
- *
- * WebKit kaster `InvalidStateError` når `currentTime` skrives mens
- * `readyState` er HAVE_NOTHING, og hvert eneste søk i editoren lander på en
- * strømmet `<audio>` som kanskje fortsatt åpner. Et unntak her ville avbrutt
- * håndtereren som søkte, og tatt spillehodets tegning med seg.
- */
-function seekEl(el: HTMLMediaElement, sec: number): void {
-  try {
-    el.currentTime = sec;
-  } catch {
-    /* ikke åpen ennå — E.playStartSec holder fortsatt målet */
-  }
-}
-
-/** Der spillehodet er NÅ. */
-function currentSec(): number {
-  if (!E.isPlaying) return E.playStartSec;
-  // Play er bedt om, men elementet har ikke startet: `currentTime` er
-  // fortsatt 0, og å lese den ville visket ut brukerens søk.
-  if (E.mainPlayPending) return E.playStartSec;
-  const el = E.playerEl;
-  return el ? el.currentTime : E.playStartSec;
 }
 
 /** Kutt er hopp-soner. Et spillehode som hviler inne i ett er meningsløst —
@@ -173,8 +125,8 @@ export function seekTo(sec: number): void {
   stopPlay();
   E.playStartSec = snapOutOfCut(clampToFile(sec));
   publishPlayhead(true);
-  const el = E.playerEl;
-  if (el) seekEl(el, E.playStartSec);
+  // Står motoren åpen, flytter vi den nå (pauset), så neste «spill» er hørt med en gang.
+  if (engineIsOpen()) sendSeek(E.playStartSec);
   scheduleDraw();
 }
 
@@ -188,83 +140,59 @@ export function togglePlay(): void {
 
 export function startPlay(): void {
   const gen = ++playGen;
-  cancelDuck();
-  const el = E.playerEl;
-  // Ingen transport i det hele tatt: ikke lat som. Knappen er sperret med en
-  // grunn i UI-et, og dette er beltet under den.
-  if (!el || !el.getAttribute("src")) return;
+  if (!E.sourceToken) return;
+  maxGenSeen = 0;
 
-  E.playStartSec = snapOutOfCut(clampToFile(E.playStartSec));
+  let from = snapOutOfCut(clampToFile(E.playStartSec));
+  // Spilt ut: begynn på nytt, som et medieelement gjør.
+  if (E.duration > 0 && from >= playableEnd() - AT_END_SEC) {
+    from = snapOutOfCut(0);
+  }
+  E.playStartSec = from;
   E.isPlaying = true;
-  E.mainPlayPending = true;
   playing.value = true;
+  resetDrawGate();
+  publishPlayhead(true);
 
-  const start = (): void => {
-    clearReadyTimer();
+  void (async () => {
+    const wasOpen = engineIsOpen();
+    const ok = await openEngine(from);
+    // Stoppet, eller startet på nytt, mens lydkortet åpnet.
     if (gen !== playGen || !E.isPlaying) return;
-    E.mainPlayPending = false;
-    seekEl(el, E.playStartSec);
-    void el.play().catch(() => {});
-  };
-
-  attachEnded(() => {
-    if (gen !== playGen || !E.isPlaying) return;
-    stopPlay();
-  });
-
-  if (el.readyState >= 1) {
-    start();
-  } else {
-    el.addEventListener("canplay", start, { once: true });
-    // Vakten. Uten den er «`canplay` kom aldri» et frosset spillehode uten
-    // utgang; med den blir det den setningen skjermen allerede har for
-    // nøyaktig dette (`editor.qualityFallback`, gjennom `playbackSource`), og
-    // en play-knapp som er av med en grunn i stedet for på med en løgn.
-    readyTimer = setTimeout(() => {
-      readyTimer = null;
-      if (gen !== playGen || !E.isPlaying || !E.mainPlayPending) return;
-      console.warn(
-        "[editor] `canplay` kom aldri innen",
-        PLAY_READY_TIMEOUT_MS,
-        "ms — avspilling gis opp",
-      );
-      el.removeEventListener("canplay", start);
+    if (!ok) {
+      console.warn("[editor] avspillingsmotoren kunne ikke åpnes");
       stopPlay();
       setPlaybackSource("none");
-    }, PLAY_READY_TIMEOUT_MS);
-  }
-
-  resetDrawGate();
-  animate();
+      return;
+    }
+    setPlaybackSource("original");
+    watchEngine();
+    watchCuts();
+    flushCuts();
+    if (wasOpen && Math.abs(engineAt - from) > 0.02) sendSeek(from);
+    else engineAt = from;
+    await window.api.editorListenTransport({ kind: "play" });
+  })();
 }
 
 export function stopPlay(): void {
   playGen++;
-  clearReadyTimer();
-  detachEnded();
-  cancelDuck();
   const wasPlaying = E.isPlaying;
-  const at = wasPlaying ? currentSec() : E.playStartSec;
-  E.mainPlayPending = false;
-  const el = E.playerEl;
-  if (el) {
-    try {
-      el.pause();
-    } catch {
-      /* allerede pauset */
-    }
-    el.volume = 1;
-  }
-  if (wasPlaying) E.playStartSec = clampToFile(at);
+  const at = wasPlaying ? engineAt : E.playStartSec;
+  unsubscribe?.();
+  unsubscribe = null;
   E.isPlaying = false;
   playing.value = false;
-  cancelAnimationFrame(E.rafId);
-  E.rafId = 0;
+  if (wasPlaying) {
+    E.playStartSec = clampToFile(at);
+    // Motoren toner ut på noen millisekunder; sekvensen er fortsatt åpen for neste «spill».
+    void window.api.editorListenTransport({ kind: "pause" });
+  }
   publishPlayhead(true);
   scheduleDraw();
 }
 
-// ── Løkka ───────────────────────────────────────────────────────────────────
+// ── Motorens hendelser ──────────────────────────────────────────────────────
 
 let drawGate = 0;
 
@@ -286,85 +214,92 @@ function publishPlayhead(force: boolean): void {
   playheadSec.value = E.playStartSec;
 }
 
-function animate(): void {
+function watchEngine(): void {
+  if (unsubscribe) return;
+  unsubscribe = subscribeEngine(onEngineEvent);
+}
+
+function onEngineEvent(e: EditorListenEvent): void {
   if (!E.isPlaying) return;
-  const at = currentSec();
-
-  // Hopp over kuttene. Undertrykket mens rampen går, ellers ville
-  // nedtoningen blitt startet på nytt av det kuttet den holder på å rømme fra.
-  const el = E.playerEl;
-  if (el && !E.mainPlayPending && !ducking) {
-    const inside = E.cuts.find((c) => at >= c.start && at < c.end);
-    if (inside) skipTo(el, Math.min(E.duration, inside.end));
+  switch (e.kind) {
+    case "position": {
+      maxGenSeen = Math.max(maxGenSeen, e.gen);
+      const at = clampToFile(e.sourceSecs);
+      engineAt = at;
+      E.playStartSec = at;
+      publishPlayhead(false);
+      followPlayhead(at);
+      scheduleDraw();
+      return;
+    }
+    case "ended":
+      if (e.gen < maxGenSeen) return;
+      // Programmet er spilt ut: spillehodet står ved slutten av det som ble spilt.
+      engineAt = playableEnd();
+      stopPlay();
+      return;
+    case "error":
+      console.warn("[editor] avspillingsmotoren meldte feil", e.message);
+      stopPlay();
+      setPlaybackSource("none");
+      return;
+    default:
+      return;
   }
-
-  E.playStartSec = at;
-  publishPlayhead(false);
-  followPlayhead(at);
-  scheduleDraw();
-  E.rafId = requestAnimationFrame(animate);
 }
 
-// ── De-klikket ──────────────────────────────────────────────────────────────
-
-let duckToken = 0;
-let ducking = false;
-
-function cancelDuck(): void {
-  duckToken++;
-  ducking = false;
-  const el = E.playerEl;
-  if (el) el.volume = 1;
+/** Be motoren hoppe (kildesekunder). Innenfor et kutt: neste del som blir igjen. */
+function sendSeek(sec: number): void {
+  engineAt = sec;
+  void window.api.editorListenTransport({ kind: "seekSource", secs: sec });
 }
 
-function skipTo(el: HTMLMediaElement, targetSec: number): void {
-  const token = ++duckToken;
-  ducking = true;
-  let frame = 0;
+// ── Kuttene er en del av programmet ─────────────────────────────────────────
 
-  const fadeIn = (): void => {
-    if (token !== duckToken) return;
-    frame++;
-    el.volume = Math.min(1, frame / DUCK_FRAMES);
-    if (frame < DUCK_FRAMES) {
-      requestAnimationFrame(fadeIn);
+function cancelCutsTimer(): void {
+  if (cutsTimer === null) return;
+  clearTimeout(cutsTimer);
+  cutsTimer = null;
+}
+
+/** Følg kuttlista så lenge motoren er åpen. Første kjøring er økta som nettopp ble åpnet med
+ *  de samme kuttene, og sender ingenting. */
+function watchCuts(): void {
+  if (stopCutWatch) return;
+  let first = true;
+  stopCutWatch = effect(() => {
+    void cuts.value;
+    if (first) {
+      first = false;
       return;
     }
-    el.volume = 1;
-    ducking = false;
-  };
-
-  const fadeOut = (): void => {
-    if (token !== duckToken) return;
-    frame++;
-    el.volume = Math.max(0, 1 - frame / DUCK_FRAMES);
-    if (frame < DUCK_FRAMES) {
-      requestAnimationFrame(fadeOut);
-      return;
-    }
-    seekEl(el, targetSec);
-    E.playStartSec = targetSec;
-    frame = 0;
-    requestAnimationFrame(fadeIn);
-  };
-
-  requestAnimationFrame(fadeOut);
+    cancelCutsTimer();
+    cutsTimer = setTimeout(flushCuts, CUTS_DEBOUNCE_MS);
+  });
 }
 
-// ── `ended`, uten å samle opp døde lyttere ──────────────────────────────────
-
-let endedHandler: (() => void) | null = null;
-
-function attachEnded(onEnded: () => void): void {
-  const el = E.playerEl;
-  if (!el) return;
-  if (endedHandler) el.removeEventListener("ended", endedHandler);
-  endedHandler = onEnded;
-  el.addEventListener("ended", onEnded, { once: true });
-}
-
-function detachEnded(): void {
-  const el = E.playerEl;
-  if (el && endedHandler) el.removeEventListener("ended", endedHandler);
-  endedHandler = null;
+/** Send kuttlista til motoren nå, hvis den er åpen og noe venter. */
+function flushCuts(): void {
+  const pending = cutsTimer !== null;
+  cancelCutsTimer();
+  if (!pending || !engineIsOpen()) return;
+  const kept = E.duration - E.cuts.reduce((s, c) => s + (c.end - c.start), 0);
+  if (E.isPlaying && kept <= 0.001) {
+    // Alt er klippet bort: det er ingenting å spille.
+    stopPlay();
+    return;
+  }
+  const at = E.isPlaying ? engineAt : snapOutOfCut(E.playStartSec);
+  if (!E.isPlaying && at !== E.playStartSec) {
+    E.playStartSec = at;
+    publishPlayhead(true);
+    scheduleDraw();
+  }
+  engineAt = at;
+  void window.api.editorListenTransport({
+    kind: "cuts",
+    cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
+    fullLengthSec: E.duration,
+    atSecs: at,
+  });
 }

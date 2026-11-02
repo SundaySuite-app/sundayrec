@@ -697,7 +697,6 @@ pub fn run() {
             // R1 non-destructive editor (DTOs pure; ffmpeg runs gated by `editor`).
             commands::editor::editor_load_recording,
             commands::editor::editor_peaks,
-            commands::editor::editor_extract_playback_proxy,
             // A recording enters the editor by a token Rust mints (A2): the
             // picker it opens, a history row's id, or a drop on the window.
             commands::editor::editor_open_recording,
@@ -727,7 +726,6 @@ pub fn run() {
             commands::publish::publish_open_upload_page,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_master_preview,
             commands::editor::editor_prepare_listen,
             commands::editor::editor_listen_open,
             commands::editor::editor_listen_chain,

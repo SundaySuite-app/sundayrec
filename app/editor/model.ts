@@ -88,11 +88,11 @@ export interface MediaInfo {
 /**
  * Hva avspillingen kan si om seg selv.
  *
- *   `original` — webviewen strømmer opptaket rett fra disk. Ingen beskjed.
- *   `proxy`    — den kunne ikke, så vi laget en mellomfil. Beskjed, dempet.
- *   `none`     — heller ikke det gikk. Beskjed, og knappen er sperret med grunn.
+ *   `original` — avspillingsmotoren spiller opptaket. Ingen beskjed.
+ *   `none`     — motoren kunne ikke åpnes (ingen lydenhet, eller fila lot seg ikke lese).
+ *                Beskjed; knappen virker fortsatt, så et nytt forsøk er ett trykk.
  */
-export type PlaybackSource = "original" | "proxy" | "none";
+export type PlaybackSource = "original" | "none";
 
 // ── Den muterbare sannheten ─────────────────────────────────────────────────
 
@@ -139,19 +139,10 @@ export const E = {
   vpStart: 0,
   vpEnd: 0,
 
-  /**
-   * `<audio>`-elementet som strømmer opptaket. EIES AV MODELLEN, ikke av
-   * JSX: et element Preact rendrer ville mistet `src`-en sin ved neste
-   * render av noe over det, og en avspilling som stopper uten at noe feiler
-   * er den verste formen for feil. Legacy gjør det samme, av samme grunn.
-   */
-  playerEl: null as HTMLAudioElement | null,
   playbackSource: "original" as PlaybackSource,
   /** Der spillehodet står NÅ, i sekunder fra opptakets start. */
   playStartSec: 0,
   isPlaying: false,
-  /** Play er bedt om, men elementet har ikke startet ennå. Se `playback.ts`. */
-  mainPlayPending: false,
   rafId: 0,
 
   /**
@@ -326,10 +317,7 @@ export function clearDirty(): void {
 /**
  * Nullstill alt som hører til ÉN åpen fil.
  *
- * Kalles ved starten av en ny åpning og når fila lukkes. Det som IKKE
- * nullstilles er `playerEl` — elementet gjenbrukes, for et nytt `new Audio()`
- * per fil lekker en dekoder og et åpent filhåndtak hver gang (legacys
- * `persistentPlayerEl`, samme grunn).
+ * Kalles ved starten av en ny åpning og når fila lukkes.
  */
 export function resetFileState(): void {
   E.filePath = "";
@@ -350,7 +338,6 @@ export function resetFileState(): void {
   E.vpEnd = 0;
   E.playStartSec = 0;
   E.isPlaying = false;
-  E.mainPlayPending = false;
   E.playbackSource = "original";
   E.isDragging = false;
   E.dragStartSec = -1;

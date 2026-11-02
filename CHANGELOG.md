@@ -5,6 +5,17 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Avspillingen i steget Klipp går på samme motor som Lyd.** Opptaket spilles ikke
+  lenger av et lydelement i vinduet, og det lages ingen mellomfil for formater vinduet
+  ikke kunne spille: motoren leser alle formater selv. Kuttene er en del av det som
+  spilles (20 ms krysstoning i stedet for at lyden dempes og hopper), spillehodet
+  følger lydkortet, og et hopp i bølgeformen høres etter 70–120 ms på en Mac (M1 Pro, en
+  90 minutters mp3; før 95–160 ms). Legger du til, fjerner eller angrer et kutt mens det
+  spiller, fortsetter lyden fra samme sted med det nye programmet, med et lite opphold og
+  uten klikk. På Macen ga 17 sekunder med hopp, pause og nye kutt `underruns 0 xruns 0`.
+  Må prøves ved å lytte etter klikk og hakk, og at spillehodet holder seg i takt gjennom
+  en hel gudstjeneste, på Mac og Windows (RIG-DAY).
+
 - **«Før» og «Etter» i steget Lyd er et bytte, ikke en ventetid.** Lyttingen spilles
   nå av avspillingsmotoren i stedet for en tjue sekunders mp3 som ble laget for hvert
   valg: ingen fil lages, og både originalen og lyden gjennom profilen ligger klare.
