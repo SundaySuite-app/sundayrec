@@ -387,15 +387,6 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_token_is_refused_with_its_own_code",
         },
     ),
-    // ── editor_master_preview: the source the preview renders from.
-    (
-        "editor_master_preview",
-        "EditorMasterPreviewRequest.source_token",
-        Token {
-            resolver: "resolve_source(&chosen",
-            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
-        },
-    ),
     // ── editor_prepare_listen: the same request as the preview, the same source.
     (
         "editor_prepare_listen",
@@ -454,14 +445,6 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
     ),
     (
         "editor_peaks",
-        "source_token",
-        Token {
-            resolver: "resolve_source(&chosen",
-            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
-        },
-    ),
-    (
-        "editor_extract_playback_proxy",
         "source_token",
         Token {
             resolver: "resolve_source(&chosen",

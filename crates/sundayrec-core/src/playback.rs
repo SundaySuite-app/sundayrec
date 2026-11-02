@@ -34,8 +34,10 @@
 //! material is continuous already.
 //!
 //! **The export does not do this yet.** `editor::join_fades` gives each interior edge a 15 ms
-//! fade OUT and fade IN (a dip to silence). Making the export read this plan is what makes
-//! «what you hear is what you get» true for cuts too; it is a later step, not B5a.
+//! fade OUT and fade IN (a dip to silence), in an ffmpeg filter graph that keeps the length.
+//! Making the export read this plan ([`ProgramReader`]) is what makes «what you hear is what you
+//! get» true for cuts too; it belongs with B6, which renders the audio in Rust over the cut
+//! intervals (decided in B5c).
 //!
 //! ## The end
 //!

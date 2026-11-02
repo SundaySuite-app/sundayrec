@@ -1530,54 +1530,9 @@ pub fn peaks_pipe_args(input_path: &str) -> Vec<String> {
     .collect()
 }
 
-/// ffmpeg arguments to transcode `input_path` to a compact, **seekable, stereo**
-/// AAC `.m4a` proxy at the source rate (48 kHz cap is the browser's comfort zone)
-/// for AUDIBLE playback of files too big / too exotic for the inline Web-Audio
-/// path. Unlike [`peaks_pipe_args`] (8 kHz MONO — fine for a waveform but
-/// telephone-quality to LISTEN to), this keeps stereo + full speech/music
-/// bandwidth, yet stays small enough to stream from disk via an `<audio>` element
-/// (no multi-GB Web-Audio PCM buffer → no OOM). `+faststart` puts the moov atom up
-/// front so the element can start + seek immediately.
-///
-/// NOTE: the renderer wiring (play oversized/exotic files via an `<audio>` element
-/// pointed at this proxy, keeping the 8 kHz decode only for the waveform) is a
-/// RIGG-VERIFISER follow-up — it changes the editor's playback transport, which
-/// cannot be validated in a headless build. The arg builder is ready + tested.
-pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
-    [
-        "-nostdin",
-        "-hide_banner",
-        "-i",
-        input_path,
-        "-vn",
-        "-ac",
-        "2",
-        // Cap at 48 kHz: anything higher is wasted on monitoring and some webviews
-        // refuse exotic rates. `aresample` only downsamples when the source is
-        // higher; a 44.1 kHz source passes through (ffmpeg keeps the lower rate).
-        "-af",
-        "aresample=48000",
-        "-c:a",
-        "aac",
-        // 256k AAC-LC: transparent for monitoring/cut decisions now that the
-        // proxy is the DEFAULT listen transport (v0.5.0) — 192k was chosen when
-        // it was an opt-in experiment. (ALAC noted as the lossless revisit if
-        // fidelity complaints ever arrive; ~3× the disk for marginal gain.)
-        "-b:a",
-        "256k",
-        "-movflags",
-        "+faststart",
-        "-y",
-        out_path,
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
-}
-
-/// Filename prefix for the editor's playback-proxy temp `.m4a` (the full-fidelity
-/// listen transport for oversized/exotic files). The seam writes one to the OS
-/// temp dir and sweeps stale ones by this prefix so they don't accumulate.
+/// Filename prefix of the playback-proxy temp `.m4a` older versions wrote to the OS temp dir
+/// (the `<audio>` element's transport; gone with B5c). The startup sweep still reaps leftovers
+/// by this prefix.
 pub const PLAYBACK_PROXY_PREFIX: &str = "sundayrec-playback-proxy-";
 
 /// One-shot SAMPLE-peak probe over the ORIGINAL file: `volumedetect` into the
@@ -1620,8 +1575,8 @@ pub fn parse_max_volume_db(stderr: &str) -> Option<f64> {
     token.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
-/// Whether a temp-dir entry name is a leftover playback-proxy m4a the seam should
-/// sweep before writing a fresh one. Mirrors [`crate::mastering::is_preview_temp_name`].
+/// Whether a temp-dir entry name is a leftover playback-proxy m4a the startup sweep should
+/// remove. Mirrors [`crate::mastering::is_preview_temp_name`].
 pub fn is_playback_proxy_temp_name(name: &str) -> bool {
     name.starts_with(PLAYBACK_PROXY_PREFIX) && name.ends_with(".m4a")
 }
@@ -3708,27 +3663,6 @@ mod tests {
             "nothing is written to disk, so there is no file to overwrite: {joined}"
         );
         assert!(args.contains(&"-nostdin".to_string()));
-    }
-
-    #[test]
-    fn playback_proxy_args_are_stereo_48k_aac_faststart() {
-        // The AUDIBLE proxy keeps stereo + full bandwidth (unlike the 8 kHz mono
-        // peaks WAV) but stays a compact, seekable m4a so it streams from disk.
-        let args = playback_proxy_args("/rec/big.flac", "/tmp/proxy.m4a");
-        let joined = args.join(" ");
-        assert!(joined.contains("-vn"));
-        assert!(joined.contains("-ac 2"), "stereo, not mono: {joined}");
-        assert!(
-            joined.contains("aresample=48000"),
-            "capped at 48 kHz: {joined}"
-        );
-        assert!(joined.contains("-c:a aac"));
-        assert!(joined.contains("-b:a 256k"));
-        assert!(
-            joined.contains("-movflags +faststart"),
-            "seekable: {joined}"
-        );
-        assert_eq!(args.last().unwrap(), "/tmp/proxy.m4a");
     }
 
     #[test]

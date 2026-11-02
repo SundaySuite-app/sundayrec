@@ -352,13 +352,11 @@ const EVENT_MAP: Record<string, string> = {
   "editor-export-progress": "editor://export-progress",
   // B5b: what the playback engine tells the sound step (position, end, underrun, …).
   "editor-listen": "editor://listen",
-  // Fase 9: the three editor passes that used to run for minutes behind a
-  // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
-  // separate channels only because they drive separate surfaces (the loading
-  // screen, the «Analyser opptak» card, the playback-proxy wait).
+  // Fase 9: the editor passes that used to run for minutes behind a spinner. Both carry the
+  // same `EditorDecodeProgress { fraction }`; separate channels only because they drive
+  // separate surfaces (the loading screen, the «Analyser opptak» card).
   "editor-peaks-progress": "editor://peaks-progress",
   "editor-analysis-progress": "editor://analysis-progress",
-  "editor-proxy-progress": "editor://proxy-progress",
 };
 
 // Per-event payload ADAPTERS: the Tauri backend emits typed Rust structs whose
@@ -1654,20 +1652,11 @@ const api: Record<string, unknown> = {
       null,
     ),
   // editor_peaks → { peaks, sampleRate } — the waveform for BOTH the audio and
-  // the video loader (playback is always a media element on asset://). Streamed
+  // the video loader (playback is the engine in Rust). Streamed
   // out of ffmpeg 100 peaks/s and cached in a `<stem>.peaks.json` sidecar, so a
   // reopen costs a JSON read instead of a full decode.
   editorExtractAudioPeaks: async (sourceToken: string) =>
     call("editor_peaks", { sourceToken }, null),
-  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file. The
-  // LAST-RESORT playback transport: used only when the webview has no decoder
-  // for the container, or when the original refused to open. Normal playback
-  // streams the ORIGINAL over asset://; this streams the same way, so neither
-  // path builds a multi-GB Web-Audio PCM buffer. Returns the proxy path, or null
-  // when even the transcode failed (the editor then says playback is
-  // unavailable — cuts and export still run on the original).
-  editorExtractPlaybackProxy: async (sourceToken: string) =>
-    call<string | null>("editor_extract_playback_proxy", { sourceToken }, null),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest via
   // `toEditorExportRequest`, same as `editorExportFile` — including `gainDb`,
@@ -1681,13 +1670,7 @@ const api: Record<string, unknown> = {
     });
   },
   // ── Mastering (editor_master_*) ──────────────
-  // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
-  // Mastering commands return bare structs; the consumer expects { ok, … }.
-  masterPreview: async (sourceToken: string, listen: MasterPreviewParams) =>
-    editorCall("editor_master_preview", {
-      request: { sourceToken, ...listen },
-    }),
-  // Same request as `masterPreview`; Rust measures the programme in the background so the
+  // The request `editorListenChain` takes; Rust measures the programme in the background so the
   // «Etter» that follows finds the plan ready. `true` = ready, `false` = not started/ended.
   // A failure is silent on purpose (no notifier, no counter): nobody asked for this work, and
   // «Etter» meets the same failure itself, with its own sentence.
@@ -1704,8 +1687,8 @@ const api: Record<string, unknown> = {
   },
 
   // ── Listening on the playback engine (B5b) ───────────────────────────────
-  // The sound step's Før/Etter: Rust plays the recording with its cuts and tells the window
-  // where it is (`editor-listen`). Nothing is rendered to a file.
+  // The sound step's Før/Etter AND (B5c) the cut step's playback: Rust plays the recording with
+  // its cuts and tells the window where it is (`editor-listen`). Nothing is rendered to a file.
   /** Open the session, paused, «Før» chosen, no chain. `{ ok: true, programSecs }`. */
   editorListenOpen: async (sourceToken: string, listen: MasterPreviewParams) =>
     editorCall("editor_listen_open", {

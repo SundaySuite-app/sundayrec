@@ -20,11 +20,9 @@
 //!
 //! ## What this seam does NOT do: feed playback
 //!
-//! The renderer plays the ORIGINAL recording through a media element on
-//! `asset://` ([`allow_asset_path`] widens the scope to the one file, when the
-//! command layer opens it). Nothing
-//! here decodes audio *for playback*: [`extract_playback_proxy`] is a LAST
-//! resort for containers the webview has no decoder for, and [`peaks`] gives the
+//! The playback engine ([`crate::playback`], B5a–c) plays the recording itself: it decodes the
+//! ORIGINAL with ffmpeg and hands it to the sound card, with the cuts. The renderer has no media
+//! element for it. Nothing here decodes audio *for playback*; [`peaks`] gives the
 //! waveform at 100 buckets/second — cached in a sidecar, so a reopen re-reads a
 //! small JSON instead of the media.
 //!
@@ -1231,17 +1229,17 @@ async fn startup_sweep_in(
     removed
 }
 
-/// Sweep the OS temp dir for leftover mastering-preview mp3s
-/// (`sundayrec-master-preview-*.mp3`, written by [`master_preview`]) and for the
+/// Sweep the OS temp dir for what older versions left behind: the mastering-preview mp3s
+/// (`sundayrec-master-preview-*.mp3`) and the playback-proxy m4a files
+/// (`sundayrec-playback-proxy-*.m4a`), neither of which is written any more (the playback
+/// engine, B5b/B5c, plays the recording itself) — and for the
 /// staged copy of a crashed mastered export (`sundayrec-export-pcm-*.f32`, ~2 GB
-/// for 90 minutes; an export that ends any other way deletes its own). Each preview is
-/// ~800 kB (20 s @ 320 kbps) and the Lyd step renders one per sound profile per
-/// recording, so a machine that auditions freely accumulates megabytes that
-/// nothing ever reclaimed — `is_preview_temp_name` existed with zero callers
-/// (P4b restanse #1 in docs/APP-SHELL.md). Same discipline as
+/// for 90 minutes; an export that ends any other way deletes its own). The predicates stay
+/// for as long as a machine can still hold files from those versions. Same discipline as
 /// [`cleanup_temp_files`]: the pure predicate decides, this layer does the
 /// readdir/unlink, best-effort, never panics. Returns how many were removed.
 pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
+    use sundayrec_core::editor::is_playback_proxy_temp_name;
     use sundayrec_core::mastering::is_preview_temp_name;
     use sundayrec_core::pcm_stream::is_staged_pcm_name;
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -1250,7 +1248,9 @@ pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
     let mut removed = 0usize;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if (is_preview_temp_name(&name) || is_staged_pcm_name(&name))
+        if (is_preview_temp_name(&name)
+            || is_playback_proxy_temp_name(&name)
+            || is_staged_pcm_name(&name))
             && std::fs::remove_file(entry.path()).is_ok()
         {
             removed += 1;
@@ -1305,7 +1305,7 @@ fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFl
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewRequest {
     /// The recording to preview, as the File token that stands for it — never a
-    /// path; the command resolves it and hands [`master_preview`] the place.
+    /// path; the command resolves it and hands the seam the place.
     pub source_token: String,
     /// The mastering preset the export would carry. `None` when the mixer is on: the mixer
     /// replaces the profile, so the export carries `processing` and no preset.
@@ -1326,14 +1326,6 @@ pub struct EditorMasterPreviewRequest {
     pub cut_regions: Vec<EditorCutRegion>,
     #[serde(default)]
     pub full_length_sec: Option<f64>,
-}
-
-/// Where the rendered preview mp3 landed (a temp file the renderer plays).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorMasterPreviewResult.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorMasterPreviewResult {
-    pub preview_path: String,
 }
 
 /// The mastering-apply engine: the pure [`JobRegistry`](sundayrec_core::mastering::JobRegistry)
@@ -1383,18 +1375,16 @@ pub struct EditorExportProgress {
     pub phase: String,
 }
 
-/// A decode-progress tick for the three whole-file passes that used to report
-/// nothing at all: the waveform decode (`editor://peaks-progress`), the content
-/// analysis (`editor://analysis-progress`) and the playback-proxy transcode
-/// (`editor://proxy-progress`).
+/// A decode-progress tick for the whole-file passes that used to report
+/// nothing at all: the waveform decode (`editor://peaks-progress`) and the content
+/// analysis (`editor://analysis-progress`).
 ///
 /// `fraction` is 0..1 and monotonically non-decreasing within one pass. It is a
 /// measured quantity in every case, not a guess: the two decode passes divide
 /// bytes-read by the byte count the probed duration implies (both pipes are a
-/// fixed rate — 8 kHz and 16 kHz mono s16le), and the transcode divides
-/// ffmpeg's own `out_time` by the same duration.
+/// fixed rate — 8 kHz and 16 kHz mono s16le).
 ///
-/// One shape for all three because the renderer treats them identically, and a
+/// One shape for both because the renderer treats them identically, and a
 /// `phase` field would be inventing a distinction the UI does not draw: each of
 /// these is a single pass, named by the surface that started it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -1729,15 +1719,6 @@ pub async fn probe_streams(_input_path: &str) -> AppResult<EditorStreamInfo> {
     disabled("probeStreams")
 }
 
-/// Render a windowed single-pass mastering preview to a temp mp3.
-#[cfg(not(feature = "editor"))]
-pub async fn master_preview(
-    _req: &EditorMasterPreviewRequest,
-    _input_path: &str,
-) -> AppResult<EditorMasterPreviewResult> {
-    disabled("masterPreview")
-}
-
 /// Nothing to prepare without the editor: not ready, and not an error.
 #[cfg(not(feature = "editor"))]
 pub async fn prepare_listen(
@@ -1785,15 +1766,6 @@ where
     F: Fn(f32),
 {
     disabled("peaks")
-}
-
-/// Transcode a large/exotic recording to a seekable stereo AAC playback proxy.
-#[cfg(not(feature = "editor"))]
-pub async fn extract_playback_proxy<F>(_input_path: &str, _on_progress: F) -> AppResult<String>
-where
-    F: Fn(f32),
-{
-    disabled("extractPlaybackProxy")
 }
 
 /// Sample-peak probe over the original file (Normalize's honest basis). Named
@@ -2026,55 +1998,6 @@ where
     })
 }
 
-/// Transcode a large/exotic recording to a small, **seekable stereo AAC `.m4a`
-/// proxy** for AUDIBLE full-fidelity playback via an `<audio>` element (streams
-/// from disk → no multi-GB Web-Audio PCM buffer). The 8 kHz decode in [`peaks`]
-/// stays the waveform source; this is the listen-quality transport used when the
-/// webview cannot open the original. Returns the temp-file path the
-/// renderer plays through `asset://` (the same pattern as the mastering preview).
-/// Export still runs on the original file, so quality is untouched.
-/// HARDWARE-UNVERIFIED — the renderer wiring is a RIGG-VERIFISER follow-up.
-#[cfg(feature = "editor")]
-pub async fn extract_playback_proxy<F>(input_path: &str, on_progress: F) -> AppResult<String>
-where
-    F: Fn(f32),
-{
-    use sundayrec_core::editor::{playback_proxy_args, PLAYBACK_PROXY_PREFIX};
-
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    // Only one proxy is alive at a time (the currently-open file), so sweep any
-    // stale ones first — a ~tens-of-MB m4a per open would otherwise pile up.
-    sweep_playback_proxies();
-    let out_path = std::env::temp_dir().join(format!(
-        "{PLAYBACK_PROXY_PREFIX}{}.m4a",
-        uuid::Uuid::now_v7().simple()
-    ));
-    let out_str = out_path.to_string_lossy().into_owned();
-    let args = playback_proxy_args(input_path, &out_str);
-    // A full transcode of the recording — budget it against the media length so
-    // a stalled source volume can't leave the editor "Klargjør avspilling…"
-    // forever with no way out. The same duration is the progress denominator:
-    // this is a minute-plus wait on a long service and it used to show nothing.
-    let hint = duration_hint(input_path).await;
-    let timeout = sundayrec_core::editor::editor_op_timeout(hint);
-    run_ffmpeg_progress(
-        &args,
-        hint.unwrap_or(0.0),
-        timeout,
-        "playback proxy",
-        on_progress,
-    )
-    .await?;
-    if !out_path.exists() {
-        return Err(AppError::Recording(
-            "playback proxy produced no file".into(),
-        ));
-    }
-    Ok(out_str)
-}
-
 /// Grant the webview's `asset://` scope read access to ONE media file, handing
 /// the actual grant to `grant` (the caller owns the `AppHandle`; this seam owns
 /// the "does it exist" decision and the feature gate).
@@ -2134,25 +2057,6 @@ pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
         None => String::new(),
     };
     Ok(parse_max_volume_db(&stderr_buf))
-}
-
-/// Best-effort sweep of stale playback-proxy m4a files from the OS temp dir.
-/// Called before writing a fresh proxy so they don't accumulate across opens.
-#[cfg(feature = "editor")]
-fn sweep_playback_proxies() {
-    use sundayrec_core::editor::is_playback_proxy_temp_name;
-
-    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
-        for entry in entries.flatten() {
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(is_playback_proxy_temp_name)
-            {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
 }
 
 /// How old a leaked `sundayrec-editor-*` temp dir must be before the sweep
@@ -2509,108 +2413,15 @@ pub async fn probe_streams(input_path: &str) -> AppResult<EditorStreamInfo> {
     })
 }
 
-/// Render a windowed mastering preview to a temp mp3 that plays what the export makes (M2R #3):
-///
-/// * the chain comes from [`resolve_audio_params`] + [`pre_chain_for`], the same two functions the
-///   export calls — the preset or the mixer, the channel repair and «Tale»'s decision;
-/// * the level is the PROGRAMME's, not the window's: the loudness of the whole recording after
-///   the cuts, through that chain, planned against the preset's target ([`program_plan`]). A
-///   window from a quiet part comes out quieter than one from a loud part, as it does in the file.
-///
-/// Encoded at 320k. The renderer A/B-plays the result against the original. HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-pub async fn master_preview(
-    req: &EditorMasterPreviewRequest,
-    input_path: &str,
-) -> AppResult<EditorMasterPreviewResult> {
-    use sundayrec_core::mastering::{
-        clamp_preview_duration, clamp_preview_start, preview_decode_args, preview_encode_args,
-        PREVIEW_TEMP_PREFIX,
-    };
-
-    // The stall floor is the budget of one windowed render. The programme measure is a
-    // full-length pass, but its progress counts frames like the export's, so a stall is a stall.
-    let stall_ms = export_stall_ms();
-    let engine = ExportEngine::new();
-
-    // 1. The chain — the export's — and the programme's level plan.
-    let ListenPlan { chain, plan, fmt } = listen_plan(&engine, req, input_path).await?;
-    let start = clamp_preview_start(req.start_sec);
-    let dur = clamp_preview_duration(req.duration_sec);
-    let out_path = std::env::temp_dir().join(format!(
-        "{PREVIEW_TEMP_PREFIX}{}.mp3",
-        uuid::Uuid::now_v7().simple()
-    ));
-    let out_str = out_path.to_string_lossy().into_owned();
-
-    // 2. The window through the chain, to PCM in memory (at most 60 s): ffmpeg decodes
-    //    (no `-af`), the chain runs in Rust.
-    let built = chain
-        .build(fmt.sample_rate as f32, fmt.channels)
-        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
-    let decode = preview_decode_args(input_path, start, dur, fmt);
-    let fmt = sundayrec_core::pcm_stream::PcmFormat {
-        sample_rate: fmt.sample_rate,
-        channels: built.out_channels(),
-    };
-    let pcm_bytes: Vec<u8> = pcm::run_chain(
-        &engine,
-        &decode,
-        0,
-        stall_ms,
-        (0.0, 0.0),
-        EXPORT_PHASE_MEASURING,
-        &|_, _| {},
-        move |r, _| {
-            let mut v = Vec::new();
-            std::io::Read::read_to_end(
-                &mut sundayrec_core::chain::ChainReader::new(r, built),
-                &mut v,
-            )?;
-            Ok(v)
-        },
-    )
-    .await?;
-
-    // 3. Apply the programme's plan to the window, and encode it.
-    let encode = preview_encode_args(fmt, &out_str);
-    let feed: pcm::Feed = std::sync::Arc::new(move |w, _abort| {
-        let mut src = pcm_bytes.as_slice();
-        sundayrec_core::pcm_stream::render(&mut src, fmt, &plan, Some(w), false, |_| {})?;
-        Ok(())
-    });
-    run_export_ffmpeg(
-        &engine,
-        &encode,
-        dur,
-        stall_ms,
-        &|_, _| {},
-        EXPORT_PHASE_ENCODING,
-        (0.0, 99.0),
-        Some(&feed),
-    )
-    .await?;
-    if !out_path.exists() {
-        return Err(AppError::Recording(
-            "master preview produced no file".into(),
-        ));
-    }
-    Ok(EditorMasterPreviewResult {
-        preview_path: out_str,
-    })
-}
-
-/// What a listen request resolves to before any window is rendered: the export's chain, the
-/// programme's level plan and the PCM format both run in.
+/// What a listen request resolves to: the export's chain and the programme's level plan.
 #[cfg(feature = "editor")]
 struct ListenPlan {
     chain: sundayrec_core::chain::Chain,
     plan: sundayrec_core::loudness::GainPlan,
-    fmt: sundayrec_core::pcm_stream::PcmFormat,
 }
 
 /// The slow, shared half of a listen request: «Tale»'s analysis and the programme measure.
-/// [`master_preview`] renders its window on top of this; [`prepare_listen`] stops here, which
+/// [`listen::set_chain`] installs it; [`prepare_listen`] stops here, which
 /// is what leaves the plan in [`PLAN_BOOK`] for the «Etter» that follows.
 #[cfg(feature = "editor")]
 async fn listen_plan(
@@ -2656,7 +2467,7 @@ async fn listen_plan(
         }
         None => pcm::unity_plan(),
     };
-    Ok(ListenPlan { chain, plan, fmt })
+    Ok(ListenPlan { chain, plan })
 }
 
 /// Which preparation is the latest. A new one, an export and a starting recording all bump it;
@@ -2705,7 +2516,7 @@ async fn until_superseded<F: std::future::Future>(
 
 /// Measure the programme of a listen request in the background and keep the plan, so the
 /// «Etter» that follows finds it ([`PLAN_BOOK`]). Same request, same key as
-/// [`master_preview`], and the same single measurement if «Etter» is already waiting on it.
+/// [`listen::set_chain`], and the same single measurement if «Etter» is already waiting on it.
 ///
 /// Returns whether the plan is ready. `false` = not prepared: this preparation was superseded
 /// by a newer one (the choice or the cuts changed) or ended by an export or a recording.
@@ -4346,127 +4157,6 @@ async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
     parse_video_size(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// The media length of `input_path` in seconds, for scaling an op's kill-timer.
-/// A header-only ffprobe, so it costs nothing next to the full-file read it is
-/// budgeting for — and it is ITSELF capped, because the whole point of the
-/// kill-timers is that a stalled volume must not hang the editor, and a probe
-/// with no timer would just move the hang one process earlier. `None` (unknown
-/// duration) simply falls back to [`editor_op_timeout`]'s floor.
-#[cfg(feature = "editor")]
-async fn duration_hint(input_path: &str) -> Option<f64> {
-    const PROBE_CAP: std::time::Duration = std::time::Duration::from_secs(20);
-    tokio::time::timeout(
-        PROBE_CAP,
-        crate::media::ffmpeg::probe_duration_secs(input_path),
-    )
-    .await
-    .ok()
-    .flatten()
-}
-
-/// Run ffmpeg like [`run_ffmpeg`], but with `-progress` on stdout parsed into an
-/// 0..1 fraction against `total_sec`.
-///
-/// The `-progress pipe:1 -nostats` pair is spliced in front of the OUTPUT path
-/// (the last argument) rather than added by the core's arg builders: these are
-/// global options, the builders are pinned by their own tests, and only this one
-/// caller wants the machine-readable stream. `total_sec <= 0` (an unprobeable
-/// container) means the fraction cannot be honest, so the run reports nothing
-/// and the caller's bar stays indeterminate.
-///
-/// Reads COMPLETE lines only, for the reason `run_export_ffmpeg` documents at
-/// length: re-scanning an accumulating buffer keeps re-reporting the first
-/// `out_time` in it and freezes the bar for the first few dozen ticks.
-#[cfg(feature = "editor")]
-async fn run_ffmpeg_progress<F>(
-    args: &[String],
-    total_sec: f64,
-    timeout: std::time::Duration,
-    what: &str,
-    on_progress: F,
-) -> AppResult<()>
-where
-    F: Fn(f32),
-{
-    use sundayrec_core::mastering::parse_progress_time;
-    use tokio::io::AsyncReadExt;
-
-    let mut with_progress = args.to_vec();
-    let out_at = with_progress.len().saturating_sub(1);
-    with_progress.splice(
-        out_at..out_at,
-        ["-progress", "pipe:1", "-nostats"].map(String::from),
-    );
-    let arg_refs: Vec<&str> = with_progress.iter().map(String::as_str).collect();
-    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let mut stdout = child.stdout.take();
-    // stderr still has to be drained concurrently or a full pipe wedges ffmpeg.
-    let drain = child.stderr.take().map(|mut stderr| {
-        tauri::async_runtime::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes).await;
-            String::from_utf8_lossy(&bytes).into_owned()
-        })
-    });
-
-    let child_ref = &mut child;
-    let progress_ref = &on_progress;
-    let waited = tokio::time::timeout(timeout, async move {
-        if let Some(mut out) = stdout.take() {
-            let mut buf = String::new();
-            let mut chunk = [0u8; 4096];
-            let mut last = 0.0f32;
-            loop {
-                match out.read(&mut chunk).await {
-                    Ok(0) => break,
-                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
-                    Err(_) => break,
-                }
-                while let Some(nl) = buf.find('\n') {
-                    let line: String = buf.drain(..=nl).collect();
-                    let Some(cur) = parse_progress_time(&line) else {
-                        continue;
-                    };
-                    if total_sec <= 0.0 {
-                        continue;
-                    }
-                    let frac = ((cur / total_sec) as f32).clamp(0.0, 0.99);
-                    if frac > last {
-                        last = frac;
-                        progress_ref(frac);
-                    }
-                }
-            }
-        }
-        child_ref.wait().await
-    })
-    .await;
-
-    let status = match waited {
-        Ok(r) => r.map_err(|e| AppError::Recording(format!("{what} wait: {e}")))?,
-        Err(_elapsed) => {
-            let _ = child.kill().await;
-            tracing::warn!(
-                what,
-                timeout_ms = timeout.as_millis() as u64,
-                "editor ffmpeg op exceeded its kill-timer"
-            );
-            return Err(AppError::Recording(format!("timeout: {what}")));
-        }
-    };
-    let stderr_buf = match drain {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    if !status.success() {
-        let tail: String = stderr_buf.chars().rev().take(500).collect::<String>();
-        let tail: String = tail.chars().rev().collect();
-        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
-    }
-    on_progress(1.0);
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     // ── The programme plan: one measurement per key (M2R #3 follow-up) ──────────────────────
@@ -4916,23 +4606,8 @@ mod tests {
 
     #[cfg(not(feature = "editor"))]
     #[tokio::test]
-    async fn probe_preview_apply_disabled_without_feature() {
+    async fn probe_disabled_without_feature() {
         assert!(probe_streams("/x.mp4")
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        let prev = EditorMasterPreviewRequest {
-            source_token: "t".into(),
-            preset_id: Some("speech-clear".into()),
-            start_sec: 0.0,
-            duration_sec: 15.0,
-            processing: None,
-            channel_repair: None,
-            cut_regions: Vec::new(),
-            full_length_sec: None,
-        };
-        assert!(master_preview(&prev, "/x.mp4")
             .await
             .unwrap_err()
             .to_string()
@@ -5384,8 +5059,8 @@ mod tests {
         assert!(!d.join("clip.__editor_tmp.mp4").exists());
     }
 
-    /// The preview sweep removes ONLY `sundayrec-master-preview-*.mp3` and
-    /// leaves every neighbour in the temp dir untouched — including near
+    /// The sweep removes ONLY `sundayrec-master-preview-*.mp3`, `sundayrec-playback-proxy-*.m4a`
+    /// and the staged PCM, and leaves every neighbour in the temp dir untouched — including near
     /// misses: the right prefix with the wrong extension, and the right
     /// extension without the prefix. Mutation check: neutering
     /// `is_preview_temp_name` to `true` deletes the neighbours and fails the
@@ -5396,6 +5071,9 @@ mod tests {
         let d = dir.path();
         std::fs::write(d.join("sundayrec-master-preview-abc123.mp3"), b"x").unwrap();
         std::fs::write(d.join("sundayrec-master-preview-def456.mp3"), b"x").unwrap();
+        // …and the proxy m4a of the versions that transcoded one for the `<audio>` element.
+        std::fs::write(d.join("sundayrec-playback-proxy-0192abc.m4a"), b"x").unwrap();
+        std::fs::write(d.join("sundayrec-playback-proxy-0192abc.wav"), b"keep").unwrap();
         // Near misses and innocent bystanders that must survive:
         std::fs::write(d.join("sundayrec-master-preview-half.wav"), b"keep").unwrap();
         std::fs::write(d.join("unrelated-preview.mp3"), b"keep").unwrap();
@@ -5407,7 +5085,9 @@ mod tests {
         std::fs::write(d.join("somebody-elses.f32"), b"keep").unwrap();
 
         let removed = cleanup_preview_temp_files(d);
-        assert_eq!(removed, 3);
+        assert_eq!(removed, 4);
+        assert!(!d.join("sundayrec-playback-proxy-0192abc.m4a").exists());
+        assert!(d.join("sundayrec-playback-proxy-0192abc.wav").exists());
         assert!(!d.join("sundayrec-export-pcm-0192abc.f32").exists());
         assert!(d.join("sundayrec-export-pcm-0192abc.wav").exists());
         assert!(d.join("somebody-elses.f32").exists());
@@ -8739,66 +8419,6 @@ mod tests {
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
-            }
-        }
-
-        /// M2R #3c: the preview is levelled like the EXPORT, i.e. by the programme and not by
-        /// the window. A window from the quiet half and one from the loud half of the same
-        /// programme come out where the export puts those same seconds (within a small
-        /// tolerance); the old window-alone levelling put both on the preset's target.
-        #[test]
-        fn master_preview_gets_the_gain_the_export_gives_the_programme_or_skips() {
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
-            else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dyn.wav", 48_000, 24.0);
-            let out_dir = tempfile::tempdir().unwrap();
-            let mut ex = export_request(&src, &out_dir.path().to_string_lossy(), "wav", &[], 24.0);
-            ex.master_preset = Some("speech-clear".into());
-            let (result, _) = run_export_blocking(&ffmpeg, &ffprobe, &ex);
-            let exported = result.expect("the export should succeed");
-            let exported = std::path::PathBuf::from(&exported.output_path);
-
-            for (start, label) in [(2.0, "quiet"), (14.0, "loud")] {
-                let req = EditorMasterPreviewRequest {
-                    source_token: "t".into(),
-                    preset_id: Some("speech-clear".into()),
-                    start_sec: start,
-                    duration_sec: 8.0,
-                    processing: None,
-                    channel_repair: None,
-                    cut_regions: Vec::new(),
-                    full_length_sec: Some(24.0),
-                };
-                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                unsafe {
-                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                    std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-                }
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let got = rt.block_on(master_preview(&req, &src));
-                unsafe {
-                    std::env::remove_var("SUNDAYREC_FFMPEG");
-                    std::env::remove_var("SUNDAYREC_FFPROBE");
-                }
-                drop(_guard);
-                let got = got.expect("preview should succeed");
-                let preview = std::path::PathBuf::from(&got.preview_path);
-                let heard = measure_ebu_r128(&ffmpeg, &preview, Some((1.0, 6.0))).input_i;
-                let _ = std::fs::remove_file(&preview);
-                // Skip the first and last second of the window: the chain starts cold at its
-                // first sample (funn 9) and the export's own seconds are mid-programme.
-                let exported_here =
-                    measure_ebu_r128(&ffmpeg, &exported, Some((start + 1.0, 6.0))).input_i;
-                assert!(
-                    (heard - exported_here).abs() <= 1.0,
-                    "the {label} window previews at {heard:.2} LUFS, the export has \
-                     {exported_here:.2} LUFS at the same seconds"
-                );
             }
         }
 

@@ -447,6 +447,43 @@ Avspillingsmotoren»).
   profilbytter (`speech-clear` ↔ `voice-noisy-room`) ga `underruns 0 xruns 0`; en ny kjede var
   varm etter 75–77 ms; produsentens sanntidsfaktor med begge lag 12–16× (B5a, ett lag: 9–22×).
 
+**Gjort i B5c: Klipp-steget** (`app/editor/playback.ts`, `editor/listen.rs`, `playback/{mod,producer}.rs`).
+`<audio>`-elementet, volumrampen (de-klikket), hoppløkka og avspillingsproxyen er borte; Klipp-steget er
+en fjernkontroll for motoren.
+
+- **Én økt, ett lydkort.** Klipp-steget åpner den samme økta som Lyd (`sound.ts`: `openEngine`,
+  `subscribeEngine`, `stopListen`); den åpnes av første «spill» og lukkes når steget forlates eller
+  fila byttes. Klipp ber ikke om noen kjede: det lytter til opptaket slik det er («Før»), med kuttene.
+  Spillehodet (`E.playStartSec`) skrives fra motorens `Position`-hendelser og ingen andre steder mens
+  det spiller; veggklokka flytter ingenting.
+- **Nye kutt mens det spiller.** `Player::set_plan` bytter kutt-planen og fortsetter fra samme sted i
+  kilden som et hopp (`Command::SetPlan` i produsenten: samme omstart som et hopp, med planen byttet først;
+  en plan-endring blir aldri slukt av et senere hopp). Rapporttråden kartlegger posisjoner med planen som
+  gjaldt for deres generasjon, så en forsinket hendelse fra det gamle programmet ikke får det nye kartet.
+  Hendelsen går som `EditorListenAction::Cuts` på `editor_listen_transport` (ingen ny kommando). Frontenden
+  samler endringer i 120 ms. Pris: det samme lille oppholdet som et hopp, ikke et klikk.
+- **Hopp uten forkjøring når det ikke er noen kjede.** Produsenten kjørte 1 s forkjøring (dekoding + kjede)
+  etter hvert hopp, også uten kjede. Nå hoppes det over når kjeden er tom. Hopp hørt etter 70–97 ms uten
+  kjede og 70–120 ms med (`speech-clear`), mot 95–160 ms i B5a. Forhåndsfyllingen (0,1 s) er ikke rørt:
+  `underruns 0` på begge kjøringene, og å korte den gir lite igjen (det meste er ffmpeg-oppstarten).
+- **Det som ble slettet:** `editor_master_preview` og `editor_extract_playback_proxy` (kommandoene,
+  Rust-funksjonene, `EditorMasterPreviewResult`, `preview_*_args`, `clamp_preview_*`, `playback_proxy_args`,
+  `run_ffmpeg_progress`, fixturen og `editor-proxy-progress`), `routePlayback`/`PLAYER_EXTS`, alle
+  `<audio>`-felt i modellen, og i18n-nøklene `playbackViaProxy` og `preparingPlayback` (alle sju språk).
+  Stående igjen med vilje: oppryddingen av gamle `sundayrec-master-preview-*.mp3` og
+  `sundayrec-playback-proxy-*.m4a` i temp-mappa ved oppstart (maskiner som kjørte eldre versjoner kan ha
+  slike), og `editor_prepare_listen`/`listen_plan` (forhåndsmålingen).
+- **Video.** Klipp-steget viser ikke bildet (det gjorde det aldri; `loader.ts` sa det), så det fantes
+  ikke noe `<video>` slavet til `<audio>`, og ingenting ble brutt. Lyden i en videofil spilles av motoren
+  som all annen lyd. Den dagen bildet vises: en dempet `<video>` som følger motorens `Position`, rettet når
+  den driver mer enn ett bilde.
+- **Eksportens 15 ms ut/inn-toning er ikke byttet ut.** Eksporten kutter med et ffmpeg-filtergraf
+  (`atrim` + `afade` + `concat`, `editor::join_fades`) som bevarer lengden, mens motorens krysstoning
+  låner 10 ms fra begge sider av kuttet. Å la eksporten bruke samme plan betyr å lese programmet gjennom
+  `ProgramReader` i stedet for filtergrafen, og det er B6s arbeid (lyden rendres i Rust over de snappede
+  intervallene). Det er riktig sted å gjøre det: samme `CutPlan` for avspilling og eksport. Til da er det
+  du hører ved et kutt en krysstoning på 20 ms, mens filen har en 15 ms dukk. Eget punkt etter B6.
+
 ### Fase 6 — rask videoeksport
 
 - Opptaket setter et nøkkelbilde hvert 2. sekund (`-g`, eller

@@ -160,72 +160,6 @@ fn parse_hms(s: &str) -> Option<f64> {
     Some(h * 3600.0 + m * 60.0 + sec)
 }
 
-/// Clamp a measure-preview snippet duration to the `[1, 60]` second band the
-/// Electron `buildPreview` enforced, defaulting a non-finite request to 15 s.
-pub fn clamp_preview_duration(requested: f64) -> f64 {
-    let d = if requested.is_finite() {
-        requested
-    } else {
-        15.0
-    };
-    d.clamp(1.0, 60.0)
-}
-
-/// Clamp a preview *start* second to `>= 0`, defaulting a non-finite request to
-/// 0 — mirrors `buildPreview`'s `Math.max(0, Number.isFinite(startSec) ? startSec : 0)`.
-pub fn clamp_preview_start(requested: f64) -> f64 {
-    let s = if requested.is_finite() {
-        requested
-    } else {
-        0.0
-    };
-    s.max(0.0)
-}
-
-/// ffmpeg args that decode a `[start, start+dur]` window of `input_path` and stream it as raw
-/// f32 PCM on stdout, with NO audio filter (B2b: the preset's tone/dynamics chain runs in Rust,
-/// `crate::chain`; the level is then set in Rust too). `-ss`/`-t` come BEFORE `-i` for an accurate
-/// container-index seek; `start`/`dur` are formatted to 3 decimals. The seam supplies the
-/// clamped values (via [`clamp_preview_start`]/[`clamp_preview_duration`]).
-pub fn preview_decode_args(
-    input_path: &str,
-    start: f64,
-    dur: f64,
-    fmt: crate::pcm_stream::PcmFormat,
-) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "-nostdin",
-        "-hide_banner",
-        "-ss",
-        &format!("{start:.3}"),
-        "-t",
-        &format!("{dur:.3}"),
-        "-i",
-        input_path,
-        "-vn",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-    args.extend(crate::pcm_stream::output_args(fmt));
-    args
-}
-
-/// ffmpeg args that encode the gained preview PCM (stdin) to a temp mp3. The preview is what the
-/// user A/Bs against the original, so it runs at 320k (near-transparent) — at 192k the user was
-/// comparing the master to a LOSSY render, which made the mastering itself sound more
-/// compressed than the actual export.
-pub fn preview_encode_args(fmt: crate::pcm_stream::PcmFormat, out_path: &str) -> Vec<String> {
-    let mut args: Vec<String> = vec!["-nostdin".into(), "-hide_banner".into()];
-    args.extend(crate::pcm_stream::input_args(fmt));
-    args.extend(
-        ["-c:a", "libmp3lame", "-b:a", "320k", "-y", out_path]
-            .into_iter()
-            .map(String::from),
-    );
-    args
-}
-
 /// Filename prefix for mastering-preview temp files left in the OS temp dir. The
 /// startup sweep (and [`is_preview_temp_name`]) match this. Mirrors the Electron
 /// `sundayrec-master-preview-` prefix.
@@ -427,61 +361,6 @@ mod tests {
     #[test]
     fn progress_none_when_absent() {
         assert!(parse_progress_time("frame=1\nfps=30").is_none());
-    }
-
-    // ── preview clamp ─────────────────────────────────────────────────────────────
-
-    #[test]
-    fn preview_duration_clamps_to_band() {
-        assert_eq!(clamp_preview_duration(0.5), 1.0);
-        assert_eq!(clamp_preview_duration(120.0), 60.0);
-        assert_eq!(clamp_preview_duration(30.0), 30.0);
-        assert_eq!(clamp_preview_duration(f64::NAN), 15.0);
-    }
-
-    #[test]
-    fn preview_start_clamps_to_non_negative() {
-        assert_eq!(clamp_preview_start(-5.0), 0.0);
-        assert_eq!(clamp_preview_start(12.5), 12.5);
-        assert_eq!(clamp_preview_start(f64::NAN), 0.0);
-    }
-
-    // ── preview args ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn preview_decode_seeks_before_input_and_streams_raw_pcm() {
-        use crate::pcm_stream::PcmFormat;
-        let fmt = PcmFormat {
-            sample_rate: 44_100,
-            channels: 1,
-        };
-        let a = preview_decode_args("/rec/a.mp3", 12.3456, 20.0, fmt);
-        let at = |s: &str| a.iter().position(|x| x == s).unwrap();
-        assert!(at("-ss") < at("-i") && at("-t") < at("-i"));
-        assert_eq!(a[at("-ss") + 1], "12.346");
-        assert_eq!(a[at("-t") + 1], "20.000");
-        assert!(
-            !a.iter().any(|x| x == "-af"),
-            "no audio filter: the chain is Rust"
-        );
-        let joined = a.join(" ");
-        assert!(joined.contains("-f f32le"));
-        assert!(joined.contains("-ar 44100 -ac 1"));
-        assert!(joined.ends_with("pipe:1"));
-        assert!(!joined.contains("-filter_complex"));
-    }
-
-    #[test]
-    fn preview_encode_reads_pcm_from_stdin_at_320k() {
-        use crate::pcm_stream::PcmFormat;
-        let fmt = PcmFormat {
-            sample_rate: 48_000,
-            channels: 2,
-        };
-        let a = preview_encode_args(fmt, "/tmp/x.mp3").join(" ");
-        assert!(a.contains("-f f32le -ar 48000 -ac 2 -i pipe:0"));
-        assert!(a.contains("libmp3lame -b:a 320k"));
-        assert!(a.ends_with("-y /tmp/x.mp3"));
     }
 
     // ── preview temp cleanup ─────────────────────────────────────────────────────────

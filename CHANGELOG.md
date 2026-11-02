@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+<<<<<<< HEAD
+
 - **Videoopptak med en ødelagt videofil blir levert med lyd.** Før stoppet en videofil
   som ikke lot seg lese hele leveringen, og du satt igjen med en rå lydfil. Nå lages
   mp4-en med lyd, du får en melding om at bildet er ufullstendig, og videofila ligger
@@ -16,6 +18,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   avsluttet mellom at mp4-en var ferdig og at lydfila ble ryddet bort, laget neste
   oppstart en ekstra mp4 med bare lyd og en ekstra rad i historikken. Nå gjenkjennes
   opptaket som allerede levert.
+  \=======
+- **Avspillingen i steget Klipp går på samme motor som Lyd.** Opptaket spilles ikke
+  lenger av et lydelement i vinduet, og det lages ingen mellomfil for formater vinduet
+  ikke kunne spille: motoren leser alle formater selv. Kuttene er en del av det som
+  spilles (20 ms krysstoning i stedet for at lyden dempes og hopper), spillehodet
+  følger lydkortet, og et hopp i bølgeformen høres etter 70–120 ms på en Mac (M1 Pro, en
+  90 minutters mp3; før 95–160 ms). Legger du til, fjerner eller angrer et kutt mens det
+  spiller, fortsetter lyden fra samme sted med det nye programmet, med et lite opphold og
+  uten klikk. På Macen ga 17 sekunder med hopp, pause og nye kutt `underruns 0 xruns 0`.
+  Må prøves ved å lytte etter klikk og hakk, og at spillehodet holder seg i takt gjennom
+  en hel gudstjeneste, på Mac og Windows (RIG-DAY).
+
+> > > > > > > origin/main
 
 - **«Før» og «Etter» i steget Lyd er et bytte, ikke en ventetid.** Lyttingen spilles
   nå av avspillingsmotoren i stedet for en tjue sekunders mp3 som ble laget for hvert

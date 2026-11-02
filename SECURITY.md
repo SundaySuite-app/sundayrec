@@ -209,9 +209,9 @@ So a future auditor doesn't have to re-derive these from scratch:
   window (the process catches the drop itself, `window::on_event` →
   `editor::note_drop`, and tells the page with `editor://file-dropped` — the
   path of a drop never reaches the page). `editor_load_recording`,
-  `editor_peaks`, `editor_extract_playback_proxy`, `editor_segments`,
+  `editor_peaks`, `editor_segments`,
   `editor_diagnose_channels`, `editor_auto_process`,
-  `editor_master_preview` and `editor_export` take `source_token` and nothing
+  `editor_listen_open`, `editor_listen_chain` and `editor_export` take `source_token` and nothing
   else, and resolve it with `resolve_source` (`ChosenPaths::resolve(token,
 File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   the RESOLVED source. The intro and outro clips are not in the request at all:

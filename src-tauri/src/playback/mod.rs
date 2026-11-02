@@ -37,8 +37,8 @@
 //! ([`Player::set_wet`]). A chain change while it plays ([`Player::set_chain`]) is built and
 //! warmed up beside the one that runs and crossfaded in by the producer ([`producer`]).
 //!
-//! The sound step drives this through the commands in `editor::listen` (B5b); the Klipp step
-//! comes in B5c. The runner `examples/playback.rs` drives this module on the Mac's speakers
+//! The sound step (B5b) and the Klipp step (B5c) drive this through the commands in
+//! `editor::listen`; the Klipp step changes the cuts while it plays ([`Player::set_plan`]). The runner `examples/playback.rs` drives this module on the Mac's speakers
 //! (RIG-DAY «Avspillingsmotoren», «Før/Etter og profilbytte»).
 
 pub mod producer;
@@ -98,6 +98,18 @@ const REPORT_EVERY: Duration = Duration::from_millis(33);
 
 pub type Sink = Box<dyn FnMut(PlaybackEvent) + Send + 'static>;
 
+/// The cut plans in force, newest last, each from the generation it started: a position event
+/// of generation `g` is mapped to source time with the last plan whose generation is `<= g`.
+type Plans = Arc<Mutex<Vec<(u64, CutPlan)>>>;
+
+fn source_secs_at(plans: &Plans, gen: u64, program_secs: f64) -> f64 {
+    let g = plans.lock().unwrap_or_else(|e| e.into_inner());
+    match g.iter().rev().find(|(from, _)| *from <= gen).or(g.first()) {
+        Some((_, plan)) => plan.program_to_source_secs(program_secs),
+        None => program_secs,
+    }
+}
+
 fn rings(
     device_rate: u32,
     device_channels: usize,
@@ -117,7 +129,12 @@ fn rings(
 /// A running engine: one recording, one cut plan, one chain.
 pub struct Player {
     shared: Arc<Shared>,
-    plan: CutPlan,
+    /// The plan in force. Held while a command that depends on it is sent, so a seek never
+    /// computes its frame from a plan the producer has already replaced.
+    plan: Mutex<CutPlan>,
+    /// Every plan the reporter may still need, each from the generation it came into force
+    /// (see [`Player::set_plan`]).
+    plans: Plans,
     cmd: Sender<Command>,
     producer: Option<JoinHandle<()>>,
     reporter: Option<(Sender<()>, JoinHandle<()>)>,
@@ -213,6 +230,7 @@ impl Player {
         shared.wet_target.store(1.0f32.to_bits(), Ordering::Release);
         let (cmd, cmd_rx) = mpsc::channel();
         let plan = programme.plan.clone();
+        let plans: Plans = Arc::new(Mutex::new(vec![(0, plan.clone())]));
         let producer = Producer {
             plan: programme.plan,
             opener: programme.opener,
@@ -231,14 +249,15 @@ impl Player {
             .map_err(|e| e.to_string())?;
         let (rep_tx, rep_rx) = mpsc::channel();
         let rep_shared = shared.clone();
-        let rep_plan = plan.clone();
+        let rep_plans = plans.clone();
         let reporter = std::thread::Builder::new()
             .name("playback-reporter".into())
-            .spawn(move || report(rep_shared, rep_plan, error, sink, rep_rx))
+            .spawn(move || report(rep_shared, rep_plans, error, sink, rep_rx))
             .map_err(|e| e.to_string())?;
         let p = Player {
             shared,
-            plan,
+            plan: Mutex::new(plan),
+            plans,
             cmd,
             producer: Some(producer),
             reporter: Some((rep_tx, reporter)),
@@ -250,8 +269,13 @@ impl Player {
         Ok(p)
     }
 
-    pub fn plan(&self) -> &CutPlan {
-        &self.plan
+    /// The cut plan in force.
+    pub fn plan(&self) -> CutPlan {
+        self.lock_plan().clone()
+    }
+
+    fn lock_plan(&self) -> std::sync::MutexGuard<'_, CutPlan> {
+        self.plan.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn device_rate(&self) -> u32 {
@@ -295,7 +319,8 @@ impl Player {
     /// the new in; a pause stays a pause.
     /// Returns the new generation: position events of older generations are stale.
     pub fn seek_program(&self, secs: f64) -> u64 {
-        let frame = (secs.max(0.0) * f64::from(self.plan.rate())).round() as u64;
+        let plan = self.lock_plan();
+        let frame = (secs.max(0.0) * f64::from(plan.rate())).round() as u64;
         let gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
         // The command first: the callback, seeing the new generation, discards everything up to
         // its start marker, which the producer pushes when it takes the command.
@@ -309,7 +334,39 @@ impl Player {
 
     /// Jump to `secs` of SOURCE time (a click on the waveform). Inside a cut: the next keep.
     pub fn seek_source(&self, secs: f64) -> u64 {
-        self.seek_program(self.plan.source_to_program_secs(secs))
+        let program = self.lock_plan().source_to_program_secs(secs);
+        self.seek_program(program)
+    }
+
+    /// Change the cuts (B5c): the programme becomes `plan`, and playing goes on from `at_secs`
+    /// of SOURCE time (inside a cut: the next keep), as a jump. The callback fades out the old
+    /// programme, drops it and fades the new one in, so a cut made while it plays costs the
+    /// jump's gap and no click; a pause stays a pause. The plan must have the source's rate.
+    /// Returns the new generation.
+    pub fn set_plan(&self, plan: CutPlan, at_secs: f64) -> u64 {
+        let mut cur = self.lock_plan();
+        let frame = (plan.source_to_program_secs(at_secs) * f64::from(plan.rate())).round() as u64;
+        let gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
+        {
+            // The reporter maps this generation's positions with the new plan, and the older
+            // ones (still in the ring for a moment) with the plan they were made under.
+            let mut plans = self.plans.lock().unwrap_or_else(|e| e.into_inner());
+            let playing = self.shared.playing_gen.load(Ordering::Acquire);
+            let keep_from = plans
+                .iter()
+                .rposition(|(from, _)| *from <= playing)
+                .unwrap_or(0);
+            plans.drain(..keep_from);
+            plans.push((gen, plan.clone()));
+        }
+        let _ = self.cmd.send(Command::SetPlan {
+            gen,
+            plan: plan.clone(),
+            program_frame: frame,
+        });
+        self.shared.requested_gen.store(gen, Ordering::Release);
+        *cur = plan;
+        gen
     }
 
     /// The programme position the device was last handed, seconds.
@@ -325,7 +382,7 @@ impl Player {
             underruns: self.shared.underruns.load(Ordering::Relaxed),
             xruns: self.shared.xruns.load(Ordering::Relaxed),
             realtime_factor: (ns > 0 && frames > 0)
-                .then(|| (frames as f64 / f64::from(self.plan.rate())) / (ns as f64 / 1e9)),
+                .then(|| (frames as f64 / f64::from(self.lock_plan().rate())) / (ns as f64 / 1e9)),
             chain_warm_ms: Some(self.shared.warm_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
         }
     }
@@ -369,7 +426,7 @@ impl Drop for Player {
 /// only; a position event is sent when the callback has moved the position.
 fn report(
     shared: Arc<Shared>,
-    plan: CutPlan,
+    plans: Plans,
     error: Arc<Mutex<Option<String>>>,
     mut sink: Sink,
     stop: Receiver<()>,
@@ -388,7 +445,7 @@ fn report(
             sink(PlaybackEvent::Position {
                 gen,
                 program_secs,
-                source_secs: plan.program_to_source_secs(program_secs),
+                source_secs: source_secs_at(&plans, gen, program_secs),
             });
         }
         let ended = shared.ended_gen.load(Ordering::Acquire);

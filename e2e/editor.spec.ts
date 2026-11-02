@@ -533,18 +533,84 @@ test.describe("editor", () => {
   });
 
   test("avspilling som ikke kan gå sier det ærlig", async ({ page }) => {
-    // I en ren nettleser er `asset://` død — atlasets eget forbehold. Elementet
-    // klarer ikke å åpne originalen, mellomfila lar seg ikke lage uten en
-    // bakende, og da SIER skjermen det i stedet for å la avspillingsknappen
-    // stå og ikke gjøre noe.
-    await openEditor(page);
+    // Motoren kan ikke åpnes (ingen lydenhet): skjermen SIER det i stedet for å la
+    // avspillingsknappen stå og ikke gjøre noe, og knappen er ikke sperret — neste
+    // trykk er et nytt forsøk.
+    await openEditor(page, {
+      editor_listen_open: fn(`() => { throw new Error("no output device"); }`),
+    });
+    await expect(page.getByTestId("editor-playback-notice")).toHaveCount(0);
+    await page.getByTestId("editor-play").click();
     const notice = page.getByTestId("editor-playback-notice");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("Avspilling er ikke tilgjengelig");
-    await expect(page.getByTestId("editor-play")).toHaveAttribute(
+    await expect(page.getByTestId("editor-play")).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );
+  });
+
+  test("Klipp-steget spilles av motoren: spill, hopp og nye kutt er meldinger", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await openEditor(page);
+    await waitForSuggestion(page);
+
+    // Spill: økta åpnes der spillehodet står, og motoren får «spill». Ingen mp3, ingen proxy.
+    await page.getByTestId("editor-play").click();
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.map((x) => x.cmd)))
+      .toEqual(["open", "transport"]);
+    let calls = await listenCalls(page);
+    expect(calls[0].request).toMatchObject({
+      sourceToken: OPENED.token,
+      startSec: 0,
+      cutRegions: [],
+      fullLengthSec: DURATION,
+    });
+    expect(calls[1].action).toEqual({ kind: "play" });
+    await expect(page.getByTestId("editor-play")).toHaveAttribute(
+      "aria-label",
+      "Pause",
+    );
+
+    // Spillehodet er motorens: en posisjon flytter klokka.
+    await emit(page, "editor-listen", {
+      kind: "position",
+      gen: 1,
+      programSecs: 125,
+      sourceSecs: 125,
+    });
+    await expect(page.getByTestId("editor-time")).toHaveText("0:02:05");
+
+    // Et nytt kutt mens det spiller går til motoren, fra samme sted.
+    await page.getByTestId("editor-keep-sermon").click();
+    await expect
+      .poll(() =>
+        listenCalls(page).then((c) =>
+          c.filter((x) => x.action?.kind === "cuts"),
+        ),
+      )
+      .toHaveLength(1);
+    calls = await listenCalls(page);
+    expect(calls.at(-1)?.action).toMatchObject({
+      kind: "cuts",
+      fullLengthSec: DURATION,
+      atSecs: 125,
+    });
+
+    // Pause lar økta stå åpen; å gå til Lyd-steget lukker den.
+    await page.getByTestId("editor-play").click();
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.at(-1)?.action))
+      .toEqual({ kind: "pause" });
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect
+      .poll(() =>
+        listenCalls(page).then((c) => c.some((x) => x.cmd === "close")),
+      )
+      .toBe(true);
   });
 
   test("varigheten kommer fra fila, ikke fra en gjetning", async ({ page }) => {
@@ -828,7 +894,6 @@ test.describe("editor", () => {
       { cmd: "transport", action: { kind: "side", after: false } },
       { cmd: "transport", action: { kind: "side", after: true } },
     ]);
-    expect(await previewRequests(page)).toHaveLength(0);
 
     // Å forlate steget lukker økta: lydkortet har én eier.
     await page.getByTestId("editor-steps-row-cut").click();
@@ -1241,19 +1306,5 @@ async function listenCalls(page: Page): Promise<
           }>;
         }
       ).__E2E_LISTEN__ ?? [],
-  );
-}
-
-/** Forespørslene `editor_master_preview` fikk. */
-async function previewRequests(
-  page: Page,
-): Promise<Array<Record<string, unknown>>> {
-  return page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __E2E_PREVIEWS__?: Array<Record<string, unknown>>;
-        }
-      ).__E2E_PREVIEWS__ ?? [],
   );
 }
