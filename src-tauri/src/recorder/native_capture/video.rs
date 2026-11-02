@@ -1151,49 +1151,7 @@ mod tests {
 
     // ── Real ffmpeg: an encoder that refuses to open (M3R #1) ───────────────
 
-    /// The fetched ffmpeg/ffprobe, or `None` → the caller SKIPs. Under
-    /// `SUNDAYREC_REQUIRE_SIDECAR=1` a missing sidecar PANICS instead.
-    /// The fetched sidecars, pinned through `SUNDAYREC_FFMPEG`/`_FFPROBE` for
-    /// the whole test under THE env lock (`media::ffmpeg::tests::ENV_LOCK`).
-    /// Without the pin, `ffmpeg_path()` falls through to PATH: a homebrew
-    /// ffmpeg locally, nothing on CI — and a parallel longrun test's
-    /// `remove_var` can strike mid-test (macOS CI on #402: 0 slots written).
-    struct SidecarPin {
-        _guard: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl Drop for SidecarPin {
-        fn drop(&mut self) {
-            // SAFETY: still holding ENV_LOCK.
-            unsafe {
-                std::env::remove_var("SUNDAYREC_FFMPEG");
-                std::env::remove_var("SUNDAYREC_FFPROBE");
-            }
-        }
-    }
-
-    fn sidecar_or_skip() -> Option<SidecarPin> {
-        let guard = crate::media::ffmpeg::tests::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let ffmpeg = crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg");
-        let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe");
-        if let (Some(ffmpeg), Some(ffprobe)) = (ffmpeg, ffprobe) {
-            // SAFETY: serialised by ENV_LOCK; removed on Drop, before the
-            // guard is released.
-            unsafe {
-                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-            }
-            return Some(SidecarPin { _guard: guard });
-        }
-        assert!(
-            std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
-            "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable ffmpeg/ffprobe sidecar — run `npm run ffmpeg`"
-        );
-        eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-        None
-    }
+    use crate::media::ffmpeg::tests::sidecar_or_skip;
 
     /// A factory whose HARDWARE encoder is a real ffmpeg that fails when it
     /// opens its encoder (4:4:4 into baseline H.264) — after it has already

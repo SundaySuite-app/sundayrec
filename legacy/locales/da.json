@@ -1152,6 +1152,7 @@
     "trashManifestUnreadable": "Papirkurvens indhold kunne ikke læses. Filerne ligger der stadig, men appen ved ikke længere, hvor de kom fra.",
     "dataDirMoveFailed": "Historikken og indstillingerne kunne ikke flyttes til den nye mappe. Appen bruger den gamle denne gang, og intet er slettet. Dine optagelsesfiler ligger stadig i optagelsesmappen. Genstart appen; hjælper det ikke, så tag kontakt.",
     "dataLeftInOldDir": "Historik og indstillinger fra den ældre version ligger tilbage i den gamle mappe. Denne version bruger den nye mappe, så det, du gemte med den ældre version, vises ikke her. Dine optagelsesfiler ligger stadig i optagelsesmappen.",
-    "levelWeak": "Optagelsen er meget svag — er mixeren skruet ned?"
+    "levelWeak": "Optagelsen er meget svag — er mixeren skruet ned?",
+    "videoDropped": "Optagelsen er gemt med lyd, men billedet er ufuldstændigt: en videofil kunne ikke læses. Filen ligger ved siden af optagelsen ({file})."
   }
 }

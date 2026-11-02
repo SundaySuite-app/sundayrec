@@ -6,7 +6,7 @@ import type { VideoProblem } from "./VideoProblem";
  */
 export type RecordingProgress = { 
 /**
- * Total bytes ffmpeg has written to the current segment so far.
+ * Total bytes the capture has written to the current segment so far.
  */
 bytes_written: number, 
 /**

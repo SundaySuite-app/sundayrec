@@ -49,6 +49,7 @@ export type BackendWarningKey =
   | "backend-data-dir-move"
   | "backend-data-left-in-old-dir"
   | "backend-level-weak"
+  | "backend-video-dropped"
   | "backend-warning";
 
 /** Nøklene. Lukket liste: et nytt banner er en beslutning, ikke noe som siger
