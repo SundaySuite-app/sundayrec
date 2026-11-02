@@ -20,11 +20,9 @@
 //!
 //! ## What this seam does NOT do: feed playback
 //!
-//! The renderer plays the ORIGINAL recording through a media element on
-//! `asset://` ([`allow_asset_path`] widens the scope to the one file, when the
-//! command layer opens it). Nothing
-//! here decodes audio *for playback*: [`extract_playback_proxy`] is a LAST
-//! resort for containers the webview has no decoder for, and [`peaks`] gives the
+//! The playback engine ([`crate::playback`], B5a–c) plays the recording itself: it decodes the
+//! ORIGINAL with ffmpeg and hands it to the sound card, with the cuts. The renderer has no media
+//! element for it. Nothing here decodes audio *for playback*; [`peaks`] gives the
 //! waveform at 100 buckets/second — cached in a sidecar, so a reopen re-reads a
 //! small JSON instead of the media.
 //!
@@ -1307,7 +1305,7 @@ fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFl
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewRequest {
     /// The recording to preview, as the File token that stands for it — never a
-    /// path; the command resolves it and hands [`master_preview`] the place.
+    /// path; the command resolves it and hands the seam the place.
     pub source_token: String,
     /// The mastering preset the export would carry. `None` when the mixer is on: the mixer
     /// replaces the profile, so the export carries `processing` and no preset.
@@ -1377,18 +1375,16 @@ pub struct EditorExportProgress {
     pub phase: String,
 }
 
-/// A decode-progress tick for the three whole-file passes that used to report
-/// nothing at all: the waveform decode (`editor://peaks-progress`), the content
-/// analysis (`editor://analysis-progress`) and the playback-proxy transcode
-/// (`editor://proxy-progress`).
+/// A decode-progress tick for the whole-file passes that used to report
+/// nothing at all: the waveform decode (`editor://peaks-progress`) and the content
+/// analysis (`editor://analysis-progress`).
 ///
 /// `fraction` is 0..1 and monotonically non-decreasing within one pass. It is a
 /// measured quantity in every case, not a guess: the two decode passes divide
 /// bytes-read by the byte count the probed duration implies (both pipes are a
-/// fixed rate — 8 kHz and 16 kHz mono s16le), and the transcode divides
-/// ffmpeg's own `out_time` by the same duration.
+/// fixed rate — 8 kHz and 16 kHz mono s16le).
 ///
-/// One shape for all three because the renderer treats them identically, and a
+/// One shape for both because the renderer treats them identically, and a
 /// `phase` field would be inventing a distinction the UI does not draw: each of
 /// these is a single pass, named by the surface that started it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -2417,17 +2413,15 @@ pub async fn probe_streams(input_path: &str) -> AppResult<EditorStreamInfo> {
     })
 }
 
-/// What a listen request resolves to before any window is rendered: the export's chain, the
-/// programme's level plan and the PCM format both run in.
+/// What a listen request resolves to: the export's chain and the programme's level plan.
 #[cfg(feature = "editor")]
 struct ListenPlan {
     chain: sundayrec_core::chain::Chain,
     plan: sundayrec_core::loudness::GainPlan,
-    fmt: sundayrec_core::pcm_stream::PcmFormat,
 }
 
 /// The slow, shared half of a listen request: «Tale»'s analysis and the programme measure.
-/// [`master_preview`] renders its window on top of this; [`prepare_listen`] stops here, which
+/// [`listen::set_chain`] installs it; [`prepare_listen`] stops here, which
 /// is what leaves the plan in [`PLAN_BOOK`] for the «Etter» that follows.
 #[cfg(feature = "editor")]
 async fn listen_plan(
@@ -2473,7 +2467,7 @@ async fn listen_plan(
         }
         None => pcm::unity_plan(),
     };
-    Ok(ListenPlan { chain, plan, fmt })
+    Ok(ListenPlan { chain, plan })
 }
 
 /// Which preparation is the latest. A new one, an export and a starting recording all bump it;
@@ -2522,7 +2516,7 @@ async fn until_superseded<F: std::future::Future>(
 
 /// Measure the programme of a listen request in the background and keep the plan, so the
 /// «Etter» that follows finds it ([`PLAN_BOOK`]). Same request, same key as
-/// [`master_preview`], and the same single measurement if «Etter» is already waiting on it.
+/// [`listen::set_chain`], and the same single measurement if «Etter» is already waiting on it.
 ///
 /// Returns whether the plan is ready. `false` = not prepared: this preparation was superseded
 /// by a newer one (the choice or the cuts changed) or ended by an export or a recording.
@@ -4161,127 +4155,6 @@ async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
         .await
         .ok()?;
     parse_video_size(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// The media length of `input_path` in seconds, for scaling an op's kill-timer.
-/// A header-only ffprobe, so it costs nothing next to the full-file read it is
-/// budgeting for — and it is ITSELF capped, because the whole point of the
-/// kill-timers is that a stalled volume must not hang the editor, and a probe
-/// with no timer would just move the hang one process earlier. `None` (unknown
-/// duration) simply falls back to [`editor_op_timeout`]'s floor.
-#[cfg(feature = "editor")]
-async fn duration_hint(input_path: &str) -> Option<f64> {
-    const PROBE_CAP: std::time::Duration = std::time::Duration::from_secs(20);
-    tokio::time::timeout(
-        PROBE_CAP,
-        crate::media::ffmpeg::probe_duration_secs(input_path),
-    )
-    .await
-    .ok()
-    .flatten()
-}
-
-/// Run ffmpeg like [`run_ffmpeg`], but with `-progress` on stdout parsed into an
-/// 0..1 fraction against `total_sec`.
-///
-/// The `-progress pipe:1 -nostats` pair is spliced in front of the OUTPUT path
-/// (the last argument) rather than added by the core's arg builders: these are
-/// global options, the builders are pinned by their own tests, and only this one
-/// caller wants the machine-readable stream. `total_sec <= 0` (an unprobeable
-/// container) means the fraction cannot be honest, so the run reports nothing
-/// and the caller's bar stays indeterminate.
-///
-/// Reads COMPLETE lines only, for the reason `run_export_ffmpeg` documents at
-/// length: re-scanning an accumulating buffer keeps re-reporting the first
-/// `out_time` in it and freezes the bar for the first few dozen ticks.
-#[cfg(feature = "editor")]
-async fn run_ffmpeg_progress<F>(
-    args: &[String],
-    total_sec: f64,
-    timeout: std::time::Duration,
-    what: &str,
-    on_progress: F,
-) -> AppResult<()>
-where
-    F: Fn(f32),
-{
-    use sundayrec_core::mastering::parse_progress_time;
-    use tokio::io::AsyncReadExt;
-
-    let mut with_progress = args.to_vec();
-    let out_at = with_progress.len().saturating_sub(1);
-    with_progress.splice(
-        out_at..out_at,
-        ["-progress", "pipe:1", "-nostats"].map(String::from),
-    );
-    let arg_refs: Vec<&str> = with_progress.iter().map(String::as_str).collect();
-    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let mut stdout = child.stdout.take();
-    // stderr still has to be drained concurrently or a full pipe wedges ffmpeg.
-    let drain = child.stderr.take().map(|mut stderr| {
-        tauri::async_runtime::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes).await;
-            String::from_utf8_lossy(&bytes).into_owned()
-        })
-    });
-
-    let child_ref = &mut child;
-    let progress_ref = &on_progress;
-    let waited = tokio::time::timeout(timeout, async move {
-        if let Some(mut out) = stdout.take() {
-            let mut buf = String::new();
-            let mut chunk = [0u8; 4096];
-            let mut last = 0.0f32;
-            loop {
-                match out.read(&mut chunk).await {
-                    Ok(0) => break,
-                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
-                    Err(_) => break,
-                }
-                while let Some(nl) = buf.find('\n') {
-                    let line: String = buf.drain(..=nl).collect();
-                    let Some(cur) = parse_progress_time(&line) else {
-                        continue;
-                    };
-                    if total_sec <= 0.0 {
-                        continue;
-                    }
-                    let frac = ((cur / total_sec) as f32).clamp(0.0, 0.99);
-                    if frac > last {
-                        last = frac;
-                        progress_ref(frac);
-                    }
-                }
-            }
-        }
-        child_ref.wait().await
-    })
-    .await;
-
-    let status = match waited {
-        Ok(r) => r.map_err(|e| AppError::Recording(format!("{what} wait: {e}")))?,
-        Err(_elapsed) => {
-            let _ = child.kill().await;
-            tracing::warn!(
-                what,
-                timeout_ms = timeout.as_millis() as u64,
-                "editor ffmpeg op exceeded its kill-timer"
-            );
-            return Err(AppError::Recording(format!("timeout: {what}")));
-        }
-    };
-    let stderr_buf = match drain {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    if !status.success() {
-        let tail: String = stderr_buf.chars().rev().take(500).collect::<String>();
-        let tail: String = tail.chars().rev().collect();
-        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
-    }
-    on_progress(1.0);
-    Ok(())
 }
 
 #[cfg(test)]

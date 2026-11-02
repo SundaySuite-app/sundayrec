@@ -11,7 +11,7 @@ import type { EditorProcessing } from "./EditorProcessing";
 export type EditorMasterPreviewRequest = { 
 /**
  * The recording to preview, as the File token that stands for it — never a
- * path; the command resolves it and hands [`master_preview`] the place.
+ * path; the command resolves it and hands the seam the place.
  */
 sourceToken: string, 
 /**
