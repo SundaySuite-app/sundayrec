@@ -29,6 +29,10 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use sundayrec_core::editor::{build_keeps, CutRegion};
+use sundayrec_core::playback::CutPlan;
+
+use super::EditorCutRegion;
 use crate::error::{AppError, AppResult};
 use crate::playback::{PlaybackEvent, Player};
 
@@ -104,10 +108,41 @@ pub enum EditorListenAction {
     Side {
         after: bool,
     },
+    /// The cuts were edited (B5c): the programme is now these cuts, and playing goes on from
+    /// `at_secs` of source time as a jump. Cuts that would leave nothing are ignored.
+    Cuts {
+        #[serde(rename = "cutRegions")]
+        cut_regions: Vec<EditorCutRegion>,
+        #[serde(rename = "fullLengthSec")]
+        full_length_sec: f64,
+        #[serde(rename = "atSecs")]
+        at_secs: f64,
+    },
+}
+
+/// The plan for these cuts, or `None` when nothing would be left (or the length is not one).
+fn plan_for(cuts: &[EditorCutRegion], duration: f64, rate: u32) -> Option<CutPlan> {
+    if !duration.is_finite() || duration <= 0.0 {
+        return None;
+    }
+    let cuts: Vec<CutRegion> = cuts
+        .iter()
+        .map(|c| CutRegion {
+            start: c.start,
+            end: c.end,
+        })
+        .collect();
+    let keeps = build_keeps(&cuts, duration);
+    if keeps.is_empty() {
+        return None;
+    }
+    Some(CutPlan::new(&keeps, duration, rate))
 }
 
 struct Session {
     player: Player,
+    /// The source's sample rate: a new cut plan is made in it.
+    rate: u32,
     /// Chain asks handed out, and the newest one installed: a slow ask that finishes after a
     /// newer one must not put its older chain over it.
     #[cfg_attr(not(feature = "editor"), allow(dead_code))]
@@ -171,6 +206,18 @@ impl ListenEngine {
                 }
             }
             EditorListenAction::Side { after } => s.player.set_wet(*after),
+            EditorListenAction::Cuts {
+                cut_regions,
+                full_length_sec,
+                at_secs,
+            } => {
+                if !at_secs.is_finite() {
+                    return;
+                }
+                if let Some(plan) = plan_for(cut_regions, *full_length_sec, s.rate) {
+                    s.player.set_plan(plan, *at_secs);
+                }
+            }
         }
     }
 }
@@ -208,8 +255,6 @@ mod real {
     use crate::playback::source::FfmpegOpener;
     use crate::playback::Programme;
     use sundayrec_core::chain::Chain;
-    use sundayrec_core::editor::{build_keeps, CutRegion};
-    use sundayrec_core::playback::CutPlan;
 
     /// Open the session for `source` with the cuts of `req`: paused, at `req.start_sec` (source
     /// seconds), «Før» chosen, no chain yet. Replaces a session that is open.
@@ -234,19 +279,8 @@ mod real {
         if !duration.is_finite() || duration <= 0.0 {
             return Err(AppError::Validation("invalid_duration".into()));
         }
-        let cuts: Vec<CutRegion> = req
-            .cut_regions
-            .iter()
-            .map(|c| CutRegion {
-                start: c.start,
-                end: c.end,
-            })
-            .collect();
-        let keeps = build_keeps(&cuts, duration);
-        if keeps.is_empty() {
-            return Err(AppError::Validation("no_audio_remaining".into()));
-        }
-        let plan = CutPlan::new(&keeps, duration, fmt.sample_rate);
+        let plan = plan_for(&req.cut_regions, duration, fmt.sample_rate)
+            .ok_or_else(|| AppError::Validation("no_audio_remaining".into()))?;
         let program_secs = plan.program_secs();
         let programme = Programme {
             plan,
@@ -283,6 +317,7 @@ mod real {
         engine.epoch.fetch_add(1, Ordering::AcqRel);
         *engine.lock() = Some(Session {
             player,
+            rate: fmt.sample_rate,
             asked: AtomicU64::new(0),
             installed: 0,
         });
@@ -352,6 +387,17 @@ mod tests {
     }
 
     #[test]
+    fn new_cuts_make_a_plan_unless_nothing_is_left() {
+        let cut = |start, end| EditorCutRegion { start, end };
+        let plan = plan_for(&[cut(10.0, 20.0)], 60.0, 48_000).unwrap();
+        assert!((plan.program_secs() - 50.0).abs() < 1e-6);
+        assert!(plan_for(&[], 60.0, 48_000).is_some());
+        assert!(plan_for(&[cut(0.0, 60.0)], 60.0, 48_000).is_none());
+        assert!(plan_for(&[], f64::NAN, 48_000).is_none());
+        assert!(plan_for(&[], 0.0, 48_000).is_none());
+    }
+
+    #[test]
     fn the_transport_takes_its_actions_as_the_window_writes_them() {
         let a: EditorListenAction =
             serde_json::from_str(r#"{"kind":"seekSource","secs":12.5}"#).unwrap();
@@ -359,6 +405,21 @@ mod tests {
         let a: EditorListenAction =
             serde_json::from_str(r#"{"kind":"side","after":true}"#).unwrap();
         assert_eq!(a, EditorListenAction::Side { after: true });
+        let a: EditorListenAction = serde_json::from_str(
+            r#"{"kind":"cuts","cutRegions":[{"start":1.0,"end":2.0}],"fullLengthSec":60.0,"atSecs":5.5}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            a,
+            EditorListenAction::Cuts {
+                cut_regions: vec![EditorCutRegion {
+                    start: 1.0,
+                    end: 2.0
+                }],
+                full_length_sec: 60.0,
+                at_secs: 5.5
+            }
+        );
         assert!(serde_json::from_str::<EditorListenAction>(r#"{"kind":"burn"}"#).is_err());
     }
 
@@ -369,6 +430,11 @@ mod tests {
         engine.transport(&EditorListenAction::Play);
         engine.transport(&EditorListenAction::Side { after: false });
         engine.transport(&EditorListenAction::SeekSource { secs: f64::NAN });
+        engine.transport(&EditorListenAction::Cuts {
+            cut_regions: vec![],
+            full_length_sec: 60.0,
+            at_secs: 1.0,
+        });
         assert!(!engine.is_open());
         assert!(engine.detach().is_none());
     }

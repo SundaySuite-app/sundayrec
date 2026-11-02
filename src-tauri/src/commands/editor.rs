@@ -59,7 +59,7 @@ use super::media_filters::{media_filter_names, AUDIO_EXT, VIDEO_EXT};
 use crate::db::{store, Db};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest, EditorMasterPreviewResult,
+    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest,
     EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar, ExportEngine, ExportFolder,
     MasterEngine, ResolvedExport,
 };
@@ -428,28 +428,6 @@ pub async fn editor_peaks(
 ) -> AppResult<EditorPeaks> {
     let source = resolve_source(&chosen, &source_token).await?;
     editor::peaks(&source, decode_progress(app, "editor://peaks-progress")).await
-}
-
-/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
-/// full-fidelity playback; returns the temp-file path the renderer streams via
-/// `asset://` (an `<audio>` element). Export still runs on the original, so
-/// quality is untouched. The proxy is a file RUST just made in the temp folder,
-/// so the asset scope is widened to it here, not by a path the webview names.
-/// HARDWARE-UNVERIFIED.
-#[tauri::command]
-pub async fn editor_extract_playback_proxy(
-    app: tauri::AppHandle,
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-) -> AppResult<String> {
-    let source = resolve_source(&chosen, &source_token).await?;
-    let proxy = editor::extract_playback_proxy(
-        &source,
-        decode_progress(app.clone(), "editor://proxy-progress"),
-    )
-    .await?;
-    editor::allow_asset_path(&proxy, grant_asset_file(&app))?;
-    Ok(proxy)
 }
 
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
@@ -1092,24 +1070,8 @@ pub async fn editor_sermon_pick(
 // risikoen som fikk mastering-kvartetten (b4) til å bli stående. Det som lukkes
 // her er IPC-flaten. Å åpne en dør igjen er én `#[tauri::command]`-innpakning.
 
-/// Render a windowed single-pass mastering preview to a temp mp3 of the
-/// recording behind `request.source_token`.
-#[tauri::command]
-pub async fn editor_master_preview(
-    app: tauri::AppHandle,
-    chosen: State<'_, ChosenPaths>,
-    request: EditorMasterPreviewRequest,
-) -> AppResult<EditorMasterPreviewResult> {
-    let source = resolve_source(&chosen, &request.source_token).await?;
-    let preview = editor::master_preview(&request, &source).await?;
-    // The preview is a temp file Rust just rendered; the webview plays it over
-    // `asset://`, so the scope is widened to it here.
-    editor::allow_asset_path(&preview.preview_path, grant_asset_file(&app))?;
-    Ok(preview)
-}
-
 /// Get the «Etter» listening ready in the background: measure the programme of this request
-/// (same request as `editor_master_preview`, same cache key) so the first «Etter» finds the
+/// (the same request as `editor_listen_chain`, the same cache key) so the first «Etter» finds the
 /// level plan done. Returns whether the plan is ready; `false` when it was not started or was
 /// ended — a recording is running, an export is running, a newer request took over. Never
 /// competes with a recording or an export: it does not start then, and it ends if one starts.

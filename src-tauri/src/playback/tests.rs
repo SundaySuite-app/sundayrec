@@ -276,6 +276,67 @@ fn a_seek_through_the_engine_is_click_free_and_lands_where_asked() {
     assert!((d.p.position_secs() - (p0 + 9_600.0 / f64::from(rate))).abs() < 1e-9);
 }
 
+/// B5c: the cuts are edited while it plays. The engine takes the new plan as a jump to where the
+/// playhead stood: no step beyond the signal's own, the audio after it is the source as the NEW
+/// plan lays it out, and the position events of the new generation are mapped with the new plan
+/// (a cut made BEFORE the playhead moves the programme position, not the source one).
+#[test]
+fn new_cuts_while_playing_restart_on_the_new_programme() {
+    let rate = 48_000;
+    let whole = CutPlan::whole(6.0, rate);
+    let synth = Synth {
+        f: sine300,
+        rate,
+        len: 6 * u64::from(rate),
+    };
+    let mut d = headless(synth, whole, Chain::default(), rate, 1);
+    d.p.play();
+    d.until_playing(1);
+    d.play_paced(4_800);
+
+    // Cut 1.0 s..2.0 s of the source, and carry on from source 0.5 s.
+    let cut = CutPlan::new(&keeps(&[(0.0, 1.0), (2.0, 6.0)]), 6.0, rate);
+    let gen = d.p.set_plan(cut.clone(), 0.5);
+    assert_eq!(gen, 2);
+    d.until_seeked(2);
+    let p0 = d.p.position_secs();
+    assert!((0.5..=0.51).contains(&p0), "programme position {p0}");
+    // Play across the join (programme 1.0 s) and on.
+    d.play_paced(rate as usize);
+    let natural = 0.4 * 2.0 * std::f32::consts::PI * 300.0 / rate as f32;
+    let worst = d
+        .out
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .fold(0.0, f32::max);
+    // The join is a constant-power crossfade of two sines: no hard step.
+    assert!(worst < 2.0 * natural, "worst step {worst} vs {natural}");
+    // Well past the join the output is the source at the NEW plan's source time.
+    let tail_from = d.out.len() - 4_800;
+    // The last `rate` samples are the second played after `p0`; the tail is its last 0.1 s.
+    let p_tail = p0 + f64::from(rate - 4_800) / f64::from(rate);
+    for (i, v) in d.out[tail_from..].iter().enumerate().step_by(97) {
+        let prog = p_tail + i as f64 / f64::from(rate);
+        let want = sine300(cut.program_to_source_secs(prog));
+        assert!((v - want).abs() < 1e-4, "frame {i}: {v} vs {want} at programme {prog}");
+    }
+    // The reporter maps the new generation with the new plan: programme p0+1 s is source
+    // 2.x s, which the old plan (programme == source) would have called 1.x s.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let last = loop {
+        if let Some(l) = d.positions().last().copied() {
+            if l.0 >= p0 + 1.0 - 1e-9 {
+                break l;
+            }
+        }
+        assert!(Instant::now() < deadline, "no position event after the plan change");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(last.1 > 2.4 && last.1 < 2.6, "source {last:?}");
+    assert_eq!(d.p.stats().underruns, 0);
+    assert_eq!(d.p.plan().program_frames(), cut.program_frames());
+}
+
 /// The real-time margin of the producer side (decode + «Tale»'s preset chain + 44.1→48 kHz):
 /// measured, printed, and held to a floor any runner meets. The plan's figure (B0c: the chain
 /// alone 18–21× on the cloud box, 42× on the Mac) is checked on the Mac by the runner, not here.
