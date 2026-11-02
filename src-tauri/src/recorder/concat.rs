@@ -48,6 +48,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use sundayrec_core::capture::audio_encode_args;
@@ -173,7 +175,50 @@ pub(crate) async fn finalize_deliverable(
     preroll_clip_path: Option<&str>,
     delivery: Option<&DeliverySpec>,
 ) -> AppResult<String> {
+    finalize_deliverable_noted(deliverable, preroll_clip_path, delivery)
+        .await
+        .map(|f| f.path)
+}
+
+/// What a finished deliverable is, and what the caller should say about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Finished {
+    /// The file the recording ended up in (what the history row points at).
+    pub path: String,
+    /// The recording has SOUND but the picture could not be put in it: the video
+    /// was not readable (M3R #11). The delivery is the mp4 with sound only, and
+    /// the video file is kept beside it ([`park_unplayed_video`]). The caller
+    /// tells the person; nothing here can.
+    pub video_dropped: bool,
+}
+
+/// [`finalize_deliverable`] with the notes the caller says out loud.
+pub(crate) async fn finalize_deliverable_noted(
+    deliverable: &Deliverable,
+    preroll_clip_path: Option<&str>,
+    delivery: Option<&DeliverySpec>,
+) -> AppResult<Finished> {
     let primary = deliverable.primary_path.clone();
+
+    // M3R #10: a crash between the delivered mp4 and the removal of the WAV
+    // leaves a capture whose delivery is already in the folder. Delivering it
+    // again would make a second, sound-only mp4 and a second history row.
+    if let Some(spec) = delivery.filter(|d| d.mode == DeliveryMode::MuxAudioVideo) {
+        if let Some(done) = already_delivered(&primary).await {
+            tracing::info!(
+                capture = %primary,
+                delivery = %done,
+                "recorder: this capture was already delivered — not delivering it again"
+            );
+            if !spec.keep_audio_capture {
+                remove_capture(&primary).await;
+            }
+            return Ok(Finished {
+                path: done,
+                video_dropped: false,
+            });
+        }
+    }
 
     // Pre-roll existence guard: a stale/missing/empty clip path must NOT take the
     // whole recording down with a failed concat. Drop it and fall back to no
@@ -238,12 +283,31 @@ pub(crate) async fn finalize_deliverable(
     // Before the audio merge deletes the WAV fragments: their lengths are what
     // each MKV is declared as (see `video_concat_plan`), so a short or missing
     // MKV can never pull the later video ahead of the sound.
+    //
+    // A video that cannot be joined (an unreadable MKV, M3R #11) must not stop
+    // the delivery: the sound is the recording. The video is left out of the mux
+    // and its files are kept beside the delivery afterwards.
+    let mut video_dropped = false;
+    let mut use_video = false;
     let video_lead_secs = if delivery.is_some_and(|d| d.mode == DeliveryMode::MuxAudioVideo) {
         let preroll_secs = match preroll {
             Some(p) => wav_secs(Path::new(p)).await.unwrap_or(0.0),
             None => 0.0,
         };
-        preroll_secs + merge_video_fragments(&fragments, &primary).await?
+        match merge_video_fragments(&fragments, &primary).await {
+            Ok(lead) => {
+                use_video = true;
+                preroll_secs + lead
+            }
+            Err(e) => {
+                tracing::error!(
+                    capture = %primary,
+                    "recorder: the video could not be joined — delivering the sound alone: {e}"
+                );
+                video_dropped = true;
+                0.0
+            }
+        }
     } else {
         0.0
     };
@@ -323,7 +387,10 @@ pub(crate) async fn finalize_deliverable(
     // capture; encode/remux it to the user's chosen format, validate it, and drop
     // the capture file.
     match delivery {
-        None => Ok(primary),
+        None => Ok(Finished {
+            path: primary,
+            video_dropped: false,
+        }),
         Some(spec) => {
             // NEVER overwrite a file that is already there: an earlier recording
             // (or a still-finalising one) may own `spec.delivery_path` — the path
@@ -331,6 +398,7 @@ pub(crate) async fn finalize_deliverable(
             // sibling instead and report THAT path (callers store the returned
             // path in the history row).
             let planned = free_delivery_path(&spec.delivery_path);
+            let dropped_in_mux = Arc::new(AtomicBool::new(false));
             // Encode into a temp NEXT TO the delivery and rename on success: a
             // crash (or a failed encode) mid-transcode leaves only the temp, never
             // a half-written file under the delivery's real name that the library,
@@ -341,15 +409,24 @@ pub(crate) async fn finalize_deliverable(
                     ..spec.clone()
                 };
                 let primary = primary.clone();
+                let dropped_in_mux = Arc::clone(&dropped_in_mux);
                 async move {
                     if tmp_spec.mode == DeliveryMode::MuxAudioVideo {
-                        mux_capture_to_delivery(&primary, video_lead_secs, &tmp_spec).await
+                        mux_capture_to_delivery(
+                            &primary,
+                            video_lead_secs,
+                            &tmp_spec,
+                            use_video,
+                            &dropped_in_mux,
+                        )
+                        .await
                     } else {
                         transcode_capture_to_delivery(&primary, &tmp_spec).await
                     }
                 }
             })
             .await;
+            let video_dropped = video_dropped || dropped_in_mux.load(Ordering::Relaxed);
             let spec = &DeliverySpec {
                 delivery_path: match delivered {
                     Ok(path) => path,
@@ -375,10 +452,27 @@ pub(crate) async fn finalize_deliverable(
                     .await
                     .is_ok()
                 {
-                    let _ = tokio::fs::remove_file(
-                        sundayrec_core::video_track::video_fragment_path(&primary),
-                    )
-                    .await;
+                    if video_dropped {
+                        // The picture is NOT in the mp4: the video files are the
+                        // only copy of it. They go beside the delivery, never
+                        // into the bin.
+                        let mkvs: Vec<PathBuf> = fragments
+                            .iter()
+                            .map(|f| PathBuf::from(sundayrec_core::video_track::video_fragment_path(f)))
+                            .collect();
+                        park_unplayed_video(&mkvs, &spec.delivery_path).await;
+                    }
+                    // M3R #10: remember that this capture is delivered BEFORE
+                    // the video is removed — a crash from here on must not
+                    // deliver it a second time.
+                    write_delivered_marker(&primary, &spec.delivery_path, !video_dropped).await;
+                    if !video_dropped {
+                        let _ = tokio::fs::remove_file(
+                            sundayrec_core::video_track::video_fragment_path(&primary),
+                        )
+                        .await;
+                    }
+                    let _ = tokio::fs::remove_file(lead_marker_path(&primary)).await;
                 }
                 if spec.keep_audio_capture {
                     tracing::info!(
@@ -387,13 +481,18 @@ pub(crate) async fn finalize_deliverable(
                         "recorder: delivered (wav + mkv → {}); the wav is kept for the separate audio file",
                         spec.ext
                     );
-                    return Ok(spec.delivery_path.clone());
+                    return Ok(Finished {
+                        path: spec.delivery_path.clone(),
+                        video_dropped,
+                    });
                 }
             }
             // The delivery file is whole — the capture is now redundant litter,
             // but only once the delivery is durable on disk (a power cut right
             // after Stop must not leave a partial MP3 and no lossless source).
-            if !remove_capture_once_delivery_durable(&primary, &spec.delivery_path).await {
+            if remove_capture_once_delivery_durable(&primary, &spec.delivery_path).await {
+                let _ = tokio::fs::remove_file(delivered_marker_path(&primary)).await;
+            } else {
                 tracing::warn!(
                     capture = %primary,
                     delivery = %spec.delivery_path,
@@ -406,7 +505,10 @@ pub(crate) async fn finalize_deliverable(
                 "recorder: delivered (capture → {})",
                 spec.ext
             );
-            Ok(spec.delivery_path.clone())
+            Ok(Finished {
+                path: spec.delivery_path.clone(),
+                video_dropped,
+            })
         }
     }
 }
@@ -588,32 +690,208 @@ async fn transcode_capture_to_delivery(capture: &str, spec: &DeliverySpec) -> Ap
 /// audio got, plus any fragments at the start without video), audio to AAC.
 /// No MKV at all (the encoder never started) still delivers the sound.
 ///
+/// An MKV that is there but that ffmpeg cannot read (M3R #11: a crash that left
+/// a header and nothing else) must not take the delivery down with it: the mux
+/// is tried again without the picture, `dropped` is set, and the caller keeps
+/// the MKV beside the delivery. Sound in an mp4 is better than a raw WAV and a
+/// retry at every start that fails the same way.
+/// `allow_video` is false when the join of the fragments already failed.
+///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
 async fn mux_capture_to_delivery(
     wav: &str,
     video_lead_secs: f64,
     spec: &DeliverySpec,
+    allow_video: bool,
+    dropped: &AtomicBool,
 ) -> AppResult<()> {
     let mkv = sundayrec_core::video_track::video_fragment_path(wav);
-    let video = tokio::fs::metadata(&mkv)
-        .await
-        .is_ok_and(|m| m.len() > 0)
-        .then_some(mkv);
-    if video.is_none() {
+    let video = (allow_video
+        && tokio::fs::metadata(&mkv)
+            .await
+            .is_ok_and(|m| m.len() > 0))
+    .then_some(mkv);
+    if video.is_none() && allow_video {
         tracing::warn!(capture = %wav, "recorder: no video was recorded — delivering the sound alone");
     }
     let rate = read_wav_info(Path::new(wav)).await.map(|i| i.sample_rate);
-    let args = sundayrec_core::video_track::mux_args(
-        video.as_deref(),
-        video_lead_secs,
-        wav,
-        rate,
-        spec.bitrate_kbps,
-        &spec.ext,
-        spec.hvc1_tag,
-        &spec.delivery_path,
-    );
-    run_concat(&args).await
+    let args_for = |video: Option<&str>| {
+        sundayrec_core::video_track::mux_args(
+            video,
+            video_lead_secs,
+            wav,
+            rate,
+            spec.bitrate_kbps,
+            &spec.ext,
+            spec.hvc1_tag,
+            &spec.delivery_path,
+        )
+    };
+    let Some(video) = video else {
+        return run_concat(&args_for(None)).await;
+    };
+    match run_concat(&args_for(Some(&video))).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            tracing::error!(
+                capture = %wav,
+                video = %video,
+                "recorder: the video could not be muxed — delivering the sound alone: {e}"
+            );
+            // ffmpeg runs with `-n`: a half-written output would stop the retry.
+            let _ = tokio::fs::remove_file(&spec.delivery_path).await;
+            run_concat(&args_for(None)).await?;
+            dropped.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+}
+
+/// `<capture>.delivered`: written once a video capture's delivery is durable,
+/// BEFORE its MKV is removed (M3R #10). Names the delivery and says whether the
+/// picture is in it (`video` or `audio`) — first line the kind, then the path.
+fn delivered_marker_path(wav: &str) -> PathBuf {
+    Path::new(wav).with_extension("delivered")
+}
+
+/// `<joined>.lead`: the seconds of sound before the first picture of a joined
+/// MKV, kept beside it so a second try knows the lead the first one worked out
+/// (M3R #9) — the joined file alone does not say it.
+fn lead_marker_path(wav: &str) -> PathBuf {
+    Path::new(&sundayrec_core::video_track::video_fragment_path(wav)).with_extension("lead")
+}
+
+async fn write_delivered_marker(wav: &str, delivery: &str, with_video: bool) {
+    let body = format!("{}\n{delivery}", if with_video { "video" } else { "audio" });
+    let marker = delivered_marker_path(wav);
+    if let Err(e) = crate::util::write_atomic_async(&marker, body.as_bytes()).await {
+        tracing::warn!(marker = %marker.display(), "recorder: could not write the delivered marker: {e}");
+    }
+}
+
+/// The delivery an earlier pass already made for this capture, if its marker is
+/// there and the file it names is whole. A marker for a file that is gone or
+/// broken counts for nothing: the capture is delivered again.
+async fn already_delivered(wav: &str) -> Option<String> {
+    let body = tokio::fs::read_to_string(delivered_marker_path(wav))
+        .await
+        .ok()?;
+    let (kind, path) = body.split_once('\n')?;
+    if !output_is_valid(Path::new(path)).await {
+        return None;
+    }
+    if kind == "video" {
+        // The picture is inside the mp4; a leftover MKV is a crash between the
+        // marker and its removal.
+        let _ = tokio::fs::remove_file(sundayrec_core::video_track::video_fragment_path(wav)).await;
+        let _ = tokio::fs::remove_file(lead_marker_path(wav)).await;
+    }
+    Some(path.to_string())
+}
+
+/// Remove a capture WAV and what remembers its delivery. The caller of a
+/// `keep_audio_capture` delivery uses this once the separate audio is made.
+pub(crate) async fn remove_capture(wav: &str) {
+    let _ = tokio::fs::remove_file(wav).await;
+    let _ = tokio::fs::remove_file(delivered_marker_path(wav)).await;
+}
+
+/// Move video files that could not be played into the folder of the delivery
+/// they belong to, as `<delivery>_video.mkv` (`_video_2` …), instead of leaving
+/// them in the hidden capture folder for ever or deleting the only copy of the
+/// picture. A file ffmpeg cannot read may still be repairable. Zero-byte files
+/// are not recordings and are removed. Returns where each one went.
+pub(crate) async fn park_unplayed_video(mkvs: &[PathBuf], delivery: &str) -> Vec<PathBuf> {
+    let delivery = Path::new(delivery);
+    let dir = delivery.parent().unwrap_or_else(|| Path::new("."));
+    let stem = delivery
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording".into());
+    park_video_into(mkvs, dir, &stem).await
+}
+
+/// [`park_unplayed_video`] with the folder and the name's stem given.
+pub(crate) async fn park_video_into(mkvs: &[PathBuf], dir: &Path, stem: &str) -> Vec<PathBuf> {
+    let mut moved = Vec::new();
+    for mkv in mkvs {
+        match tokio::fs::metadata(mkv).await {
+            Ok(m) if m.len() == 0 => {
+                let _ = tokio::fs::remove_file(mkv).await;
+                continue;
+            }
+            Ok(_) => {}
+            Err(_) => continue,
+        }
+        let n = moved.len() + 1;
+        let name = if n == 1 {
+            format!("{stem}_video.mkv")
+        } else {
+            format!("{stem}_video_{n}.mkv")
+        };
+        let target = PathBuf::from(free_delivery_path(&dir.join(name).to_string_lossy()));
+        let result = match tokio::fs::rename(mkv, &target).await {
+            Ok(()) => Ok(()),
+            // Another volume: copy, make it durable, and only then let go.
+            Err(_) => match tokio::fs::copy(mkv, &target).await {
+                Ok(_) if sync_file_and_dir(&target).await.is_ok() => {
+                    let _ = tokio::fs::remove_file(mkv).await;
+                    Ok(())
+                }
+                Ok(_) => {
+                    let _ = tokio::fs::remove_file(&target).await;
+                    Err(std::io::Error::other("could not flush the copy"))
+                }
+                Err(e) => Err(e),
+            },
+        };
+        match result {
+            Ok(()) => {
+                tracing::warn!(
+                    from = %mkv.display(),
+                    to = %target.display(),
+                    "recorder: kept an unplayed video beside the delivery"
+                );
+                moved.push(target);
+            }
+            Err(e) => tracing::error!(
+                video = %mkv.display(),
+                "recorder: could not move the unplayed video out of the capture folder: {e}"
+            ),
+        }
+    }
+    moved
+}
+
+/// Can ffprobe find a video stream in `path`? Like [`output_is_valid`], a probe
+/// that cannot run counts as yes: the size gate is the hard guarantee.
+pub(crate) async fn video_is_readable(path: &Path) -> bool {
+    if !output_exists_nonempty(path).await {
+        return false;
+    }
+    let probe = crate::util::hidden_command(ffprobe_path())
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(Duration::from_secs(15), probe).await {
+        Ok(Ok(out)) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).contains("video")
+        }
+        Ok(Ok(_)) => false,
+        _ => true,
+    }
 }
 
 /// Seconds of audio in a PCM WAV: the bytes after its `data` chunk header over
@@ -658,6 +936,7 @@ async fn merge_video_fragments(fragments: &[String], primary: &str) -> AppResult
     }
     let plan = video_concat_plan(&info);
     let target = PathBuf::from(video_fragment_path(primary));
+    let lead_marker = target.with_extension("lead");
     if plan.files.is_empty() {
         return Ok(plan.lead_secs);
     }
@@ -667,6 +946,12 @@ async fn merge_video_fragments(fragments: &[String], primary: &str) -> AppResult
         .map(|&(i, secs)| (video_fragment_path(&fragments[i]), secs))
         .collect();
     if entries.len() == 1 && Path::new(&entries[0].0) == target {
+        // Already ONE file. Either the only fragment with video — or the join
+        // an earlier try made, whose other MKVs are gone and whose lead (the
+        // sound before the first picture) only its marker remembers (M3R #9).
+        if let Some(lead) = read_lead_marker(&lead_marker).await {
+            return Ok(lead);
+        }
         return Ok(plan.lead_secs);
     }
     let stem = target
@@ -705,6 +990,16 @@ async fn merge_video_fragments(fragments: &[String], primary: &str) -> AppResult
             "concat: could not flush the joined video for {primary}: {e}"
         )));
     }
+    // The lead goes down BEFORE the join takes its place, so there is no
+    // moment where a joined file exists without it.
+    if plan.lead_secs > 0.0 {
+        let body = format!("{:.6}", plan.lead_secs);
+        if let Err(e) = crate::util::write_atomic_async(&lead_marker, body.as_bytes()).await {
+            tracing::warn!("concat: could not write the video lead marker: {e}");
+        }
+    } else {
+        let _ = tokio::fs::remove_file(&lead_marker).await;
+    }
     atomic_replace(&tmp, &target).await?;
     for (path, _) in &entries {
         if Path::new(path) != target {
@@ -718,6 +1013,16 @@ async fn merge_video_fragments(fragments: &[String], primary: &str) -> AppResult
         "recorder: joined the video fragments (concat -c copy, declared durations)"
     );
     Ok(plan.lead_secs)
+}
+
+async fn read_lead_marker(path: &Path) -> Option<f64> {
+    let secs: f64 = tokio::fs::read_to_string(path)
+        .await
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (secs.is_finite() && secs > 0.0).then_some(secs)
 }
 
 /// `true` if `path` exists and is past the pure size gate (non-empty enough to be

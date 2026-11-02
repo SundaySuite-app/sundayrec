@@ -1176,6 +1176,7 @@
     "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą.",
     "dataDirMoveFailed": "Nie udało się przenieść historii i ustawień do nowego folderu. Tym razem aplikacja używa starego, a nic nie zostało usunięte. Twoje pliki nagrań nadal są w folderze nagrań. Uruchom aplikację ponownie; jeśli to nie pomoże, skontaktuj się z nami.",
     "dataLeftInOldDir": "Historia i ustawienia ze starszej wersji pozostały w starym folderze. Ta wersja używa nowego folderu, więc to, co zapisano w starszej wersji, nie jest tu widoczne. Twoje pliki nagrań nadal są w folderze nagrań.",
-    "levelWeak": "Nagranie jest bardzo ciche — czy mikser jest wyciszony?"
+    "levelWeak": "Nagranie jest bardzo ciche — czy mikser jest wyciszony?",
+    "videoDropped": "Nagranie zapisano z dźwiękiem, ale brakuje obrazu: nie udało się odczytać pliku wideo. Plik wideo został obok nagrania ({file})."
   }
 }

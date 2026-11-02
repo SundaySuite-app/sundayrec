@@ -1154,6 +1154,7 @@
     "trashManifestUnreadable": "The trash listing could not be read. The files are still there, but the app no longer knows where they came from.",
     "dataDirMoveFailed": "The history and settings could not be moved to the new folder. The app is using the old one this time, and nothing has been deleted. Your recording files are still in the recordings folder. Restart the app; if that does not help, get in touch.",
     "dataLeftInOldDir": "History and settings from the older version were left in the old folder. This version uses the new folder, so what you saved with the older version is not shown here. Your recording files are still in the recordings folder.",
-    "levelWeak": "The recording is very quiet — is the mixer turned down?"
+    "levelWeak": "The recording is very quiet — is the mixer turned down?",
+    "videoDropped": "The recording is saved with its sound, but the picture is missing: the video file could not be read. The video file is kept next to the recording ({file})."
   }
 }

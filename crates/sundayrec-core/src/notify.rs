@@ -69,6 +69,11 @@ pub mod code {
     /// is probably turned down (`level_watch`). Raised once per take.
     pub const LEVEL_WEAK: &str = "level_weak";
 
+    /// The recording is saved with its sound, but the picture could not be put
+    /// in it: the video file was unreadable (M3R #11). The video file is kept
+    /// beside the recording.
+    pub const VIDEO_DROPPED: &str = "video_dropped";
+
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
     pub const ALL: &[&str] = &[
@@ -80,6 +85,7 @@ pub mod code {
         DATA_DIR_MOVE_FAILED,
         DATA_LEFT_IN_OLD_DIR,
         LEVEL_WEAK,
+        VIDEO_DROPPED,
     ];
 }
 

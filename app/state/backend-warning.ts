@@ -88,6 +88,8 @@ export const WARNING_BANNER_KEYS: Record<string, BackendWarningKey> = {
   data_left_in_old_dir: "backend-data-left-in-old-dir",
   // D3: opptaket har vært svært svakt i over fem minutter — mikseren er dempet?
   level_weak: "backend-level-weak",
+  // M3R #11: videofila var ulesbar; opptaket er levert med lyd alene.
+  video_dropped: "backend-video-dropped",
 };
 
 /** Katalognøkkelens suffiks under `notify.*` for en kjent kode. */
@@ -103,6 +105,8 @@ export const WARNING_SUFFIXES: Record<string, string> = {
   data_left_in_old_dir: "dataLeftInOldDir",
   // D3.
   level_weak: "levelWeak",
+  // M3R #11.
+  video_dropped: "videoDropped",
 };
 
 /** Byte per GB, 1024³ — det samme tallet forhåndssjekken og disken bruker. */
