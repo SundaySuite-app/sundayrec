@@ -5,6 +5,18 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Videoopptak med en ødelagt videofil blir levert med lyd.** Før stoppet en videofil
+  som ikke lot seg lese hele leveringen, og du satt igjen med en rå lydfil. Nå lages
+  mp4-en med lyd, du får en melding om at bildet er ufullstendig, og videofila ligger
+  igjen ved siden av opptaket i stedet for å bli slettet.
+- **Video uten lyd etter en krasj blir liggende der du finner den.** Hvis lydfila var
+  borte etter en avbrutt økt, lå videofila skjult i opptaksmappa for alltid og tok
+  flere GB. Nå flyttes den til opptaksmappen din og vises i historikken.
+- **Krasj rett etter levering gir ikke lenger et dobbelt opptak.** Hvis appen
+  avsluttet mellom at mp4-en var ferdig og at lydfila ble ryddet bort, laget neste
+  oppstart en ekstra mp4 med bare lyd og en ekstra rad i historikken. Nå gjenkjennes
+  opptaket som allerede levert.
+
 - **«Før» og «Etter» i steget Lyd er et bytte, ikke en ventetid.** Lyttingen spilles
   nå av avspillingsmotoren i stedet for en tjue sekunders mp3 som ble laget for hvert
   valg: ingen fil lages, og både originalen og lyden gjennom profilen ligger klare.

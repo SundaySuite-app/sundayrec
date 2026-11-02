@@ -410,9 +410,18 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
   THIRD-PARTY-NOTICES. (0.6.0 står som ren MIT/Apache, men 0.6.1 rettet lisensen
   fordi koden bærer IJG-tabeller — derfor 0.7.)
 - **Bevis:** `camera::preview::tests::the_preview_holds_four_a_second_from_one_session_through_a_recording`
-  (syntetisk kilde, 1280×720@30: 3–5 b/s før og under et opptak, nøyaktig én
-  ramme per lydplass, 0 droppede, kamerapush under 20 ms) og den ignorerte
-  `real_camera_preview_…` for ekte kamera (RIG-DAY (v5)).
+  (syntetisk kilde, 1280×720@30, nøyaktig én ramme per lydplass, 0 droppede) og
+  den ignorerte `real_camera_preview_…` for ekte kamera (RIG-DAY (v5)).
+  **CI-grense og målt verdi er to ting.** Testen i CI går på en delt løper i
+  debug-bygg og er løsnet for det: kamerapush under **100 ms** (en belastet
+  Windows-løper stoppet kamerakallbacken i 30,5 ms), minst **1,0** sendt bilde i
+  sekundet og lengste opphold under **1,5 s**. Den beviser at bildene fortsetter
+  å komme, og at kameratråden ikke venter på JPEG-koderen, ikke at de kommer
+  raskt nok. Tallene som gjelder er målt på ekte kamera: FaceTime og iPhone
+  (Continuity) **4,00 b/s**, største hull **299 ms**. Tilbudt frekvens
+  (hvert sjuende bilde, 4,3 b/s) er holdt av en egen grense i testen. «3–5 b/s» og
+  «under 20 ms» som stod her før er ikke noe CI beviser; 20 ms er heller ikke
+  målt på kamera.
 
 **Levert (C4b).** `getUserMedia` er ute av webviewet. Det C5 må vite:
 

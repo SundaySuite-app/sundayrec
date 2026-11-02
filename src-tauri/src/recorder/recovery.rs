@@ -754,7 +754,9 @@ fn orphan_videos(manifest: &SessionManifest, home: Option<&Path>) -> Vec<OrphanV
             }
             let mkv = PathBuf::from(sundayrec_core::video_track::video_fragment_path(wav));
             // A file the guard would refuse a person is not ours to move.
-            if mkv.exists() && path_guard::checked_input_file_for_home(&mkv.to_string_lossy(), home).is_ok() {
+            if mkv.exists()
+                && path_guard::checked_input_file_for_home(&mkv.to_string_lossy(), home).is_ok()
+            {
                 out.push(OrphanVideo {
                     mkv,
                     started_at_ms: d.started_at_ms,
@@ -787,9 +789,12 @@ async fn deliver_orphan_videos(
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "recording".into());
-        let moved =
-            park_video_into(std::slice::from_ref(&o.mkv), Path::new(&enc.delivery_dir), &stem)
-                .await;
+        let moved = park_video_into(
+            std::slice::from_ref(&o.mkv),
+            Path::new(&enc.delivery_dir),
+            &stem,
+        )
+        .await;
         let Some(dest) = moved.into_iter().next() else {
             continue;
         };
@@ -805,7 +810,10 @@ async fn deliver_orphan_videos(
             );
             continue;
         }
-        let byte_size = tokio::fs::metadata(&dest).await.map(|m| m.len() as i64).ok();
+        let byte_size = tokio::fs::metadata(&dest)
+            .await
+            .map(|m| m.len() as i64)
+            .ok();
         let row = RecordingRow {
             integrated_lufs: None,
             id: String::new(),
@@ -2390,7 +2398,15 @@ mod tests {
         let ok = std::process::Command::new(pinned("SUNDAYREC_FFMPEG"))
             .args(["-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
             .arg("testsrc=size=160x120:rate=10:duration=2")
-            .args(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-y"])
+            .args([
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
             .arg(path)
             .status()
             .map(|s| s.success())
@@ -2503,7 +2519,10 @@ mod tests {
 
         assert_eq!(recovered, 0);
         assert_eq!(names_in(out.path()), vec!["seg_video.mkv"]);
-        assert_eq!(std::fs::read(out.path().join("seg_video.mkv")).unwrap(), junk);
+        assert_eq!(
+            std::fs::read(out.path().join("seg_video.mkv")).unwrap(),
+            junk
+        );
         assert!(list_recordings(&pool).await.unwrap().is_empty());
     }
 
@@ -2527,10 +2546,8 @@ mod tests {
 
         // The live stop got this far (keep_separate_audio keeps the WAV) …
         let dm = m.deliverables[0].to_deliverable();
-        let mut spec = DeliverySpec::from_manifest(
-            m.delivery_encode.as_ref().unwrap(),
-            &dm.primary_path,
-        );
+        let mut spec =
+            DeliverySpec::from_manifest(m.delivery_encode.as_ref().unwrap(), &dm.primary_path);
         spec.keep_audio_capture = true;
         let first = finalize_deliverable_noted(&dm, None, Some(&spec))
             .await
@@ -2553,7 +2570,11 @@ mod tests {
         scan_dir(&pool, recovery.path()).await;
 
         assert_eq!(names_in(out.path()), vec!["seg.mp4"], "no second mp4");
-        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1, "no second row");
+        assert_eq!(
+            list_recordings(&pool).await.unwrap().len(),
+            1,
+            "no second row"
+        );
         assert!(!cap.exists(), "the capture folder is cleared");
     }
 }

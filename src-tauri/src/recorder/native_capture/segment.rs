@@ -1231,7 +1231,7 @@ where
     // Frames the video track dropped in the session's EARLIER fragments: the
     // overlay shows a session total, so this fragment's live count is added to it.
     let video_dropped_before = lock_recover(&telemetry).video_frames_dropped;
-    // Silence watcher + its (host-owned) timers — identical to the ffmpeg path.
+    // Silence watcher + its (host-owned) timers.
     let mut silence = SilenceWatcher::new(opts.stop_on_silence);
     let silence_stop_after =
         Duration::from_secs(u64::from(opts.silence_timeout_minutes.max(1)) * 60);
@@ -1244,12 +1244,12 @@ where
     let mut wd_tick = tokio::time::interval(Duration::from_millis(RecorderTimeouts::STUCK_POLL_MS));
     wd_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    // Low-disk guard — identical thresholds to the ffmpeg path (audio-only).
+    // Low-disk guard (audio-only thresholds).
     let disk_headroom = min_disk_headroom_bytes(false);
     let mut disk_tick = tokio::time::interval(Duration::from_secs(30));
     disk_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    // Split + auto-stop timers — identical to the ffmpeg path.
+    // Split + auto-stop timers.
     let split_deadline = if opts.split_minutes > 0 {
         Some(Duration::from_secs(u64::from(opts.split_minutes) * 60))
     } else {
@@ -1312,11 +1312,11 @@ where
                     SegmentSignal::Writer(WriterEvent::Error { kind, message }) => {
                         // The writer has already stopped; classify directly
                         // (no stderr sniffing) and hand the supervisor the
-                        // same fatal/transient split as the ffmpeg path.
+                        // fatal/transient split.
                         let verdict = writer_error_verdict(kind);
                         // Derive the wire code from the shared table (never a
                         // literal) so it can't drift from the classification the
-                        // recovery policy just made — the ffmpeg twin does the same.
+                        // recovery policy just made.
                         let code_str = error_code_str(verdict.code);
                         if verdict.fatal {
                             sink.failure(code_str, &message);
@@ -1407,8 +1407,7 @@ where
             // Byte-progress watchdog.
             _ = wd_tick.tick() => {
                 if wd.observe(seg.bytes(), (env.now_ms)()) == WatchdogVerdict::Stuck {
-                    // WARNING, not error — the ffmpeg twin's reason verbatim
-                    // (`engine.rs`, the same watchdog arm): this breaks to
+                    // WARNING, not error: this breaks to
                     // `UnexpectedExit`, the recovery policy reconnects, and the
                     // session lives. `ERROR_EVENT` is TERMINAL, and firing it
                     // here tore the overlay down and sent a "the recording
@@ -1416,8 +1415,7 @@ where
                     // while the capture was coming back.
                     sink.warning(
                         "stuck_recording",
-                        // English reserve, verbatim from the ffmpeg twin —
-                        // see `engine.rs`: the code is what the shell renders.
+                        // English reserve: the code is what the shell renders.
                         &format!(
                             "no progress for {} s — reconnecting",
                             RecorderTimeouts::STUCK_PROGRESS_MS / 1000

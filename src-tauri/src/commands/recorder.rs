@@ -194,12 +194,13 @@ async fn plan_manual(
 /// How long the device is left alone between the last other owner letting go and
 /// the capture engine opening it.
 ///
-/// SETTLE: the renderer released its getUserMedia captures just before this
-/// command, but WebKit tears the CoreAudio unit down asynchronously — until it
-/// does, a multi-channel device can sit in the webview's 2-channel format and
-/// avfoundation's open fails with "audio format is not supported" (rig-verified
-/// on the Qu-5, 2026-07-31). A short pause lets the device's native format come
-/// back before ffmpeg opens it.
+/// SETTLE: the level meter and the pre-roll buffer release the device just
+/// before this command, and CoreAudio tears the unit down asynchronously — until
+/// it does, a multi-channel device can still sit in the other owner's format and
+/// the open fails (first seen on the Qu-5, 2026-07-31, when the webview's
+/// getUserMedia was the other owner; that is gone since C4b, the wait is still
+/// needed for the meter and the pre-roll). A short pause lets the device's native
+/// format come back before the capture engine opens it.
 ///
 /// A named constant rather than an inline literal so the ordering test can
 /// assert the settle is *this* long and not, say, silently zero.

@@ -172,7 +172,7 @@ const _: fn() = || {
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "RecordingProgress.ts")]
 pub struct RecordingProgress {
-    /// Total bytes ffmpeg has written to the current segment so far.
+    /// Total bytes the capture has written to the current segment so far.
     #[ts(type = "number")]
     pub bytes_written: u64,
     /// Camera frames the video track has dropped so far this SESSION (C3c),

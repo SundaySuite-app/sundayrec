@@ -111,10 +111,9 @@ impl DeliverySpec {
     /// [`AudioEncodeManifest`] — the manifest's own fields plus the delivery path
     /// derived from the capture stem (which carries any `_partN` split suffix).
     ///
-    /// The single place a manifest becomes a finalise spec. It has three callers —
-    /// the live stop (`engine::finalize_one`), the next-launch crash recovery
-    /// (`recovery::recover_session`) and the Windows cpal video stop (F2-W4) — and
-    /// they MUST agree: a recording finalised by one and a recording finalised by
+    /// The single place a manifest becomes a finalise spec. It has two callers —
+    /// the live stop (`engine::finalize_one`) and the next-launch crash recovery
+    /// (`recovery::recover_session`) — and they MUST agree: a recording finalised by one and a recording finalised by
     /// another are the same recording, one of them just went through a crash.
     pub(crate) fn from_manifest(
         enc: &sundayrec_core::recovery::AudioEncodeManifest,
@@ -730,11 +729,8 @@ async fn mux_capture_to_delivery(
     dropped: &AtomicBool,
 ) -> AppResult<()> {
     let mkv = sundayrec_core::video_track::video_fragment_path(wav);
-    let video = (allow_video
-        && tokio::fs::metadata(&mkv)
-            .await
-            .is_ok_and(|m| m.len() > 0))
-    .then_some(mkv);
+    let video =
+        (allow_video && tokio::fs::metadata(&mkv).await.is_ok_and(|m| m.len() > 0)).then_some(mkv);
     if video.is_none() && allow_video {
         tracing::warn!(capture = %wav, "recorder: no video was recorded — delivering the sound alone");
     }
@@ -1884,7 +1880,15 @@ mod tests {
         let ok = std::process::Command::new(ffmpeg)
             .args(["-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
             .arg(format!("testsrc=size=160x120:rate=10:duration={secs}"))
-            .args(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-y"])
+            .args([
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
             .arg(path)
             .status()
             .map(|s| s.success())
@@ -1908,7 +1912,14 @@ mod tests {
     fn stream_kinds(path: &Path) -> Vec<String> {
         let ffprobe = std::env::var("SUNDAYREC_FFPROBE").expect("pinned sidecar");
         let out = std::process::Command::new(ffprobe)
-            .args(["-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0"])
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+            ])
             .arg(path)
             .output()
             .expect("ffprobe runs");
@@ -1923,7 +1934,10 @@ mod tests {
 
     fn mux_spec(out_dir: &Path, stem: &str, keep_wav: bool) -> DeliverySpec {
         DeliverySpec {
-            delivery_path: out_dir.join(format!("{stem}.mp4")).to_string_lossy().into_owned(),
+            delivery_path: out_dir
+                .join(format!("{stem}.mp4"))
+                .to_string_lossy()
+                .into_owned(),
             ext: "mp4".into(),
             channels: 2,
             sample_rate: None,
@@ -1951,7 +1965,9 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn an_unreadable_mkv_still_delivers_the_sound_and_keeps_the_video() {
-        let Some(_pin) = sidecar_or_skip() else { return };
+        let Some(_pin) = sidecar_or_skip() else {
+            return;
+        };
         let cap = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
         let wav = cap.path().join("seg.wav");
@@ -1964,7 +1980,10 @@ mod tests {
             .await
             .expect("the sound must be delivered");
 
-        assert!(done.video_dropped, "the caller must be told the picture is missing");
+        assert!(
+            done.video_dropped,
+            "the caller must be told the picture is missing"
+        );
         assert_eq!(Path::new(&done.path), out.path().join("seg.mp4"));
         assert_eq!(stream_kinds(Path::new(&done.path)), vec!["audio"]);
         assert_eq!(
@@ -1982,7 +2001,9 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn an_unreadable_fragment_is_left_out_of_the_join_and_kept() {
-        let Some(_pin) = sidecar_or_skip() else { return };
+        let Some(_pin) = sidecar_or_skip() else {
+            return;
+        };
         let cap = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
         let wav = cap.path().join("seg.wav");
@@ -2001,7 +2022,10 @@ mod tests {
             .await
             .expect("the sound must be delivered");
 
-        assert!(done.video_dropped, "the caller must be told the picture is incomplete");
+        assert!(
+            done.video_dropped,
+            "the caller must be told the picture is incomplete"
+        );
         assert_eq!(
             stream_kinds(Path::new(&done.path)),
             vec!["audio", "video"],
@@ -2031,7 +2055,9 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn a_second_try_keeps_the_lead_of_the_first_fragment_without_video() {
-        let Some(_pin) = sidecar_or_skip() else { return };
+        let Some(_pin) = sidecar_or_skip() else {
+            return;
+        };
         let cap = tempfile::tempdir().unwrap();
         let wav = cap.path().join("seg.wav");
         let wav_r1 = cap.path().join("seg_r1.wav");
@@ -2045,7 +2071,10 @@ mod tests {
         let frags = vec![a.clone(), b];
 
         let first = merge_video_fragments(&frags, &a).await.unwrap().lead_secs;
-        assert!((first - 3.0).abs() < 0.01, "3 s of sound before the picture, got {first}");
+        assert!(
+            (first - 3.0).abs() < 0.01,
+            "3 s of sound before the picture, got {first}"
+        );
         assert!(
             !cap.path().join("seg_r1.mkv").exists(),
             "the join consumed the fragment (this is the state a failed try leaves)"
@@ -2063,7 +2092,9 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn a_capture_that_was_delivered_is_not_delivered_again() {
-        let Some(_pin) = sidecar_or_skip() else { return };
+        let Some(_pin) = sidecar_or_skip() else {
+            return;
+        };
         let cap = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
         let wav = cap.path().join("seg.wav");

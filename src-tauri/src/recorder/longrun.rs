@@ -486,8 +486,6 @@ impl HeadlessSession {
 
     /// The recovery manifest this session would have written — so a test can
     /// hand it straight to the REAL `recovery::recover_session`.
-    // Consumed by the E6.4 fault-injection tests, which land in this same file.
-    #[allow(dead_code)]
     pub fn manifest(&self, delivery_ext: &str) -> sundayrec_core::recovery::SessionManifest {
         use sundayrec_core::recovery::{AudioEncodeManifest, DeliverableManifest, SessionManifest};
         SessionManifest {
