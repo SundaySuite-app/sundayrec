@@ -318,7 +318,10 @@ fn new_cuts_while_playing_restart_on_the_new_programme() {
     for (i, v) in d.out[tail_from..].iter().enumerate().step_by(97) {
         let prog = p_tail + i as f64 / f64::from(rate);
         let want = sine300(cut.program_to_source_secs(prog));
-        assert!((v - want).abs() < 1e-4, "frame {i}: {v} vs {want} at programme {prog}");
+        assert!(
+            (v - want).abs() < 1e-4,
+            "frame {i}: {v} vs {want} at programme {prog}"
+        );
     }
     // The reporter maps the new generation with the new plan: programme p0+1 s is source
     // 2.x s, which the old plan (programme == source) would have called 1.x s.
@@ -329,7 +332,10 @@ fn new_cuts_while_playing_restart_on_the_new_programme() {
                 break l;
             }
         }
-        assert!(Instant::now() < deadline, "no position event after the plan change");
+        assert!(
+            Instant::now() < deadline,
+            "no position event after the plan change"
+        );
         std::thread::sleep(Duration::from_millis(5));
     };
     assert!(last.1 > 2.4 && last.1 < 2.6, "source {last:?}");

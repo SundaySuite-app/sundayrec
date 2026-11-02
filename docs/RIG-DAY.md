@@ -1125,6 +1125,39 @@ lydtråden. Ca. 15 min på Macen; samme på Windows-boksen. Hodetelefoner.
       **Windows:** samme på rigg-PC-en; i tillegg at lyden ikke hakker mens
       profilen byttes (den nye kjeden varmes opp i en egen tråd).
 
+## (c) Klipp-steget på motoren, og spillehodet i en hel gudstjeneste (B5c)
+
+`<audio>`-elementet, volumrampen og avspillingsproxyen er borte: Klipp-steget i
+Rediger spilles av den samme motoren som Lyd (B5a/B5b), med kuttene som
+konstant-effekt-overganger. Ca. 30 min + selve gudstjenesten. Hodetelefoner.
+
+- [ ] **Lytteprøve i appen: avspilling, hopp og kutt.** Rediger → åpne et ekte opptak
+      → steget Klipp. Trykk spill, og la det gå i et par minutter. Klikk i
+      bølgeformen mange ganger (både mens det spiller og i pause), og dra spillehodets
+      trekant. Velg to–tre områder og legg dem til som kutt MENS det spiller; trykk
+      angre og gjør om. Spill over hvert kutt.
+      **Lytt etter:** klikk eller hakk ved start, pause, hvert hopp og hver kuttskjøt
+      (skal være ingen; et kutt midt i avspillingen gir et lite opphold, men ikke
+      klikk); at et klikk inne i et kutt lander rett etter det; at lyden etter et kutt
+      er den som står rett etter kuttet i bølgeformen. **Forventet:** ingen klikk, og
+      hoppet høres etter ca. 0,1 s.
+- [ ] **Spillehodet i synk gjennom en hel gudstjeneste (90 min), Mac og Windows.**
+      Åpne et ekte 90-minutters opptak i Klipp. Sett opp en kontroll i
+      begynnelsen: et tydelig lydmerke (klapp) med kjent tid i bølgeformen. Trykk
+      spill og la det gå UTEN å røre noe i 90 minutter (skjermsparer av). Se på
+      bølgeformen underveis: spillehodet skal ligge på samme sted i toppene som lyden
+      du hører (sjekk mot et kjent lydmerke ved ca. 30, 60 og 85 minutter). Trykk
+      pause ved slutten og skriv ned tallet. **Forventet:** spillehodet driver ikke
+      mot lyden (innenfor ett bølgeformpiksel på normal visning), tallet ved
+      slutten er opptakets lengde, og `underruns` er 0 (ses i loggen hvis
+      `RUST_LOG=sundayrec_lib::playback=debug`). Prøv det samme med et kutt midt i
+      (f.eks. «Behold bare prekenen»): spillehodet skal fortsatt være i takt
+      etter kuttene. **Windows:** samme på rigg-PC-en, i tillegg at lyden ikke
+      hakker mens du jobber i andre vinduer.
+- [ ] **Kjøreren (Mac).** `$P ~/Downloads/2026.01.04.mp3 --at 3:src=600 --at 5:src=1200 --at 7:cuts=1300-1400@-1 --at 10:src=1350 --at 12:pause --at 13:play --for 17`
+      **Forventet:** `underruns 0`, `xruns 0`; hvert hopp hørt etter under ca.
+      150 ms; `cuts` fortsetter fra der den stod.
+
 ## Etterpå
 
 - [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det

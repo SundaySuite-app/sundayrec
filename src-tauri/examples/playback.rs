@@ -11,7 +11,8 @@
 //!   vocal chain (`voice-podcast`, …). Default: none (the file as it is, so what you hear at a
 //!   join or a seek is the engine, not a filter).
 //! * `--at T:<action>` at T seconds of wall time: `seek=P` (programme seconds), `src=S` (source
-//!   seconds), `pause`, `play`, and (B5b) `side=before|after` (Før/Etter: the programme as it is,
+//!   seconds), `pause`, `play`, (B5c) `cuts=A-B+C-D@AT` (new cuts while it plays, continuing from
+//!   source second AT, or from where it is without `@AT`), and (B5b) `side=before|after` (Før/Etter: the programme as it is,
 //!   or through the chain) and `chain=<id>` (change the profile while it plays). Without any `--at`, a demo script runs (see [`demo`]): the start,
 //!   a seek to 2 s before each of the first two joins (you hear the cut 2 s later), a pause and a
 //!   resume, and a seek into a cut (it lands on the next keep).
@@ -70,6 +71,8 @@ enum Action {
     Side(bool),
     /// A new profile, crossfaded in while it plays.
     Chain(String),
+    /// (B5c) New cuts while it plays, continuing from `at` source seconds (`-1` = where it is).
+    Cuts(Vec<(f64, f64)>, f64),
 }
 
 fn parse_action(s: &str) -> Result<(f64, Action), String> {
@@ -81,6 +84,20 @@ fn parse_action(s: &str) -> Result<(f64, Action), String> {
         Some(("side", "before")) => Action::Side(false),
         Some(("side", "after")) => Action::Side(true),
         Some(("chain", id)) => Action::Chain(id.to_string()),
+        // `cuts=A-B+C-D@AT`: the cuts of a cut-step edit, and where playing goes on (source s).
+        Some(("cuts", v)) => {
+            let (list, at) = v.split_once('@').unwrap_or((v, "-1"));
+            let at: f64 = at.parse().map_err(|_| format!("--at {s}: bad @"))?;
+            let mut cuts = Vec::new();
+            for span in list.split('+').filter(|x| !x.is_empty()) {
+                let (a, b) = span.split_once('-').ok_or(format!("--at {s}: A-B"))?;
+                cuts.push((
+                    a.parse().map_err(|_| format!("--at {s}"))?,
+                    b.parse().map_err(|_| format!("--at {s}"))?,
+                ));
+            }
+            Action::Cuts(cuts, at)
+        }
         None if a == "pause" => Action::Pause,
         None if a == "play" => Action::Play,
         _ => return Err(format!("--at {s}: unknown action")),
@@ -203,6 +220,7 @@ fn run() -> Result<(), String> {
     let t0 = Instant::now();
     let mut next_print = 0.0;
     let mut seeking: Option<(u64, Instant)> = None;
+    let mut last_source = 0.0;
     let mut script = script.into_iter().peekable();
     loop {
         let now = t0.elapsed().as_secs_f64();
@@ -221,6 +239,16 @@ fn run() -> Result<(), String> {
                 Action::Pause => player.pause(),
                 Action::Play => player.play(),
                 Action::Side(wet) => player.set_wet(wet),
+                Action::Cuts(list, at) => {
+                    let cuts: Vec<CutRegion> = list
+                        .iter()
+                        .map(|&(start, end)| CutRegion { start, end })
+                        .collect();
+                    let keeps = build_keeps(&cuts, probe.duration_sec);
+                    let at = if at < 0.0 { last_source } else { at };
+                    let plan = CutPlan::new(&keeps, probe.duration_sec, rate);
+                    seeking = Some((player.set_plan(plan, at), Instant::now()));
+                }
                 Action::Chain(id) => match chain_for(&id) {
                     Ok(c) => player.set_chain(c),
                     Err(e) => eprintln!("{e}"),
@@ -234,6 +262,7 @@ fn run() -> Result<(), String> {
                     program_secs,
                     source_secs,
                 } => {
+                    last_source = source_secs;
                     if let Some((g, t)) = seeking {
                         if gen == g {
                             seeking = None;

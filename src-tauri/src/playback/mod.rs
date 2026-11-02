@@ -37,8 +37,8 @@
 //! ([`Player::set_wet`]). A chain change while it plays ([`Player::set_chain`]) is built and
 //! warmed up beside the one that runs and crossfaded in by the producer ([`producer`]).
 //!
-//! The sound step drives this through the commands in `editor::listen` (B5b); the Klipp step
-//! comes in B5c. The runner `examples/playback.rs` drives this module on the Mac's speakers
+//! The sound step (B5b) and the Klipp step (B5c) drive this through the commands in
+//! `editor::listen`; the Klipp step changes the cuts while it plays ([`Player::set_plan`]). The runner `examples/playback.rs` drives this module on the Mac's speakers
 //! (RIG-DAY «Avspillingsmotoren», «Før/Etter og profilbytte»).
 
 pub mod producer;

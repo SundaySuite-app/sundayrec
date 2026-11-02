@@ -1,4 +1,4 @@
-//! The sound step's listening, on the playback engine (B5b).
+//! The sound step's listening, and (B5c) the cut step's playback, on the playback engine.
 //!
 //! «Før/Etter» used to render a 20-second mp3 through ffmpeg for every choice (the wait the
 //! step's «Gjengir …» text was about). Now the engine ([`crate::playback`]) plays the
@@ -17,7 +17,8 @@
 //!   older one that finishes later. The engine crossfades to it; the ear gets it after at most
 //!   half a second of what is already buffered.
 //! * [`transport`] — play, pause, jump (source seconds, as a click on the waveform would give),
-//!   and the Før/Etter switch.
+//!   the Før/Etter switch, and (B5c) new cuts: the cut step edits them while it plays, and the
+//!   engine continues from the same place in the source under the new plan.
 //! * [`close`] — stop and let go of the device.
 //!
 //! What the engine tells (position, end, underrun, xrun, error) goes to the window as

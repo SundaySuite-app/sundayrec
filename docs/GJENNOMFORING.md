@@ -1654,6 +1654,13 @@ ut/inn-toning ved kutt.
 > `playback.ts` skal være borte. Skriv et nytt RIG-DAY-punkt: spillehodet i synk
 > gjennom en hel gudstjeneste, på Mac og Windows.
 
+**Gjort i B5c:** Klipp-steget spilles av motoren (se `docs/LYDMOTOR.md` §Fase 5 «Gjort i B5c»);
+`master_preview`, `extract_playback_proxy`, `<audio>`, volumrampen og proxyen er slettet. Svar på B5bs
+spørsmål: (1) `master_preview` slettet, `editor_prepare_listen`/`listen_plan` beholdt; (2) eksportens
+15 ms-toning er ikke byttet ut, fordi det krever at eksporten leser `CutPlan` i stedet for filtergrafen,
+og det hører til B6; (3) hopp uten kjede er 70–97 ms (ingen forkjøring), forhåndsfyllingen er urørt.
+Lytteprøven og 90-minutters synken: RIG-DAY «(c) Klipp-steget på motoren».
+
 ## B6 — Rask videoeksport
 
 **Modell:** Sonnet · **Gren:** `ombygging/b6-rask-videoeksport` · **Pakke:** B6
