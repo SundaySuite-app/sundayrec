@@ -1155,6 +1155,6 @@
     "dataDirMoveFailed": "Verlauf und Einstellungen konnten nicht in den neuen Ordner verschoben werden. Die App verwendet diesmal den alten, und es wurde nichts gelöscht. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner. Starte die App neu; falls das nicht hilft, melde dich.",
     "dataLeftInOldDir": "Verlauf und Einstellungen der älteren Version liegen noch im alten Ordner. Diese Version verwendet den neuen Ordner, daher werden die Änderungen der älteren Version hier nicht angezeigt. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner.",
     "levelWeak": "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?",
-    "videoDropped": "Die Aufnahme ist mit Ton gespeichert, aber das Bild fehlt: Die Videodatei konnte nicht gelesen werden. Die Videodatei liegt neben der Aufnahme ({file})."
+    "videoDropped": "Die Aufnahme ist mit Ton gespeichert, aber das Bild ist unvollständig: Eine Videodatei konnte nicht gelesen werden. Die Datei liegt neben der Aufnahme ({file})."
   }
 }

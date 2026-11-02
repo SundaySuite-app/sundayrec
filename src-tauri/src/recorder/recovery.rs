@@ -2379,4 +2379,181 @@ mod tests {
             "delivered recordings are never deleted by recovery"
         );
     }
+
+    // ── Video sessions: the sound is gone, or the delivery is already made ──────
+
+    fn pinned(tool: &str) -> String {
+        std::env::var(tool).expect("pinned sidecar")
+    }
+
+    fn make_picture_mkv(path: &Path) {
+        let ok = std::process::Command::new(pinned("SUNDAYREC_FFMPEG"))
+            .args(["-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("testsrc=size=160x120:rate=10:duration=2")
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-y"])
+            .arg(path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "lavfi picture must be made");
+    }
+
+    fn make_sine_wav(path: &Path) {
+        let ok = std::process::Command::new(pinned("SUNDAYREC_FFMPEG"))
+            .args(["-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("sine=frequency=440:duration=2")
+            .args(["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", "-y"])
+            .arg(path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "lavfi sound must be made");
+    }
+
+    /// A video session's manifest: one deliverable of one WAV fragment in `cap`,
+    /// delivered as mp4 into `out`.
+    fn video_manifest(cap: &Path, out: &Path) -> SessionManifest {
+        let wav = cap.join("seg.wav").to_string_lossy().into_owned();
+        SessionManifest {
+            recovery_attempts: 0,
+            session_id: "1700000000000".into(),
+            device_name: "Soundcraft USB".into(),
+            session_start_ms: 1_700_000_000_000,
+            preroll_clip_path: None,
+            delivery_encode: Some(AudioEncodeManifest {
+                delivery_dir: out.to_string_lossy().into_owned(),
+                ext: "mp4".into(),
+                channels: 2,
+                sample_rate: None,
+                bitrate_kbps: 128,
+                mode: DeliveryMode::MuxAudioVideo,
+                hvc1_tag: false,
+            }),
+            deliverables: vec![DeliverableManifest {
+                primary_path: wav.clone(),
+                fragments: vec![wav],
+                started_at_ms: 1_700_000_000_000,
+                video_fragments: Vec::new(),
+            }],
+        }
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .map(|d| {
+                d.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        v.sort();
+        v
+    }
+
+    /// M3R #12: a video file whose sound is gone was never delivered and never
+    /// deleted: it lay in the hidden capture folder for ever. It now goes to the
+    /// save folder, with a row, and the capture folder is emptied.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn a_video_without_its_sound_is_delivered_not_left_behind() {
+        let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+            return;
+        };
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let cap = out.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&cap).unwrap();
+        let m = video_manifest(&cap, out.path());
+        make_picture_mkv(&cap.join("seg.mkv"));
+        // The leftover of an earlier try, and an empty file: neither is a recording.
+        std::fs::write(cap.join("seg.lead"), "3.0").unwrap();
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+
+        assert_eq!(recovered, 1, "one row, for the video");
+        assert_eq!(names_in(out.path()), vec!["seg_video.mkv"]);
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].file_path.ends_with("seg_video.mkv"));
+        assert!(!manifest_file.exists(), "the manifest is cleared");
+    }
+
+    /// M3R #12: a video file that cannot be read is still not deleted — it is
+    /// moved out of the hidden folder, without a row.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn an_unreadable_video_without_sound_is_kept_in_the_save_folder() {
+        let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+            return;
+        };
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let cap = out.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&cap).unwrap();
+        let m = video_manifest(&cap, out.path());
+        let mut junk = vec![0x1A, 0x45, 0xDF, 0xA3, 0x84, 0x42, 0x82, 0x84];
+        junk.extend((0..4000u32).map(|i| (i % 251) as u8));
+        std::fs::write(cap.join("seg.mkv"), &junk).unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+
+        assert_eq!(recovered, 0);
+        assert_eq!(names_in(out.path()), vec!["seg_video.mkv"]);
+        assert_eq!(std::fs::read(out.path().join("seg_video.mkv")).unwrap(), junk);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    /// M3R #10: the app died after the mp4 was delivered (and its row written)
+    /// and before the WAV was removed. The next start must not make a second,
+    /// sound-only mp4 and a second row.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn a_delivery_the_crash_interrupted_is_not_made_twice() {
+        let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+            return;
+        };
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let cap = out.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&cap).unwrap();
+        let m = video_manifest(&cap, out.path());
+        make_sine_wav(&cap.join("seg.wav"));
+        make_picture_mkv(&cap.join("seg.mkv"));
+
+        // The live stop got this far (keep_separate_audio keeps the WAV) …
+        let dm = m.deliverables[0].to_deliverable();
+        let mut spec = DeliverySpec::from_manifest(
+            m.delivery_encode.as_ref().unwrap(),
+            &dm.primary_path,
+        );
+        spec.keep_audio_capture = true;
+        let first = finalize_deliverable_noted(&dm, None, Some(&spec))
+            .await
+            .unwrap();
+        let row = RecordingRow {
+            integrated_lufs: None,
+            id: String::new(),
+            file_path: first.path.clone(),
+            device_name: None,
+            started_at: 0.0,
+            duration_ms: None,
+            byte_size: None,
+            created_at: 0.0,
+            note: None,
+        };
+        insert_recording(&pool, row).await.unwrap();
+        // … and died. The manifest is still there.
+        write_recorders_manifest(recovery.path(), &m).await;
+
+        scan_dir(&pool, recovery.path()).await;
+
+        assert_eq!(names_in(out.path()), vec!["seg.mp4"], "no second mp4");
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1, "no second row");
+        assert!(!cap.exists(), "the capture folder is cleared");
+    }
 }

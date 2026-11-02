@@ -1155,6 +1155,6 @@
     "dataDirMoveFailed": "L’historique et les réglages n’ont pas pu être déplacés vers le nouveau dossier. L’application utilise l’ancien cette fois, et rien n’a été supprimé. Vos fichiers d’enregistrement sont toujours dans le dossier des enregistrements. Redémarrez l’application ; si cela ne suffit pas, contactez-nous.",
     "dataLeftInOldDir": "L’historique et les réglages de l’ancienne version sont restés dans l’ancien dossier. Cette version utilise le nouveau dossier, donc ce que vous avez enregistré avec l’ancienne version n’apparaît pas ici. Vos fichiers d’enregistrement sont toujours dans le dossier des enregistrements.",
     "levelWeak": "L’enregistrement est très faible — la table de mixage est-elle baissée ?",
-    "videoDropped": "L'enregistrement est sauvegardé avec le son, mais l'image manque : le fichier vidéo n'a pas pu être lu. Le fichier vidéo est conservé à côté de l'enregistrement ({file})."
+    "videoDropped": "L'enregistrement est sauvegardé avec le son, mais l'image est incomplète : un fichier vidéo n'a pas pu être lu. Le fichier est conservé à côté de l'enregistrement ({file})."
   }
 }
