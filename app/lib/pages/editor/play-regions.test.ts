@@ -4,7 +4,6 @@ import {
   nextRegion,
   regionPosToTimeline,
   resolvePosition,
-  routePlayback,
   timelineEnd,
   timelineStart,
   type RegionTimeline,
@@ -108,52 +107,5 @@ describe("nextRegion", () => {
 
   it("still hands the intro over to the recording", () => {
     expect(nextRegion("intro", bare)).toBe("main");
-  });
-});
-
-describe("routePlayback", () => {
-  it("streams the original for formats the webview decodes", () => {
-    for (const ext of [
-      ".flac",
-      ".wav",
-      ".mp3",
-      ".m4a",
-      ".m4b",
-      ".m4r",
-      ".aac",
-      ".aiff",
-      ".aif",
-      ".caf",
-    ]) {
-      expect(routePlayback(ext)).toBe("element");
-    }
-  });
-
-  it("routes exotic containers through the proxy", () => {
-    for (const ext of [
-      ".ogg",
-      ".oga",
-      ".opus",
-      ".wma",
-      ".ape",
-      ".ac3",
-      ".amr",
-      ".mka",
-      ".webm",
-    ]) {
-      expect(routePlayback(ext)).toBe("proxy");
-    }
-  });
-
-  it("normalises casing and a missing leading dot", () => {
-    expect(routePlayback(".FLAC")).toBe("element");
-    expect(routePlayback("WAV")).toBe("element");
-    expect(routePlayback("  .Mp3 ")).toBe("element");
-    expect(routePlayback("OGG")).toBe("proxy");
-  });
-
-  it("routes an unknown/empty extension to the proxy rather than a dead element", () => {
-    expect(routePlayback("")).toBe("proxy");
-    expect(routePlayback(".")).toBe("proxy");
   });
 });

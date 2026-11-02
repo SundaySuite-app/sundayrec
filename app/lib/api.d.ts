@@ -396,14 +396,7 @@ declare global {
       editorExtractAudioPeaks: (
         sourceToken: string,
       ) => Promise<{ peaks: number[]; sampleRate: number } | null>;
-      editorExtractPlaybackProxy: (
-        sourceToken: string,
-      ) => Promise<string | null>;
       editorExportVideo: (params: unknown) => Promise<EditorExportOutcome>;
-      masterPreview: (
-        sourceToken: string,
-        listen: MasterPreviewParams,
-      ) => Promise<{ ok: boolean; previewPath?: string; error?: string }>;
       /** Measure the programme of a listen request in the background, so «Etter»
        *  finds the level plan ready. Resolves to whether it is ready. */
       prepareListen: (
@@ -424,7 +417,7 @@ declare global {
         sourceToken: string,
         listen: MasterPreviewParams,
       ) => Promise<boolean>;
-      /** Play, pause, jump (source seconds) or choose Før/Etter. Never rejects. */
+      /** Play, pause, jump (source seconds), choose Før/Etter or set new cuts. Never rejects. */
       editorListenTransport: (action: EditorListenAction) => Promise<void>;
       /** Stop the listening and release the sound card. Never rejects. */
       editorListenClose: () => Promise<void>;

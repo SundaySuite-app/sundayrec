@@ -1,38 +1,32 @@
 /**
- * Å åpne et opptak — fire ting, i denne rekkefølgen, og `loadSeq` over dem alle.
+ * Å åpne et opptak — tre ting, i denne rekkefølgen, og `loadSeq` over dem alle.
  *
  *   1. **Varigheten**, fra `editor_load_recording` (ffprobe leser bare
  *      container-hodet), så tidslinja finnes på millisekunder selv for en
  *      gudstjeneste på flere gigabyte.
- *   2. **Transporten**: `<audio>`-elementet peker på ORIGINALEN over `asset://`.
- *      En omkodet mellomfil er reserveløsningen, og den tas bare når webviewen
- *      ikke har en dekoder for containeren — eller når originalen viser seg
- *      ikke å åpne likevel.
- *   3. **Bølgeformen**: bakenden strømmer dekodingen rett inn i 100 topper i
+ *   2. **Bølgeformen**: bakenden strømmer dekodingen rett inn i 100 topper i
  *      sekundet og cacher svaret ved siden av opptaket. Ingen lydbuffer bygges
  *      i renderer-en, så en FLAC på fire timer koster like lite minne som en på
  *      fire minutter.
- *   4. **Sidevognene**: kutt-utkastet fra en økt som ble avbrutt, og
+ *   3. **Sidevognene**: kutt-utkastet fra en økt som ble avbrutt, og
  *      eksportens «Innhold» (`.meta.json`) fra forrige gang.
+ *
+ * ## Ingen transport å velge (B5c)
+ *
+ * Før pekte et `<audio>`-element på originalen, eller på en omkodet mellomfil når webviewen
+ * ikke hadde dekoder for containeren. Nå spiller avspillingsmotoren i Rust opptaket selv
+ * (ffmpeg dekoder alt), og den åpnes først ved første «spill» (`playback.ts`). Lasting har
+ * derfor ingenting med lyd å gjøre.
  *
  * `E.loadSeq` vokter alt sammen: hver `await` sjekker den på nytt, så en
  * bruker som åpner fil nummer to midt i lastingen aldri får den førstes
- * varighet, topper eller transport.
+ * varighet eller topper.
  *
- * ## Fremdriften sier hvilken fase den er i
- *
- * «Analyserer …» alene er ikke sant nok: en førstegangsåpning av en to timers
- * gudstjeneste bruker mesteparten av tiden på bølgeformen, og en fil webviewen
- * ikke kan spille bruker den på omkodingen. Begge har hver sin tekst, og begge
- * har en EKTE bar — bakenden rapporterer sin dekodingsposisjon på
- * `editor-peaks-progress` og `editor-proxy-progress`.
- *
- * Tekstene er legacys egne (`editor.analyzingWaveform`,
- * `editor.preparingPlayback`) og finnes derfor allerede i alle sju språk.
+ * Fremdriften sier hvilken fase den er i: «Analyserer …» med en EKTE bar —
+ * bakenden rapporterer sin dekodingsposisjon på `editor-peaks-progress`.
  */
 
 import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
-import { routePlayback } from "@lib/pages/editor/play-regions";
 
 import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
 import { confirmAbandonExport } from "./discard";
@@ -54,49 +48,14 @@ import {
 } from "./model";
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
-import {
-  ensurePlayerEl,
-  seekTo,
-  setPlaybackSource,
-  teardownPlayback,
-} from "./playback";
+import { seekTo, teardownPlayback } from "./playback";
 import { runAnalysis } from "./sermon";
 import { fitAll } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
-/** Hvor lenge et element får på seg å melde at det kan spille. Romslig nok for
- *  en kald ekstern disk, kort nok til at brukeren ikke sitter med en
- *  avspillingsknapp som ikke gjør noe. Legacys eget tall. */
-const PLAYER_READY_TIMEOUT_MS = 5000;
-
 /** Utkast eldre enn dette legges ikke tilbake. Legacys egen grense: å bli møtt
  *  av kutt man gjorde for to måneder siden er ikke gjenoppretting. */
 const DRAFT_MAX_AGE_MS = 7 * 86_400_000;
-
-/**
- * Containere webviewen dekoder selv.
- *
- * Lydsiden er `@lib/pages/editor/play-regions`' egen `routePlayback` —
- * PLAYER_EXTS, uendret. Videocontainerne er lagt til her og ikke der, fordi de
- * betyr noe ANNET i legacy: der peker de på `<video>`-elementet, som P4a ikke
- * har. Her spilles lydsporet av gjennom det samme `<audio>`-elementet som alt
- * annet, og både WKWebView (CoreMedia) og Chromium gjør det uten videre.
- *
- * ⚠️ Bildet vises fortsatt ikke mens man klipper. Klippingen er den samme —
- * tidslinja, kuttene og eksporten er lydens uansett — men den som redigerer en
- * videofil ser bare bølgeformen. P4b bygde den andre halvdelen av spørsmålet:
- * «Ta med video (MP4)» i steg 3 BEVARER bildet i eksporten (`hasVideo`
- * nedenfor er det som lar bryteren finnes). Å VISE det mens man klipper er
- * fortsatt en eierbeslutning.
- */
-const VIDEO_ELEMENT_EXTS = new Set([".mp4", ".m4v", ".mov"]);
-
-function routeForEditor(ext: string): "element" | "proxy" {
-  const norm = ext.trim().toLowerCase();
-  const dotted = norm.startsWith(".") ? norm : `.${norm}`;
-  if (VIDEO_ELEMENT_EXTS.has(dotted)) return "element";
-  return routePlayback(dotted);
-}
 
 /**
  * F2-9: did the LAST recorded failure of `cmd` mean the file is gone?
@@ -286,8 +245,6 @@ async function openFileNow(
   const path = E.filePath;
   const token = E.sourceToken;
 
-  const ext = extensionOf(path);
-
   // 1. Varigheten — og de tre andre tingene den samme probingen allerede vet.
   //
   // `hasVideo` styrer «Ta med video (MP4)» i steg 3, og `channels`/`sampleRate`
@@ -318,25 +275,7 @@ async function openFileNow(
   }
   if (seq !== E.loadSeq) return;
 
-  // 2. Transporten.
-  const el = ensurePlayerEl();
-  let watching: Promise<boolean> | null = null;
-  if (routeForEditor(ext) === "proxy") {
-    await attachProxy(token, seq);
-    if (seq !== E.loadSeq) return;
-  } else {
-    // Webviewens `asset://`-omfang ble utvidet til akkurat denne fila av Rust,
-    // da den ble åpnet — ingenting å be om her.
-    setPlaybackSource("original");
-    el.src = window.api.toAssetUrl(path);
-    el.load();
-    // Bevisst IKKE ventet på: arbeidsflaten males så snart bølgeformen er
-    // inne. Viser det seg at originalen ikke lar seg åpne, byttes en
-    // mellomfil inn under den.
-    watching = whenPlayable(el, PLAYER_READY_TIMEOUT_MS);
-  }
-
-  // 3. Bølgeformen.
+  // 2. Bølgeformen.
   const peaks = await withPhase(
     "analyzingWaveform",
     "editor-peaks-progress",
@@ -346,19 +285,6 @@ async function openFileNow(
   if (peaks && Array.isArray(peaks.peaks) && peaks.peaks.length > 0) {
     E.peaks = Float32Array.from(peaks.peaks);
     if (seconds <= 0) seconds = E.peaks.length / 100;
-  }
-
-  if (seconds <= 0) {
-    // Verken ffprobe eller uttrekket visste: spør elementet selv. Bare
-    // nåbart når ffmpeg mangler helt.
-    const ok = watching
-      ? await watching
-      : await whenPlayable(el, PLAYER_READY_TIMEOUT_MS);
-    if (seq !== E.loadSeq) return;
-    if (ok && Number.isFinite(el.duration) && el.duration > 0) {
-      seconds = el.duration;
-    }
-    watching = null;
   }
 
   if (seconds <= 0) {
@@ -381,7 +307,7 @@ async function openFileNow(
   }
   fitAll();
 
-  // 4. Sidevogna. Et utkast som finnes betyr at forrige økt endte midt i noe.
+  // 3. Sidevogna. Et utkast som finnes betyr at forrige økt endte midt i noe.
   try {
     const draft = (await window.api.editorReadCutsDraft(token)) as {
       cuts?: Array<{ start: number; end: number }>;
@@ -403,7 +329,7 @@ async function openFileNow(
   }
   if (seq !== E.loadSeq) return;
 
-  // 4b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
+  // 3b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
   // navn på en helligdag. To raske oppslag, og EKSPORTERING skal ha dem før
   // noen rekker å se feltene. Vokter selv på `seq`.
   await loadExportContent(token, E.startedAtMs, seq);
@@ -426,8 +352,6 @@ async function openFileNow(
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
 
-  if (watching) void watchOriginal(watching, token, seq);
-
   // Analysen kjører alltid ved åpning, men etter første maling: den er nok en
   // full ffmpeg-passering over opptaket, og å starte den før arbeidsflaten er
   // på skjermen ville latt to dekodinger av den samme filen konkurrere.
@@ -438,102 +362,6 @@ async function openFileNow(
   analyzing.value = true;
   whenIdle(() => {
     if (seq === E.loadSeq) void runAnalysis(seq);
-  });
-}
-
-// ── Transporten ─────────────────────────────────────────────────────────────
-
-/**
- * Bytt inn mellomfila hvis originalen aldri ble spillbar.
- *
- * Grunnene finnes: et profil-valg webviewen ikke har dekoder for, et skadet
- * filhode, et nettverksvolum som stopper opp. Uten dette ville
- * avspillingsknappen stått der og ikke gjort noe.
- */
-async function watchOriginal(
-  ready: Promise<boolean>,
-  token: string,
-  seq: number,
-): Promise<void> {
-  const ok = await ready;
-  if (seq !== E.loadSeq || ok || E.playbackSource !== "original") return;
-  await attachProxy(token, seq);
-}
-
-/**
- * Pek elementet på en omkodet AAC-mellomfil.
- *
- * SISTE utvei: enten har containeren ingen dekoder i webviewen i det hele
- * tatt, eller originalen nektet å åpne. Den koster en full omkoding (et minutt
- * eller mer på en gudstjeneste), så den tas aldri på spekulasjon.
- */
-async function attachProxy(token: string, seq: number): Promise<boolean> {
-  let proxy: string | null;
-  try {
-    proxy = await withPhase(
-      "preparingPlayback",
-      "editor-proxy-progress",
-      window.api.editorExtractPlaybackProxy(token),
-    );
-  } catch {
-    proxy = null;
-  }
-  if (seq !== E.loadSeq) return false;
-  if (!proxy) {
-    // Klipping og eksport går på originalen uansett, så dette er en beskjed,
-    // ikke en feiltilstand.
-    setPlaybackSource("none");
-    return false;
-  }
-
-  // Mellomfila er laget av Rust, som også har åpnet `asset://` for den.
-  const el = ensurePlayerEl();
-  el.src = window.api.toAssetUrl(proxy);
-  el.load();
-  setPlaybackSource("proxy");
-  void whenPlayable(el, PLAYER_READY_TIMEOUT_MS).then((ok) => {
-    // Snakk bare for den transporten vi faktisk hektet på.
-    if (seq === E.loadSeq && E.playbackSource === "proxy" && !ok) {
-      setPlaybackSource("none");
-    }
-  });
-  return true;
-}
-
-/**
- * Løser når elementet kan si hvor det er, eller `false` når det feiler eller
- * aldri kommer dit.
- *
- * ÉN opprydding for timeren og begge lytterne: en foreldreløs timer pluss
- * gamle lyttere på et GJENBRUKT element er nøyaktig slik forrige fils lasting
- * korrumperte den neste da brukeren byttet fort.
- */
-function whenPlayable(
-  el: HTMLMediaElement,
-  timeoutMs: number,
-): Promise<boolean> {
-  if (el.readyState >= 1) return Promise.resolve(true);
-  return new Promise<boolean>((resolve) => {
-    let timer = 0;
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      el.removeEventListener("loadedmetadata", onMeta);
-      el.removeEventListener("error", onErr);
-    };
-    const onMeta = (): void => {
-      cleanup();
-      resolve(true);
-    };
-    const onErr = (): void => {
-      cleanup();
-      resolve(false);
-    };
-    el.addEventListener("loadedmetadata", onMeta, { once: true });
-    el.addEventListener("error", onErr, { once: true });
-    timer = window.setTimeout(() => {
-      cleanup();
-      resolve(false);
-    }, timeoutMs);
   });
 }
 
@@ -586,16 +414,4 @@ function whenIdle(fn: () => void): void {
   ).requestIdleCallback;
   if (typeof ric === "function") ric(fn, { timeout: 1500 });
   else window.setTimeout(fn, 1500);
-}
-
-// ── Små ting ────────────────────────────────────────────────────────────────
-
-function basename(path: string): string {
-  return path.split(/[/\\]/).pop() ?? path;
-}
-
-function extensionOf(path: string): string {
-  const name = basename(path);
-  const at = name.lastIndexOf(".");
-  return at > 0 ? name.slice(at).toLowerCase() : "";
 }

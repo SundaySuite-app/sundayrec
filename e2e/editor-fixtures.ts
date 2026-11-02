@@ -104,15 +104,11 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
     // default — a fixture that "found" a dead channel in every spec would put a
     // repair into every export payload and hide the ones that mean something.
     editor_auto_process: AUTO_PROCESS,
-    editor_master_preview: fn(`(args) => {
-      (window.__E2E_PREVIEWS__ ||= []).push(args.request);
-      return { previewPath: "/tmp/sundayrec-master-preview-e2e.mp3" };
-    }`),
     editor_prepare_listen: fn(`(args) => {
       (window.__E2E_PREPARES__ ||= []).push(args.request);
       return true;
     }`),
-    // B5b: lyttingen på avspillingsmotoren. Fixturene logger hva som ble bedt om i
+    // B5b/B5c: lyttingen og Klipp-avspillingen på avspillingsmotoren. Fixturene logger hva som ble bedt om i
     // `window.__E2E_LISTEN__`; motoren selv (lydkortet) finnes ikke i en nettleser.
     editor_listen_open: fn(`(args) => {
       (window.__E2E_LISTEN__ ||= []).push({ cmd: "open", request: args.request });

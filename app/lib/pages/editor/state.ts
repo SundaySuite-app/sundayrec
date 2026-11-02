@@ -41,25 +41,6 @@ export const VIDEO_EXTS = new Set([
   ".asf",
   ".f4v",
 ]);
-// Audio formats the WEBVIEW itself streams from disk via `asset://` — the
-// editor's playback transport. WKWebView (CoreAudio) and WebView2 (Media
-// Foundation) both decode these natively, so the <audio> element plays the
-// ORIGINAL file at full fidelity with no transcode and no PCM in memory.
-// Deliberately NARROWER than "what a browser can decode": ogg/oga/opus/webm are
-// left out because WKWebView does not ship those decoders — they go through the
-// on-demand AAC proxy instead (see routePlayback in play-regions.ts).
-export const PLAYER_EXTS = new Set([
-  ".flac",
-  ".wav",
-  ".mp3",
-  ".m4a",
-  ".m4b",
-  ".m4r",
-  ".aac",
-  ".aiff",
-  ".aif",
-  ".caf",
-]);
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 export const $ = (id: string) => document.getElementById(id);

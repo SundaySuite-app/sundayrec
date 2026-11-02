@@ -31,6 +31,13 @@
  *
  * Én økt om gangen, åpnet av første «spill» og lukket når steget forlates eller fila
  * byttes (`stopListen`). Økta eier lydkortet, så den holdes ikke åpen lenger enn steget.
+ *
+ * ## Klipp-steget bruker den samme økta (B5c)
+ *
+ * `<audio>`-elementet er borte: avspillingen i Klipp-steget (`playback.ts`) åpner den samme
+ * motoren gjennom `openEngine`, lytter på de samme hendelsene (`subscribeEngine`) og lukker den
+ * gjennom `stopListen`. Det finnes aldri to økter, og et steg som ikke eier lydkortet kan ikke
+ * åpne det. Klipp-steget ber ikke om noen kjede: det lytter til opptaket slik det er, med kuttene.
  */
 
 import { computed, effect, signal } from "@preact/signals";
@@ -230,6 +237,25 @@ let chainInflight: { key: string; promise: Promise<ChainResult> } | null = null;
 
 type ChainResult = "ok" | "superseded" | "failed";
 
+/** Hvem som vil ha motorens hendelser (Klipp-steget, B5c). */
+const engineListeners = new Set<(e: EditorListenEvent) => void>();
+
+/** Lytt på motorens hendelser: posisjonen (eldre generasjoner er allerede sortert bort), slutten,
+ *  hull og feil. Returnerer avmeldingen. */
+export function subscribeEngine(
+  fn: (e: EditorListenEvent) => void,
+): () => void {
+  engineListeners.add(fn);
+  return () => {
+    engineListeners.delete(fn);
+  };
+}
+
+/** Er økta åpen nå? */
+export function engineIsOpen(): boolean {
+  return session !== null;
+}
+
 /** Stopp lyttingen og slipp lydkortet. Kalles når steget forlates og når fila lukkes. */
 export function stopListen(): void {
   const had = session;
@@ -259,21 +285,22 @@ function onListenEvent(raw: unknown): void {
       if (e.gen < maxGen) return;
       maxGen = e.gen;
       listenAt.value = e.sourceSecs;
-      return;
+      break;
     case "ended":
       listenPlaying.value = false;
       atEnd = true;
-      return;
+      break;
     case "underrun":
       listenUnderruns.value = e.total;
-      return;
+      break;
     case "error":
       listenError.value = true;
       listenPlaying.value = false;
-      return;
+      break;
     default:
       return;
   }
+  for (const fn of [...engineListeners]) fn(e);
 }
 
 /** Forespørselen uten lyd: kuttene og lengden og hvor man begynner. Det økta åpnes med. */
@@ -286,8 +313,14 @@ function bareRequest(start: number): MasterPreviewParams {
   };
 }
 
-/** Åpne økta hvis den ikke er åpen. Venter ikke på noe annet enn at lydkortet er åpnet. */
-async function ensureSession(): Promise<boolean> {
+/** Åpne økta hvis den ikke er åpen. Venter ikke på noe annet enn at lydkortet er åpnet.
+ *  `startSec`: hvor den står (kildesekunder) når den åpnes; lyd-steget starter midt i prekenen,
+ *  Klipp-steget der spillehodet står. */
+export function openEngine(startSec?: number): Promise<boolean> {
+  return ensureSession(startSec);
+}
+
+async function ensureSession(startSec = listenStart.peek()): Promise<boolean> {
   const token = E.sourceToken;
   if (!token) return false;
   if (session && session.token === token) return true;
@@ -297,7 +330,7 @@ async function ensureSession(): Promise<boolean> {
     if (closing) await closing;
     const res = await window.api.editorListenOpen(
       token,
-      listenRequest(listenStart.peek()) ?? bareRequest(listenStart.peek()),
+      listenRequest(startSec) ?? bareRequest(startSec),
     );
     // Steget ble forlatt, eller en annen fil åpnet, mens lydkortet åpnet.
     if (openSeq !== mine || E.sourceToken !== token) {
@@ -308,7 +341,7 @@ async function ensureSession(): Promise<boolean> {
     maxGen = 0;
     atEnd = false;
     installedKey = null;
-    listenAt.value = listenStart.peek();
+    listenAt.value = startSec;
     session = {
       token,
       unlisten: window.api.on("editor-listen", onListenEvent) ?? (() => {}),
