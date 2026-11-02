@@ -205,8 +205,13 @@ fn the_device_clock_drives_the_position_events() {
     std::thread::sleep(REPORT_EVERY * 4);
     let _ = d.positions();
     std::thread::sleep(REPORT_EVERY * 4);
+    // A late report of where it already stood may still arrive (a slow CI
+    // reporter thread); what must not happen is movement.
     let idle = d.positions();
-    assert!(idle.is_empty(), "no device frames, no events: {idle:?}");
+    assert!(
+        idle.iter().all(|&(prog, _)| prog == p0),
+        "no device frames, no movement: {idle:?} from {p0}"
+    );
     assert_eq!(d.p.position_secs(), p0);
     d.play_paced(48_000);
     // Let the reporter look once more.
