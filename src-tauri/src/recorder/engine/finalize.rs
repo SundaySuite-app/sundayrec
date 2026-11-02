@@ -18,7 +18,9 @@ use sundayrec_core::settings::ChannelMode;
 use tauri::{AppHandle, Emitter};
 
 use crate::db::store::{insert_recording, RecordingRow};
-use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
+use crate::recorder::concat::{
+    finalize_deliverable_noted, output_is_valid, remove_capture, warn_video_dropped, DeliverySpec,
+};
 use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::preroll::PrerollClip;
 use crate::util::lock_recover;
@@ -385,8 +387,13 @@ async fn finalize_one(
     // survive so the next launch can retry the transcode.
     let mut delivered = true;
     let final_path =
-        match finalize_deliverable(deliverable, preroll_path, Some(&delivery_spec)).await {
-            Ok(p) => p,
+        match finalize_deliverable_noted(deliverable, preroll_path, Some(&delivery_spec)).await {
+            Ok(f) => {
+                if f.video_dropped {
+                    warn_video_dropped(Some(&ctx.app), &f.path);
+                }
+                f.path
+            }
             Err(e) => {
                 tracing::error!(
                     deliverable = %deliverable.primary_path,
@@ -433,7 +440,7 @@ async fn finalize_one(
         (delivered && delivery_spec.keep_audio_capture).then(|| deliverable.primary_path.clone());
     let Some(pool) = &ctx.pool else {
         if let Some(w) = &kept_wav {
-            let _ = tokio::fs::remove_file(w).await;
+            remove_capture(w).await;
         }
         return (delivered, landed);
     };
@@ -478,7 +485,7 @@ async fn finalize_one(
         .await;
     }
     if let Some(w) = &kept_wav {
-        let _ = tokio::fs::remove_file(w).await;
+        remove_capture(w).await;
     }
     (delivered, landed)
 }

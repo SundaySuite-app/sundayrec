@@ -170,6 +170,7 @@ fn is_windows() -> bool {
 /// primary as the history file.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
+#[cfg(test)]
 pub(crate) async fn finalize_deliverable(
     deliverable: &Deliverable,
     preroll_clip_path: Option<&str>,
@@ -787,6 +788,23 @@ async fn already_delivered(wav: &str) -> Option<String> {
         let _ = tokio::fs::remove_file(lead_marker_path(wav)).await;
     }
     Some(path.to_string())
+}
+
+/// Say that a recording was delivered without its picture (M3R #11). `app` is an
+/// `Option` so the recovery loop can run in tests without a Tauri runtime.
+pub(crate) fn warn_video_dropped(app: Option<&tauri::AppHandle>, delivery: &str) {
+    let Some(app) = app else { return };
+    let short = Path::new(delivery)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(delivery)
+        .to_string();
+    crate::notify::warn(
+        app,
+        sundayrec_core::notify::BackendWarning::warn(sundayrec_core::notify::code::VIDEO_DROPPED)
+            .msg("Opptaket er lagret med lyd, men videofila var ikke lesbar. Videofila er beholdt ved siden av opptaket.")
+            .param("file", short),
+    );
 }
 
 /// Remove a capture WAV and what remembers its delivery. The caller of a
