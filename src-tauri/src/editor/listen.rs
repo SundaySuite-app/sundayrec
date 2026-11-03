@@ -283,6 +283,7 @@ mod real {
     use crate::editor::{listen_plan, load_recording, pcm, EditorMasterPreviewRequest};
     use crate::editor::{ExportEngine, ListenPlan};
     use crate::playback::source::FfmpegOpener;
+    #[cfg(unix)]
     use crate::playback::Programme;
     use sundayrec_core::chain::Chain;
 
@@ -393,6 +394,7 @@ mod real {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::playback::Programme;
 
     #[test]
@@ -454,9 +456,14 @@ mod tests {
         assert!(serde_json::from_str::<EditorListenAction>(r#"{"kind":"burn"}"#).is_err());
     }
 
+    // Only the unix-gated recording test below drives a session (`mock_app` is not built on
+    // Windows), so the helpers are unix-only too, or Windows CI fails on dead code.
+    #[cfg(unix)]
     #[derive(Clone)]
     struct Silence;
+    #[cfg(unix)]
     struct SilenceStream;
+    #[cfg(unix)]
     impl sundayrec_core::playback::PcmStream for SilenceStream {
         fn read_planar(
             &mut self,
@@ -470,6 +477,7 @@ mod tests {
             Ok(frames)
         }
     }
+    #[cfg(unix)]
     impl sundayrec_core::playback::PcmOpener for Silence {
         type Stream = SilenceStream;
         fn open(&mut self, _source_frame: u64) -> std::io::Result<SilenceStream> {
@@ -478,6 +486,7 @@ mod tests {
     }
 
     /// A headless session (no sound card, as in CI) that is playing.
+    #[cfg(unix)]
     fn playing_session(engine: &ListenEngine) -> std::sync::mpsc::Receiver<PlaybackEvent> {
         use sundayrec_core::editor::KeepSegment;
         let rate = 48_000;
