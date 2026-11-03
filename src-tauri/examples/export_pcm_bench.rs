@@ -109,7 +109,6 @@ fn main() {
         &[],
         false,
         false,
-        duration,
         ConcatFormat::default(),
     );
     let ff = ffmpeg();

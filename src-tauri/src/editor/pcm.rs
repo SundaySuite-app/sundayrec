@@ -5,8 +5,9 @@
 //! A mastered export is three steps (the decision between "stage the processed PCM on disk" and
 //! "run the chain twice" is in docs/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
 //!
-//! 1. [`run_chain`]: ffmpeg decodes + cuts to raw PCM on stdout (no `-af`); Rust runs the audio
-//!    chain over it ([`ChainReader`], B2b), meters it and copies it to a [`StagedPcm`] file.
+//! 1. [`run_blocking`] over a [`Program`]: the cut recording is read as the playback engine plays
+//!    it (M4R #6); Rust runs the audio chain over it ([`ChainReader`], B2b), meters it and copies
+//!    it to a [`StagedPcm`] file.
 //! 2. [`run_blocking`]: dry runs of the gain stage over the staged file until the limiter's cost
 //!    in loudness is corrected (only when a limiter is planned).
 //! 3. the encode (in `run_export_ffmpeg`): a [`Feed`] reads the staged file, applies the plan and
@@ -21,11 +22,11 @@ use std::time::{Duration, Instant};
 use std::sync::Mutex;
 
 use sundayrec_core::chain::{Chain, ChainReader};
-use sundayrec_core::editor::{audio_export_filter_complex, ConcatFormat};
 use sundayrec_core::loudness::{self, GainPlan, Loudness};
 use sundayrec_core::mastering::MasterPreset;
 use sundayrec_core::pcm_stream::{self, PcmFormat, STAGED_PREFIX};
 
+use super::program::Program;
 use super::{
     bail_if_cancelled, ffmpeg_exit_error, spawn_stderr_tail, ExportEngine, EXPORT_PHASE_MEASURING,
 };
@@ -386,7 +387,6 @@ pub(super) async fn measure_and_plan<P>(
     preset: Option<&MasterPreset>,
     keeps: &[sundayrec_core::editor::KeepSegment],
     source_duration: f64,
-    kept_duration: f64,
     fmt: PcmFormat,
     stall_ms: u64,
     on_progress: &P,
@@ -404,10 +404,11 @@ where
         sample_rate: fmt_in.sample_rate,
         channels: built.out_channels(),
     };
+    let program = Program::new(source, keeps, source_duration, fmt_in);
 
     // The parked copy needs room too. Refuse BEFORE spending minutes on the measure, with the
     // same code the output-folder guard uses.
-    let need = staged_bytes(fmt, kept_duration);
+    let need = staged_bytes(fmt, program.seconds());
     if let Ok(free) = fs4::available_space(std::env::temp_dir()) {
         if free < need.saturating_add(STAGING_MARGIN_BYTES) {
             tracing::warn!(
@@ -423,24 +424,22 @@ where
         }
     }
 
-    let args = decode_args(source, keeps, source_duration, fmt_in);
-
     let staged = StagedPcm::new();
-    let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
+    let total_frames = program.frames();
     let path = staged.path().to_path_buf();
     super::count_analysis_decode(source, super::Decode::Staging);
-    let (input, frames) = run_chain(
+    let (input, frames) = run_blocking(
         engine,
-        &args,
         total_frames,
         stall_ms,
         (0.0, 45.0),
         EXPORT_PHASE_MEASURING,
         on_progress,
-        move |r, done| {
+        move |done, abort| {
+            let mut r = program.reader(&abort);
             let file = std::fs::File::create(&path)?;
             let mut w = std::io::BufWriter::with_capacity(1 << 20, file);
-            let mut processed = ChainReader::new(r, built);
+            let mut processed = ChainReader::new(&mut r, built);
             let out = pcm_stream::measure(&mut processed, fmt, Some(&mut w), |n| {
                 done.store(n, Ordering::Relaxed)
             })?;
@@ -535,39 +534,6 @@ where
     })
 }
 
-/// The decode of the export's first pass: ffmpeg cuts the source (trim, join fades, concat) and
-/// puts the programme on stdout as raw f32 PCM. No tone or dynamics filter: that is the Rust
-/// chain's job since B2b.
-pub(super) fn decode_args(
-    source: &str,
-    keeps: &[sundayrec_core::editor::KeepSegment],
-    source_duration: f64,
-    fmt: PcmFormat,
-) -> Vec<String> {
-    let (fc, map) = audio_export_filter_complex(
-        keeps,
-        0,
-        &[],
-        &[],
-        false,
-        false,
-        source_duration,
-        ConcatFormat::default(),
-    );
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        source.to_string(),
-        "-filter_complex".into(),
-        fc,
-        "-map".into(),
-        map,
-    ];
-    args.extend(pcm_stream::output_args(fmt));
-    args
-}
-
 /// The loudness of the whole PROGRAMME the export will encode: the cut, run through `chain`,
 /// metered and thrown away (no staged copy, so no disk and no dry runs). This is what the
 /// windowed preview levels against, so a 20-second window gets the gain the export gives the
@@ -580,7 +546,6 @@ pub(super) async fn measure_program(
     chain: &Chain,
     keeps: &[sundayrec_core::editor::KeepSegment],
     source_duration: f64,
-    kept_duration: f64,
     fmt: PcmFormat,
     stall_ms: u64,
 ) -> AppResult<Loudness> {
@@ -591,19 +556,19 @@ pub(super) async fn measure_program(
         sample_rate: fmt.sample_rate,
         channels: built.out_channels(),
     };
-    let args = decode_args(source, keeps, source_duration, fmt);
-    let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
+    let program = Program::new(source, keeps, source_duration, fmt);
+    let total_frames = program.frames();
     super::count_analysis_decode(source, super::Decode::Programme);
-    let (loud, _frames) = run_chain(
+    let (loud, _frames) = run_blocking(
         engine,
-        &args,
         total_frames,
         stall_ms,
         (0.0, 0.0),
         EXPORT_PHASE_MEASURING,
         &|_, _| {},
-        move |r, done| {
-            let mut processed = ChainReader::new(r, built);
+        move |done, abort| {
+            let mut r = program.reader(&abort);
+            let mut processed = ChainReader::new(&mut r, built);
             pcm_stream::measure(&mut processed, fmt_out, None, |n| {
                 done.store(n, Ordering::Relaxed)
             })
@@ -695,50 +660,5 @@ mod tests {
         assert_eq!(r.read(&mut buf).unwrap(), 2);
         abort.store(true, Ordering::Relaxed);
         assert!(r.read(&mut buf).is_err());
-    }
-
-    #[test]
-    fn the_decode_cuts_but_runs_no_tone_or_dynamics_filter() {
-        use sundayrec_core::editor::KeepSegment;
-        let keeps = [
-            KeepSegment {
-                start: 0.0,
-                end: 10.0,
-            },
-            KeepSegment {
-                start: 20.0,
-                end: 30.0,
-            },
-        ];
-        let a = decode_args(
-            "/rec/a.mp3",
-            &keeps,
-            60.0,
-            PcmFormat {
-                sample_rate: 44_100,
-                channels: 2,
-            },
-        );
-        let joined = a.join(" ");
-        assert!(!a.iter().any(|x| x == "-af"), "no -af: {joined}");
-        for chain_filter in [
-            "highpass",
-            "equalizer",
-            "acompressor",
-            "afftdn",
-            "agate",
-            "alimiter",
-            "deesser",
-            "loudnorm",
-            "volume=",
-            "pan=",
-        ] {
-            assert!(
-                !joined.contains(chain_filter),
-                "`{chain_filter}` is the Rust chain's job: {joined}"
-            );
-        }
-        assert!(joined.contains("atrim") && joined.contains("concat"));
-        assert!(joined.ends_with("-f f32le -c:a pcm_f32le -ar 44100 -ac 2 pipe:1"));
     }
 }

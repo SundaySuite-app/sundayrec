@@ -505,55 +505,6 @@ fn atrim(input_ref: &str, seg: &KeepSegment) -> String {
     )
 }
 
-// ── De-click join fades ──────────────────────────────────────────────────────
-
-/// Length (seconds) of the fade applied at an INTERIOR cut boundary. 15 ms is
-/// the shortest fade that reliably kills the click of a mid-waveform splice
-/// while staying far below the ~50 ms at which a listener starts to perceive
-/// the fade itself — cut a word in half and it still sounds like a cut, not a
-/// duck.
-pub const JOIN_FADE_SEC: f64 = 0.015;
-
-/// The `afade` filters for ONE keep segment, in SEGMENT-LOCAL time (the
-/// preceding `asetpts=PTS-STARTPTS` has already reset the segment to t=0).
-///
-/// The rule is about the ORIGINAL file, not the segment index: fade IN when the
-/// segment's start is not the true file start, fade OUT when its end is not the
-/// true file end. So a single keep trimmed at both ends gets both fades, the
-/// first of two keeps gets only the out-fade, and an untouched whole-file keep
-/// gets none. Durations are untouched (a fade is a gain envelope, not a trim),
-/// so chapter remapping and the kept-duration bookkeeping stay exact.
-///
-/// A segment too short to hold the fades keeps its hard edges — better a click
-/// than a sub-30 ms sliver that is *all* envelope.
-fn join_fades(seg: &KeepSegment, total_duration: f64) -> Vec<String> {
-    let dur = seg.end - seg.start;
-    let mut out = Vec::new();
-    if !dur.is_finite() || dur <= 2.0 * JOIN_FADE_SEC {
-        return out;
-    }
-    if seg.start > KEEP_EPSILON {
-        out.push(format!("afade=t=in:st=0:d={JOIN_FADE_SEC}"));
-    }
-    if total_duration.is_finite() && seg.end < total_duration - KEEP_EPSILON {
-        out.push(format!(
-            "afade=t=out:st={}:d={JOIN_FADE_SEC}",
-            ts(dur - JOIN_FADE_SEC)
-        ));
-    }
-    out
-}
-
-/// [`atrim`] plus this segment's de-click [`join_fades`].
-fn atrim_faded(input_ref: &str, seg: &KeepSegment, total_duration: f64) -> String {
-    let mut chain = atrim(input_ref, seg);
-    for f in join_fades(seg, total_duration) {
-        chain.push(',');
-        chain.push_str(&f);
-    }
-    chain
-}
-
 /// The format every `concat` input is pinned to when jingles are spliced in.
 ///
 /// `concat` needs identical rate and layout on all inputs, and with only
@@ -595,9 +546,9 @@ impl ConcatFormat {
 /// chain (may be empty). `has_intro`/`has_outro` toggle the surrounding concat;
 /// the intro is always input 0, the outro the input after the main one.
 ///
-/// `total_duration` is the SOURCE recording's length — it decides which segment
-/// edges are interior cuts and therefore get a de-click fade (see
-/// [`join_fades`]). `post_filters` run LAST, on the final pad after any
+/// The cut itself is a plain `atrim` per keep: the export's JOINS are not made here but by the
+/// Rust programme (`playback::CutPlan`, M4R #6), which feeds this graph a finished PCM; the
+/// graph only ever trims the whole recording or that PCM. `post_filters` run LAST, on the final pad after any
 /// intro/outro concat: that is where the dither belongs, because it has to see
 /// every sample that reaches the encoder.
 ///
@@ -611,7 +562,6 @@ pub fn audio_export_filter_complex(
     post_filters: &[String],
     has_intro: bool,
     has_outro: bool,
-    total_duration: f64,
     format: ConcatFormat,
 ) -> (String, String) {
     let main_ref = format!("[{main_input_idx}:a]");
@@ -620,15 +570,12 @@ pub fn audio_export_filter_complex(
 
     if keeps.len() == 1 {
         let seg = &keeps[0];
-        let mut chain = vec![atrim_faded(&main_ref, seg, total_duration)];
+        let mut chain = vec![atrim(&main_ref, seg)];
         chain.extend(proc_filters.iter().cloned());
         filter_parts.push(format!("{}[main_out]", chain.join(",")));
     } else {
         for (i, seg) in keeps.iter().enumerate() {
-            filter_parts.push(format!(
-                "{}[seg{i}]",
-                atrim_faded(&main_ref, seg, total_duration)
-            ));
+            filter_parts.push(format!("{}[seg{i}]", atrim(&main_ref, seg)));
         }
         let seg_inputs: String = (0..keeps.len()).map(|i| format!("[seg{i}]")).collect();
         if !proc_filters.is_empty() {
@@ -695,12 +642,10 @@ pub fn is_simple_audio_export(
     keeps.len() == 1 && proc_filters.is_empty() && !has_intro && !has_outro
 }
 
-/// The single-segment `-af` value for the simple audio path, including this
-/// segment's de-click [`join_fades`] (a "trim the first 10 minutes off" export
-/// is exactly the case where the cut edge is audible).
-pub fn audio_simple_af(seg: &KeepSegment, total_duration: f64) -> String {
+/// The single-segment `-af` value for the simple audio path.
+pub fn audio_simple_af(seg: &KeepSegment) -> String {
     // Same chain as the filter_complex path, minus the input/output labels.
-    atrim_faded("", seg, total_duration)
+    atrim("", seg)
 }
 
 /// The COMPLETE output-argument list for the simple single-segment audio path
@@ -721,11 +666,10 @@ pub fn audio_simple_export_args(
     bitrate: Option<u32>,
     bit_depth: Option<u8>,
     source_rate: Option<u32>,
-    total_duration: f64,
 ) -> Vec<String> {
-    // Trim (+ join fades) then, for a 16-bit PCM target, the dither — last, so
+    // Trim then, for a 16-bit PCM target, the dither — last, so
     // it sees exactly what the encoder will.
-    let mut af = audio_simple_af(seg, total_duration);
+    let mut af = audio_simple_af(seg);
     if let Some(d) = crate::mastering::dither_filter_for(fmt, bit_depth) {
         af.push(',');
         af.push_str(&d);
@@ -744,24 +688,13 @@ pub fn audio_simple_export_args(
 /// The video filter graph (trim + audio-processing) for a single main input.
 /// Mirrors `buildVideoFilterComplex`. Returns `(filter_complex, v_out, a_out)`.
 ///
-/// `total_duration` is the SOURCE recording's length, and it is here for the
-/// same reason it is in [`audio_export_filter_complex`]: it decides which
-/// segment edges are interior cuts and therefore get a de-click [`join_fades`]
-/// envelope.
-///
-/// F2-7: until that parameter existed the video path spliced its audio with a
-/// raw `atrim…asetpts` and nothing else — the audio-only path has had
-/// [`atrim_faded`] since the de-click work, the video path never got it. Every
-/// cut in a video export therefore carried exactly the click the audio export
-/// was fixed to avoid: same recording, same cuts, two different answers, and
-/// the one a church publishes to YouTube was the clicking one. The VIDEO side
-/// of the graph is untouched — a 15 ms gain envelope belongs on the audio pad,
-/// and frames are cut on their own boundaries.
+/// Like [`audio_export_filter_complex`] it is only used for the whole recording since M4R #6:
+/// a video export that cuts takes its sound from the Rust programme (the crossfade the engine
+/// plays) and its picture from [`video_only_filter_complex`] or the B6 copy.
 pub fn video_filter_complex(
     main_idx: usize,
     keeps: &[KeepSegment],
     proc_filters: &[String],
-    total_duration: f64,
 ) -> (String, String, String) {
     let a_ref = format!("[{main_idx}:a]");
     let mut parts: Vec<String> = Vec::new();
@@ -772,7 +705,7 @@ pub fn video_filter_complex(
             ts(seg.start),
             ts(seg.end)
         ));
-        let mut a_chain = vec![atrim_faded(&a_ref, seg, total_duration)];
+        let mut a_chain = vec![atrim(&a_ref, seg)];
         a_chain.extend(proc_filters.iter().cloned());
         parts.push(format!("{}[a_main]", a_chain.join(",")));
     } else {
@@ -782,10 +715,7 @@ pub fn video_filter_complex(
                 ts(seg.start),
                 ts(seg.end)
             ));
-            parts.push(format!(
-                "{}[aseg{i}]",
-                atrim_faded(&a_ref, seg, total_duration)
-            ));
+            parts.push(format!("{}[aseg{i}]", atrim(&a_ref, seg)));
         }
         let v_in: String = (0..keeps.len()).map(|i| format!("[vseg{i}]")).collect();
         let a_in: String = (0..keeps.len()).map(|i| format!("[aseg{i}]")).collect();
@@ -2565,7 +2495,7 @@ mod tests {
             start: 0.0,
             end: 10.0,
         };
-        let args = audio_simple_export_args(&seg, "mp3", Some(128), None, None, 10.0);
+        let args = audio_simple_export_args(&seg, "mp3", Some(128), None, None);
         // Without these two the export of a VIDEO source to an audio container
         // let ffmpeg's automatic stream selection pull in the video stream.
         assert!(args.contains(&"-vn".to_string()), "args: {args:?}");
@@ -2576,7 +2506,7 @@ mod tests {
         assert_eq!(args[map_at + 1], "0:a:0");
         // The trim + codec still ride along, unchanged.
         let af_at = args.iter().position(|a| a == "-af").unwrap();
-        assert_eq!(args[af_at + 1], audio_simple_af(&seg, 10.0));
+        assert_eq!(args[af_at + 1], audio_simple_af(&seg));
         assert!(args.ends_with(&["-b:a".to_string(), "128k".to_string()]));
     }
 
@@ -2586,7 +2516,7 @@ mod tests {
             start: 1.0,
             end: 2.0,
         };
-        let args = audio_simple_export_args(&seg, "wav", None, Some(24), None, 2.0);
+        let args = audio_simple_export_args(&seg, "wav", None, Some(24), None);
         assert!(args.contains(&"-vn".to_string()));
         assert!(args
             .windows(2)
@@ -2607,14 +2537,11 @@ mod tests {
             &[],
             false,
             false,
-            2.0,
             ConcatFormat::default(),
         );
-        // Trimmed at the START only (the keep runs to the file's end) → one fade.
         assert_eq!(
             fc,
-            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,\
-             afade=t=in:st=0:d=0.015,volume=2[main_out]"
+            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,volume=2[main_out]"
         );
         assert_eq!(map, "[main_out]");
     }
@@ -2626,16 +2553,8 @@ mod tests {
             start: 0.0,
             end: 10.0,
         }];
-        let (fc, map) = audio_export_filter_complex(
-            &keeps,
-            1,
-            &[],
-            &[],
-            true,
-            true,
-            10.0,
-            ConcatFormat::default(),
-        );
+        let (fc, map) =
+            audio_export_filter_complex(&keeps, 1, &[], &[], true, true, ConcatFormat::default());
         assert!(fc.starts_with("[0:a]aformat=sample_fmts=fltp[intro_fmt];"));
         assert!(fc.contains("[1:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[main_out]"));
         assert!(fc.contains("[2:a]aformat=sample_fmts=fltp[outro_fmt]"));
@@ -2656,7 +2575,7 @@ mod tests {
             sample_rate: Some(48_000),
             channels: Some(2),
         };
-        let (fc, _map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, 10.0, fmt);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, fmt);
         let pin = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
         assert!(fc.contains(&format!("[0:a]{pin}[intro_fmt]")), "{fc}");
         assert!(fc.contains(&format!("[main_out]{pin}[main_fmt]")), "{fc}");
@@ -2695,105 +2614,40 @@ mod tests {
             &[],
             false,
             false,
-            10.0,
             ConcatFormat::default(),
         );
         assert!(fc.contains("[seg0][seg1]concat=n=2:v=0:a=1[concat_out]"));
         assert!(fc.contains("[concat_out]alimiter[main_out]"));
     }
 
-    // ── de-click join fades (P4) ─────────────────────────────────────────────
+    // ── the cut is a plain trim (M4R #6) ─────────────────────────────────────
 
     #[test]
-    fn a_cut_gives_the_two_new_edges_fades_and_nothing_else() {
-        // Cut 5–6 s out of a 10 s file: seg0 ends at an interior edge (fade out),
-        // seg1 starts at one (fade in). The file's own start/end stay hard.
-        let keeps = build_keeps(&[cut(5.0, 6.0)], 10.0);
-        let (fc, _map) = audio_export_filter_complex(
-            &keeps,
-            0,
-            &[],
-            &[],
-            false,
-            false,
-            10.0,
-            ConcatFormat::default(),
-        );
+    fn no_graph_fades_a_cut_any_more() {
+        // The joins are the Rust programme's crossfade (`playback::CutPlan`); an ffmpeg graph
+        // that trimmed with a fade out and in would put a second, different join on top.
+        let keeps = build_keeps(&[cut(0.0, 2.0), cut(5.0, 6.0), cut(8.0, 10.0)], 10.0);
+        assert_eq!(keeps.len(), 2);
+        let (fc, _map) =
+            audio_export_filter_complex(&keeps, 0, &[], &[], false, false, ConcatFormat::default());
         assert_eq!(
             fc,
-            "[0:a]atrim=start=0.0000:end=5.0000,asetpts=PTS-STARTPTS,\
-             afade=t=out:st=4.9850:d=0.015[seg0];\
-             [0:a]atrim=start=6.0000:end=10.0000,asetpts=PTS-STARTPTS,\
-             afade=t=in:st=0:d=0.015[seg1];\
+            "[0:a]atrim=start=2.0000:end=5.0000,asetpts=PTS-STARTPTS[seg0];\
+             [0:a]atrim=start=6.0000:end=8.0000,asetpts=PTS-STARTPTS[seg1];\
              [seg0][seg1]concat=n=2:v=0:a=1[main_out]"
         );
-        // Exactly two fades — not one per segment edge.
-        assert_eq!(fc.matches("afade=").count(), 2, "{fc}");
-    }
-
-    #[test]
-    fn an_uncut_export_has_no_fades_at_all() {
-        // Whole file kept → both edges are the real file edges → no envelope.
-        let keeps = build_keeps(&[], 10.0);
-        let (fc, _map) = audio_export_filter_complex(
-            &keeps,
-            0,
-            &[],
-            &[],
-            false,
-            false,
-            10.0,
-            ConcatFormat::default(),
-        );
-        assert!(!fc.contains("afade"), "{fc}");
-        assert!(!audio_simple_af(&keeps[0], 10.0).contains("afade"));
-    }
-
-    #[test]
-    fn a_keep_trimmed_at_both_ends_fades_both_ways() {
-        // Head + tail cut (the "trim to sermon" shape) → one keep, two fades.
-        let keeps = build_keeps(&[cut(0.0, 2.0), cut(8.0, 10.0)], 10.0);
-        assert_eq!(keeps.len(), 1);
-        let (fc, _map) = audio_export_filter_complex(
-            &keeps,
-            0,
-            &[],
-            &[],
-            false,
-            false,
-            10.0,
-            ConcatFormat::default(),
-        );
-        assert!(fc.contains("afade=t=in:st=0:d=0.015"), "{fc}");
-        // Segment-local time: the 6 s segment fades out at 6 − 0.015.
-        assert!(fc.contains("afade=t=out:st=5.9850:d=0.015"), "{fc}");
-    }
-
-    #[test]
-    fn the_simple_path_fades_its_trimmed_start_too() {
-        // "Cut the first 10 minutes" takes the simple `-af` path — the very case
-        // where the splice is a hard mid-waveform edge.
+        let (vfc, _v, _a) = video_filter_complex(0, &keeps, &[]);
+        assert!(!vfc.contains("afade"), "{vfc}");
         let seg = KeepSegment {
             start: 600.0,
             end: 3600.0,
         };
-        let af = audio_simple_af(&seg, 3600.0);
         assert_eq!(
-            af,
-            "atrim=start=600.0000:end=3600.0000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015"
+            audio_simple_af(&seg),
+            "atrim=start=600.0000:end=3600.0000,asetpts=PTS-STARTPTS"
         );
-        let args = audio_simple_export_args(&seg, "mp3", None, None, Some(48_000), 3600.0);
-        assert!(args.iter().any(|a| a.contains("afade=t=in")), "{args:?}");
-    }
-
-    #[test]
-    fn a_sliver_segment_keeps_its_hard_edges() {
-        // Shorter than two fades → an all-envelope blip. Better a click.
-        let seg = KeepSegment {
-            start: 5.0,
-            end: 5.02,
-        };
-        assert!(!audio_simple_af(&seg, 10.0).contains("afade"));
+        let args = audio_simple_export_args(&seg, "mp3", None, None, Some(48_000));
+        assert!(!args.iter().any(|a| a.contains("afade")), "{args:?}");
     }
 
     // ── dither post-filter (P4) ──────────────────────────────────────────────
@@ -2804,7 +2658,7 @@ mod tests {
             start: 0.0,
             end: 10.0,
         };
-        let args = audio_simple_export_args(&seg, "wav", None, Some(16), Some(48_000), 10.0);
+        let args = audio_simple_export_args(&seg, "wav", None, Some(16), Some(48_000));
         let af = &args[args.iter().position(|a| a == "-af").unwrap() + 1];
         assert!(
             af.ends_with(",aresample=osf=s16:dither_method=triangular"),
@@ -2812,7 +2666,7 @@ mod tests {
         );
         // 24-bit WAV, FLAC and mp3 have nothing to dither.
         for (fmt, depth) in [("wav", Some(24)), ("flac", None), ("mp3", None)] {
-            let a = audio_simple_export_args(&seg, fmt, None, depth, Some(48_000), 10.0);
+            let a = audio_simple_export_args(&seg, fmt, None, depth, Some(48_000));
             let af = &a[a.iter().position(|x| x == "-af").unwrap() + 1];
             assert!(
                 !af.contains("aresample"),
@@ -2835,7 +2689,6 @@ mod tests {
             &dither,
             true,
             true,
-            10.0,
             ConcatFormat::default(),
         );
         assert!(
@@ -2855,7 +2708,6 @@ mod tests {
             &dither,
             false,
             false,
-            10.0,
             ConcatFormat::default(),
         );
         assert!(
@@ -2871,88 +2723,21 @@ mod tests {
             start: 2.0,
             end: 8.0,
         }];
-        // A whole-file keep (start 0, end == duration) has no interior edge, so
-        // no fade — the trim string is byte-identical to the pre-F2-7 one.
-        let (fc, v, a) = video_filter_complex(0, &keeps, &[], 8.0);
+        let (fc, v, a) = video_filter_complex(0, &keeps, &[]);
         assert_eq!(v, "[v_main]");
         assert_eq!(a, "[a_main]");
         assert!(fc.contains("[0:v]trim=start=2.0000:end=8.0000,setpts=PTS-STARTPTS[v_main]"));
-        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS,afade=t=in"));
+        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS[a_main]"));
     }
 
-    // ── F2-7: the video path's audio joins are faded too ─────────────────────
-
     #[test]
-    fn video_filter_single_keep_untouched_file_has_no_fade() {
+    fn video_filter_untouched_file_is_a_plain_trim() {
         let keeps = vec![KeepSegment {
             start: 0.0,
             end: 10.0,
         }];
-        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
-        assert!(
-            !fc.contains("afade"),
-            "no cut, no splice, no envelope: {fc}"
-        );
+        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[]);
         assert!(fc.contains("[0:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[a_main]"));
-    }
-
-    #[test]
-    fn video_filter_fades_every_interior_cut_edge() {
-        // 0–5 and 6–10 out of a 10 s source: the FIRST segment's end and the
-        // SECOND's start are the splice, and only those two get an envelope.
-        let keeps = vec![
-            KeepSegment {
-                start: 0.0,
-                end: 5.0,
-            },
-            KeepSegment {
-                start: 6.0,
-                end: 10.0,
-            },
-        ];
-        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
-        assert!(
-            fc.contains("asetpts=PTS-STARTPTS,afade=t=out:st=4.9850:d=0.015[aseg0]"),
-            "the first segment fades OUT into the cut: {fc}"
-        );
-        assert!(
-            fc.contains("asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015[aseg1]"),
-            "the second fades IN out of it: {fc}"
-        );
-        assert_eq!(
-            fc.matches("afade").count(),
-            2,
-            "the file's own start and end are NOT splices: {fc}"
-        );
-        // The video pads are byte-identical to the pre-F2-7 graph.
-        assert!(fc.contains("[0:v]trim=start=0.0000:end=5.0000,setpts=PTS-STARTPTS[vseg0]"));
-        assert!(fc.contains("[0:v]trim=start=6.0000:end=10.0000,setpts=PTS-STARTPTS[vseg1]"));
-    }
-
-    #[test]
-    fn video_and_audio_paths_agree_on_the_join_fade() {
-        // The bug F2-7 fixes was a DISAGREEMENT, not a missing feature: the two
-        // graphs answered "how do you splice a cut" differently. Pin that they
-        // now produce the same audio chain for the same segment.
-        let keeps = vec![
-            KeepSegment {
-                start: 1.0,
-                end: 4.0,
-            },
-            KeepSegment {
-                start: 7.0,
-                end: 9.0,
-            },
-        ];
-        let (video_fc, _v, _a) = video_filter_complex(0, &keeps, &[], 12.0);
-        for seg in &keeps {
-            let audio_chain = atrim_faded("[0:a]", seg, 12.0);
-            assert!(
-                video_fc.contains(&audio_chain),
-                "the video path must splice audio exactly as the audio path does\n\
-                 wanted: {audio_chain}\n   in: {video_fc}"
-            );
-        }
     }
 
     #[test]
@@ -2967,14 +2752,11 @@ mod tests {
                 end: 10.0,
             },
         ];
-        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()], 10.0);
+        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()]);
         assert!(fc.contains("[vseg0]"));
         assert!(fc.contains("[vseg0][vseg1]concat=n=2:v=1:a=0[v_main]"));
         assert!(fc.contains("[aseg0][aseg1]concat=n=2:v=0:a=1[a_concat]"));
         assert!(fc.contains("[a_concat]acompressor[a_main]"));
-        // The processing chain still runs AFTER the concat, so the fades sit on
-        // the raw segments where the splice actually is.
-        assert!(fc.contains("afade=t=out:st=4.9850:d=0.015[aseg0]"));
     }
 
     // ── ffmetadata ───────────────────────────────────────────────────────────

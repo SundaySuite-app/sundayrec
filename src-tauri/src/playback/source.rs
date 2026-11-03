@@ -12,6 +12,7 @@
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdout, Stdio};
+use std::sync::{Arc, Mutex, Weak};
 
 use sundayrec_core::playback::{PcmOpener, PcmStream};
 
@@ -54,10 +55,35 @@ impl FfmpegOpener {
     }
 }
 
-impl PcmOpener for FfmpegOpener {
-    type Stream = FfmpegStream;
+/// The decodes an export has running, so a cancel or a stall can end them from another thread
+/// (a stream blocked in a read on a wedged ffmpeg never looks at an abort flag).
+#[derive(Debug, Clone, Default)]
+pub struct KillSwitch(Arc<Mutex<Vec<Weak<Mutex<Child>>>>>);
 
-    fn open(&mut self, source_frame: u64) -> io::Result<FfmpegStream> {
+impl KillSwitch {
+    fn register(&self, child: &Arc<Mutex<Child>>) {
+        let mut all = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|w| w.strong_count() > 0);
+        all.push(Arc::downgrade(child));
+    }
+
+    /// Kill every decode still running. Their readers see end-of-stream and the stream reports
+    /// the failed exit.
+    pub fn kill_all(&self) {
+        let all = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        for c in all.iter().filter_map(Weak::upgrade) {
+            let _ = c.lock().unwrap_or_else(|e| e.into_inner()).kill();
+        }
+    }
+}
+
+impl FfmpegOpener {
+    /// [`PcmOpener::open`], with the decode registered in `switch` when given.
+    pub fn open_with(
+        &self,
+        source_frame: u64,
+        switch: Option<&KillSwitch>,
+    ) -> io::Result<FfmpegStream> {
         let mut child = crate::util::hidden_std_command(&self.ffmpeg)
             .args(self.args(source_frame))
             .stdin(Stdio::null())
@@ -68,6 +94,10 @@ impl PcmOpener for FfmpegOpener {
             .stdout
             .take()
             .ok_or_else(|| io::Error::other("ffmpeg gave no stdout"))?;
+        let child = Arc::new(Mutex::new(child));
+        if let Some(sw) = switch {
+            sw.register(&child);
+        }
         Ok(FfmpegStream {
             child,
             stdout,
@@ -78,9 +108,17 @@ impl PcmOpener for FfmpegOpener {
     }
 }
 
+impl PcmOpener for FfmpegOpener {
+    type Stream = FfmpegStream;
+
+    fn open(&mut self, source_frame: u64) -> io::Result<FfmpegStream> {
+        self.open_with(source_frame, None)
+    }
+}
+
 /// One running decode.
 pub struct FfmpegStream {
-    child: Child,
+    child: Arc<Mutex<Child>>,
     stdout: ChildStdout,
     channels: usize,
     bytes: Vec<u8>,
@@ -103,7 +141,11 @@ impl PcmStream for FfmpegStream {
                 .read(&mut self.bytes[self.have..want.max(frame_bytes)])
             {
                 Ok(0) => {
-                    let status = self.child.wait()?;
+                    let status = self
+                        .child
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .wait()?;
                     if !status.success() {
                         return Err(io::Error::other(format!("ffmpeg stopped: {status}")));
                     }
@@ -139,8 +181,9 @@ impl PcmStream for FfmpegStream {
 
 impl Drop for FfmpegStream {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let mut c = self.child.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = c.kill();
+        let _ = c.wait();
     }
 }
 

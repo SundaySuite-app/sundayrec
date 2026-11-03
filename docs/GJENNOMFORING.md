@@ -1594,7 +1594,7 @@ målinger: `docs/LYDMOTOR.md` §Fase 5 «Gjort i B5a»; lytteprøven: RIG-DAY «
 Avspillingsmotoren». To ting B5b/B5c arver: (1) lydkjeden kjører i produsenttråden før
 ringen (den allokerer), så et profilbytte midt i avspilling bør gjøres som et hopp til
 samme posisjon for å høres med en gang; (2) eksporten bruker fortsatt 15 ms ut/inn-toning
-ved kutt, ikke kutt-planens 20 ms konstant-effekt-overganger.
+ved kutt, ikke kutt-planens 20 ms konstant-effekt-overganger (løst i M4R #6, se `docs/LYDMOTOR.md` §Fase 6).
 
 ## B5b — Før/Etter blir et øyeblikkelig bytte
 
@@ -1658,7 +1658,7 @@ ut/inn-toning ved kutt.
 `master_preview`, `extract_playback_proxy`, `<audio>`, volumrampen og proxyen er slettet. Svar på B5bs
 spørsmål: (1) `master_preview` slettet, `editor_prepare_listen`/`listen_plan` beholdt; (2) eksportens
 15 ms-toning er ikke byttet ut, fordi det krever at eksporten leser `CutPlan` i stedet for filtergrafen,
-og det hører til B6; (3) hopp uten kjede er 70–97 ms (ingen forkjøring), forhåndsfyllingen er urørt.
+og det hører til B6 (gjort i M4R #6); (3) hopp uten kjede er 70–97 ms (ingen forkjøring), forhåndsfyllingen er urørt.
 Lytteprøven og 90-minutters synken: RIG-DAY «(c) Klipp-steget på motoren».
 
 ## B6 — Rask videoeksport

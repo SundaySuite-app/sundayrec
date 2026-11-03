@@ -1154,6 +1154,15 @@ konstant-effekt-overganger. Ca. 30 min + selve gudstjenesten. Hodetelefoner.
       (f.eks. «Behold bare prekenen»): spillehodet skal fortsatt være i takt
       etter kuttene. **Windows:** samme på rigg-PC-en, i tillegg at lyden ikke
       hakker mens du jobber i andre vinduer.
+- [ ] **Det du hører er det du får ved et kutt (M4R #6).** Åpne et ekte opptak i Klipp og
+      legg et kutt midt i en holdt tone eller midt i en setning (orgel, «Amen»). Spill over
+      kuttet i Klipp og lytt. Eksporter så (mp3 eller wav) og spill samme sted i fila.
+      **Lytt etter:** at overgangen i fila er den samme myke overgangen som i Klipp. Det skal
+      ikke være noe lite hull, dukk eller «tikk» i fila (det var 15 ms-dukken). Gjør det samme med
+      «Behold bare prekenen» på en video (bildet kopieres): lyden skal skifte der bildet skifter.
+      Prøv også «fjern de første minuttene» (bare en trimmet start): ingen smell i filas første
+      øyeblikk. **Forventet:** lik overgang i Klipp og i fila; lengden på fila er kuttene lagt
+      etter hverandre.
 - [ ] **Kjøreren (Mac).** `$P ~/Downloads/2026.01.04.mp3 --at 3:src=600 --at 5:src=1200 --at 7:cuts=1300-1400@-1 --at 10:src=1350 --at 12:pause --at 13:play --for 17`
       **Forventet:** `underruns 0`, `xruns 0`; hvert hopp hørt etter under ca.
       150 ms; `cuts` fortsetter fra der den stod.
