@@ -3,4 +3,4 @@
 /**
  * What the engine tells the window (`editor://listen`).
  */
-export type EditorListenEvent = { "kind": "position", gen: number, programSecs: number, sourceSecs: number, } | { "kind": "ended", gen: number, } | { "kind": "underrun", total: number, } | { "kind": "xrun", total: number, } | { "kind": "error", message: string, };
+export type EditorListenEvent = { "kind": "position", gen: number, programSecs: number, sourceSecs: number, } | { "kind": "ended", gen: number, } | { "kind": "underrun", total: number, } | { "kind": "xrun", total: number, } | { "kind": "error", message: string, } | { "kind": "stopped" };

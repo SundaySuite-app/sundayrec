@@ -37,6 +37,9 @@ use super::EditorCutRegion;
 use crate::error::{AppError, AppResult};
 use crate::playback::{PlaybackEvent, Player};
 
+/// Where the engine's events go: `editor://listen`.
+pub(crate) const LISTEN_EVENT: &str = "editor://listen";
+
 /// What `editor_listen_open` answers.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "EditorListenOpened.ts")]
@@ -68,6 +71,10 @@ pub enum EditorListenEvent {
     Xrun { total: u32 },
     /// The device or the file failed; the listening has stopped.
     Error { message: String },
+    /// The backend ended the session because a recording started (M4R #8): the recording is
+    /// the one that cannot be redone, and it needs the sound card. The window shows the
+    /// listening as stopped; the next «spill» opens a new session.
+    Stopped,
 }
 
 impl From<PlaybackEvent> for EditorListenEvent {
@@ -223,6 +230,28 @@ impl ListenEngine {
     }
 }
 
+/// A recording is starting: close the listening session, if one is open, and tell the window.
+///
+/// Done in the backend (not by the window), so it also holds when the window is hidden, which
+/// a scheduled recording usually finds it. Like the export, the session is work beside the
+/// recording on the same CPU, and its output holds a device the recording may want (a
+/// mixer's USB card is both). Best effort: a recording must start whatever this finds.
+/// Returns whether a session was closed.
+pub async fn stop_for_recording<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::{Emitter, Manager};
+    let Some(engine) = app.try_state::<ListenEngine>() else {
+        return false;
+    };
+    let Some(session) = engine.detach() else {
+        return false;
+    };
+    // The engine fades out and joins its threads: not on the async runtime.
+    let _ = crate::util::off_runtime(move || session.close()).await;
+    let _ = app.emit(LISTEN_EVENT, EditorListenEvent::Stopped);
+    tracing::warn!("a recording is starting: the open listening session was closed");
+    true
+}
+
 #[cfg(feature = "editor")]
 pub use real::{open, set_chain};
 
@@ -364,6 +393,7 @@ mod real {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playback::Programme;
 
     #[test]
     fn engine_events_reach_the_window_in_their_own_words() {
@@ -422,6 +452,112 @@ mod tests {
             }
         );
         assert!(serde_json::from_str::<EditorListenAction>(r#"{"kind":"burn"}"#).is_err());
+    }
+
+    #[derive(Clone)]
+    struct Silence;
+    struct SilenceStream;
+    impl sundayrec_core::playback::PcmStream for SilenceStream {
+        fn read_planar(
+            &mut self,
+            dst: &mut [Vec<f32>],
+            at: usize,
+            frames: usize,
+        ) -> std::io::Result<usize> {
+            for d in dst.iter_mut() {
+                d[at..at + frames].fill(0.0);
+            }
+            Ok(frames)
+        }
+    }
+    impl sundayrec_core::playback::PcmOpener for Silence {
+        type Stream = SilenceStream;
+        fn open(&mut self, _source_frame: u64) -> std::io::Result<SilenceStream> {
+            Ok(SilenceStream)
+        }
+    }
+
+    /// A headless session (no sound card, as in CI) that is playing.
+    fn playing_session(engine: &ListenEngine) -> std::sync::mpsc::Receiver<PlaybackEvent> {
+        use sundayrec_core::editor::KeepSegment;
+        let rate = 48_000;
+        let plan = CutPlan::new(
+            &[KeepSegment {
+                start: 0.0,
+                end: 60.0,
+            }],
+            60.0,
+            rate,
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (player, _renderer) = Player::headless(
+            Programme {
+                plan,
+                chain: sundayrec_core::chain::Chain::default(),
+                opener: Silence,
+                source_channels: 1,
+            },
+            rate,
+            2,
+            Box::new(move |e| {
+                let _ = tx.send(e);
+            }),
+        )
+        .unwrap();
+        player.play();
+        *engine.lock() = Some(Session {
+            player,
+            rate,
+            asked: AtomicU64::new(0),
+            installed: 0,
+        });
+        rx
+    }
+
+    /// M4R #8: a recording starting closes a playing session and tells the window, whether or
+    /// not the window is there to ask. `mock_app` is not built on Windows (see Cargo.toml).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_starting_recording_closes_the_listening_session() {
+        use tauri::{Listener, Manager};
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        // No engine managed, or nothing open: a quiet no-op.
+        assert!(!stop_for_recording(handle).await);
+        handle.manage(ListenEngine::new());
+        assert!(!stop_for_recording(handle).await);
+
+        let told = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = told.clone();
+        handle.listen(LISTEN_EVENT, move |e| {
+            sink.lock().unwrap().push(e.payload().to_string());
+        });
+        let engine = handle.state::<ListenEngine>();
+        let _events = playing_session(&engine);
+        assert!(engine.is_open());
+
+        assert!(stop_for_recording(handle).await);
+        assert!(!engine.is_open(), "the session is gone, the device released");
+        // A late ask for the gone session is dropped, not an error.
+        engine.transport(&EditorListenAction::Play);
+        // The window is told, in the words the UI reads.
+        for _ in 0..200 {
+            if !told.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(*told.lock().unwrap(), vec![r#"{"kind":"stopped"}"#]);
+        // Second call: nothing left to close.
+        assert!(!stop_for_recording(handle).await);
+    }
+
+    #[test]
+    fn stopped_reaches_the_window_as_a_kind() {
+        assert_eq!(
+            serde_json::to_value(EditorListenEvent::Stopped).unwrap(),
+            serde_json::json!({ "kind": "stopped" })
+        );
     }
 
     /// The step may be left as the click arrives: nothing open is neither an error nor a panic.

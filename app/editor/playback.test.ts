@@ -191,6 +191,18 @@ describe("spill og pause", () => {
     expect(playbackSource.value).toBe("none");
   });
 
+  it("et opptak som starter stopper avspillingen: spillehodet blir stående (M4R #8)", async () => {
+    startPlay();
+    await settle();
+    position(42);
+    engine.emit({ kind: "stopped" });
+    expect(playing.value).toBe(false);
+    expect(E.isPlaying).toBe(false);
+    expect(E.playStartSec).toBeCloseTo(42, 3);
+    // Ikke en feil: motoren er ikke «borte», bare lukket for opptaket.
+    expect(playbackSource.value).not.toBe("none");
+  });
+
   it("uten fil gjør spill ingenting", async () => {
     E.sourceToken = "";
     startPlay();

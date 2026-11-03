@@ -222,6 +222,10 @@ function watchEngine(): void {
 function onEngineEvent(e: EditorListenEvent): void {
   if (!E.isPlaying) return;
   switch (e.kind) {
+    case "stopped":
+      // Et opptak startet og Rust lukket økta: spillehodet blir stående der motoren var.
+      stopPlay();
+      return;
     case "position": {
       maxGenSeen = Math.max(maxGenSeen, e.gen);
       const at = clampToFile(e.sourceSecs);

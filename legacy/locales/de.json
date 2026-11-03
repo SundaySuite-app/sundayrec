@@ -685,6 +685,7 @@
       "sample": "{at} — ab der Predigt",
       "listenPreparing": "Die Hörprobe wird vorbereitet – beim ersten Mal dauert es etwas …",
       "listenFailed": "Die Wiedergabe konnte nicht gestartet werden. Der Export läuft wie gewohnt.",
+      "listenStopped": "Die Wiedergabe wurde gestoppt, weil eine Aufnahme gestartet wurde.",
       "said": {
         "hum": "Wir haben das Netzbrummen entfernt",
         "noise": "Wir haben das Hintergrundrauschen gedämpft",

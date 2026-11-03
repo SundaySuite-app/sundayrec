@@ -685,6 +685,7 @@
       "sample": "{at} — from the sermon",
       "listenPreparing": "Getting the listening ready – the first time takes a little while …",
       "listenFailed": "Could not start the listening. The export still runs.",
+      "listenStopped": "The listening was stopped because a recording started.",
       "said": {
         "hum": "We removed mains hum",
         "noise": "We reduced background noise",

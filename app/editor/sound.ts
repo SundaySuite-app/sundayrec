@@ -195,6 +195,9 @@ export type ListenSide = "before" | "after";
 export const listenSide = signal<ListenSide>("after");
 export const listenPlaying = signal(false);
 export const listenError = signal(false);
+/** Backenden stoppet lyttingen fordi et opptak startet (M4R #8). Ikke en feil: opptaket går
+ *  foran, og neste «spill» åpner en ny økt. */
+export const listenStopped = signal(false);
 /** Økta er åpen og kjeden for det som er valgt NÅ er ikke inne i den ennå: «Etter» venter
  *  på målingen av programmet (første gang for dette valget og disse kuttene), ikke på lyd.
  *  Teksten under knappen sier det. */
@@ -297,10 +300,16 @@ function onListenEvent(raw: unknown): void {
       listenError.value = true;
       listenPlaying.value = false;
       break;
+    case "stopped":
+      // Rust har allerede lukket økta og sluppet lydkortet; her slippes bare det som var igjen.
+      listenStopped.value = true;
+      listenPlaying.value = false;
+      break;
     default:
       return;
   }
   for (const fn of [...engineListeners]) fn(e);
+  if (e.kind === "stopped") stopListen();
 }
 
 /** Forespørselen uten lyd: kuttene og lengden og hvor man begynner. Det økta åpnes med. */
@@ -440,6 +449,7 @@ export async function toggleListen(): Promise<void> {
     return;
   }
   listenError.value = false;
+  listenStopped.value = false;
   if (!(await ensureSession())) {
     listenError.value = true;
     return;
@@ -613,6 +623,7 @@ export function resetSound(): void {
   analyzingSound.value = false;
   listenSide.value = "after";
   listenError.value = false;
+  listenStopped.value = false;
   listenStart.value = 0;
   listenUnderruns.value = 0;
   cancelListenPrepare();

@@ -691,6 +691,7 @@
       "sample": "{at} — od kazania",
       "listenPreparing": "Przygotowuję odsłuch – za pierwszym razem to chwilę potrwa …",
       "listenFailed": "Nie udało się uruchomić odsłuchu. Eksport działa normalnie.",
+      "listenStopped": "Odsłuch został zatrzymany, ponieważ rozpoczęło się nagrywanie.",
       "said": {
         "hum": "Usunęliśmy buczenie z sieci",
         "noise": "Wyciszyliśmy szum tła",

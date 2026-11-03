@@ -685,6 +685,7 @@
       "sample": "{at} — fra prekenen",
       "listenPreparing": "Gjør klar lytting – første gang tar det litt tid …",
       "listenFailed": "Kunne ikke starte lyttingen. Eksporten går som vanlig.",
+      "listenStopped": "Lyttingen ble stoppet fordi et opptak startet.",
       "said": {
         "hum": "Vi fjernet brum fra strømnettet",
         "noise": "Vi dempet bakgrunnsstøyen",
