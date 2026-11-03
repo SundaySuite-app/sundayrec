@@ -94,6 +94,8 @@ pub mod listen;
 mod open;
 #[cfg(feature = "editor")]
 mod pcm;
+#[cfg(feature = "editor")]
+mod program;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -2560,7 +2562,6 @@ async fn program_plan(
     if keeps.is_empty() {
         return Err(AppError::Validation("no_audio_remaining".into()));
     }
-    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
     let key = tale_cache_key(source).map(|k| format!("{k:?}|{source_duration}|{params_key}"));
     PLAN_BOOK
         .get_or_measure(key, || async {
@@ -2570,7 +2571,6 @@ async fn program_plan(
                 chain,
                 &keeps,
                 source_duration,
-                kept_duration,
                 fmt,
                 export_stall_ms(),
             )
@@ -3420,9 +3420,8 @@ where
     // The levelled PCM the encoder will be fed, once processed. `None` for an export that
     // changes nothing (just the cut).
     let mut master: Option<pcm::MasteredPcm> = None;
-    // A copied picture takes its sound from the Rust path too, even when nothing changes the
-    // sound: that path renders exactly the snapped intervals.
-    if !pre_chain.is_empty() || preset.is_some() || copy.is_some() {
+    let pcm_fmt = pcm::pcm_format(source_rate, probed.as_ref().and_then(|i| i.channels));
+    if !pre_chain.is_empty() || preset.is_some() {
         // A full-file measure on a long service takes a while with NOTHING to show for it; say
         // so instead of leaving the bar at 0.
         on_progress(0.0, EXPORT_PHASE_MEASURING);
@@ -3433,8 +3432,7 @@ where
             preset.as_ref(),
             &keeps,
             req.duration,
-            kept_duration,
-            pcm::pcm_format(source_rate, probed.as_ref().and_then(|i| i.channels)),
+            pcm_fmt,
             timeout_ms,
             on_progress,
         )
@@ -3451,6 +3449,20 @@ where
         master = Some(m);
         on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
+    // M4R #6: an export that only cuts takes its sound from the same programme the engine
+    // plays (`CutPlan`/`ProgramReader`, the crossfade included), straight into the encoder: no
+    // measure, no staged copy. Only an export of the whole recording, with nothing to render
+    // around, is left to ffmpeg's own demux. A copied picture takes its sound from here too,
+    // over exactly the snapped intervals.
+    let whole_file = keeps.len() == 1 && keeps[0].start == 0.0 && keeps[0].end == req.duration;
+    let direct: Option<program::Program> = (master.is_none() && (copy.is_some() || !whole_file))
+        .then(|| program::Program::new(&inputs.source, &keeps, req.duration, pcm_fmt));
+    // The PCM the encoder is fed: its format and length.
+    let pcm_in: Option<(sundayrec_core::pcm_stream::PcmFormat, f64)> = match (&master, &direct) {
+        (Some(m), _) => Some((m.fmt, m.seconds())),
+        (None, Some(d)) => Some((d.fmt(), d.seconds())),
+        (None, None) => None,
+    };
     // No filter string reaches ffmpeg any more (the cut, the join fades and the dither are the
     // only graph left; the chain is Rust).
     let proc_filters: Vec<String> = Vec::new();
@@ -3517,7 +3529,7 @@ where
     };
     // The metadata file is appended after all real inputs (intro/main/outro, plus — on the
     // mastered VIDEO path, where the picture is input 0 — the levelled PCM that follows it).
-    let mastered_video = is_video && master.is_some();
+    let mastered_video = is_video && pcm_in.is_some();
     let meta_input_idx = 1 + has_intro as usize + has_outro as usize + mastered_video as usize;
 
     // 4c. Video codec choice: H.264 (default) or H.265 when requested.
@@ -3540,22 +3552,19 @@ where
         0
     };
 
-    // The keeps the AUDIO graph trims. A mastered export's PCM arrives already cut: it is one
-    // whole segment of its own length (and no interior cut, so no de-click fade is added a
-    // second time — the fades were part of the graph that produced the PCM).
-    let pcm_keeps: Vec<sundayrec_core::editor::KeepSegment> = master
-        .as_ref()
-        .map(|m| {
+    // The keeps the AUDIO graph trims. The PCM an export is fed arrives already cut: it is one
+    // whole segment of its own length (the crossfades were part of the programme that produced
+    // the PCM).
+    let pcm_keeps: Vec<sundayrec_core::editor::KeepSegment> = pcm_in
+        .map(|(_, seconds)| {
             vec![sundayrec_core::editor::KeepSegment {
                 start: 0.0,
-                end: m.seconds() + 1.0,
+                end: seconds + 1.0,
             }]
         })
         .unwrap_or_default();
-    let (audio_keeps, audio_total): (&[sundayrec_core::editor::KeepSegment], f64) = match &master {
-        Some(_) => (&pcm_keeps, pcm_keeps[0].end),
-        None => (&keeps, req.duration),
-    };
+    let audio_keeps: &[sundayrec_core::editor::KeepSegment] =
+        if pcm_in.is_some() { &pcm_keeps } else { &keeps };
 
     // 5. Build the ffmpeg args — all graph/codec decisions are the core's.
     //
@@ -3567,10 +3576,10 @@ where
         if let Some(p) = intro {
             args.extend(["-i".into(), p.to_string()]);
         }
-        match &master {
-            // The audio of a mastered AUDIO export is the levelled PCM on stdin, already cut
-            // and processed: it takes the main input's place.
-            Some(m) if !is_video => args.extend(sundayrec_core::pcm_stream::input_args(m.fmt)),
+        match pcm_in {
+            // The audio of an AUDIO export is the programme's PCM on stdin, already cut (and
+            // processed and levelled): it takes the main input's place.
+            Some((fmt, _)) if !is_video => args.extend(sundayrec_core::pcm_stream::input_args(fmt)),
             // B6: the picture comes from the concat list. `-copyts` keeps the list's own
             // timestamps (otherwise the CLI re-bases the input on its container start, which
             // the concat demuxer reports 80 ms early because of the AAC priming, and the
@@ -3592,10 +3601,10 @@ where
                 None => args.extend(["-i".into(), inputs.source.clone()]),
             },
         }
-        if let (Some(m), true) = (&master, is_video) {
-            // …on a mastered VIDEO export the source stays input 0 for its picture and the
-            // levelled PCM is input 1.
-            args.extend(sundayrec_core::pcm_stream::input_args(m.fmt));
+        if let (Some((fmt, _)), true) = (pcm_in, is_video) {
+            // …on a VIDEO export the source stays input 0 for its picture and the PCM is
+            // input 1.
+            args.extend(sundayrec_core::pcm_stream::input_args(fmt));
         }
         if let Some(p) = outro {
             args.extend(["-i".into(), p.to_string()]);
@@ -3604,9 +3613,6 @@ where
             args.extend(["-i".into(), p.clone()]);
         }
         if is_video {
-            // `req.duration` (the SOURCE length) is what tells the core which
-            // segment edges are interior cuts and therefore need the de-click
-            // fade — the same argument the audio graph above already gets.
             if copy.is_some() {
                 args.extend(["-map".into(), "0:v:0".into(), "-map".into(), "1:a".into()]);
                 args.extend(sundayrec_core::editor::video_copy_codec_args(
@@ -3614,13 +3620,12 @@ where
                     video_codec,
                     source_rate,
                 ));
-            } else if master.is_some() {
+            } else if pcm_in.is_some() {
                 let (fc, v_out) = video_only_filter_complex(0, &keeps);
                 args.extend(["-filter_complex".into(), fc]);
                 args.extend(["-map".into(), v_out, "-map".into(), "1:a".into()]);
             } else {
-                let (fc, v_out, a_out) =
-                    video_filter_complex(0, &keeps, &proc_filters, req.duration);
+                let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
                 args.extend(["-filter_complex".into(), fc]);
                 args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             }
@@ -3646,7 +3651,6 @@ where
                 req.bitrate,
                 req.bit_depth,
                 source_rate,
-                audio_total,
             ));
         } else {
             let (fc, map) = audio_export_filter_complex(
@@ -3656,7 +3660,6 @@ where
                 &post_filters,
                 has_intro,
                 has_outro,
-                audio_total,
                 concat_format,
             );
             args.extend(["-filter_complex".into(), fc]);
@@ -3704,7 +3707,11 @@ where
     // out is the level the file really has.
     let measured_out: std::sync::Arc<std::sync::Mutex<Option<sundayrec_core::loudness::Loudness>>> =
         Default::default();
-    let feed = master.as_ref().map(|m| m.feed(measured_out.clone()));
+    let feed = match (&master, &direct) {
+        (Some(m), _) => Some(m.feed(measured_out.clone())),
+        (None, Some(d)) => Some(d.feed()),
+        (None, None) => None,
+    };
     let mut render = TempRender::armed(engine, &tmp_path);
     // …and the ways out no `Drop` can catch — a force quit, a crash, a power
     // cut — are covered by writing the path down FIRST (F2-4b). The startup
@@ -7413,14 +7420,24 @@ mod tests {
                 .expect("SUNDAYREC_BENCH_SECS");
             let format = std::env::var("SUNDAYREC_BENCH_FORMAT").unwrap_or_else(|_| "mp3".into());
             let dir = tempfile::tempdir().unwrap();
-            let mut req = export_request(
-                &file,
-                &dir.path().to_string_lossy(),
-                &format,
-                &[(60.0, 120.0)],
-                secs,
-            );
-            req.master_preset = Some("speech-clear".into());
+            // `SUNDAYREC_BENCH_CUTS=60:120,900:960` names the cut regions (default one cut,
+            // 60:120) and `SUNDAYREC_BENCH_PRESET=none` leaves the mastering off (default
+            // `speech-clear`): the cut-only export is the one the join path decides.
+            let cuts: Vec<(f64, f64)> = std::env::var("SUNDAYREC_BENCH_CUTS")
+                .unwrap_or_else(|_| "60:120".into())
+                .split(',')
+                .filter_map(|c| {
+                    let (a, b) = c.split_once(':')?;
+                    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+                })
+                .collect();
+            let mut req =
+                export_request(&file, &dir.path().to_string_lossy(), &format, &cuts, secs);
+            req.master_preset = match std::env::var("SUNDAYREC_BENCH_PRESET").as_deref() {
+                Ok("none") => None,
+                Ok(p) => Some(p.to_string()),
+                Err(_) => Some("speech-clear".into()),
+            };
             let started = std::time::Instant::now();
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let took = started.elapsed();
@@ -9304,6 +9321,176 @@ mod tests {
             );
             assert_monotonic(&ticks);
             eprintln!("editor export smoke: 3-keep fade graph rendered {dur:.2}s");
+        }
+
+        /// Decode `path` to planar `f32` with the pinned ffmpeg, in the source's own rate.
+        fn decode_f32(
+            ffmpeg: &std::path::Path,
+            path: &std::path::Path,
+            channels: usize,
+            rate: u32,
+        ) -> Vec<Vec<f32>> {
+            let out = std::process::Command::new(ffmpeg)
+                .args(["-v", "error", "-i"])
+                .arg(path)
+                .args(["-map", "0:a:0", "-f", "f32le", "-c:a", "pcm_f32le"])
+                .args(["-ar", &rate.to_string(), "-ac", &channels.to_string(), "-"])
+                .output()
+                .expect("ffmpeg should decode the export");
+            assert!(out.status.success(), "decode failed");
+            program::test_support::planar(&out.stdout, channels)
+        }
+
+        /// M4R #6: «what you hear is what you get» at a cut. The export of a recording with
+        /// cuts is the playback engine's programme (the same `CutPlan`/`ProgramReader`), here
+        /// proven through the whole export seam: a lossless 24-bit WAV, decoded again, equals the
+        /// engine's samples to the 24-bit quantisation, at every join, and is exactly as long as
+        /// the kept parts. Also a trim at the head only (the edge fade) and the uncut whole.
+        #[test]
+        fn a_cut_export_is_the_engines_programme_sample_for_sample_or_skips() {
+            use sundayrec_core::playback::{CutPlan, ProgramReader};
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            const RATE: u32 = 48_000;
+            let dir = tempfile::tempdir().unwrap();
+            let src = program::test_support::signal(program::test_support::noise, RATE, 2, 10.0);
+            let wav = dir.path().join("src.wav");
+            program::test_support::write_f32_wav(&wav, RATE, &src);
+            let engine_programme = |keeps: &[sundayrec_core::editor::KeepSegment], export: bool| {
+                let plan = if export {
+                    CutPlan::for_export(keeps, 10.0, RATE)
+                } else {
+                    CutPlan::new(keeps, 10.0, RATE)
+                };
+                let mut r = ProgramReader::new(
+                    plan,
+                    program::test_support::MemOpener(Arc::new(src.clone())),
+                    2,
+                    0,
+                );
+                let mut out = vec![Vec::new(); 2];
+                let mut buf = Vec::new();
+                loop {
+                    let n = r.read_block(&mut buf, 4096).unwrap();
+                    if n == 0 {
+                        return out;
+                    }
+                    for (o, b) in out.iter_mut().zip(&buf) {
+                        o.extend_from_slice(&b[..n]);
+                    }
+                }
+            };
+            let cases: [(&str, &[(f64, f64)]); 3] = [
+                ("two joins", &[(2.0, 3.5), (6.0, 7.25)]),
+                ("head trimmed", &[(0.0, 4.0)]),
+                ("uncut", &[]),
+            ];
+            for (what, cuts) in cases {
+                let mut req = export_request(
+                    &wav.to_string_lossy(),
+                    &dir.path().to_string_lossy(),
+                    "wav",
+                    cuts,
+                    10.0,
+                );
+                req.req.bit_depth = Some(24);
+                let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+                let out = result.unwrap_or_else(|e| panic!("{what}: {e}"));
+                assert_monotonic(&ticks);
+                let got = decode_f32(&ffmpeg, std::path::Path::new(&out.output_path), 2, RATE);
+                let cut_regions: Vec<sundayrec_core::editor::CutRegion> = cuts
+                    .iter()
+                    .map(|&(start, end)| sundayrec_core::editor::CutRegion { start, end })
+                    .collect();
+                let keeps = sundayrec_core::editor::build_keeps(&cut_regions, 10.0);
+                let want = engine_programme(&keeps, true);
+                let kept: u64 = keeps
+                    .iter()
+                    .map(|k| {
+                        (k.end * f64::from(RATE)).round() as u64
+                            - (k.start * f64::from(RATE)).round() as u64
+                    })
+                    .sum();
+                assert_eq!(
+                    got[0].len() as u64,
+                    kept,
+                    "{what}: the file is the kept parts long"
+                );
+                assert_eq!(want[0].len() as u64, kept);
+                let worst = got
+                    .iter()
+                    .zip(&want)
+                    .flat_map(|(g, w)| g.iter().zip(w).map(|(a, b)| (a - b).abs()))
+                    .fold(0.0_f32, f32::max);
+                assert!(worst < 1e-6, "{what}: worst sample difference {worst:e}");
+                // The engine's own plan: the same samples through every join.
+                if keeps.len() > 1 {
+                    let engine = engine_programme(&keeps, false);
+                    let edge = 480;
+                    for c in 0..2 {
+                        let n = got[c].len();
+                        let worst = (edge..n - edge)
+                            .map(|i| (got[c][i] - engine[c][i]).abs())
+                            .fold(0.0_f32, f32::max);
+                        assert!(worst < 1e-6, "{what}: against the engine's plan {worst:e}");
+                    }
+                }
+                eprintln!(
+                    "M4R #6 {what}: {} frames, worst difference {worst:.2e}",
+                    kept
+                );
+            }
+        }
+
+        /// M4R #6 under B6: with the picture copied the sound is the programme over the
+        /// keyframe-snapped intervals, so its length is the sum of THOSE (± one AAC frame) and
+        /// the picture is as long. (The claps in the sync test above are the instant check.)
+        #[test]
+        fn a_copied_video_export_is_as_long_as_its_snapped_intervals_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = clap_source(&ffmpeg, dir.path(), "claps.mp4", 60, 40);
+            let cuts = [(0.0, 3.3), (9.5, 13.7), (21.5, 25.1), (33.5, 40.0)];
+            let req = export_request(&src, &dir.path().to_string_lossy(), "mp4", &cuts, 40.0);
+            let keeps = sundayrec_core::editor::build_keeps(
+                &cuts
+                    .iter()
+                    .map(|&(start, end)| sundayrec_core::editor::CutRegion { start, end })
+                    .collect::<Vec<_>>(),
+                40.0,
+            );
+            let snapped: f64 = {
+                let _pin = crate::media::ffmpeg::tests::sidecar_or_skip().unwrap();
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let plan = rt
+                    .block_on(plan_video_copy(&src, &keeps, "mp4", false))
+                    .expect("this source can be copied");
+                plan.plan.keeps.iter().map(|k| k.end - k.start).sum()
+            };
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a cut-only video export should succeed");
+            let (v, a) = rt_stream_durations(&out.output_path);
+            eprintln!("M4R #6 B6: snapped {snapped:.3} s, picture {v:.3} s, sound {a:.3} s");
+            assert!((a - snapped).abs() < 0.05, "sound {a} vs snapped {snapped}");
+            assert!(
+                (v - snapped).abs() < 0.07,
+                "picture {v} vs snapped {snapped}"
+            );
+        }
+
+        fn rt_stream_durations(path: &str) -> (f64, f64) {
+            let _pin = crate::media::ffmpeg::tests::sidecar_or_skip().unwrap();
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(stream_durations(path))
+                .expect("both streams have a length")
         }
 
         /// One-click auto-improve recommends the vocal chain ONLY. Stacking a

@@ -33,17 +33,23 @@
 //! ([`CutPlan::new`]); two keeps that touch (no cut between them) get no fade at all, because the
 //! material is continuous already.
 //!
-//! **The export does not do this yet.** `editor::join_fades` gives each interior edge a 15 ms
-//! fade OUT and fade IN (a dip to silence), in an ffmpeg filter graph that keeps the length.
-//! Making the export read this plan ([`ProgramReader`]) is what makes «what you hear is what you
-//! get» true for cuts too; it belongs with B6, which renders the audio in Rust over the cut
-//! intervals (decided in B5c).
+//! **The export does this too (M4R #6).** The export reads the same plan through the same
+//! [`ProgramReader`] ([`CutPlan::for_export`], [`ProgramBytes`]) instead of cutting in an ffmpeg
+//! filter graph, so the join you hear in Klipp is the join in the file, sample for sample, and
+//! the file is as long as the sum of its keeps (a crossfade is length-preserving). Under the
+//! B6 video copy the plan is built from the keyframe-snapped intervals, so the sound switches at
+//! the same instant as the picture.
 //!
-//! ## The end
+//! ## The edges
 //!
 //! The last [`END_FADE_SEC`] of the programme is faded out, so stopping at the end does not
 //! click. The START needs nothing here: the shell's audio callback fades in every time it starts
 //! or lands after a seek.
+//!
+//! A FILE has no audio callback, so [`CutPlan::for_export`] puts the fade on both edges, but only
+//! on an edge that is a cut (a programme that starts at the recording's start or ends at its end
+//! is left alone, as it always was): «trim the first ten minutes off» must not begin on a
+//! mid-waveform sample.
 
 use std::io;
 
@@ -53,6 +59,8 @@ use crate::editor::KeepSegment;
 pub const CROSSFADE_SEC: f64 = 0.020;
 /// Fade-out at the end of the programme, seconds.
 pub const END_FADE_SEC: f64 = 0.010;
+/// Fade-in at the start of an exported programme that starts inside the recording, seconds.
+pub const START_FADE_SEC: f64 = 0.010;
 
 /// The gains of a constant-power crossfade at position `x` in `[0, 1]`: `(outgoing, incoming)`.
 /// `out² + in² = 1` for every `x`.
@@ -85,6 +93,8 @@ pub struct CutPlan {
     /// Half-width of the crossfade at the join AFTER keep `k` (`keeps.len() - 1` entries).
     halves: Vec<u64>,
     total: u64,
+    /// Frames faded in at the very start (0 in the engine: the audio callback does it).
+    start_fade: u64,
     end_fade: u64,
 }
 
@@ -109,6 +119,16 @@ impl CutPlan {
     /// `source_duration` seconds long at `rate` Hz. Keeps are clamped to the source, sorted, and
     /// empty ones dropped. An empty list plays nothing.
     pub fn new(keeps: &[KeepSegment], source_duration: f64, rate: u32) -> CutPlan {
+        Self::build(keeps, source_duration, rate, false)
+    }
+
+    /// The plan the EXPORT reads: [`Self::new`]'s joins, plus a [`START_FADE_SEC`]/[`END_FADE_SEC`]
+    /// fade on each programme edge that is a cut rather than the recording's own start or end.
+    pub fn for_export(keeps: &[KeepSegment], source_duration: f64, rate: u32) -> CutPlan {
+        Self::build(keeps, source_duration, rate, true)
+    }
+
+    fn build(keeps: &[KeepSegment], source_duration: f64, rate: u32, export: bool) -> CutPlan {
         let rate = rate.max(1);
         let to_frames = |s: f64| -> u64 {
             if s.is_finite() && s > 0.0 {
@@ -157,7 +177,20 @@ impl CutPlan {
             starts.push(total);
             total += k.len();
         }
-        let end_fade = ((END_FADE_SEC * f64::from(rate)).round() as u64).min(total / 2);
+        let fade = |sec: f64| ((sec * f64::from(rate)).round() as u64).min(total / 2);
+        // The engine always fades its end; an export only where the programme was cut short.
+        let ends_at_source = merged.last().is_some_and(|k| k.end >= source_frames);
+        let starts_at_source = merged.first().is_some_and(|k| k.start == 0);
+        let end_fade = if export && ends_at_source {
+            0
+        } else {
+            fade(END_FADE_SEC)
+        };
+        let start_fade = if export && !starts_at_source {
+            fade(START_FADE_SEC)
+        } else {
+            0
+        };
         CutPlan {
             rate,
             source_frames,
@@ -165,6 +198,7 @@ impl CutPlan {
             starts,
             halves,
             total,
+            start_fade,
             end_fade,
         }
     }
@@ -295,6 +329,15 @@ impl CutPlan {
         }
         let x = ((p - from) as f64 + 0.5) / self.end_fade as f64;
         constant_power(x).0
+    }
+
+    /// The start-fade gain at programme frame `p` (1 past the fade).
+    fn start_gain(&self, p: u64) -> f32 {
+        if p >= self.start_fade {
+            return 1.0;
+        }
+        let x = (p as f64 + 0.5) / self.start_fade as f64;
+        constant_power(x).1
     }
 
     #[cfg(test)]
@@ -463,8 +506,20 @@ impl<O: PcmOpener> ProgramReader<O> {
                 n
             }
         };
+        // Start fade (an exported programme that starts inside the recording).
+        if self.pos < self.plan.start_fade {
+            for (i, p) in (self.pos..self.pos + n as u64).enumerate() {
+                if p >= self.plan.start_fade {
+                    break;
+                }
+                let g = self.plan.start_gain(p);
+                for o in out.iter_mut() {
+                    o[i] *= g;
+                }
+            }
+        }
         // End fade.
-        if self.pos + n as u64 > self.plan.total - self.plan.end_fade {
+        if self.plan.end_fade > 0 && self.pos + n as u64 > self.plan.total - self.plan.end_fade {
             for (i, p) in (self.pos..self.pos + n as u64).enumerate() {
                 let g = self.plan.end_gain(p);
                 for o in out.iter_mut() {
@@ -476,6 +531,58 @@ impl<O: PcmOpener> ProgramReader<O> {
         self.slots.retain(|s| s.used);
         self.pos += n as u64;
         Ok(n)
+    }
+}
+
+/// A [`ProgramReader`] as a byte stream: the programme as interleaved `f32` little-endian, the
+/// shape ffmpeg's `-f f32le` gives and [`crate::pcm_stream`] reads. This is how the export takes
+/// the programme: whatever consumed an ffmpeg pipe before (the chain, the meter, the encoder's
+/// stdin) reads this instead.
+pub struct ProgramBytes<O: PcmOpener> {
+    reader: ProgramReader<O>,
+    block: Vec<Vec<f32>>,
+    bytes: Vec<u8>,
+    at: usize,
+}
+
+impl<O: PcmOpener> ProgramBytes<O> {
+    pub fn new(reader: ProgramReader<O>) -> Self {
+        Self {
+            reader,
+            block: Vec::new(),
+            bytes: Vec::new(),
+            at: 0,
+        }
+    }
+
+    /// The reader's plan.
+    pub fn plan(&self) -> &CutPlan {
+        self.reader.plan()
+    }
+}
+
+impl<O: PcmOpener> io::Read for ProgramBytes<O> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.at >= self.bytes.len() {
+            let n = self.reader.read_block(&mut self.block, MAX_BLOCK)?;
+            if n == 0 {
+                return Ok(0);
+            }
+            self.bytes.clear();
+            self.at = 0;
+            for i in 0..n {
+                for ch in &self.block {
+                    self.bytes.extend_from_slice(&ch[i].to_le_bytes());
+                }
+            }
+        }
+        let k = buf.len().min(self.bytes.len() - self.at);
+        buf[..k].copy_from_slice(&self.bytes[self.at..self.at + k]);
+        self.at += k;
+        Ok(k)
     }
 }
 
@@ -718,6 +825,163 @@ mod tests {
         let last = *out[0].last().unwrap();
         assert!(last.abs() < 0.01, "last sample {last}");
         assert_eq!(out[0][SR as usize - 481], 0.5);
+    }
+
+    // ── the export reads the same plan (M4R #6) ──────────────────────────────
+
+    /// The programme in the interleaved bytes the export reads, back as planar samples.
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    fn read_bytes(plan: &CutPlan, src: Synth, channels: usize, buf: usize) -> Vec<Vec<f32>> {
+        use std::io::Read;
+        let mut r = ProgramBytes::new(ProgramReader::new(plan.clone(), src, channels, 0));
+        let mut bytes = Vec::new();
+        let mut chunk = vec![0u8; buf];
+        loop {
+            let n = r.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..n]);
+        }
+        let mut out = vec![Vec::new(); channels];
+        for frame in bytes.chunks_exact(4 * channels) {
+            for (c, s) in frame.chunks_exact(4).enumerate() {
+                out[c].push(f32::from_le_bytes([s[0], s[1], s[2], s[3]]));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_export_joins_are_the_engines_joins_bit_for_bit() {
+        // Same keeps, same source: the engine's plan and the export's differ only on the two
+        // programme edges (the engine's own end fade, the export's start fade).
+        let k = keeps(&[(0.5, 1.2), (1.9, 2.6), (3.0, 4.0)]);
+        let engine = CutPlan::new(&k, 4.0, SR);
+        let export = CutPlan::for_export(&k, 4.0, SR);
+        assert_eq!(engine.program_frames(), export.program_frames());
+        assert_eq!(engine.join_secs(), export.join_secs());
+        let e = read_all(
+            &mut ProgramReader::new(engine.clone(), synth(noise, 4.0), 2, 0),
+            777,
+        );
+        let x = read_all(
+            &mut ProgramReader::new(export.clone(), synth(noise, 4.0), 2, 0),
+            4096,
+        );
+        let (from, to) = (480, e[0].len() - 480);
+        assert_eq!(
+            e[0][from..to],
+            x[0][from..to],
+            "left, everywhere but the edges"
+        );
+        assert_eq!(
+            e[1][from..to],
+            x[1][from..to],
+            "right, everywhere but the edges"
+        );
+        // And that range holds both joins.
+        assert!(export.starts[1] as usize > from && (export.starts[2] as usize) < to);
+        // The export starts inside the recording, so it fades in; its end is the recording's end.
+        assert!(x[0][0].abs() < 0.01 * 0.5);
+        assert_eq!(x[0][x[0].len() - 1], noise(4 * u64::from(SR) - 1, 0));
+    }
+
+    #[test]
+    fn an_export_fades_only_the_edges_that_are_cuts() {
+        let src = || synth(|_, _| 0.5, 4.0);
+        // The whole recording: not touched at all.
+        let whole = CutPlan::for_export(&keeps(&[(0.0, 4.0)]), 4.0, SR);
+        let out = read_all(&mut ProgramReader::new(whole, src(), 1, 0), 4096);
+        assert!(out[0].iter().all(|x| *x == 0.5));
+        // «Trim the first part off»: fades in, ends untouched.
+        let head = CutPlan::for_export(&keeps(&[(1.0, 4.0)]), 4.0, SR);
+        let out = read_all(&mut ProgramReader::new(head, src(), 1, 0), 333);
+        assert!(out[0][0] < 0.01 && out[0][479] < 0.5 && out[0][480] == 0.5);
+        assert_eq!(*out[0].last().unwrap(), 0.5);
+        // «Trim the end off»: starts as it is, fades out.
+        let tail = CutPlan::for_export(&keeps(&[(0.0, 3.0)]), 4.0, SR);
+        let out = read_all(&mut ProgramReader::new(tail, src(), 1, 0), 4096);
+        assert_eq!(out[0][0], 0.5);
+        assert!(out[0].last().unwrap().abs() < 0.01);
+        // The engine, by contrast, always fades its end and never its start.
+        let engine = CutPlan::new(&keeps(&[(1.0, 4.0)]), 4.0, SR);
+        let out = read_all(&mut ProgramReader::new(engine, src(), 1, 0), 4096);
+        assert_eq!(out[0][0], 0.5);
+        assert!(out[0].last().unwrap().abs() < 0.01);
+    }
+
+    #[test]
+    fn a_crossfade_does_not_change_the_length() {
+        // Length = the sum of the keeps, to the frame (each keep rounded to frames), with and
+        // without joins, for the engine's plan and the export's.
+        let spans = [(0.3, 1.2117), (1.9, 2.6013), (3.0, 3.0042), (3.5, 9.9)];
+        let want: u64 = spans
+            .iter()
+            .map(|&(a, b)| (b * f64::from(SR)).round() as u64 - (a * f64::from(SR)).round() as u64)
+            .sum();
+        for plan in [
+            CutPlan::new(&keeps(&spans), 10.0, SR),
+            CutPlan::for_export(&keeps(&spans), 10.0, SR),
+        ] {
+            assert_eq!(plan.program_frames(), want);
+            assert!(plan.crossfaded_joins() >= 3);
+            let out = read_all(
+                &mut ProgramReader::new(plan, synth(noise, 10.0), 2, 0),
+                1024,
+            );
+            assert_eq!(out[0].len() as u64, want);
+        }
+    }
+
+    #[test]
+    fn the_export_join_has_no_jump_and_keeps_its_power() {
+        let plan = CutPlan::for_export(&keeps(&[(0.4, 2.0137), (6.211, 9.0)]), 10.0, SR);
+        // Oracle 1 (as in the engine's test): no step across the join larger than twice the
+        // sine's own steepest, where a hard splice jumps by up to its amplitude.
+        let sine = read_all(
+            &mut ProgramReader::new(plan.clone(), synth(sine220, 10.0), 1, 0),
+            512,
+        );
+        let natural = 0.5 * 2.0 * std::f64::consts::PI * 220.0 / f64::from(SR);
+        let join = plan.starts[1] as usize;
+        let worst = sine[0][join - 600..join + 600]
+            .windows(2)
+            .map(|w| f64::from((w[1] - w[0]).abs()))
+            .fold(0.0, f64::max);
+        assert!(
+            worst < 2.0 * natural,
+            "worst step {worst:.4} vs {natural:.4}"
+        );
+        // Oracle 2: short-window RMS through the join within 1 dB of the signal's own.
+        let out = read_all(
+            &mut ProgramReader::new(plan.clone(), synth(noise, 10.0), 2, 0),
+            1000,
+        );
+        let rms = |s: &[f32]| {
+            (s.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / s.len() as f64).sqrt()
+        };
+        let whole = rms(&out[0][1000..join - 1000]);
+        for start in (join - 960..join + 960 - 240).step_by(60) {
+            let db = 20.0 * (rms(&out[0][start..start + 240]) / whole).log10();
+            assert!(db.abs() < 1.0, "window at {start}: {db:.2} dB");
+        }
+    }
+
+    #[test]
+    fn the_programme_bytes_are_the_interleaved_programme_whatever_the_read_size() {
+        let plan = CutPlan::for_export(&keeps(&[(0.5, 1.2), (1.9, 2.6)]), 4.0, SR);
+        let want = read_all(
+            &mut ProgramReader::new(plan.clone(), synth(noise, 4.0), 2, 0),
+            4096,
+        );
+        for buf in [1, 7, 4096, 1 << 18] {
+            assert_eq!(
+                read_bytes(&plan, synth(noise, 4.0), 2, buf),
+                want,
+                "buf {buf}"
+            );
+        }
     }
 
     #[test]
