@@ -1,4 +1,4 @@
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 
 // Pure undo/redo state machine for the editor's cut list — extracted from
 // `cuts.ts` so the invariants are UNIT-TESTABLE without a DOM (the renderer side

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Suggestion } from "./state";
+import type { Suggestion } from "./types";
 import { autoSermonIndex, buildSermonPickRequest } from "./sermon-feedback";
 
 const seg = (start: number, end: number, type: string): Suggestion => ({

@@ -15,12 +15,11 @@
 // which is exactly the kind of i18n leak this PR exists to close: dead code
 // nobody sees is dead code nobody scans for hardcoded text, either.
 //
-// `Processing`/`defaultProcessing`/`mixerProcessing` stay: `defaultProcessing`
+// `Processing`/`defaultProcessing` stay (`mixerProcessing`, which read the old shared `E`,
+// was dead after B5c: `app/editor/sound.ts` has the one the export uses): `defaultProcessing`
 // is the one place `VocalChain::default()` is mirrored in TypeScript
 // (`app/editor/sound.ts` seeds its `mixer` signal from it), and the
 // `Processing` type is shared by `MixerPanel.tsx` and `sound.ts`.
-
-import { E } from "./state";
 
 // The processing object mirrors `EditorProcessing` (camelCase bindings).
 export interface Processing {
@@ -74,12 +73,4 @@ export function defaultProcessing(): Processing {
     limiterDb: -1,
     gainDb: 0,
   };
-}
-
-/** Build the export-ready `processing` object from the mixer state, dropping
- *  zero-gain EQ bands (a 0 dB equalizer is a wasted filter). */
-export function mixerProcessing(): Processing {
-  const p = { ...E.mixer };
-  p.eq = p.eq.filter((b) => Math.abs(b.gainDb) > 0.01);
-  return p;
 }

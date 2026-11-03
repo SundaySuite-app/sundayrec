@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 import { addCutToList, mergeCuts, MIN_CUT_LENGTH_SEC } from "./cut-ops";
 
 const cut = (start: number, end: number): Cut => ({ start, end });

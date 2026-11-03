@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 import { computeKeepSegs, KEEP_EPSILON_SEC } from "./keep-segments";
 
 const cut = (start: number, end: number): Cut => ({ start, end });

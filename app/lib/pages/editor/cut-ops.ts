@@ -1,4 +1,4 @@
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 
 // Pure cut-list mutations — adding a cut + the overlap/adjacency merge. Extracted
 // from cuts.ts so the merge invariants are unit-testable (a wrong merge = the
