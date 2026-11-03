@@ -396,9 +396,8 @@ Avspillingsmotoren»).
   produsenten jobber i korte støt (ringen er full nesten hele tiden), og da gir macOS den lav
   klokke. Det er likevel 10× margin på den tyngste kjeden. Å heve trådens QoS
   (`USER_INTERACTIVE`) endret ingenting målbart og ble tatt ut igjen.
-- **Ikke gjort ennå:** eksporten bruker fortsatt 15 ms ut/inn-toning ved kutt
-  (`editor::join_fades`), ikke kutt-planens overganger. Det du hører ved et kutt er derfor ikke
-  helt det du får før eksporten leser samme plan.
+- ~~Ikke gjort ennå: eksporten bruker 15 ms ut/inn-toning ved kutt.~~ Gjort i M4R #6, se under
+  fase 6.
 
 **Gjort i B5b: Før/Etter og profilbytte** (`playback/{rt,producer}.rs`, `editor/listen.rs`,
 `app/editor/sound.ts`). Lyd-steget lytter nå på motoren; ingen mp3 gjengis for steget
@@ -477,12 +476,8 @@ en fjernkontroll for motoren.
   ikke noe `<video>` slavet til `<audio>`, og ingenting ble brutt. Lyden i en videofil spilles av motoren
   som all annen lyd. Den dagen bildet vises: en dempet `<video>` som følger motorens `Position`, rettet når
   den driver mer enn ett bilde.
-- **Eksportens 15 ms ut/inn-toning er ikke byttet ut.** Eksporten kutter med et ffmpeg-filtergraf
-  (`atrim` + `afade` + `concat`, `editor::join_fades`) som bevarer lengden, mens motorens krysstoning
-  låner 10 ms fra begge sider av kuttet. Å la eksporten bruke samme plan betyr å lese programmet gjennom
-  `ProgramReader` i stedet for filtergrafen, og det er B6s arbeid (lyden rendres i Rust over de snappede
-  intervallene). Det er riktig sted å gjøre det: samme `CutPlan` for avspilling og eksport. Til da er det
-  du hører ved et kutt en krysstoning på 20 ms, mens filen har en 15 ms dukk. Eget punkt etter B6.
+- **Eksportens 15 ms ut/inn-toning ble ikke byttet ut her** (det krevde at eksporten leste programmet
+  gjennom `ProgramReader` i stedet for filtergrafen). Gjort i M4R #6, se under fase 6.
 
 ### Fase 6 — rask videoeksport
 
@@ -498,6 +493,52 @@ en fjernkontroll for motoren.
   `editor::export` kopierer bildet via concat-demuxeren og rendrer lyden i Rust over
   nøyaktig de snappede intervallene. Tider før og etter, og synkmålingene, står i
   PR-en; riggbeviset er RIG-DAY (v10). Se GJENNOMFORING.md §B6 for rettelsene til planen.
+- **Gjort (M4R #6): eksporten kutter med motorens krysstoning** (`editor/program.rs`,
+  `sundayrec_core::playback::{CutPlan::for_export, ProgramBytes}`). Funn 6 i M4R-rapporten: lyttingen
+  hadde en 20 ms konstant-effekt-krysstoning, filen en 15 ms dukk mot null (ffmpeg `atrim` + `afade` +
+  `concat`, `editor::join_fades`). Nå leser eksporten programmet gjennom samme `CutPlan`/`ProgramReader`
+  som avspillingen, og `join_fades`/`atrim_faded`/`JOIN_FADE_SEC` er slettet.
+  - **Kjeden er uendret, kilden er byttet.** Der ffmpegs stdout (filtergrafen) var inngangen til
+    `ChainReader`/måleren/det mellomlagrede PCM-et, er det nå `ProgramBytes`: programmet som interleaved
+    `f32le`, fra én ffmpeg-dekoding per bevart del (`-ss` før `-i`, som i motoren; ingen filter). Samme
+    kjede → gain-plan → koding etter det. Forhåndsmålingen (`measure_program`) leser også programmet.
+  - **Uten kjede og preset** (bare kutt) går programmet rett i koderens stdin, uten måling og uten
+    mellomlagret kopi (`Program::feed`). Tidligere gikk dette gjennom ffmpegs filtergraf; B6-kopi uten
+    kjede/preset gikk gjennom en måle- og mellomlagringsrunde bare for å få lyden over de snappede
+    intervallene. Bare «hele opptaket, uten kutt og uten jingler» går som før gjennom ffmpegs egen
+    demux (`atrim` over hele fila, ingen skjøt å skjule).
+  - **Lengden.** En krysstoning låner fra begge sider av kuttet og forkorter ingenting: programmet er
+    summen av de bevarte delene, til rammen (hver del rundet til frames). Testet (`a_crossfade_does_not_change_the_length`,
+    og i eksporten mot en 24-bit WAV).
+  - **Kantene.** En fil har ingen lydkort-callback som toner inn. `CutPlan::for_export` toner derfor
+    10 ms (konstant effekt) inn i starten når programmet begynner inne i opptaket, og ut i slutten når det
+    slutter før opptakets slutt, som 15 ms-fadene gjorde: «fjern de første ti minuttene» skal ikke
+    starte midt i en bølge. Starter det ved opptakets start og slutter ved dets slutt, røres det ikke.
+    Motorens plan (`CutPlan::new`) er uendret: ingen start-tone (callbacken gjør det), alltid slutt-tone.
+  - **B6.** Planen bygges av de snappede intervallene (`copy.plan.keeps`, som før erstattet `keeps`), så
+    lyd og bilde skifter på samme tidspunkt, og lyden krysstones ±10 ms rundt skjøten mens bildet
+    skjøtes hardt (concat-demuxeren). Lengden av lyden er summen av de snappede intervallene.
+  - **Avbryt og stopp.** Dekodingene ligger ikke lenger i `ExportEngine`s ene barneprosess. En
+    `KillSwitch` (`playback/source.rs`) samler dem; en vaktråd dreper alle når abort-flagget settes
+    (avbryt eller stall), slik at en lesing som står i en hengende ffmpeg ikke holder eksporten.
+  - **Bevist** (`playback.rs`-testene og `editor::program`/`ffmpeg_smoke`): eksportens programutdata er
+    bit-identisk med `ProgramReader` på samme plan i minnet, gjennom ekte ffmpeg-dekoding; planens
+    skjøter er bit-identiske med motorens plan (`CutPlan::new`) overalt unntatt de to kantene; en
+    24-bit WAV-eksport dekodet igjen avviker fra motorens samples med høyst 1,19e-7 (24-bit-kvantiseringen)
+    og er nøyaktig like lang som de bevarte delene (to skjøter; hode trimmet; uten kutt); intet sprang
+    over skjøten og kortvindu-RMS innen 1 dB (samme orakel som i B5a, på eksportplanen); B6-kopi:
+    lyd 26,700 s, bilde 26,700 s, snappede intervaller 26,700 s, og klapp-synktesten er grønn
+    som før.
+  - **Eksporttid, 90 minutters mp3 (`2026.01.04.mp3`, 5398 s, M1 Pro, release, to løp der annet ikke er
+    oppgitt, ingen annen last):** tre kutt, bare kutt: 42,7 / 46,8 s før, 46,0 / 41,5 s etter;
+    bare prekenen (ett keep, 1200–3000 s): 17,1 s før og etter (første løp, kald disk: 34,5 før, 22,5 etter);
+    tre kutt med «Tale» (`speech-clear`, ett løp): 194,6 s før, 190,6 s etter (oppnådd -16,015 LUFS begge).
+    Ingen målbar forskjell: koding og kjede er det som tar tiden. Målt med `bench_mastered_export`
+    (`SUNDAYREC_BENCH_CUTS`, `SUNDAYREC_BENCH_PRESET=none` for bare kutt).
+  - **Rest:** flerkanalskilder (> 2 kanaler) bærer eksporten som stereo (som den mastrede veien alltid
+    gjorde); en kilde der probe ikke gir samplerate dekodes som 48 kHz stereo. Flerkeep-grafen i
+    `audio_export_filter_complex`/`video_filter_complex` brukes ikke lenger i produksjon (bare hele
+    opptaket eller ferdig PCM går gjennom grafen) og kan fjernes når noen rydder neste gang i den.
 
 ## Hva vi ikke tar fra filmcraft
 

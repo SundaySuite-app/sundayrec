@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Kuttene i den eksporterte fila høres ut som i Klipp.** Før hadde fila en kort dukk mot
+  stillhet (15 ms) ved hvert kutt, mens Klipp spilte en myk overgang (20 ms). Nå leser
+  eksporten lyden gjennom samme program som avspillingen, så overgangen er den samme, og fila
+  er like lang som delene du beholder. For video der bildet kopieres, skifter lyden på samme
+  sted som bildet. Eksporttiden er den samme som før: en 90 minutters mp3 med tre kutt tok
+  43–47 s før og 42–46 s etter på en Mac (M1 Pro), og med «Tale»-profilen 195 s før og 191 s
+  etter. Må prøves ved å lytte over et kutt i en holdt tone i Klipp og i fila.
 - **Videoopptak med en ødelagt videofil blir levert med lyd.** Før stoppet en videofil
   som ikke lot seg lese hele leveringen, og du satt igjen med en rå lydfil. Nå lages
   mp4-en med lyd, du får en melding om at bildet er ufullstendig, og videofila ligger
