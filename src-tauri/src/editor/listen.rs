@@ -537,7 +537,10 @@ mod tests {
         assert!(engine.is_open());
 
         assert!(stop_for_recording(handle).await);
-        assert!(!engine.is_open(), "the session is gone, the device released");
+        assert!(
+            !engine.is_open(),
+            "the session is gone, the device released"
+        );
         // A late ask for the gone session is dropped, not an error.
         engine.transport(&EditorListenAction::Play);
         // The window is told, in the words the UI reads.
