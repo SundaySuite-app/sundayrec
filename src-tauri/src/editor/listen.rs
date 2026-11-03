@@ -283,7 +283,6 @@ mod real {
     use crate::editor::{listen_plan, load_recording, pcm, EditorMasterPreviewRequest};
     use crate::editor::{ExportEngine, ListenPlan};
     use crate::playback::source::FfmpegOpener;
-    #[cfg(unix)]
     use crate::playback::Programme;
     use sundayrec_core::chain::Chain;
 
