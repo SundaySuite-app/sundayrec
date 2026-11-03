@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.28.0 — ny avspilling i redigeringen og varsel om dempet mikser
+
 - **Kuttene i den eksporterte fila høres ut som i Klipp.** Før hadde fila en kort dukk mot
   stillhet (15 ms) ved hvert kutt, mens Klipp spilte en myk overgang (20 ms). Nå leser
   eksporten lyden gjennom samme program som avspillingen, så overgangen er den samme, og fila
