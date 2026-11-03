@@ -685,6 +685,7 @@
       "sample": "{at} — från predikan",
       "listenPreparing": "Gör lyssningen redo – första gången tar det en stund …",
       "listenFailed": "Kunde inte starta lyssningen. Exporten går som vanligt.",
+      "listenStopped": "Lyssningen stoppades eftersom en inspelning startade.",
       "said": {
         "hum": "Vi tog bort brum från elnätet",
         "noise": "Vi dämpade bakgrundsbruset",

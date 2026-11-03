@@ -320,7 +320,7 @@ declare global {
         { ok: true; folder: ChosenPlace | null } | { ok: false; error: string }
       >;
       // The generated binding, not a hand-written twin — see `Suggestion` in
-      // pages/editor/state.ts for what the twin cost us.
+      // pages/editor/types.ts for what the twin cost us.
       editorDetectSegments: (
         sourceToken: string,
         force?: boolean,

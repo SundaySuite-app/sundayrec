@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 import {
   pushSnapshot,
   undoSnapshot,

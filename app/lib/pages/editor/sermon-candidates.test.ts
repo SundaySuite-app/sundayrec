@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Suggestion } from "./state";
+import type { Suggestion } from "./types";
 import {
   sermonCandidates,
   MIN_SERMON_CANDIDATE_SEC,

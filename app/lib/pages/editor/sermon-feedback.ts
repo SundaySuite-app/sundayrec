@@ -1,4 +1,4 @@
-import type { Suggestion } from "./state";
+import type { Suggestion } from "./types";
 import { sermonCandidates } from "./sermon-candidates";
 import type { EditorSermonPickRequest } from "../../../../legacy/bindings/EditorSermonPickRequest";
 

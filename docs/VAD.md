@@ -9,6 +9,22 @@ a day each because none of them produced an error.
 Read this before changing a constant. Every number below is pinned by a test,
 and the tests are named so you can find them.
 
+## Decision 2026-10-19: earshot (D1) is PARKED
+
+The owner parked the replacement of tract + Silero by `earshot` (package D1) until a
+**real corpus exists: at least 12 corrected recordings** to measure against. It is
+not a 1.0 blocker; the VAD is in shadow mode and decides nothing.
+
+- **Silero/tract stays** (`tract-onnx`, `src-tauri/resources/vad/`, the SHA check in
+  `build.rs`, the `vad` job's model check).
+- The branch `ombygging/d1-earshot-vad` (12a96b37) is **kept unmerged**, with no PR.
+- Why: `ab_eval` on the synthetic corpus gave boundary errors of **330–360 s for
+  earshot against 0.3–0.5 s for Silero**, and earshot marked held low tones as
+  speech (the developer's claim that earshot beats Silero did not hold here).
+- To pick it up again: build the corpus first (≥ 12 corrected recordings), rerun
+  `vad_ab_eval` with both engines on it, and decide on those numbers, not on the
+  synthetic ones.
+
 ## Status: nothing installed contains the model
 
 | Question                                             | Answer                                                                  |

@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-10-12, ved v0.25.3 (stabil og beta)._
+_Sist gått gjennom: 2026-11-03. Stabil er v0.25.3, beta er v0.27.0-beta.1; M4 ligger umerket under «Uutgitt» i CHANGELOG._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -17,30 +17,48 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 ## Ombyggingen — før appen rulles ut
 
-Eierens beslutning 2026-10-11: store grep, høy risiko, gjennomføres i nye økter
-lokalt på Macen. Hovedplanen er [OMBYGGING.md](OMBYGGING.md), med delplanene
-[LYDMOTOR.md](LYDMOTOR.md) og [VIDEOMOTOR.md](VIDEOMOTOR.md). Øktene — én PR
-hver, med porter, modellvalg og ferdig startmelding — står i
-[GJENNOMFORING.md](GJENNOMFORING.md). Én linje per milepæl her; pakkene står i
-hovedplanen og fjernes derfra når de er ferdige.
+Eierens beslutning 2026-10-11: store grep, høy risiko, gjennomført lokalt på
+Macen. Hovedplanen er [OMBYGGING.md](OMBYGGING.md), med delplanene
+[LYDMOTOR.md](LYDMOTOR.md) og [VIDEOMOTOR.md](VIDEOMOTOR.md); øktene (én PR
+hver) står i [GJENNOMFORING.md](GJENNOMFORING.md).
 
-| Milepæl                      | Pakker       | Kort                                                                                       |
-| ---------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| M1 — Grunnmuren              | —            | Alle pakker levert; venter på M1R-gjennomgangen                                            |
-| M2 — Ny lyd i redigeringen   | B0–B3        | filmcrafts `audio-dsp` inn, lydstyrke og lydkjede i Rust, «Tale» renser av seg selv        |
-| M3 — Ny videomotor           | C1–C5        | Kamera i Rust, lyden alltid gjennom den native motoren, én sti i stedet for fire           |
-| M4 — Sanntid, fart og resten | B4–B6, D1–D3 | Én dekoding, sanntidslytting, rask videoeksport, earshot, macOS-varsler, LUFS under opptak |
+**Kodepakkene M1–M4 er levert og merget** (PR-nummer fra `git log`). Det er ikke
+det samme som ferdig: ingen milepæl har gått gjennom porten (merget → review →
+beta → riggdag → stabil), og 0 av 84 riggpunkter er krysset av.
 
-M2 og M3 kjøres parallelt i egne arbeidstrær (eiers beslutning 2026-10-12).
-**Blokkert på eieren:** B2c sletter de gamle filterstrengene først når Ørene har
-hørt tre ekte gudstjenester, gammel lyd mot ny, og eieren har sagt ja.
+| Milepæl                      | Levert                                                                                                                                                                   | Utgitt                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| M1 — Grunnmuren              | A1 #349 #352, A2 #356, A3 #351 #354 #355, A4 #359, A5 #357 #358, C0 #350 #353; M1R #362 #365 #366                                                                        | v0.26.0-beta.1 (#378)                     |
+| M2 — Ny lyd i redigeringen   | B0 #367 #374, B1 #376 #382, B2a #375, B2b #388, B3 #391 #393; M2R #395–#397 #399                                                                                         | v0.27.0-beta.1 (#405), uten B2c           |
+| M3 — Ny videomotor           | C1 #368 #369 #371, C2 #373 #386, C3 #377 #384 #385, C4 #387 #390, C5 #394 #398; M3R #400–#402 #416                                                                       | v0.27.0-beta.1 (#405)                     |
+| M4 — Sanntid, fart og resten | B4 #403 #407, B5 #410 #412 #417, B6 #404, D2 #406 #409, D3 #408; M4R-rettelser #416 og lytte-/frontend-/dokument-PR-en etter den. **D1 er parkert, ikke levert** (under) | ikke i noen beta (0.28.0-beta.1 er neste) |
+
+**Åpent fra ombyggingen** (én linje per punkt; detaljene bor i kilden):
+
+| Punkt                                                                                                                                                                                                                                                                              | Kilde                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **B2c** (sletter filterstrengene og `chain_ab`): venter på at **eieren lytter** på ORENE-B2b, tre gudstjenester × tre profiler, gammel mot ny, og sier ja. Runden har ingen avkrysningsboks i RIG-DAY ennå                                                                         | [GJENNOMFORING.md](GJENNOMFORING.md) §B2c, [LYDMOTOR.md](LYDMOTOR.md) |
+| **D1 (earshot) er parkert** til det finnes et ekte korpus (≥ 12 korrigerte opptak). Silero/tract beholdes; grenen `ombygging/d1-earshot-vad` (12a96b37) står umerget. Ikke en 1.0-sperre                                                                                           | [GJENNOMFORING.md](GJENNOMFORING.md) §D1, [VAD.md](VAD.md)            |
+| **Riggpunkter:** Mac-boksen, Windows-boksen, videorunden (v1)–(v10) (klappetesten over 90 min), B5 (a)–(c) med 90 min spillehode, (w) varselstatus, (d3-mac)/(d3-rigg), Ørene                                                                                                      | [RIG-DAY.md](RIG-DAY.md)                                              |
+| **Milepælsportene:** beta-søndag og så stabil, for M1–M4. Stabil er fortsatt 0.25.3                                                                                                                                                                                                | [GJENNOMFORING.md](GJENNOMFORING.md) §Milepælsportene                 |
+| **Eksporten krysstoner ikke som lyttingen** (lyttingen 20 ms, eksporten dukker 15 + 15 ms): rettes i en egen PR som pågår                                                                                                                                                          | [LYDMOTOR.md](LYDMOTOR.md) §B5c                                       |
+| **Spillehodet går foran lyden med utgangsforsinkelsen** (Bluetooth 150–250 ms): mistenkt, avgjøres av klappetesten                                                                                                                                                                 | [LYDMOTOR.md](LYDMOTOR.md)                                            |
+| **M3R-rester:** #7 (cpal-latens på Mac, rigg), #13 (gjenopprettet videoopptak får ikke sidefila med lyd), #16 (konformeren viser bildet i snitt 0,5 bilde for sent), #17 (VIDEOMOTOR sier «summeres», målt er ett dobbelt bilde per grense), #19 (bilder før første lydpar kastes) | [VIDEOMOTOR.md](VIDEOMOTOR.md)                                        |
+| **Video-pre-roll:** ikke planlagt. Starten fylles med svart for pre-roll-lengden (M3R #8)                                                                                                                                                                                          | [VIDEOMOTOR.md](VIDEOMOTOR.md) §C3                                    |
+| Workeren lagrer ikke `nativeXruns` (flåten melder null hakk): migrasjon, `INSERT`, test, så Worker-deploy                                                                                                                                                                          | `sunday-telemetry`                                                    |
+| Plan-PR #344 står fortsatt åpen og bør lukkes                                                                                                                                                                                                                                      | GitHub                                                                |
+
+**Eierbeslutninger 2026-10-19:** D1 parkert (over). B6: videoeksporten kan starte
+på nøkkelbildet inntil ca. 2 s tidligere enn lyttingen, og `-aac_coder fast` er
+godtatt. D2: bannerstilen «Ingen» vises rødt. D3: bare stillhetsvarselet, og bare
+når begge vilkårene gjelder; en påminnelse etter gjenkobling er i orden.
 
 ## Kode
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 - Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
-- Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), klokkehopp tømmer papirkurven (110, trenger lagret sist-kjørt-tid), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn og to-prosess-video uten reconnect/temp-manifest (151, 65), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, `_deliver_tmp` synlig i lagringsmappa, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
+- Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), klokkehopp tømmer papirkurven (110, trenger lagret sist-kjørt-tid), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn (151; to-prosess-videostien er slettet i C3b, #384), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, `_deliver_tmp` synlig i lagringsmappa, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
 
 ## Spike / maskinvare først
 

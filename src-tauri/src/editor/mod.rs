@@ -1862,6 +1862,9 @@ pub async fn cancel_export_for_recording<R: tauri::Runtime>(app: &tauri::AppHand
     use tauri::Manager;
     // The background listen preparation is the same kind of work, and nobody waits for it.
     cancel_listen_prepare();
+    // An open or playing listening session holds the sound card and decodes beside the
+    // recording (M4R #8). It stops here, in the backend, so it holds with the window hidden.
+    listen::stop_for_recording(app).await;
     let Some(engine) = app.try_state::<ExportEngine>() else {
         return false;
     };
