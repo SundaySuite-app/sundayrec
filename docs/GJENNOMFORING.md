@@ -1665,6 +1665,9 @@ Lytteprøven og 90-minutters synken: RIG-DAY «(c) Klipp-steget på motoren».
 
 **Modell:** Sonnet · **Gren:** `ombygging/b6-rask-videoeksport` · **Pakke:** B6
 
+> **Eierbeslutning 2026-10-19:** starten kan ligge opptil ca. 2 s tidligere enn lyttingen
+> (nøkkelbildet før kuttet), og `-aac_coder fast` i kopimodus er godtatt.
+
 **Mål:** Når videoen bare **kuttes**, skal videostrømmen kopieres i stedet for å
 kodes om.
 
@@ -1729,6 +1732,16 @@ RIG-DAY-punkt).
 
 ## D1 — `earshot` erstatter tract og Silero
 
+> **PARKERT (eierens beslutning 2026-10-19). Ikke levert, ikke en 1.0-sperre.**
+> `earshot` tas ikke inn før det finnes et ekte korpus (≥ 12 korrigerte opptak) å
+> måle mot. **Silero/tract beholdes** (`tract-onnx`, `resources/vad/`, SHA-sjekken
+> og `vad`-jobbens modellkontroll blir stående). Grenen `ombygging/d1-earshot-vad`
+> (12a96b37) beholdes **umerget**, uten PR. Grunnen: `ab_eval` på syntetiske data
+> ga grensefeil på 330–360 s for earshot mot 0,3–0,5 s for Silero, og earshot
+> merket holdte dype toner som tale (utviklerens påstand holdt ikke).
+> Detaljer: [VAD.md](VAD.md) §Beslutning 2026-10-19. Resten av denne seksjonen er
+> den opprinnelige planen og gjelder bare hvis D1 tas opp igjen.
+
 **Modell:** Sonnet · **Gren:** `ombygging/d1-earshot-vad` · **Pakke:** D1
 
 **Mål:** Samme VAD, lettere motor. Skyggemodusen og porten i [VAD.md](VAD.md) er
@@ -1773,6 +1786,9 @@ sammenlignes med de gamle, og VAD.md er skrevet om.
 
 **Modell:** Sonnet · **Gren:** `ombygging/d2-varselstatus-mac` · **Pakke:** D2
 
+> **Eierbeslutning 2026-10-19:** bannerstilen «Ingen» regnes som rødt (vi regner uten
+> banner som ikke varslet).
+
 **Mål:** I dag er svaret `unknown` + et testvarsel. Med
 `UNUserNotificationCenter.getNotificationSettings` kan appen si det den vet.
 
@@ -1804,6 +1820,10 @@ tilstander, og `unknown` når appen kjøres utenfor en bundle.
 ## D3 — Lydstyrke under opptak
 
 **Modell:** Sonnet · **Gren:** `ombygging/d3-lufs-under-opptak` · **Pakke:** D3
+
+> **Eierbeslutning 2026-10-19:** bare stillhetsvarselet, og bare når begge vilkårene
+> (under −40 LUFS og mer enn 5 minutter) gjelder. En påminnelse etter gjenkobling er i
+> orden. Ingen egen teller for D3.
 
 **Mål:** En dempet mikser skal oppdages mens opptaket går, ikke etterpå.
 
