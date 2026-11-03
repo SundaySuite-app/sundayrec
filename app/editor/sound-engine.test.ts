@@ -19,6 +19,7 @@ import {
   listenError,
   listenPlaying,
   listenPreparing,
+  listenStopped,
   listenSide,
   listenStart,
   resetSound,
@@ -238,6 +239,22 @@ describe("spillehodet er det motoren sier", () => {
     engine.emit({ kind: "error", message: "the output device failed" });
     expect(listenPlaying.value).toBe(false);
     expect(listenError.value).toBe(true);
+  });
+
+  it("et opptak som starter stopper lyttingen: knappen står, beskjeden vises, neste spill åpner på nytt (M4R #8)", async () => {
+    await playingAfter();
+    expect(engine.log.filter((c) => c.cmd === "open")).toHaveLength(1);
+    // Rust har lukket økta og sier det; vinduet henger ikke.
+    engine.emit({ kind: "stopped" });
+    expect(listenPlaying.value).toBe(false);
+    expect(listenStopped.value).toBe(true);
+    expect(listenError.value).toBe(false);
+    expect(engine.listeners()).toBe(0);
+    // Neste trykk åpner en ny økt og fjerner beskjeden.
+    await toggleListen();
+    expect(engine.log.filter((c) => c.cmd === "open")).toHaveLength(2);
+    expect(listenStopped.value).toBe(false);
+    expect(listenPlaying.value).toBe(true);
   });
 
   it("pause pauser motoren; fortsett spiller der det stod", async () => {

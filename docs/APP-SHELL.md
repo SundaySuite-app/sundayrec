@@ -1991,7 +1991,7 @@ en ren tilstandsmaskin) · `keep-segments` (hva som blir igjen) ·
 `draft-scheduler` (debouncen som ikke kan skrive til feil fil) ·
 `sermon-candidates` (den ENE lista både tilbudet og korreksjonen bygges på) ·
 `sermon-feedback` (E8-nyttelasten, bygget FØR forfremmelsen) · `haptics` ·
-`play-regions` (`routePlayback`).
+`play-regions` (`routePlayback`; slettet i M4R #13, avspillingen er motoren i Rust).
 
 **Portet til `app/editor/`** — de rører DOM eller lerret, så algoritmen er
 legacys og oppkoblingen er ny: `waveform.ts` (stolpene, linjalens tikk-tetthet,

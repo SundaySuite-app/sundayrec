@@ -1089,8 +1089,7 @@ pub async fn editor_prepare_listen(
     editor::prepare_listen(&request, &source).await
 }
 
-/// Where the engine's events go: `editor://listen`.
-const LISTEN_EVENT: &str = "editor://listen";
+use editor::listen::LISTEN_EVENT;
 
 /// Open the listening session for the recording behind `request.source_token`, with the cuts
 /// the request carries, paused at `request.start_sec` (source seconds), «Før» chosen and no chain

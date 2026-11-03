@@ -48,6 +48,7 @@ import {
   ensureSoundAnalysis,
   listenAt,
   listenError,
+  listenStopped,
   listenPreparing,
   listenPlaying,
   listenSide,
@@ -271,6 +272,10 @@ function ListenCard() {
       ) : listenError.value ? (
         <p data-testid="editor-listen-error" class={styles.hint}>
           {t("app.editor.listenFailed")}
+        </p>
+      ) : listenStopped.value ? (
+        <p data-testid="editor-listen-stopped" class={styles.hint}>
+          {t("app.editor.listenStopped")}
         </p>
       ) : null}
     </Card>

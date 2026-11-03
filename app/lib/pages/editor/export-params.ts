@@ -15,7 +15,7 @@
 //      dropped by the shim and never implemented in Rust, so "Erstatt original"
 //      silently behaved like "ny fil". The pill is gone; so is the field.
 
-import { VIDEO_EXTS } from "./state";
+import { VIDEO_EXTS } from "./types";
 import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
 import type { EditorChannelRepair } from "@legacy/bindings/EditorChannelRepair";
 import type { EditorProcessing } from "@legacy/bindings/EditorProcessing";

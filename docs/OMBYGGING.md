@@ -1,7 +1,12 @@
 # Ombyggingen — store grep før SundayRec rulles ut
 
-_Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status:
-**plan, ikke startet.** Gjennomføres i nye økter lokalt på Macen, én PR per
+_Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status
+2026-11-03: **M1–M4 er levert og merget** (PR-numrene står i
+[PLAN.md](PLAN.md)), med disse unntakene: **B2c venter på eierens lytting**
+(ORENE-B2b), **D1 er parkert** (beslutning 2026-10-19, se pakke D1), og
+**ingenting har gått gjennom milepælsporten**: stabil er fortsatt 0.25.3, M4 er i
+ingen beta, og 0 av 84 riggpunkter er krysset av. Åpne punkter, én linje hver:
+[PLAN.md](PLAN.md) §Ombyggingen. Gjennomført i økter lokalt på Macen, én PR per
 økt. Øktregisteret — hvilke PR-er hver pakke blir, hvilken modell som skal
 brukes, og en ferdig startmelding per økt — står i
 [GJENNOMFORING.md](GJENNOMFORING.md)._
@@ -23,18 +28,18 @@ fjernes.
 
 ## De store beslutningene
 
-| #   | Beslutning                                                                                                                                    | Konsekvens                                                                 |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| B1  | **ffmpeg brukes bare til filer:** dekoding, koding og muxing. Ikke til opptak fra enheter, og ikke til lydbehandling                          | All enhetsfangst og all lyd-DSP flyttes til Rust                           |
-| B2  | **Én opptaksmotor** for lyd og video: den native (cpal → WAV), med kamera som et valgfritt spor                                               | Fire videostier og to ffmpeg-fangster slettes (11 000–14 000 linjer, målt) |
-| B3  | **Lydklokka er sjefen.** Video følger lyden                                                                                                   | Et kamera som faller ut, tar aldri lyden med seg                           |
-| B4  | **Kode utenfra tas inn i repoet, låst:** filmcrafts `audio-dsp` (MIT/Apache) og Caps kamera-crates (MIT). Mac-kameraet portes til objc2       | `UPSTREAM.md` per crate. Oppdateringer er egne PR-er                       |
-| B5  | **Ingen reserve etter godkjenning.** Når en ny vei er godkjent på riggen, slettes den gamle i samme milepæl, ikke etter en overgangsutgivelse | Mindre kode å vedlikeholde. Feil rettes framover                           |
-| B6  | **Nødlukene fjernes:** `classic_ffmpeg_audio`, `classic_ffmpeg_preroll` og `classic_directshow`                                               | Gamle innstillingsverdier ignoreres stille, som andre utgåtte felt         |
-| B7  | **«Tale» renser av seg selv:** brum, støy, romklang og klikk, uten nye knapper                                                                | Lyden endrer seg for alle. Ørene må godkjenne                              |
-| B8  | **Maskinvarekoding på begge plattformer**, med programvare som reserve                                                                        | Mindre CPU-last på kirke-PC-er                                             |
-| B9  | **cpal 0.18 først**, fordi begge motorene bygger på den                                                                                       | Én API-overgang i stedet for to                                            |
-| B10 | **VAD bytter motor:** `earshot` (ren Rust, uten modellfil) erstatter tract + Silero, fortsatt i skyggemodus                                   | `tract-onnx`, modellen på 2,8 MB og byggesjekken forsvinner                |
+| #   | Beslutning                                                                                                                                                        | Konsekvens                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| B1  | **ffmpeg brukes bare til filer:** dekoding, koding og muxing. Ikke til opptak fra enheter, og ikke til lydbehandling                                              | All enhetsfangst og all lyd-DSP flyttes til Rust                           |
+| B2  | **Én opptaksmotor** for lyd og video: den native (cpal → WAV), med kamera som et valgfritt spor                                                                   | Fire videostier og to ffmpeg-fangster slettes (11 000–14 000 linjer, målt) |
+| B3  | **Lydklokka er sjefen.** Video følger lyden                                                                                                                       | Et kamera som faller ut, tar aldri lyden med seg                           |
+| B4  | **Kode utenfra tas inn i repoet, låst:** filmcrafts `audio-dsp` (MIT/Apache) og Caps kamera-crates (MIT). Mac-kameraet portes til objc2                           | `UPSTREAM.md` per crate. Oppdateringer er egne PR-er                       |
+| B5  | **Ingen reserve etter godkjenning.** Når en ny vei er godkjent på riggen, slettes den gamle i samme milepæl, ikke etter en overgangsutgivelse                     | Mindre kode å vedlikeholde. Feil rettes framover                           |
+| B6  | **Nødlukene fjernes:** `classic_ffmpeg_audio`, `classic_ffmpeg_preroll` og `classic_directshow`                                                                   | Gamle innstillingsverdier ignoreres stille, som andre utgåtte felt         |
+| B7  | **«Tale» renser av seg selv:** brum, støy, romklang og klikk, uten nye knapper                                                                                    | Lyden endrer seg for alle. Ørene må godkjenne                              |
+| B8  | **Maskinvarekoding på begge plattformer**, med programvare som reserve                                                                                            | Mindre CPU-last på kirke-PC-er                                             |
+| B9  | **cpal 0.18 først**, fordi begge motorene bygger på den                                                                                                           | Én API-overgang i stedet for to                                            |
+| B10 | ~~**VAD bytter motor:** `earshot` erstatter tract + Silero~~ **PARKERT 2026-10-19** til det finnes et ekte korpus (≥ 12 korrigerte opptak). Silero/tract beholdes | `tract-onnx`, modellen og byggesjekken blir stående                        |
 
 ## Rekkefølge og milepæler
 
@@ -199,7 +204,16 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
 
 ### D — Resten
 
-**D1 — VAD: `earshot` erstatter tract + Silero (M)**
+**D1 — VAD: `earshot` erstatter tract + Silero (M) — PARKERT, ikke levert**
+
+- **Eierens beslutning 2026-10-19:** parkert til det finnes et ekte korpus
+  (≥ 12 korrigerte opptak) å måle mot. **Silero/tract beholdes.** Grenen
+  `ombygging/d1-earshot-vad` (12a96b37) beholdes **umerget**, uten PR. Ikke en
+  1.0-sperre: VAD-en står i skyggemodus og bestemmer ingenting.
+- Hvorfor: `ab_eval` på syntetiske data ga grensefeil på 330–360 s for earshot mot
+  0,3–0,5 s for Silero, og earshot merket holdte dype toner som tale. Tallene ligger i
+  [VAD.md](VAD.md) §Beslutning 2026-10-19.
+- Planen under er den opprinnelige og gjelder bare hvis D1 tas opp igjen.
 
 - Ny `VadBackend` med `earshot` (MIT/Apache, 16 kHz, 256-samples rammer).
   Skyggemodusen og porten i [VAD.md](VAD.md) er uendret. Den får bare en

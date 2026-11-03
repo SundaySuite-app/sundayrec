@@ -1,4 +1,4 @@
-import type { Cut } from "./state";
+import type { Cut } from "./types";
 
 // The KEPT (non-cut) segments of a recording — the single source of truth for
 // both preview playback (skip over cuts) and export (the cut-plan). A bug here =

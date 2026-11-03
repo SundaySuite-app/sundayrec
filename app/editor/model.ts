@@ -11,8 +11,8 @@
  *
  * Så: `E` er PORTET, ikke oversatt. Samme objekt, samme felter, samme
  * betydning — bare uten de feltene P4a ikke bygger (mikser, mastring, video,
- * jingler, metadata). Hvert felt som ER her betyr nøyaktig det det betyr i
- * `@lib/pages/editor/state`.
+ * jingler, metadata). Den gamle `E` (med `<audio>`-elementet og proxyen) er slettet (M4R #13):
+ * dette er den eneste. Typene `Cut`/`Suggestion` bor i `@lib/pages/editor/types`.
  *
  * ## Speilene, og regelen som holder dem sanne
  *
@@ -42,7 +42,7 @@
 import { signal } from "@preact/signals";
 import type { EditorSegment } from "@legacy/bindings/EditorSegment";
 import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
-import type { Cut } from "@lib/pages/editor/state";
+import type { Cut } from "@lib/pages/editor/types";
 
 export type { Cut };
 

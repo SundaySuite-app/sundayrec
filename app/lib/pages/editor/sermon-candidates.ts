@@ -1,4 +1,4 @@
-import type { Suggestion } from "./state";
+import type { Suggestion } from "./types";
 
 // Which analysed blocks the sermon picker may offer, and — the part that
 // matters — WHICH SEGMENT each offer refers to.

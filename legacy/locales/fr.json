@@ -685,6 +685,7 @@
       "sample": "{at} — à partir de la prédication",
       "listenPreparing": "Préparation de l’écoute – la première fois, cela prend un peu de temps…",
       "listenFailed": "Impossible de lancer l’écoute. L’export se déroule normalement.",
+      "listenStopped": "L’écoute a été arrêtée, car un enregistrement a démarré.",
       "said": {
         "hum": "Nous avons retiré le ronflement du secteur",
         "noise": "Nous avons atténué le bruit de fond",

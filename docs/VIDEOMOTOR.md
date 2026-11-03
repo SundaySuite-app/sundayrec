@@ -273,7 +273,10 @@ Det C3b og C3c må vite:
   MKV aldri drar resten av bildet foran lyden; så muxes WAV + MKV til mp4
   (`-c:v copy`, lyd til AAC). Manifestet lister begge (`video_fragments`), og
   gjenopprettingen går gjennom samme kode.
-- **Pre-roll — avvik fra planen:** videoen forskyves med pre-roll-lengden
+- **Pre-roll — IKKE levert (M4R #9, M3R #8):** under står det som ble prøvd i C3a. Koden
+  gir ikke video-pre-roll (`plan_preroll_harvest` gir ingenting for et opptak med kamera),
+  og det er ikke planlagt; `concat.rs` kan legge en lead med `-itsoffset`, men den brukes
+  ikke for video. RIG-DAY (c3a) lover det ikke lenger. Opprinnelig tekst: videoen forskyves med pre-roll-lengden
   (`-itsoffset`), så mp4-en starter med en tom redigering (edit list) i stedet
   for kodede svarte bilder. Etter ISO-spesifikasjonen vises ingenting der
   (svart); ffmpeg selv dekoder første bilde på de tidspunktene (målt). Kodet
