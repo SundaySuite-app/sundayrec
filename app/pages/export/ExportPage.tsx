@@ -79,6 +79,7 @@ import {
   recordings,
 } from "../../state/recordings";
 import { Banner } from "../../ui/Banner/Banner";
+import { ActionBar } from "../../ui/ActionBar/ActionBar";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
@@ -503,12 +504,19 @@ function Choices() {
         </Card>
       ) : null}
 
-      <div class={styles.exportBar}>
-        <span data-testid="editor-export-preview" class={styles.hint}>
-          {[name, mb === null ? "" : tf("app.editor.about", { mb }), folderName]
-            .filter(Boolean)
-            .join(DOT)}
-        </span>
+      <ActionBar
+        hint={
+          <span data-testid="editor-export-preview">
+            {[
+              name,
+              mb === null ? "" : tf("app.editor.about", { mb }),
+              folderName,
+            ]
+              .filter(Boolean)
+              .join(DOT)}
+          </span>
+        }
+      >
         <Button
           variant="primary"
           size="lg"
@@ -517,7 +525,7 @@ function Choices() {
         >
           {t("editor.save")}
         </Button>
-      </div>
+      </ActionBar>
     </div>
   );
 }

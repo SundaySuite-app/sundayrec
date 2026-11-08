@@ -83,6 +83,7 @@ import {
   saveSettingsDebounced,
   settings,
 } from "../../state/settings";
+import { ActionBar } from "../../ui/ActionBar/ActionBar";
 import { Button } from "../../ui/Button/Button";
 import { DecisionCard } from "../../ui/DecisionCard/DecisionCard";
 import { toast } from "../../ui/toast";
@@ -257,7 +258,15 @@ export function FirstRun() {
         <DecisionScreen id={screen.tab} />
       )}
 
-      <div class={styles.foot}>
+      <ActionBar
+        hint={
+          screen.kind === "question" && isGatedStep(index) ? (
+            <p data-testid="first-run-gate" class={styles.gate}>
+              {t("app.first.gate")}
+            </p>
+          ) : null
+        }
+      >
         {index > 0 && screen.kind === "question" ? (
           <Button
             variant="ghost"
@@ -303,13 +312,7 @@ export function FirstRun() {
             {t("app.first.next")}
           </Button>
         )}
-      </div>
-
-      {screen.kind === "question" && isGatedStep(index) ? (
-        <p data-testid="first-run-gate" class={styles.gate}>
-          {t("app.first.gate")}
-        </p>
-      ) : null}
+      </ActionBar>
     </div>
   );
 }

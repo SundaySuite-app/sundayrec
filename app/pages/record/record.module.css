@@ -167,3 +167,12 @@
   display: grid;
   gap: var(--gap-stack);
 }
+
+/*
+ * Uten bannere er raden tom, men den er fortsatt et rutenett-barn med
+ * `--gap-page` på hver side: en usynlig rad som ga Opptak et større hull
+ * mellom overskriften og undertittelen enn alle andre sider.
+ */
+.banners:empty {
+  display: none;
+}
