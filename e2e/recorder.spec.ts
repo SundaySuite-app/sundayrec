@@ -100,6 +100,7 @@ test.describe("recorder", () => {
   test("a start the engine refuses keeps the modal open and says why", async ({
     page,
   }) => {
+    await page.setViewportSize({ width: 960, height: 640 });
     // The engine's granular error codes are only worth having if the operator
     // sees them translated. `no_save_folder` is the classic first-run refusal.
     await boot(page, {
@@ -122,6 +123,21 @@ test.describe("recorder", () => {
     const toast = page.getByTestId("toast-host");
     await expect(toast).toBeVisible();
     await expect(toast).toContainText("Lagringsmappen er ikke valgt");
+
+    // Feilvarselet står igjen til det lukkes: det skal ligge OVER handlingslinja,
+    // aldri oppå Start-knappen man må trykke på for å prøve igjen.
+    const toastBox = await toast.locator("> *").first().boundingBox();
+    const startBox = await page.getByTestId("record-start").boundingBox();
+    expect(toastBox).not.toBeNull();
+    expect(startBox).not.toBeNull();
+    const t = toastBox!;
+    const b = startBox!;
+    const overlaps =
+      t.x < b.x + b.width &&
+      t.x + t.width > b.x &&
+      t.y < b.y + b.height &&
+      t.y + t.height > b.y;
+    expect(overlaps).toBe(false);
   });
 
   test("stop is guarded by a confirm and then holds a finalizing overlay", async ({

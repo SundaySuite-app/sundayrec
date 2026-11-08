@@ -101,7 +101,7 @@
   overflow-y: auto;
   /* Handlingslinja (`ActionBar`) er sticky nederst i `<main>`: fokus og
      `scrollIntoView` skal stoppe over den, ikke bak den. */
-  scroll-padding-bottom: calc(var(--sp-8) + var(--sp-7));
+  scroll-padding-bottom: calc(var(--actionbar-h) + var(--sp-4));
 }
 
 /*
