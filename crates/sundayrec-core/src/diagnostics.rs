@@ -403,7 +403,7 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
                 "Settings force {} (not \"Auto\").",
                 rate_label(&input.settings.sample_rate_mode)
             ),
-            "If the sound card runs a different rate, ffmpeg resamples and you may get stutter. Pick \"Auto\" under Settings → Sound unless you have a concrete reason.",
+            "If the sound card runs a different rate, ffmpeg resamples and you may get stutter. Choose \"Auto\" again unless you have a concrete reason.",
         ));
     }
 

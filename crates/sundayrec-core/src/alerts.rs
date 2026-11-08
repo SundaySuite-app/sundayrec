@@ -691,12 +691,12 @@ impl AlertText {
             // it before the next one. The one-off terms match the renderer's
             // `app.setup.advanced.specialsTitle` in each language.
             (A::ScheduledSpecialDeviceFallback, L::No) => {
-                "Lydenheten «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
-                 bruker den vanlige lydenheten i stedet."
+                "Lydkilden «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
+                 bruker den vanlige lydkilden i stedet."
             }
             (A::ScheduledSpecialDeviceFallback, L::En) => {
-                "The audio device \"{device}\" for the one-off recording was not available — \
-                 recording from the usual audio device instead."
+                "The sound source \"{device}\" for the one-off recording was not available — \
+                 recording from the usual sound source instead."
             }
             (A::ScheduledSpecialDeviceFallback, L::De) => {
                 "Das Audiogerät „{device}“ für die einmalige Aufnahme war nicht verfügbar — \
@@ -1528,8 +1528,8 @@ mod tests {
         }
         assert_eq!(
             AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Rode NT-USB")]),
-            "Lydenheten «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
-             bruker den vanlige lydenheten i stedet."
+            "Lydkilden «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
+             bruker den vanlige lydkilden i stedet."
         );
     }
 

@@ -202,6 +202,7 @@
         "keepAudio": "Zachowaj osobny plik audio",
         "keepAudioDesc": "Czysty plik audio obok wideo.",
         "delivers": "Kamera zapewnia: {res}, {motion}.",
+        "deliversNoMotion": "Kamera zapewnia: {res}.",
         "probeFailed": "Nie udało się odczytać, co potrafi kamera. Nagranie używa tego, co kamera faktycznie zapewnia, maksymalnie Full HD.",
         "none": "Nie znaleziono kamery",
         "noneDesc": "Podłącz kamerę albo wyłącz „Dołącz wideo”.",
@@ -1135,11 +1136,11 @@
     "qrNoAudio": "Nie zarejestrowano dźwięku — plik jest za mały, aby cokolwiek zawierać.",
     "qrSilent": "Nagranie jest ciche — brak sygnału. Sprawdź urządzenie i wzmocnienie.",
     "qrGapFail": "Brakuje fragmentów dźwięku lub są ciche — zacinanie albo przerwy.",
-    "qrDropsFail": "Wiele przerw z urządzenia audio.",
+    "qrDropsFail": "Wiele przerw ze źródła dźwięku.",
     "qrSampleRate": "Częstotliwość próbkowania została wymuszona inna niż własna urządzenia — konwersja może powodować przerwy.",
     "qrGapWarn": "Niewielka luka lub cisza w nagraniu.",
     "qrLowSignal": "Słaby sygnał — rozważ zwiększenie wzmocnienia.",
-    "qrDropsWarn": "Kilka przerw z urządzenia audio.",
+    "qrDropsWarn": "Kilka przerw ze źródła dźwięku.",
     "qrClean": "Równe nagranie, bez przerw."
   },
   "video": {

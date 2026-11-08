@@ -290,8 +290,8 @@ async fn run_capture_probe(
             ..Default::default()
         };
     }
-    // 2. The VU meter holds an input stream open (the Innstillinger → Lyd screen
-    //    the operator is most likely standing on when they press Diagnose). On
+    // 2. The VU meter holds an input stream open (the sound-check screen
+    //    the operator is most likely standing on when they start the check). On
     //    Windows a second opener can simply fail; on macOS it works but the
     //    meter goes dead. Either way the honest answer is "not now".
     if app
@@ -301,7 +301,7 @@ async fn run_capture_probe(
     {
         return CaptureProbeOutcome {
             skipped_reason: Some(
-                "the level meter is using the microphone — stop it and run Diagnose again".into(),
+                "the level meter is using the microphone — stop it and run Check this computer again".into(),
             ),
             ..Default::default()
         };

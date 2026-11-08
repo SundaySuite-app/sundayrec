@@ -200,6 +200,7 @@
         "keepAudio": "Keep a separate audio file",
         "keepAudioDesc": "A plain audio file next to the video.",
         "delivers": "The camera delivers {res}, {motion}.",
+        "deliversNoMotion": "The camera delivers {res}.",
         "probeFailed": "We could not read what the camera can do. The recording uses the best the camera actually delivers, up to Full HD.",
         "none": "Can’t find a camera",
         "noneDesc": "Connect a camera, or turn off “Include video”.",
@@ -1119,11 +1120,11 @@
     "qrNoAudio": "No audio was captured — the file is too small to hold anything.",
     "qrSilent": "The recording is silent — no signal. Check the sound source and the gain.",
     "qrGapFail": "Parts of the audio are missing or silent — stuttering or dropouts.",
-    "qrDropsFail": "Many dropouts from the audio device.",
+    "qrDropsFail": "Many dropouts from the sound source.",
     "qrSampleRate": "The sample rate was forced away from the device's own — the conversion can cause dropouts.",
     "qrGapWarn": "A small gap or silence in the recording.",
     "qrLowSignal": "Weak signal — consider raising the gain.",
-    "qrDropsWarn": "A few dropouts from the audio device.",
+    "qrDropsWarn": "A few dropouts from the sound source.",
     "qrClean": "Steady recording, no dropouts."
   },
   "video": {

@@ -200,6 +200,7 @@
         "keepAudio": "Conserver un fichier audio séparé",
         "keepAudioDesc": "Un fichier audio seul à côté de la vidéo.",
         "delivers": "La caméra fournit {res}, {motion}.",
+        "deliversNoMotion": "La caméra fournit {res}.",
         "probeFailed": "Nous n’avons pas pu lire ce que la caméra sait faire. L’enregistrement utilise le meilleur de ce que la caméra fournit réellement, jusqu’à Full HD.",
         "none": "Aucune caméra trouvée",
         "noneDesc": "Branchez une caméra, ou désactivez « Inclure la vidéo ».",
@@ -1119,11 +1120,11 @@
     "qrNoAudio": "Aucun son n’a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
     "qrSilent": "L’enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",
     "qrGapFail": "Des parties du son manquent ou sont silencieuses — saccades ou coupures.",
-    "qrDropsFail": "De nombreuses coupures du périphérique audio.",
+    "qrDropsFail": "De nombreuses coupures de la source audio.",
     "qrSampleRate": "La fréquence d’échantillonnage a été forcée hors de celle du périphérique — la conversion peut provoquer des coupures.",
     "qrGapWarn": "Un petit trou ou un silence dans l’enregistrement.",
     "qrLowSignal": "Signal faible — envisagez d’augmenter le gain.",
-    "qrDropsWarn": "Quelques coupures du périphérique audio.",
+    "qrDropsWarn": "Quelques coupures de la source audio.",
     "qrClean": "Enregistrement régulier, aucune coupure."
   },
   "video": {
