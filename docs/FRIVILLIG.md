@@ -55,27 +55,27 @@ tilgangen trolig avslått:
 
 ## Velg lyd (kontrollrommet)
 
-Appen har tre knapper nederst — **Opptak · Redigering · Eksportering** — og
+Appen har tre knapper nederst — **Opptak · Bibliotek · Eksport** — og
 et tannhjul for Innstillinger helt til høyre. Du gjør nesten alt fra
 **Opptak**.
 
-1. Trykk **«Velg lyd»** (eller **«Endre»**, hvis noe allerede er valgt) på
-   kortet til venstre. Kortet folder seg ut med enhetene appen finner:
+1. Trykk **«Velg lydkilde»** (eller **«Endre»**, hvis noe allerede er valgt) på
+   kortet til venstre. Kortet folder seg ut med lydkildene appen finner:
    maskinens egen mikrofon, en USB-mikrofon, eller et miksebord med flere
-   kanaler.
-2. Velg enheten. Snakk eller send lyd inn på mikseren — ordet under måleren
+   innganger.
+2. Velg lydkilden. Snakk eller send lyd inn på miksebordet — ordet under måleren
    forteller deg det du faktisk trenger å vite: **«Vi hører ingenting»** →
-   **«Vi hører lyd»** → **«For høyt»**. Har mikseren flere kanaler, velg
+   **«Vi hører lyd»** → **«For høyt»**. Har miksebordet flere innganger, velg
    paret dere sender lyd på.
-3. Trykk **«Bruk denne»**. Du får ÉN kvittering, «Lagret ✓», når valget er
-   tatt vare på.
+3. Trykk **«Bruk denne lydkilden»**. Du får ÉN kvittering, «Lagret ✓», når
+   valget er tatt vare på.
 
-Gjør dette én gang per oppsett — appen husker valget til noen bytter mikser
+Gjør dette én gang per oppsett — appen husker valget til noen bytter miksebord
 eller mikrofon.
 
 ## Ta opp
 
-1. Trykk **«Start opptak»** på Opptak. Er ikke lyd valgt ennå, forteller
+1. Trykk **«Start opptak»** på Opptak. Er ikke lydkilde valgt ennå, forteller
    knappen deg akkurat det i stedet for bare å være grå.
 2. Statuslinjen nederst til venstre blir rød og sier **«Tar opp»** —
    rødt betyr alltid nettopp det, ingenting annet, i denne appen.
@@ -86,10 +86,9 @@ eller mikrofon.
 4. Vent til kortet **«Opptaket er lagret»** vises. Ikke lukk appen før du ser
    det — filen skrives ferdig i denne pausen.
 
-**Finn fila:** gå til **Redigering** — den nye opptaksraden ligger øverst,
-med dato og klokkeslett. Trykk **«Vis i Finder»** på raden for å åpne mappen
-filen faktisk ligger i — samme knappetekst på Windows også, den åpner der
-Utforsker (File Explorer).
+**Finn fila:** gå til **Bibliotek** — den nye opptaksraden ligger øverst,
+med dato og klokkeslett. Trykk **«Vis i Finder»** (på Windows: **«Vis i
+Utforsker»**) på raden for å åpne mappen fila faktisk ligger i.
 
 Lukker du hele appen mens den tar opp, fortsetter opptaket i bakgrunnen (se
 etter ikonet i menylinjen/systemstatusfeltet) — men ikke gjør det med vilje;
@@ -100,10 +99,10 @@ la appen stå åpen til opptaket er stoppet og lagret.
 SundayRec laster ikke opp noe selv, men gjør fila og teksten klar, så du
 bare drar fila inn på siden menigheten bruker.
 
-1. Åpne opptaket i **Redigering**. Vil dere bare ha prekenen, trykk
+1. Åpne opptaket i **Bibliotek** med **«Rediger»**. Vil dere bare ha prekenen, trykk
    **«Behold bare prekenen»**. Det gir et kortere spor, og en gratiskonto på
    SoundCloud har bare rundt **3 timer opplasting totalt**.
-2. Gå videre til **Eksportering**. Under **Innhold** skriver du **tittel**,
+2. Gå videre til **Eksport**. Under **Innhold** skriver du **tittel**,
    **taler** og eventuelt en **beskrivelse**. Alt er valgfritt, men med
    tittel får fila navnet `2026-09-27 Tittel.mp3`, som er det SoundCloud
    foreslår som tittel. Har menigheten lagt inn en fast beskrivelse, står den
@@ -111,7 +110,8 @@ bare drar fila inn på siden menigheten bruker.
 3. Trykk **«Eksporter»**. Når kvitteringen kommer, står panelet
    **«Legg ut på SoundCloud»** under den:
    - **«Åpne SoundCloud»** åpner opplastingssiden i nettleseren.
-   - **«Vis i Finder»** viser fila. Dra den inn på siden.
+   - **«Vis i Finder»** (Windows: **«Vis i Utforsker»**) viser fila. Dra den
+     inn på siden.
    - **«Kopier»** ved tittel og beskrivelse legger teksten på
      utklippstavla, én om gangen. Lim den inn i feltene på siden.
 
@@ -134,19 +134,20 @@ stående til noen har sett den — den forsvinner ikke av seg selv:
 
 Er du usikker på hva som er galt, eller vil sende oss et konkret bevis:
 
-1. Gå til tannhjulet (**Innstillinger**) → **Hjelp og feilsøking** → **Diagnose** →
-   trykk **«Kjør»**. Du får fem svar (enheter, valgt enhet, mikrofontilgang,
-   motor, lydprøve) — et rødt kryss viser hva som er galt.
+1. Gå til tannhjulet (**Innstillinger**) → **Hjelp og feilsøking** →
+   **Sjekk maskinen** → trykk **«Start sjekk»**. Du får fem svar (lydkilder,
+   valgt lydkilde, mikrofontilgang, opptaksmotor, lydprøve) — et rødt kryss
+   viser hva som er galt.
 2. Trykk **«Kopier full rapport»**. Rapporten inneholder ingen lyd og ingen
    passord — bare tekniske fakta om maskinen og appen.
-3. Lim den inn der du ber om hjelp: et GitHub-issue, eller en e-post til
+3. Send den til den som hjelper dere, eller i en e-post til
    **dev@sundaysuite.app**. Rapporten alene forklarer sjelden alt — skriv
    gjerne med hva dere opplevde også.
 
 ## Hvem ringer du?
 
 **Ring menighetens egen faste kontakt for lyd/opptak først** — den som satte
-opp appen kjenner rommet, mikseren og hva som pleier å svikte. Skriv navn og
+opp appen kjenner rommet, miksebordet og hva som pleier å svikte. Skriv navn og
 nummer inn her, så alle frivillige finner det samme stedet:
 
 > Fast kontakt: **\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_** — telefon: **\_\_\_\_\_\_\_\_\_\_\_\_\_\_**
@@ -178,7 +179,7 @@ Det betyr, konkret:
   mappen til en ekstern disk, en skytjeneste dere allerede har, eller lignende,
   med jevne mellomrom. Det er ikke noe appen kan gjøre for dere.
 - Bytter dere maskin, må dere flytte filene selv. De ligger i den mappen
-  dere valgte i kortet **«Hvor skal opptakene?»** på Opptak — samme kort
+  dere valgte i kortet **«Hvor lagres opptakene?»** på Opptak — samme kort
   viser gjeldende mappe hvis dere er usikre.
 
 ---

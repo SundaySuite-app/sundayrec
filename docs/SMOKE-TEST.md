@@ -54,6 +54,20 @@ for anybody holding an older report.
 >    something. The gear opens what does not belong to a Sunday: the church
 >    profile and Avansert.
 >
+> **Names changed again in the November 2026 design round (PR 3, texts).** The
+> steps below still use the older names; read them with this key:
+> **«Redigering» → «Bibliotek»** and **«Eksportering» → «Eksport»** (the
+> destinations), **«Hvilken lyd?» → «Hvilken lydkilde?»**, **«Hvor skal
+> opptakene?» → «Hvor lagres opptakene?»**, **«Ta med kamera» → «Ta med video»**,
+> **«Velg lyd» → «Velg lydkilde»**, **«Bruk denne» → «Bruk denne lydkilden»**,
+> **«Diagnose» → «Sjekk maskinen»** with **«Kjør» → «Start sjekk»**,
+> **«Del anonym diagnostikk» → «Send anonym bruksstatistikk»**, **«Logg» →
+> «Feillogg»**, **«Avansert: åpne mikseren» → «Juster lyden selv»**
+> («Lydjustering»), and **«Vis i Finder» is «Vis i Utforsker» on Windows**.
+> **«the gear › Avansert» no longer exists**: Innstillinger is split into
+> sections (Kirke og språk · Tidsplan · Legg ut · Opptaket · Oppdateringer og
+> personvern · Hjelp og feilsøking · Om) with a «Hopp til» list on top.
+
 > The table and every step below are **written against that shell** — D2/PR4
 > swept the prose, so «Opptak › ‹card›» and «the gear › Avansert» are the walk,
 > not a translation you have to do in your head. Every old deep link still lands
