@@ -429,7 +429,7 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-lyd",
     page: "Opptak",
-    state: "Kilde-kortet foldet ut — hele «Hvilken lyd?» på stedet",
+    state: "Kilde-kortet foldet ut — hele «Hvilken lydkilde?» på stedet",
     recipe: "`?goto=settings:audio` → anker `sound`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
@@ -445,7 +445,7 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-mappe",
     page: "Opptak",
-    state: "«Hvor skal opptakene?» foldet ut",
+    state: "«Hvor lagres opptakene?» foldet ut",
     recipe: "`?goto=settings:files` → anker `folder`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
@@ -475,7 +475,7 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-kamera",
     page: "Opptak",
-    state: "«Ta med kamera» foldet ut, med kameravalget",
+    state: "«Ta med video» foldet ut, med kameravalget",
     recipe:
       "`?goto=settings:video` + `videoEnabled:true` — kortet kan BARE foldes ut når tillegget er på",
     boot: {
@@ -841,7 +841,7 @@ export const SCENES: Scene[] = [
   // ══ REDIGERING ════════════════════════════════════════════════════════════
   {
     id: "redigering--bibliotek",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Biblioteket med opptak — dato, lengde, notat",
     recipe: "tre rader i `recordings_list`, én med notat",
     boot: {
@@ -855,7 +855,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--bibliotek-tomt",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Biblioteket er tomt — og sier hva man gjør nå",
     recipe: "`recordings_list: []`",
     boot: {
@@ -868,7 +868,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--sok-ingen-treff",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Søket ga ingen treff",
     recipe: "fyll `library-search` med «finnesikke»",
     boot: {
@@ -884,7 +884,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--papirkurv",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Papirkurven — med «slettes om N dager»",
     recipe:
       "to rader i `trash_list`, så klikk `library-trash-open` (ikke nåbar via `?goto=`)",
@@ -916,7 +916,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--papirkurv-tom",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Papirkurven er tom",
     recipe: "`trash_list: []`, så klikk `library-trash-open`",
     boot: {
@@ -937,7 +937,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--klipp",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag",
     recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
@@ -950,7 +950,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--klipp-leter",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "«Leter etter prekenen …» — analysen er ikke ferdig",
     recipe: "`editor_segments` som aldri svarer",
     boot: {
@@ -968,7 +968,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--kuttliste",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Kuttlista — det som blir borte, som rader man kan angre",
     recipe: "åpne, så klikk `editor-keep-sermon`",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
@@ -982,7 +982,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--lyd",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Steget «Lyd» — profilene og hva de gjør",
     recipe: "åpne, så klikk `editor-steps-row-sound`",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
@@ -1002,7 +1002,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--mikser",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Mikseren åpen — de sju trinnene bak profilen",
     recipe: "steget «Lyd», så `editor-mixer-open` + `editor-mixer-toggle`",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
@@ -1023,7 +1023,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--laster",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Arbeidsflaten laster — «Analyserer …»",
     recipe: "`editor_load_recording` som aldri svarer",
     boot: {
@@ -1040,7 +1040,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--feil",
-    page: "Redigering",
+    page: "Bibliotek og redigering",
     state: "Arbeidsflaten kunne ikke åpne fila",
     recipe:
       "BÅDE `editor_load_recording: null` OG `editor_peaks: null` — toppene er en ANDRE kilde til varighet",
@@ -1061,7 +1061,7 @@ export const SCENES: Scene[] = [
   // ══ EKSPORTERING ══════════════════════════════════════════════════════════
   {
     id: "eksport--tom",
-    page: "Eksportering",
+    page: "Eksport",
     state: "Ingen fil åpen — siste opptak med én knapp, og en velger",
     recipe: "`?goto=export` med tre opptak i lista",
     boot: {
@@ -1075,7 +1075,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "eksport--ingenting",
-    page: "Eksportering",
+    page: "Eksport",
     state: "Ingen opptak i det hele tatt",
     recipe: "`recordings_list: []`",
     boot: {
@@ -1087,7 +1087,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "eksport--valg",
-    page: "Eksportering",
+    page: "Eksport",
     state: "Valgene — format, hvor, og hva som blir laget",
     recipe: "`export-pick-use` på første rad i velgeren",
     boot: {
@@ -1106,7 +1106,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "eksport--kjorer",
-    page: "Eksportering",
+    page: "Eksport",
     state: "Eksporten kjører — 40 %, med avbryt",
     recipe:
       "`editor_export` som henger (`EXPORT_HELD`) + `emit('editor-export-progress', {pct:40})`",
@@ -1134,7 +1134,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "eksport--kvittering",
-    page: "Eksportering",
+    page: "Eksport",
     state: "Kvitteringen — fila som ble laget, og hvor den ligger",
     recipe: "`editor-export-go` med `editor_export` som svarer med én gang",
     boot: {
@@ -1699,7 +1699,7 @@ export const SCENES: Scene[] = [
     id: "skallet--oppdateringsbanner",
     page: "Skallet",
     state: "Oppdateringsstripa — over den siden man ER på",
-    recipe: "`emit('update-available', { version })` på Redigering",
+    recipe: "`emit('update-available', { version })` på Bibliotek",
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: { ...CHOSEN, autoUpdate: true },

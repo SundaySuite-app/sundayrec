@@ -59,7 +59,9 @@ test.describe("app shell boot", () => {
     // is question 1, whose heading is the question (P1b). Before P1b it stopped
     // at level 1 and read «Oppsett» (the destination D2 renamed to
     // «Innstillinger» and moved onto the gear).
-    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
+    await expect(page.getByTestId("app-heading")).toHaveText(
+      "Hvilken lydkilde?",
+    );
 
     const violations = await page.evaluate(
       () => (window as any).__cspViolations as string[],
@@ -175,7 +177,9 @@ test.describe("app shell foundation", () => {
     // P1b: the route is still OPPSETT — `data-first-run` is what changes the
     // screen — but the heading is the first QUESTION, because that is what the
     // sequence shows. The shell stays on OPPSETT the whole way.
-    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
+    await expect(page.getByTestId("app-heading")).toHaveText(
+      "Hvilken lydkilde?",
+    );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
       "setup",

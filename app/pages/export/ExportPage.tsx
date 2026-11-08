@@ -85,7 +85,7 @@ import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { ProgressBar } from "../../ui/ProgressBar/ProgressBar";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
-import { revealExport } from "../../ui/reveal";
+import { revealExport, revealLabel } from "../../ui/reveal";
 import { TextArea } from "../../ui/TextArea/TextArea";
 import { TextField } from "../../ui/TextField/TextField";
 import { Toggle } from "../../ui/Toggle/Toggle";
@@ -663,34 +663,19 @@ function Running() {
  * lå en fil med det navnet der fra før.
  */
 /**
- * «Nivå: −16 LUFS» — én linje, bare når det ER noe å si (F2-C-B).
+ * «Lydstyrke: passe for nett» — én linje, bare når det ER noe å si (F2-C-B).
  *
- * Nivået er ikke et ønske: bakenden måler det behandlede signalet i Rust,
- * leverer det med ÉN forsterkning (og en true-peak-begrenser bare der toppene
- * trenger det), og tallet her er det eksporten faktisk målte på lyden som gikk
- * til koderen. Hvis toppene ikke gir rom for presetets mål, står det lavere
- * tallet der, med grunnen ved siden av. Uten en mastring (eller for et opptak
+ * Bakenden måler det behandlede signalet i Rust og leverer det med ÉN
+ * forsterkning (og en true-peak-begrenser bare der toppene trenger det).
+ * LUFS-tallet er ikke lenger i teksten: en frivillig kan ikke gjøre noe med
+ * «−16,0», men kan forstå «passe for nett». Hvis toppene ikke gir rom for
+ * presetets mål, sier linja det i ord. Uten en mastring (eller for et opptak
  * uten nivå å sette) står linja ikke der: en tom påstand er verre enn ingen.
  */
 function levelLine(): string {
   const l = exportedLoudness.value;
   if (!l) return "";
-  const lufs = formatLufs(l.achievedLufs);
-  return l.peakLimited
-    ? tf("app.editor.levelCapped", { lufs })
-    : tf("app.editor.level", { lufs });
-}
-
-/**
- * LUFS til tekst: én desimal når den finnes, minustegn (U+2212) som resten av
- * appen skriver det (`app.editor.mpSpeechClear` og de tre andre), og
- * desimalskille fra språket — «−20,8» på norsk, «−20.8» på engelsk.
- */
-function formatLufs(lufs: number): string {
-  const rounded = Math.round(lufs * 10) / 10;
-  return rounded
-    .toLocaleString(locale.value, { maximumFractionDigits: 1 })
-    .replace("-", "−");
+  return l.peakLimited ? t("app.editor.levelCapped") : t("app.editor.level");
 }
 
 function Receipt() {
@@ -747,7 +732,7 @@ function ReceiptCard({
           disabledReason={t("app.done.revealFailed")}
           onClick={() => void revealExport(revealToken)}
         >
-          {t("app.done.show")}
+          {revealLabel()}
         </Button>
         <Button
           variant="secondary"

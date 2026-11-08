@@ -65,14 +65,14 @@ test.describe("skallet", () => {
     // D3: destinasjonen heter REDIGERING. Biblioteket er dens standardvisning
     // — klipp hentes også fra andre opptakere, så «Bibliotek» ville vært et
     // navn som utelukket halvparten av det man gjør der.
-    await expect(page.getByTestId("app-heading")).toHaveText("Redigering");
+    await expect(page.getByTestId("app-heading")).toHaveText("Bibliotek");
     await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
     // Fokus på overskriften. Uten det blir en tastaturbruker stående i
     // bunnlinja og må tabbe gjennom hele navigasjonen på nytt for hver side.
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
     await page.getByTestId("nav-export").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Eksportering");
+    await expect(page.getByTestId("app-heading")).toHaveText("Eksport");
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
       "export",
@@ -170,7 +170,7 @@ test.describe("skallet", () => {
   }) => {
     await boot(page, { fixtures: CHOSEN_FIXTURES, settings: SOUND_CHOSEN });
 
-    // TRE destinasjoner etter D3 (Opptak · Redigering · Eksportering).
+    // TRE destinasjoner etter D3 (Opptak · Bibliotek · Eksport).
     // Tannhjulet teller som `nav-*` (kontrakten `no-live-surface.spec.ts`
     // hviler på), men det ligger utenfor gruppen — derfor fire, ikke tre.
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
@@ -348,7 +348,7 @@ test.describe("skallet", () => {
       settings: { ...SOUND_CHOSEN, language: "en" },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
-    await expect(page.getByTestId("nav-edit")).toContainText("Edit");
+    await expect(page.getByTestId("nav-edit")).toContainText("Library");
     await expect(page.getByTestId("nav-export")).toContainText("Export");
     await expect(page.getByTestId("nav-setup")).toContainText("Settings");
     await expect(page.getByTestId("status-text")).toHaveText("All set");

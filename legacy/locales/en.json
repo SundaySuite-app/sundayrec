@@ -2,7 +2,7 @@
   "app": {
     "page": {
       "record": "Record",
-      "edit": "Edit",
+      "edit": "Library",
       "export": "Export",
       "setup": "Settings"
     },
@@ -60,22 +60,22 @@
       "trashEmptyDesc": "Recordings you delete land here first.",
       "back": "Back to the library",
       "restore": "Put back",
-      "deleteNow": "Delete now",
+      "deleteNow": "Delete for good",
       "deleteSoon": "Deleted at the next cleanup",
       "deleteTomorrow": "Deleted tomorrow",
       "deleteInDays": "Deleted in {n} days"
     },
     "record": {
-      "noSource": "You haven't chosen where the sound comes from",
-      "noSourceDesc": "Choose the mixer — or the computer's own microphone if that's what you use.",
-      "chooseSound": "Choose sound",
+      "noSource": "You haven’t chosen a sound source",
+      "noSourceDesc": "Choose the mixing desk — or the computer’s own microphone if that’s what you use.",
+      "chooseSound": "Choose sound source",
       "sub": "Press Start when the service begins.",
       "listening": "Listening",
       "soundFrom": "Sound from",
       "start": "Start recording",
-      "whyBlocked": "Start is blocked until sound is chosen. We never record from a source nobody picked.",
-      "canStart": "You can start anyway — the recording stays silent until the mixer is back.",
-      "startHint": "Space starts the recording.",
+      "whyBlocked": "Start is blocked until a sound source is chosen. We never record from a source nobody picked.",
+      "canStart": "You can start anyway — the recording stays silent until the mixing desk is back.",
+      "startHint": "The space bar starts the recording.",
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
       "nextAutoWhen": "{day} {time}",
@@ -94,8 +94,8 @@
       }
     },
     "setup": {
-      "q1": "Which sound?",
-      "q2": "Where do recordings go?",
+      "q1": "Which sound source?",
+      "q2": "Where are recordings saved?",
       "q3": "Which quality?",
       "q4": "Which church?",
       "q5": "Who gets told if something goes wrong?",
@@ -112,25 +112,25 @@
       "save": "Save",
       "cancel": "Cancel",
       "sound": {
-        "lede": "Choose what you record from, and check that we hear it.",
-        "deviceWithPair": "{name} · channel {l}–{r}",
+        "lede": "Choose the sound source you record from, and check that we hear it.",
+        "deviceWithPair": "{name} · input {l}–{r}",
         "gone": "Can’t find {name}",
         "goneDesc": "Check that it is on and the cable is in.",
-        "noneDesc": "We never record from a source nobody chose.",
+        "noneDesc": "We never record from a sound source nobody chose.",
         "builtIn": "The computer’s own microphone",
-        "builtInDesc": "For testing only, or if you have no mixer.",
-        "external": "USB / External",
+        "builtInDesc": "For trying things out only, or if you have no mixing desk.",
+        "external": "Connected by cable",
         "mixer": {
-          "one": "Mixer · {n} channel",
-          "other": "Mixer · {n} channels"
+          "one": "Mixing desk · {n} input",
+          "other": "Mixing desk · {n} inputs"
         },
-        "whichChannels": "Which channels?",
-        "pairLabel": "Channel {l} and {r}",
-        "channelHint": "The ones with sound right now light up.",
+        "whichChannels": "Which inputs on the mixing desk?",
+        "pairLabel": "Input {l} and {r}",
+        "channelHint": "Pick the pair carrying the sound you want to record — one input for left, one for right. The ones with sound right now light up.",
         "testHint": "Speak into the microphone or play something.",
-        "useThis": "Use this",
+        "useThis": "Use this sound source",
         "noChange": "Nothing has changed.",
-        "empty": "Can’t find any sound devices",
+        "empty": "Can’t find any sound sources",
         "emptyDesc": "Not even the computer’s own microphone. Check access under System Settings → Privacy.",
         "retry": "Search again"
       },
@@ -151,9 +151,9 @@
       },
       "qualityLede": "Higher quality means bigger files. Most people stay on Good.",
       "qDesc": {
-        "mp3": "MP3. Good for the web and sharing. About 1 GB per 10 hours.",
-        "flac": "FLAC. Everything that came in, lossless. About 5 GB per 10 hours.",
-        "wav": "WAV. Uncompressed, the way an archive should be. About 10 GB per 10 hours."
+        "mp3": "Good for the web and sharing. About 1 GB per 10 hours · MP3",
+        "flac": "Everything that came in, with nothing lost. About 5 GB per 10 hours · FLAC",
+        "wav": "Uncompressed, the way an archive should be. About 10 GB per 10 hours · WAV"
       },
       "qualityCustom": "Custom · {format} {bitrate}",
       "qualityCustomDesc": "This combination isn’t one of the three. Pick a card to change it.",
@@ -165,7 +165,7 @@
         "languageLabel": "Language in the app",
         "languageDesc": "Changes right away.",
         "language": "Language: {language}",
-        "languagePaused": "This language is temporarily unavailable in the redesigned setup — the app shows {language} for now."
+        "languagePaused": "This language is temporarily unavailable — the app shows {language} for now."
       },
       "notify": {
         "lede": "The computer always tells you when something goes wrong — whoever is at it.",
@@ -175,7 +175,7 @@
         "notificationsOffDesc": "Turn on notifications for SundayRec in the system settings — otherwise nobody sees that a recording failed.",
         "onMachineUnverifiedDesc": "Failures are shown here. Send a test notification to see that they come through.",
         "remind": "Reminder before automatic recording",
-        "remindDesc": "So someone has time to turn on the mixer.",
+        "remindDesc": "So someone has time to turn on the mixing desk.",
         "remindChip": "No set time",
         "remindGate": "Turn on “Record automatically” first.",
         "remindOff": "Off",
@@ -186,26 +186,35 @@
         "permissionUnknown": "Can't be read on this computer. Send a test notification to see that they come through.",
         "permissionDeniedError": "Nobody sees the failure notifications until notifications are turned back on.",
         "sendTest": "Send test notification",
-        "openSettings": "Open settings",
+        "openSettings": "Open system settings",
         "testSent": "The test notification was sent. If it didn't appear, open the settings and turn on notifications for SundayRec.",
         "testSentDenied": "The test notification was sent, but notifications are off — it won't show until they're turned on.",
         "testFailed": "The test notification could not be sent.",
         "openSettingsFailed": "Couldn't open the notification settings. Open them from the system settings."
       },
       "camera": {
-        "title": "Include camera",
+        "title": "Include video",
         "desc": "Record video alongside the sound.",
         "noneChosen": "No camera chosen",
         "pick": "Camera",
         "keepAudio": "Keep a separate audio file",
         "keepAudioDesc": "A plain audio file next to the video.",
-        "delivers": {
-          "one": "The camera delivers at most {height}p · {n} frame per second.",
-          "other": "The camera delivers at most {height}p · {n} frames per second."
-        },
-        "probeFailed": "We could not read what the camera can do. The recording uses what the camera actually delivers, up to 1080p.",
+        "delivers": "The camera delivers {res}, {motion}.",
+        "deliversNoMotion": "The camera delivers {res}.",
+        "probeFailed": "We could not read what the camera can do. The recording uses the best the camera actually delivers, up to Full HD.",
         "none": "Can’t find a camera",
-        "noneDesc": "Connect a camera, or turn off “Include camera”."
+        "noneDesc": "Connect a camera, or turn off “Include video”.",
+        "res": {
+          "uhd": "4K",
+          "fhd": "Full HD",
+          "hd": "HD",
+          "sd": "lower resolution"
+        },
+        "motion": {
+          "smooth": "very smooth motion",
+          "normal": "smooth motion",
+          "low": "somewhat choppy motion"
+        }
       },
       "auto": {
         "title": "Record automatically",
@@ -234,9 +243,9 @@
         "6": "Sunday"
       },
       "advanced": {
-        "soundLink": "Advanced sound",
-        "preroll": "Pre-roll buffer",
-        "prerollDesc": "Sound kept from before you pressed Start. The buffer holds the microphone open in the background for as long as the app is ready to record.",
+        "soundLink": "More recording options",
+        "preroll": "Include sound from before Start",
+        "prerollDesc": "The app listens in the background, so the seconds before you press Start are not lost. The microphone stays open for as long as the app is ready to record.",
         "prerollChoice": {
           "0": "Off",
           "15": "15 seconds",
@@ -262,7 +271,7 @@
           "360": "6 hours"
         },
         "split": "Split long recordings",
-        "splitDesc": "Starts a new file at a set interval, so no single file gets enormous.",
+        "splitDesc": "Each part becomes its own file. Useful for long recordings: smaller files are easier to edit and upload, and if something goes wrong only the last part is at risk.",
         "splitEvery": "New file every",
         "splitChoice": {
           "30": "30 minutes",
@@ -276,29 +285,29 @@
         "autoDeleteAfter": "Delete after (days)",
         "autoDeleteConfirm": "Delete recordings sooner",
         "autoDeleteRange": "Enter a number between 1 and 3650.",
-        "diag": "Share anonymous diagnostics",
+        "diag": "Send anonymous usage statistics",
         "diagDesc": "Never audio, names or files. You can see exactly what is sent.",
         "diagPreviewTitle": "What is sent",
         "diagPreviewNext": "This is exactly what will be sent next time.",
-        "diagPreviewHistory": "Diagnostics are off. This shows the shape of the data from your own local history — nothing is sent.",
+        "diagPreviewHistory": "Usage statistics are off. This shows what the data would look like, taken from your own history on this computer — nothing is sent.",
         "diagPreviewEmpty": "Nothing to send right now.",
         "diagPreviewFailed": "Could not fetch the preview.",
         "diagDelete": "Delete my data",
         "diagDeleteTitle": "Delete your data?",
-        "diagDeleteBody": "Your anonymous ID is replaced with a new one, and reports not yet sent are cleared. SundayRec then asks the server to delete everything held under the old ID.",
-        "diagDeleteConfirm": "Yes, clear and swap the ID",
-        "diagDeleted": "The data is cleared locally, and you have a new anonymous ID.",
+        "diagDeleteBody": "Statistics not yet sent are cleared. SundayRec then asks for everything already sent from this computer to be deleted. The computer gets a new anonymous number, so new figures cannot be linked to the old ones.",
+        "diagDeleteConfirm": "Yes, delete the data",
+        "diagDeleted": "The data is cleared, and the computer has a new anonymous number.",
         "diagDeleteFailed": "Could not delete the data. Try again.",
         "update": "Updates",
-        "updateDesc": "Stable is recommended. Beta gets new things first.",
+        "updateDesc": "“Regular” is recommended. “Try new things first” gives you new versions before they are well tested.",
         "autoUpdate": "Update automatically",
         "autoUpdateDesc": "Checks every hour whether a newer version exists. Nothing is downloaded until you say yes.",
-        "updateStable": "Stable",
-        "updateBeta": "Beta",
-        "updateBetaTitle": "Switch to beta updates?",
-        "updateBetaBody": "Beta reaches you before it has been through a real service, and can contain faults that ruin a recording. Do not use beta on the machine that records the service. You can switch back at any time.",
-        "updateBetaConfirm": "Yes, use beta",
-        "updateBetaCancel": "Stay on stable",
+        "updateStable": "Regular (recommended)",
+        "updateBeta": "Try new things first",
+        "updateBetaTitle": "Try new versions first?",
+        "updateBetaBody": "These versions reach you before they have been tried at a real service, and can contain faults that ruin a recording. Do not use this on the computer that records the service. You can switch back at any time.",
+        "updateBetaConfirm": "Yes, try new things first",
+        "updateBetaCancel": "Stay on regular",
         "updateCheck": "Check for updates now",
         "updateChecking": "Checking for updates …",
         "updateUpToDate": "You are up to date",
@@ -312,33 +321,33 @@
         "updateFailed": "Could not check for updates",
         "updateBusyRecording": "Cannot update while a recording is running",
         "updateNotesLabel": "What's new",
-        "log": "Log",
-        "logDesc": "For troubleshooting together with us. No audio and no passwords.",
+        "log": "Error log",
+        "logDesc": "A file showing what the app has done, and any errors. It helps whoever is troubleshooting. No audio and no passwords.",
         "show": "Show",
         "copy": "Copy",
-        "logShowFailed": "Could not open the log folder.",
-        "logEmpty": "The log is still empty.",
-        "logCopied": "Log copied",
-        "logCopyFailed": "Could not copy the log.",
-        "profile": "Settings profile",
-        "profileDesc": "Take the setup to another computer. Passwords are never included.",
+        "logShowFailed": "Could not open the folder with the error log.",
+        "logEmpty": "The error log is still empty.",
+        "logCopied": "Error log copied",
+        "logCopyFailed": "Could not copy the error log.",
+        "profile": "Move the setup to another computer",
+        "profileDesc": "Save the settings in a file, and load them on the other computer. Passwords are never included.",
         "licenses": "Licenses",
         "licensesDesc": "The software from others that SundayRec is built on, and ffmpeg (GPL) with where its source code is.",
         "licensesOpen": "Show licenses",
         "licensesClose": "Close",
         "licensesFailed": "The license text could not be found. Try reinstalling the app.",
         "licensesFrameTitle": "Licenses and third-party notices",
-        "export": "Export",
-        "import": "Import",
-        "importTitle": "Import settings?",
-        "importBody": "This replaces the settings on this computer with the contents of the file you choose. The audio device, camera, recordings folder and “Start automatically with the computer” stay as they are here. Recordings, the library and passwords are untouched.",
-        "importConfirm": "Yes, import",
-        "exported": "The settings were exported.",
-        "exportFailed": "Could not export the settings: {err}",
-        "imported": "The settings were imported.",
-        "importFailed": "Could not import the settings: {err}",
-        "importNotProfile": "That file is not a SundayRec settings profile, or it is damaged. Nothing was changed.",
-        "importTooLarge": "That file is too large to be a settings profile. Nothing was changed.",
+        "export": "Save setup",
+        "import": "Load setup",
+        "importTitle": "Load setup?",
+        "importBody": "This replaces the settings on this computer with the contents of the file you choose. The sound source, camera, recordings folder and “Start automatically with the computer” stay as they are here. Recordings, the library and passwords are untouched.",
+        "importConfirm": "Yes, load the setup",
+        "exported": "The setup was saved.",
+        "exportFailed": "Could not save the setup: {err}",
+        "imported": "The setup was loaded.",
+        "importFailed": "Could not load the setup: {err}",
+        "importNotProfile": "That file is not a setup saved by SundayRec, or it is damaged. Nothing was changed.",
+        "importTooLarge": "That file is too large to be a saved setup. Nothing was changed.",
         "schedTitle": "More times and one-off recordings",
         "schedDesc": "The weekly time is set on the Record page, in the “Record automatically” card. Here you add more.",
         "schedTimes": "Weekly times",
@@ -359,8 +368,8 @@
         "specialNeedsDate": "Choose a date first.",
         "specialPast": "That date has passed — a recording will not start.",
         "specialDeviceSame": "Same as the usual recording",
-        "specialDevice": "Audio device for this recording",
-        "specialDeviceHint": "Choose an audio device of its own if this recording should come from a different sound card. If it is not connected when the recording starts, the usual one is used — and you are told.",
+        "specialDevice": "Sound source for this recording",
+        "specialDeviceHint": "Choose a sound source of its own if this recording should come from something other than usual. If it is not connected when the recording starts, the usual one is used — and you are told.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (not connected now)",
         "wake": "Wake the machine from sleep",
@@ -374,36 +383,36 @@
           "unknown": "We do not know yet whether this machine can be woken."
         },
         "wakeIssue": {
-          "macArmNoPowerOn": "Apple Silicon cannot start from a fully powered-off state — only from sleep.",
-          "macIntelManualPowerOn": "An Intel Mac can start from off, but you must enable “Start up or wake” manually in System Settings → Battery.",
-          "winTimerDiesWithApp": "The wake timer is set by SundayRec while it is running. Quit SundayRec entirely and the wake timer goes with it.",
-          "winS5NeedsBios": "Waking from fully powered off (S5) requires “Wake on RTC from S5” in the BIOS — software cannot enable it.",
-          "linuxUnsupported": "Linux is not supported for automatic wake from SundayRec.",
-          "platformUnsupported": "This platform is not supported for automatic wake."
+          "macArmNoPowerOn": "This Mac cannot turn itself on from fully off — it has to be asleep.",
+          "macIntelManualPowerOn": "This Mac can turn itself on from off, but you have to switch on “Start up or wake” yourself in System Settings → Battery.",
+          "winTimerDiesWithApp": "SundayRec sets up the wake-up while the program is running. If you quit SundayRec completely, it disappears.",
+          "winS5NeedsBios": "For the computer to wake from fully off, this must be switched on in its startup settings (BIOS). SundayRec cannot do that for you — leave the computer asleep instead.",
+          "linuxUnsupported": "Automatic wake-up does not work on Linux.",
+          "platformUnsupported": "Automatic wake-up does not work on this type of computer."
         },
         "wakeAdvice": {
-          "macKeepAsleep": "Leave the machine asleep (do not shut it down) once it is prepared.",
-          "macDisableStandby": "Turn deep sleep (standby) off — it can stop the machine from waking.",
-          "macStayPluggedIn": "Mains power must be connected — a Mac does not wake reliably on battery.",
-          "winKeepAppRunning": "Leave SundayRec running — it starts automatically at sign-in and sits in the system tray.",
-          "winSleepNotShutdown": "Put the machine to sleep (Sleep/Hibernate) rather than shutting it down.",
-          "winStayPluggedIn": "Mains power should be connected — many laptops disable wake timers on battery.",
-          "winCheckBios": "If the test wake fails, check the BIOS for “Wake on RTC” and enable “Allow wake timers” in the power options.",
-          "useMacOrWindows": "Use a Mac or a Windows PC to enable automatic wake."
+          "macKeepAsleep": "Leave the computer asleep — do not shut it down.",
+          "macDisableStandby": "Turn off “deep sleep” (standby) in the energy settings — otherwise the computer may not wake up.",
+          "macStayPluggedIn": "Keep the computer plugged in — a Mac does not wake reliably on battery.",
+          "winKeepAppRunning": "Keep SundayRec running — it starts by itself when you sign in and sits in the system tray by the clock.",
+          "winSleepNotShutdown": "Put the computer to sleep, do not shut it down.",
+          "winStayPluggedIn": "Keep the computer plugged in — many laptops will not wake on battery.",
+          "winCheckBios": "If the trial wake-up does not work: check that “Allow wake timers” is on in the power settings, and that “Wake on RTC” is on in the BIOS.",
+          "useMacOrWindows": "Automatic wake-up only works on Mac and Windows."
         },
-        "wakeArm": "Activate wake-up",
+        "wakeArm": "Set up wake-up",
         "wakeArmWord": {
-          "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",
-          "ok": "The wake-up is registered with the operating system.",
-          "autoRecordOff": "No wake-ups to register — “Record automatically” is off.",
-          "nothingUpcoming": "No wake-ups to register — nothing is scheduled ahead.",
+          "idle": "Put the wake-up into the computer now. May ask for an administrator password.",
+          "ok": "The wake-up has been set up in the computer.",
+          "autoRecordOff": "No wake-ups to set up — “Record automatically” is off.",
+          "nothingUpcoming": "No wake-ups to set up — nothing is scheduled ahead.",
           "needsAdmin": "Needs an administrator password — try again and answer the prompt.",
           "disabled": "Turn on “Wake the machine from sleep” first.",
           "unsupported": "This machine cannot be woken by the app.",
-          "cancelled": "You cancelled — nothing was registered.",
-          "failed": "The wake-up was not registered."
+          "cancelled": "You cancelled — nothing was set up.",
+          "failed": "The wake-up was not set up."
         },
-        "wakeTest": "Test wake-up in 2 min",
+        "wakeTest": "Try a wake-up in 2 min",
         "wakeTestIdle": "Schedule a real wake-up two minutes from now, and see whether the machine actually wakes.",
         "wakeTestScheduled": "Scheduled for {time} — let the machine sleep to see whether it wakes.",
         "wakeHistoryTitle": "Wake history",
@@ -416,12 +425,12 @@
           "testFail": "Test wake-up failed"
         },
         "wakeHistoryReason": {
-          "noResume": "no resume observed",
+          "noResume": "the computer did not wake up",
           "tooLate": "came too late",
           "onBattery": "running on battery"
         },
-        "audioTech": "Audio technology",
-        "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app.",
+        "audioTech": "About the audio technology",
+        "diagnoseReportWhere": "Send the report to whoever is helping you, or to dev@sundaysuite.app.",
         "publishDesc": "After an export the app can open the page you upload to, with the title and description ready to copy. SundayRec does not upload anything itself.",
         "publishWhere": "Where do you publish?",
         "publishChannelName": {
@@ -429,7 +438,7 @@
           "none": "None"
         },
         "publishChannelDesc": {
-          "soundcloud": "Often your podcast feed (RSS) too",
+          "soundcloud": "Often your podcast too",
           "youtube": "Upload in YouTube Studio",
           "spotify": "Podcast in Spotify for Creators",
           "custom": "For example WordPress or your podcast host",
@@ -441,7 +450,8 @@
         "publishUrlInvalid": "This does not look like a web address",
         "publishTemplate": "Standard description",
         "publishTemplateDesc": "Filled in on export, where it can be changed. {title}, {speaker}, {date} and {church} are replaced.",
-        "publishTemplatePlaceholder": "Sermon from {church}, {date}. Speaker: {speaker}."
+        "publishTemplatePlaceholder": "Sermon from {church}, {date}. Speaker: {speaker}.",
+        "audioTechNote": "The text below is a licence notice from Steinberg and is shown in English."
       },
       "sections": {
         "nav": "Jump to",
@@ -453,40 +463,40 @@
         "updates": "Updates and privacy",
         "updatesDesc": "You decide whether the app checks for new versions and whether it sends anonymous statistics.",
         "help": "Help and troubleshooting",
-        "helpDesc": "If something is not working: check the machine, get the log, or move your setup to another machine.",
+        "helpDesc": "If something is not working: check this computer, get the error log, or move your setup to another computer.",
         "about": "About",
         "aboutDesc": "Licenses and notices for the software SundayRec is built on."
       }
     },
     "diagnose": {
-      "title": "Diagnose",
-      "desc": "Checks sound, permissions, engine and disk, and writes a report you can pass on.",
-      "run": "Run",
-      "running": "Running …",
-      "failed": "The diagnosis could not run: {err}",
+      "title": "Check this computer",
+      "desc": "Checks the sound source, permissions, recording engine and disk, and makes a report you can pass on.",
+      "run": "Start check",
+      "running": "Checking …",
+      "failed": "The check could not run: {err}",
       "probeSkipped": "The sound test did not run: {why}",
       "copy": "Copy full report",
       "copied": "Report copied",
       "copyFailed": "Could not copy the report",
       "savedTo": "Saved to",
-      "devicesTitle": "Every audio device the recorder can see",
-      "noDevices": "No audio devices found",
-      "ipcTitle": "Commands that did not answer this session ({n})",
-      "test": "Test recording (~10 s)",
+      "devicesTitle": "All sound sources the app can see",
+      "noDevices": "No sound sources found",
+      "ipcTitle": "Parts of the app that did not respond this time ({n})",
+      "test": "Test recording (10 sec)",
       "testRunning": "Recording a test …",
       "testBlocked": "Not while a recording is running.",
-      "testOk": "The test recording completed — {signal}.",
+      "testOk": "The test recording went fine — {signal}.",
       "testFail": "The test recording failed: {why}",
       "r": {
-        "devices": "Audio devices found",
-        "selected": "Chosen device",
+        "devices": "Sound sources found",
+        "selected": "Chosen sound source",
         "mic": "Microphone access",
-        "engine": "Audio engine (ffmpeg)",
+        "engine": "Recording engine (ffmpeg)",
         "probe": "Sound test"
       },
       "v": {
         "notFound": "not found",
-        "defaultDevice": "Default device",
+        "defaultDevice": "Computer default",
         "ffmpegOk": "Available",
         "ffmpegMissing": "Not found",
         "unknown": "Cannot be determined",
@@ -502,7 +512,7 @@
         }
       },
       "testErr": {
-        "deviceNotFound": "the audio device was not found",
+        "deviceNotFound": "could not find the sound source",
         "permissionDenied": "microphone access denied",
         "ffmpegError": "the recording engine failed",
         "noAudio": "no sound in the recording"
@@ -518,12 +528,12 @@
           "hint": "Reinstall SundayRec — the recording engine ships with the app."
         },
         "audio01": {
-          "title": "No audio device found",
-          "hint": "Check that the sound card is connected and its driver installed. On a shared PC: is the audio service running?"
+          "title": "No sound source found",
+          "hint": "Check that the mixing desk or sound card is connected and its driver installed. On a shared PC: is the audio service running?"
         },
         "audio02": {
-          "title": "The chosen audio device was not found",
-          "hint": "Connect the device, or pick another one under “Which sound?” on Record."
+          "title": "The chosen sound source was not found",
+          "hint": "Connect the sound source, or choose another under “Which sound source?” on the Record page."
         },
         "rate01": {
           "title": "A fixed sample rate is selected",
@@ -531,7 +541,7 @@
         },
         "video01": {
           "title": "Video is on, but no camera was found",
-          "hint": "Connect the camera, or turn off “Include camera” on Record."
+          "hint": "Connect the camera, or turn off “Include video” on the Record page."
         },
         "video02": {
           "title": "The camera gave no picture",
@@ -543,7 +553,7 @@
         },
         "disk02": {
           "title": "Cannot write to the save folder",
-          "hint": "Choose a folder you can write to under “Where do recordings go?” on Record."
+          "hint": "Choose a folder you can write to under “Where are recordings saved?” on the Record page."
         },
         "perm01": {
           "title": "Microphone access is denied",
@@ -555,15 +565,15 @@
         },
         "engine01": {
           "title": "The last recording ended with an error",
-          "hint": "The error code is on the line above. Run a test recording to see whether it works now."
+          "hint": "The error code is in the line above. Make a test recording to see whether it works now."
         },
         "capture01": {
           "title": "The last recording showed signs of stutter",
-          "hint": "Close other heavy programs, check the cable and power to the sound card, and that the sample rate is on “Auto”. Then record again and see whether the numbers drop."
+          "hint": "Close other heavy programs, and check the cable and power to the sound card. Then make a new recording and see whether the numbers drop."
         },
         "capture02": {
           "title": "The sound test got no sound",
-          "hint": "Check that the right device is chosen under “Which sound?” on Record, that the cable is in, and that no other program is holding the microphone. Then run the diagnosis again."
+          "hint": "Check that the right sound source is chosen under “Which sound source?” on the Record page, that the cable is plugged in, and that no other program is using the microphone. Then run the check again."
         },
         "crash01": {
           "title": "The app has crashed",
@@ -574,12 +584,12 @@
           "hint": "The app restarted them itself, so nothing stopped. If it repeats, bring this report — the names above say which part is unstable."
         },
         "log01": {
-          "title": "The log file is not active",
+          "title": "The error log is not active",
           "hint": "That usually means the app folder could not be created. Restart the app; if it persists, check disk space and permissions."
         },
         "log02": {
-          "title": "Part of the log is missing",
-          "hint": "The log is incomplete because the recording was prioritised — that is the right way round. A slow disk is worth looking at before the next long recording."
+          "title": "Parts of the error log are missing",
+          "hint": "The error log is incomplete because the recording came first — that is the right way round. A slow disk is worth looking at before the next long recording."
         },
         "ok": {
           "title": "No problems detected",
@@ -605,11 +615,11 @@
       "next": "Next",
       "back": "Back",
       "skipSound": "Continue without sound",
-      "gate": "“Next” opens once we hear sound.",
-      "gateReason": "We hear no sound yet. Speak into the microphone, or turn on the mixer.",
+      "gate": "Choose a sound source and press “Use this sound source”. “Next” opens once we hear sound.",
+      "gateReason": "We don’t hear any sound yet. Speak into the microphone, or turn on the mixing desk.",
       "readyTitle": "Ready for Sunday",
-      "readyDesc": "This is the same you will find under Settings (the gear) and on the Record screen later.",
-      "fixHere": "Everything here can be fixed right away — the row opens the screen in place, and you stay in the setup.",
+      "readyDesc": "This is the same you will find under Settings (the gear) and on the Record page later.",
+      "fixHere": "Press “Set up” or “Change” on a row to fix it right away. You stay right here.",
       "notifyTodo": "Notifications are off — nobody is told if a recording fails.",
       "open": "Open SundayRec",
       "progress": "Progress",
@@ -645,7 +655,9 @@
       "title": "Recording saved",
       "show": "Show in Finder",
       "ok": "Done",
-      "revealFailed": "Couldn’t find the file on disk."
+      "revealFailed": "Couldn’t find the file on disk.",
+      "showWin": "Show in Explorer",
+      "showOther": "Show in folder"
     },
     "editor": {
       "stepCut": "Cut",
@@ -663,7 +675,7 @@
       "keepLabel": "{name} · {span}",
       "handleStart": "Where the sermon begins",
       "handleEnd": "Where the sermon ends",
-      "result": "Result: {kept} (of {total})",
+      "result": "Final length: {kept} of {total}",
       "seconds": "{n} s",
       "minutesSeconds": "{m} min {s} s",
       "pause": "Pause",
@@ -672,8 +684,8 @@
       "redo": "Redo",
       "nothingToUndo": "Nothing to undo yet.",
       "nothingToRedo": "Nothing to redo.",
-      "notSermonDesc": "Pick the right block. We remember it next time.",
-      "blockOption": "Block {n} — {at} · {span}",
+      "notSermonDesc": "Pick the right part. We will remember it for next time.",
+      "blockOption": "Part {n} — {at} · {span}",
       "stepSound": "Sound",
       "nextSound": "Next: Sound",
       "nextExport": "Next: Export",
@@ -704,33 +716,33 @@
         "clicks": "We removed clicks and crackle",
         "clean": "The recording was clean."
       },
-      "advancedMixer": "Advanced: open the mixer",
-      "hideMixer": "Hide the mixer",
-      "mixerTitle": "Advanced sound mixer",
-      "mixerUseDesc": "The mixer replaces “{profile}”. No mastering is added on top — you drive the whole chain.",
-      "mxEq": "Tone balance",
+      "advancedMixer": "Adjust the sound yourself",
+      "hideMixer": "Hide the sound adjustments",
+      "mixerTitle": "Sound adjustment",
+      "mixerUseDesc": "When this is on, your own choices are used instead of “{profile}”. No automatic processing is added on top.",
+      "mxEq": "Tone",
       "mx": {
-        "hpf": "Low cut",
-        "denoise": "Noise reduction",
-        "dereverb": "Room damping",
-        "gate": "Gate",
-        "comp": "Compressor",
-        "deesser": "De-esser",
-        "limiter": "Limiter",
-        "gain": "Output level",
+        "hpf": "Remove low rumble",
+        "denoise": "Remove hiss",
+        "dereverb": "Less room echo",
+        "gate": "Quiet the silent parts",
+        "comp": "Even out loud and soft speech",
+        "deesser": "Softer s sounds",
+        "limiter": "Stop the sound from distorting",
+        "gain": "Final volume",
         "freq": "Frequency",
-        "reduction": "Reduction",
+        "reduction": "How much",
         "strength": "Strength",
-        "threshold": "Threshold",
-        "ratio": "Ratio",
-        "attack": "Attack",
-        "release": "Release",
-        "makeup": "Make-up",
+        "threshold": "Starts at",
+        "ratio": "Strength",
+        "attack": "Reacts after",
+        "release": "Lets go after",
+        "makeup": "Lift afterwards",
         "intensity": "Strength",
-        "ceiling": "Ceiling",
-        "eqMud": "250 Hz — cut mud",
-        "eqPresence": "3.5 kHz — presence",
-        "eqAir": "10 kHz — air"
+        "ceiling": "Never louder than",
+        "eqMud": "Less muddy (250 Hz)",
+        "eqPresence": "Clearer speech (3.5 kHz)",
+        "eqAir": "More brightness and air (10 kHz)"
       },
       "exFormat": "Format",
       "exWhere": "Where",
@@ -746,12 +758,22 @@
       "includeVideoDesc": "The recording has a video track. Without this the export is audio only.",
       "videoLocksFormat": "The format is MP4 while the video is included.",
       "about": "about {mb} MB",
-      "level": "Level: {lufs} LUFS",
-      "levelCapped": "Level: {lufs} LUFS (limited by peaks)",
+      "level": "Volume: right for the web",
+      "levelCapped": "Volume: a little lower than intended (loud peaks in the sound)",
       "exported": "Exported",
       "exportAgain": "Export in another format",
       "toLibrary": "To the library",
-      "exportFailed": "The export stopped. Try again."
+      "exportFailed": "The export stopped. Try again.",
+      "mxHelp": {
+        "hpf": "Technical term: high-pass filter",
+        "denoise": "Technical term: noise reduction",
+        "dereverb": "Technical term: de-reverb",
+        "gate": "Technical term: noise gate",
+        "comp": "Technical term: compressor",
+        "deesser": "Technical term: de-esser",
+        "limiter": "Technical term: limiter",
+        "eq": "Technical term: EQ (equalizer)"
+      }
     },
     "export": {
       "lastEdited": "Last edited",
@@ -775,7 +797,7 @@
       "publishCopy": "Copy",
       "publishCopied": "Copied",
       "publishCopyFailed": "Could not copy. Select the text and copy it yourself.",
-      "publishNothing": "There is no valid https link under Settings → Advanced, so nothing was opened.",
+      "publishNothing": "There is no valid https link under Settings → Publishing, so nothing was opened.",
       "publishFailed": "Could not open the page. Open it in your browser yourself."
     },
     "span": {
@@ -809,13 +831,13 @@
     "noSchedule": "No recording scheduled",
     "preflightCode": {
       "ffmpegMissing": "The ffmpeg binary is missing. SundayRec must be installed again.",
-      "deviceMissing": "The audio device selected in settings is not connected.",
+      "deviceMissing": "The sound source selected in settings is not connected.",
       "folderNotWritable": "The save folder cannot be written to.",
       "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
       "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
       "cameraDenied": "Camera access has not been granted.",
       "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress.",
-      "specialDeviceMissing": "The audio device “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual audio device is used."
+      "specialDeviceMissing": "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used."
     },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",
@@ -851,7 +873,7 @@
     "alreadyEmpty": "The trash is empty",
     "undo": "Undo",
     "undoFailed": "Could not bring everything back — check the trash.",
-    "restoreFailed": "Could not restore",
+    "restoreFailed": "Could not put it back",
     "deleteForever": "Delete for good",
     "confirmPurgeOne": "Delete “{name}” for good?",
     "confirmEmpty": {
@@ -877,7 +899,7 @@
     "nextPreviewPrefix": "Next recording"
   },
   "audio": {
-    "guardDevice": "Change audio device"
+    "guardDevice": "Switch the sound source"
   },
   "general": {
     "notifyStart": "Desktop notification when recording starts",
@@ -885,7 +907,7 @@
     "saveFailed": "Could not save the setting"
   },
   "error": {
-    "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
+    "tryAgainHint": "If the problem persists, open Settings → Help and troubleshooting → Check this computer, or restart the app.",
     "ipcFailed": "Something in the background did not respond, so this view may be incomplete.",
     "settingsLoadFailed": "Could not read the settings — showing defaults. Changes you make now may be lost.",
     "settingsLoadRetry": "Try again",
@@ -897,10 +919,10 @@
     "emptyDesc": "Pick an audio or video file to start editing. You can trim the start and end, or cut sections out of the middle.",
     "openFile": "Open file…",
     "loading": "Loading audio file…",
-    "dragHint": "Click and drag to mark a cut",
-    "cutsTitle": "Cut regions",
-    "cutsNone": "Remove all cuts",
-    "deleteCut": "Remove cut",
+    "dragHint": "Click and drag to mark a part to cut out",
+    "cutsTitle": "Cut-out parts",
+    "cutsNone": "Undo all cuts",
+    "deleteCut": "Undo cut",
     "save": "Export",
     "cancel": "Cancel",
     "saveOk": "✓ Saved",
@@ -994,14 +1016,14 @@
     "autoEnhance": "✨ Automatic audio enhancement (one click)",
     "autoEnhanceFail": "Could not analyze the audio (requires the editor build).",
     "autoEnhancing": "✨ Analyzing…",
-    "chanBalanced": "Channels are balanced ✓",
-    "chanBothDead": "Both channels are very weak",
-    "chanDeadLeft": "Left channel is silent (check the cable)",
-    "chanDeadRight": "Right channel is silent (check the cable)",
-    "chanImbalance": "Uneven level between channels",
-    "chanMono": "Mono recording",
-    "chanUnusableLeft": "Left channel is too weak to rescue — the right one is copied to both (check the cable)",
-    "chanUnusableRight": "Right channel is too weak to rescue — the left one is copied to both (check the cable)",
+    "chanBalanced": "Left and right sound equally strong ✓",
+    "chanBothDead": "The sound is very weak on both left and right",
+    "chanDeadLeft": "No sound on the left (check the cable)",
+    "chanDeadRight": "No sound on the right (check the cable)",
+    "chanImbalance": "Left and right are not equally strong",
+    "chanMono": "The recording has only one sound channel (mono)",
+    "chanUnusableLeft": "The left side is too weak to rescue — the right is used on both sides (check the cable)",
+    "chanUnusableRight": "The right side is too weak to rescue — the left is used on both sides (check the cable)",
     "channelRepair": "Channel repair",
     "codecH264": "H.264 (universal)",
     "codecH265": "H.265 (smaller file)",
@@ -1025,7 +1047,7 @@
     "metaSpeaker": "SPEAKER",
     "metaTitle": "Metadata",
     "metaTitle2": "TITLE",
-    "useMixer": "🎛 Advanced audio mixer (overrides voice processing)",
+    "useMixer": "🎛 Sound adjustment (replaces voice processing)",
     "videoCodec": "Video codec",
     "videoFormat": "Video format",
     "vocalChain": "Voice processing",
@@ -1044,7 +1066,7 @@
     "crMonoMix": "Mix to mono"
   },
   "recording": {
-    "deviceSubstituted": "Recording from \"{device}\", not the device you chose. Check that it is the right microphone.",
+    "deviceSubstituted": "Recording from “{device}”, not the sound source you chose. Check that it is the right microphone.",
     "live": "RECORDING NOW",
     "filesize": "file size",
     "diskLeft": "disk space left",
@@ -1062,19 +1084,19 @@
     "sigGood": "GOOD",
     "sigWeak": "WEAK",
     "errorPermission": "Microphone access denied — open System Settings and grant access",
-    "errorDeviceNotFound": "Audio device not found — check the USB connection",
-    "errorNotReadable": "The audio device is in use by another application",
-    "errorDeviceError": "Error opening the audio device — try reconnecting it",
+    "errorDeviceNotFound": "Sound source not found — check the USB connection",
+    "errorNotReadable": "The sound source is in use by another application",
+    "errorDeviceError": "Error opening the sound source — try reconnecting it",
     "errorAlreadyRecording": "A recording is already in progress",
-    "errorEmpty": "The recording is empty — no audio reached the app from the device",
+    "errorEmpty": "The recording is empty — no audio reached the app from the sound source",
     "errorFolderPermission": "No access to the save folder — make sure it's writable",
     "errorFolderError": "Can't create the save folder — check disk space and permissions",
-    "errorDeviceDisconnected": "The audio device was disconnected during recording — check the connection",
+    "errorDeviceDisconnected": "The sound source was disconnected during recording — check the connection",
     "errorDiskFull": "The disk is full — free up space and try again",
     "errorFfmpegMissing": "Internal error: the recording binary is missing — reinstall the app",
-    "errorStuck": "Recording stopped — no audio from the device for 60 seconds",
+    "errorStuck": "Recording stopped — no audio from the sound source for 60 seconds",
     "errorStartTimeout": "The recording never got going — check that the microphone (and camera) are connected, and that SundayRec has access under System Settings → Privacy & Security",
-    "errorEngineExited": "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and run Diagnose if it happens again.",
+    "errorEngineExited": "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again.",
     "errorVideoCapture": "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
     "errorCameraFormat": "The camera does not support the chosen frame rate or resolution — pick another video setting and try again.",
     "errorCameraPermission": "Camera access denied — open System Settings and give the app access to the camera",
@@ -1084,8 +1106,8 @@
     "qualityReasons": "Cause: {r}",
     "qualityAction": "Show recording",
     "errorInvalidOpts": "Invalid recording settings — restart and try again",
-    "errorNoSaveFolder": "No save folder selected — go to the Record page and pick one in the “Where do recordings go?” card",
-    "errorUnknown": "Something went wrong during recording — check that the audio device and save folder are ready",
+    "errorNoSaveFolder": "No save folder has been chosen — go to the Record page and choose one in the “Where are recordings saved?” card",
+    "errorUnknown": "Something went wrong during recording — check that the sound source and save folder are ready",
     "reconnectSecs": "s",
     "reconnecting": "Audio source disconnected — reconnecting",
     "silenceWarn": "Silence detected — the recording will stop automatically if the silence continues.",
@@ -1096,21 +1118,21 @@
     "extend15": "+ 15 min",
     "cancelAutostop": "Cancel auto-stop",
     "qrNoAudio": "No audio was captured — the file is too small to hold anything.",
-    "qrSilent": "The recording is silent — no signal. Check the device and the gain.",
+    "qrSilent": "The recording is silent — no signal. Check the sound source and the gain.",
     "qrGapFail": "Parts of the audio are missing or silent — stuttering or dropouts.",
-    "qrDropsFail": "Many dropouts from the audio device.",
+    "qrDropsFail": "Many dropouts from the sound source.",
     "qrSampleRate": "The sample rate was forced away from the device's own — the conversion can cause dropouts.",
     "qrGapWarn": "A small gap or silence in the recording.",
     "qrLowSignal": "Weak signal — consider raising the gain.",
-    "qrDropsWarn": "A few dropouts from the audio device.",
+    "qrDropsWarn": "A few dropouts from the sound source.",
     "qrClean": "Steady recording, no dropouts."
   },
   "video": {
     "guardDevice": "Change camera"
   },
   "onboarding": {
-    "promptTitle": "Share anonymous diagnostics?",
-    "promptDesc": "SundayRec can send anonymous error and usage statistics to SundaySuite to improve the app. Optional, and you can answer any time under Settings → Advanced.",
+    "promptTitle": "Send anonymous usage statistics?",
+    "promptDesc": "SundayRec can send anonymous error and usage statistics to SundaySuite to improve the app. Optional, and you can answer any time under Settings → Updates and privacy.",
     "rePromptTitle": "We are asking you again",
     "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
   },
@@ -1145,7 +1167,7 @@
     "micRestricted": "Microphone access is blocked by a system administrator or parental controls. Recording will not work until the block is lifted.",
     "cameraDenied": "Camera access is denied. Open System Settings → Privacy & Security → Camera and enable SundayRec.",
     "cameraRestricted": "Camera access is blocked by a system administrator or parental controls. Video recording will not work until the block is lifted.",
-    "ffmpegMissing": "The bundled audio engine (ffmpeg) was not found. Video, export and editing will not work — reinstall the app."
+    "ffmpegMissing": "The recording engine (ffmpeg) was not found. Video, export and editing will not work — reinstall the app."
   },
   "progress": {
     "etaCalculating": "estimating …",
@@ -1156,14 +1178,14 @@
     "etaHoursMinutes": "about {h} h {m} min left"
   },
   "notify": {
-    "prerollDead": "The pre-roll buffer is not working — sound from before you press record is not being kept.",
+    "prerollDead": "“Include sound from before Start” is not working right now — sound from before you press Start is not being kept.",
     "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
-    "deviceMissing": "The audio device “{device}” is not connected.",
+    "deviceMissing": "The sound source “{device}” is not connected.",
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
     "trashManifestUnreadable": "The trash listing could not be read. The files are still there, but the app no longer knows where they came from.",
     "dataDirMoveFailed": "The history and settings could not be moved to the new folder. The app is using the old one this time, and nothing has been deleted. Your recording files are still in the recordings folder. Restart the app; if that does not help, get in touch.",
     "dataLeftInOldDir": "History and settings from the older version were left in the old folder. This version uses the new folder, so what you saved with the older version is not shown here. Your recording files are still in the recordings folder.",
-    "levelWeak": "The recording is very quiet — is the mixer turned down?",
+    "levelWeak": "The recording is very quiet — is the mixing desk turned down?",
     "videoDropped": "The recording is saved with its sound, but the picture is incomplete: a video file could not be read. The file is kept next to the recording ({file})."
   }
 }

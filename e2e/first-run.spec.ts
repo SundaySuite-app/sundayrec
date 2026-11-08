@@ -118,10 +118,10 @@ test.describe("første gang", () => {
     await expect(next).toHaveAttribute("aria-disabled", "true");
     await expect(next).toHaveAttribute(
       "title",
-      "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på mikseren.",
+      "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på miksebordet.",
     );
     await expect(page.getByTestId("first-run-gate")).toHaveText(
-      "«Neste» åpnes når vi hører lyd.",
+      "Velg lydkilde og trykk «Bruk denne lydkilden». «Neste» åpnes når vi hører lyd.",
     );
 
     // Stillhet er ikke lyd: −70 dBFS er under HEARD_DB (−50).

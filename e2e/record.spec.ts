@@ -139,10 +139,10 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
     await expect(start).toBeFocused();
     await expect(start).toHaveAttribute(
       "title",
-      /Start er sperret til lyden er valgt/,
+      /Start er sperret til dere har valgt lydkilde/,
     );
     await expect(page.getByTestId("record-why-blocked")).toContainText(
-      "Vi tar aldri opp fra en kilde ingen har valgt",
+      "Vi tar aldri opp fra en lydkilde ingen har valgt",
     );
 
     // MUTASJONSPRØVEN: fjern sperren i `sourceState` (`canStart: true` for
@@ -553,9 +553,7 @@ test.describe("bannerne på opptakssiden", () => {
     await expect(banner).toHaveAttribute("data-tone", "bad");
     await expect(banner).toContainText("Opptaket ble avbrutt kl.");
     // Den LOKALISERTE grunnen, aldri motorens rå-kode.
-    await expect(banner).toContainText(
-      "Lydenheten ble koblet fra under opptak",
-    );
+    await expect(banner).toContainText("Lydkilden ble koblet fra under opptak");
     await expect(banner).not.toContainText("device_disconnected");
 
     await page.getByTestId("banner-recording-error-dismiss").click();
@@ -727,7 +725,7 @@ test.describe("bakendens egne advarsler (backend://warning)", () => {
       }),
     ).toBeGreaterThan(0);
     await expect(page.getByTestId("banner-backend-preroll-dead")).toContainText(
-      "Forhåndsbufferen virker ikke",
+      "«Ta med lyd fra før Start» virker ikke akkurat nå",
     );
 
     await emit(page, "backend-warning", {

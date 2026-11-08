@@ -1,7 +1,8 @@
 .stack {
   position: fixed;
   right: var(--sp-7);
-  bottom: var(--sp-6);
+  /* Over bunnlinja OG handlingslinja: en stående feil skal ikke dekke Start. */
+  bottom: calc(var(--bottombar-h) + var(--actionbar-h) + var(--sp-3));
   z-index: var(--z-toast);
   display: grid;
   gap: var(--sp-3);

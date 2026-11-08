@@ -336,37 +336,13 @@ impl AlertText {
             (A::SchedulerTaskTitle, L::Fr) => "SundayRec — erreur du planificateur",
 
             // ── SchedulerTaskBody ───────────────────────────────────────────
-            (A::SchedulerTaskBody, L::No) => {
-                "Planleggeren har en vedvarende feil og kan gå glipp av planlagte opptak. \
-                 Start appen på nytt; vedvarer det, kjør Diagnose under Innstillinger → Lyd."
-            }
-            (A::SchedulerTaskBody, L::En) => {
-                "The scheduler has a persistent fault and may miss scheduled recordings. \
-                 Restart the app; if it persists, run Diagnose under Settings → Audio."
-            }
-            (A::SchedulerTaskBody, L::De) => {
-                "Der Planer hat einen anhaltenden Fehler und verpasst möglicherweise geplante \
-                 Aufnahmen. Starten Sie die App neu; hält es an, führen Sie die Diagnose unter \
-                 Einstellungen → Audio aus."
-            }
-            (A::SchedulerTaskBody, L::Sv) => {
-                "Schemaläggaren har ett ihållande fel och kan missa schemalagda inspelningar. \
-                 Starta om appen; kvarstår det, kör Diagnos under Inställningar → Ljud."
-            }
-            (A::SchedulerTaskBody, L::Da) => {
-                "Planlæggeren har en vedvarende fejl og kan gå glip af planlagte optagelser. \
-                 Genstart appen; fortsætter det, kør Diagnose under Indstillinger → Lyd."
-            }
-            (A::SchedulerTaskBody, L::Pl) => {
-                "Harmonogram ma trwały błąd i może pominąć zaplanowane nagrania. Uruchom \
-                 aplikację ponownie; jeśli to nie pomoże, uruchom Diagnostykę w Ustawienia → \
-                 Dźwięk."
-            }
-            (A::SchedulerTaskBody, L::Fr) => {
-                "Le planificateur a une erreur persistante et risque de manquer des \
-                 enregistrements programmés. Redémarrez l'application ; si cela persiste, \
-                 lancez Diagnostic dans Réglages → Audio."
-            }
+            (A::SchedulerTaskBody, L::No) => "Planleggeren har en vedvarende feil og kan gå glipp av planlagte opptak. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking.",
+            (A::SchedulerTaskBody, L::En) => "The scheduler has a persistent fault and may miss scheduled recordings. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting.",
+            (A::SchedulerTaskBody, L::De) => "Der Planer hat einen anhaltenden Fehler und verpasst möglicherweise geplante Aufnahmen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche.",
+            (A::SchedulerTaskBody, L::Sv) => "Schemaläggaren har ett ihållande fel och kan missa schemalagda inspelningar. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning.",
+            (A::SchedulerTaskBody, L::Da) => "Planlæggeren har en vedvarende fejl og kan gå glip af planlagte optagelser. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding.",
+            (A::SchedulerTaskBody, L::Pl) => "Harmonogram ma trwały błąd i może pominąć zaplanowane nagrania. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów.",
+            (A::SchedulerTaskBody, L::Fr) => "Le planificateur a une erreur persistante et risque de manquer des enregistrements programmés. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage.",
 
             // ── TrashSweepTaskTitle ─────────────────────────────────────────
             (A::TrashSweepTaskTitle, L::No) => "SundayRec — opprydding stoppet",
@@ -378,42 +354,13 @@ impl AlertText {
             (A::TrashSweepTaskTitle, L::Fr) => "SundayRec — nettoyage arrêté",
 
             // ── TrashSweepTaskBody ──────────────────────────────────────────
-            (A::TrashSweepTaskBody, L::No) => {
-                "Den automatiske tømmingen av papirkurven har en vedvarende feil, så slettede \
-                 opptak blir liggende og bruke plass. Start appen på nytt; vedvarer det, kjør \
-                 Diagnose under Innstillinger → Lyd."
-            }
-            (A::TrashSweepTaskBody, L::En) => {
-                "Automatic emptying of the trash has a persistent fault, so deleted recordings \
-                 stay on disk and take up space. Restart the app; if it persists, run Diagnose \
-                 under Settings → Audio."
-            }
-            (A::TrashSweepTaskBody, L::De) => {
-                "Das automatische Leeren des Papierkorbs hat einen anhaltenden Fehler, sodass \
-                 gelöschte Aufnahmen liegen bleiben und Platz belegen. Starten Sie die App neu; \
-                 hält es an, führen Sie die Diagnose unter Einstellungen → Audio aus."
-            }
-            (A::TrashSweepTaskBody, L::Sv) => {
-                "Den automatiska tömningen av papperskorgen har ett ihållande fel, så raderade \
-                 inspelningar blir kvar och tar plats. Starta om appen; kvarstår det, kör \
-                 Diagnos under Inställningar → Ljud."
-            }
-            (A::TrashSweepTaskBody, L::Da) => {
-                "Den automatiske tømning af papirkurven har en vedvarende fejl, så slettede \
-                 optagelser bliver liggende og optager plads. Genstart appen; fortsætter det, \
-                 kør Diagnose under Indstillinger → Lyd."
-            }
-            (A::TrashSweepTaskBody, L::Pl) => {
-                "Automatyczne opróżnianie kosza ma trwały błąd, więc usunięte nagrania \
-                 pozostają na dysku i zajmują miejsce. Uruchom aplikację ponownie; jeśli to nie \
-                 pomoże, uruchom Diagnostykę w Ustawienia → Dźwięk."
-            }
-            (A::TrashSweepTaskBody, L::Fr) => {
-                "Le vidage automatique de la corbeille a une erreur persistante : les \
-                 enregistrements supprimés restent sur le disque et occupent de l'espace. \
-                 Redémarrez l'application ; si cela persiste, lancez Diagnostic dans Réglages → \
-                 Audio."
-            }
+            (A::TrashSweepTaskBody, L::No) => "Den automatiske tømmingen av papirkurven har en vedvarende feil, så slettede opptak blir liggende og bruke plass. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking.",
+            (A::TrashSweepTaskBody, L::En) => "Automatic emptying of the trash has a persistent fault, so deleted recordings stay on disk and take up space. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting.",
+            (A::TrashSweepTaskBody, L::De) => "Das automatische Leeren des Papierkorbs hat einen anhaltenden Fehler, sodass gelöschte Aufnahmen liegen bleiben und Platz belegen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche.",
+            (A::TrashSweepTaskBody, L::Sv) => "Den automatiska tömningen av papperskorgen har ett ihållande fel, så raderade inspelningar blir kvar och tar plats. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning.",
+            (A::TrashSweepTaskBody, L::Da) => "Den automatiske tømning af papirkurven har en vedvarende fejl, så slettede optagelser bliver liggende og optager plads. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding.",
+            (A::TrashSweepTaskBody, L::Pl) => "Automatyczne opróżnianie kosza ma trwały błąd, więc usunięte nagrania pozostają na dysku i zajmują miejsce. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów.",
+            (A::TrashSweepTaskBody, L::Fr) => "Le vidage automatique de la corbeille a une erreur persistante : les enregistrements supprimés restent sur le disque et occupent de l'espace. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage.",
 
             // ── QualityTaskRestarted ────────────────────────────────────────
             (A::QualityTaskRestarted, L::No) => {
@@ -471,12 +418,8 @@ impl AlertText {
             }
 
             // ── PreflightDeviceMissing ──────────────────────────────────────
-            (A::PreflightDeviceMissing, L::No) => {
-                "Lydenheten som er valgt i innstillingene er ikke tilkoblet."
-            }
-            (A::PreflightDeviceMissing, L::En) => {
-                "The audio device selected in settings is not connected."
-            }
+            (A::PreflightDeviceMissing, L::No) => "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
+            (A::PreflightDeviceMissing, L::En) => "The sound source selected in settings is not connected.",
             (A::PreflightDeviceMissing, L::De) => {
                 "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen."
             }
@@ -715,14 +658,8 @@ impl AlertText {
             // Half an hour before a one-off recording on its own device. Says
             // what will happen if nobody acts, in the same words the start's
             // fallback notice uses.
-            (A::PreflightSpecialDeviceMissing, L::No) => {
-                "Lydenheten «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke \
-                 til før start, tas opptaket fra den vanlige lydenheten."
-            }
-            (A::PreflightSpecialDeviceMissing, L::En) => {
-                "The audio device \"{device}\" for the one-off recording is not connected. If \
-                 it is not connected before the start, the usual audio device is used."
-            }
+            (A::PreflightSpecialDeviceMissing, L::No) => "Lydkilden «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
+            (A::PreflightSpecialDeviceMissing, L::En) => "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used.",
             (A::PreflightSpecialDeviceMissing, L::De) => {
                 "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
                  Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
@@ -754,12 +691,12 @@ impl AlertText {
             // it before the next one. The one-off terms match the renderer's
             // `app.setup.advanced.specialsTitle` in each language.
             (A::ScheduledSpecialDeviceFallback, L::No) => {
-                "Lydenheten «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
-                 bruker den vanlige lydenheten i stedet."
+                "Lydkilden «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
+                 bruker den vanlige lydkilden i stedet."
             }
             (A::ScheduledSpecialDeviceFallback, L::En) => {
-                "The audio device \"{device}\" for the one-off recording was not available — \
-                 recording from the usual audio device instead."
+                "The sound source \"{device}\" for the one-off recording was not available — \
+                 recording from the usual sound source instead."
             }
             (A::ScheduledSpecialDeviceFallback, L::De) => {
                 "Das Audiogerät „{device}“ für die einmalige Aufnahme war nicht verfügbar — \
@@ -970,8 +907,8 @@ impl AlertText {
             }
 
             // ── RecordingDeviceNotFound ──────────────────────────────────────
-            (A::RecordingDeviceNotFound, L::No) => "Lydenheten ble ikke funnet — sjekk USB-tilkoblingen",
-            (A::RecordingDeviceNotFound, L::En) => "Audio device not found — check the USB connection",
+            (A::RecordingDeviceNotFound, L::No) => "Lydkilden ble ikke funnet — sjekk USB-tilkoblingen",
+            (A::RecordingDeviceNotFound, L::En) => "Sound source not found — check the USB connection",
             (A::RecordingDeviceNotFound, L::De) => "Audiogerät nicht gefunden — USB-Verbindung prüfen",
             (A::RecordingDeviceNotFound, L::Sv) => "Ljudenheten hittades inte — kontrollera USB-anslutningen",
             (A::RecordingDeviceNotFound, L::Da) => "Lydenheden blev ikke fundet — tjek USB-forbindelsen",
@@ -986,37 +923,37 @@ impl AlertText {
             (A::RecordingPermissionDenied, L::Pl) => "Odmowa dostępu do mikrofonu — otwórz Ustawienia systemu i udziel dostępu",
             (A::RecordingPermissionDenied, L::Fr) => "Accès au microphone refusé — ouvrez les Réglages système et accordez l’accès",
             // ── RecordingDeviceBusy ──────────────────────────────────────────
-            (A::RecordingDeviceBusy, L::No) => "Lydenheten er i bruk av et annet program",
-            (A::RecordingDeviceBusy, L::En) => "The audio device is in use by another application",
+            (A::RecordingDeviceBusy, L::No) => "Lydkilden er i bruk av et annet program",
+            (A::RecordingDeviceBusy, L::En) => "The sound source is in use by another application",
             (A::RecordingDeviceBusy, L::De) => "Das Audiogerät wird von einem anderen Programm verwendet",
             (A::RecordingDeviceBusy, L::Sv) => "Ljudenheten används av ett annat program",
             (A::RecordingDeviceBusy, L::Da) => "Lydenheden bruges af et andet program",
             (A::RecordingDeviceBusy, L::Pl) => "Urządzenie audio jest używane przez inną aplikację",
             (A::RecordingDeviceBusy, L::Fr) => "Le périphérique audio est déjà utilisé par une autre application",
             // ── RecordingDeviceError ─────────────────────────────────────────
-            (A::RecordingDeviceError, L::No) => "Feil ved åpning av lydenhet — prøv å koble til på nytt",
-            (A::RecordingDeviceError, L::En) => "Error opening the audio device — try reconnecting it",
+            (A::RecordingDeviceError, L::No) => "Feil ved åpning av lydkilden — prøv å koble til på nytt",
+            (A::RecordingDeviceError, L::En) => "Error opening the sound source — try reconnecting it",
             (A::RecordingDeviceError, L::De) => "Fehler beim Öffnen des Audiogeräts — versuchen Sie, es erneut anzuschließen",
             (A::RecordingDeviceError, L::Sv) => "Fel vid öppning av ljudenheten — försök att ansluta den på nytt",
             (A::RecordingDeviceError, L::Da) => "Fejl ved åbning af lydenheden — prøv at tilslutte den igen",
             (A::RecordingDeviceError, L::Pl) => "Błąd otwarcia urządzenia audio — spróbuj podłączyć je ponownie",
             (A::RecordingDeviceError, L::Fr) => "Erreur à l’ouverture du périphérique audio — essayez de le rebrancher",
             // ── RecordingDeviceDisconnected ──────────────────────────────────
-            (A::RecordingDeviceDisconnected, L::No) => "Lydenheten ble koblet fra under opptak — sjekk tilkoblingen",
-            (A::RecordingDeviceDisconnected, L::En) => "The audio device was disconnected during recording — check the connection",
+            (A::RecordingDeviceDisconnected, L::No) => "Lydkilden ble koblet fra under opptak — sjekk tilkoblingen",
+            (A::RecordingDeviceDisconnected, L::En) => "The sound source was disconnected during recording — check the connection",
             (A::RecordingDeviceDisconnected, L::De) => "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen",
             (A::RecordingDeviceDisconnected, L::Sv) => "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen",
             (A::RecordingDeviceDisconnected, L::Da) => "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen",
             (A::RecordingDeviceDisconnected, L::Pl) => "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie",
             (A::RecordingDeviceDisconnected, L::Fr) => "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion",
             // ── RecordingEngineExited ────────────────────────────────────────
-            (A::RecordingEngineExited, L::No) => "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og kjør Diagnose hvis det gjentar seg.",
-            (A::RecordingEngineExited, L::En) => "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and run Diagnose if it happens again.",
-            (A::RecordingEngineExited, L::De) => "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und führen Sie die Diagnose aus, wenn es sich wiederholt.",
-            (A::RecordingEngineExited, L::Sv) => "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning, och kör Diagnos om det upprepas.",
-            (A::RecordingEngineExited, L::Da) => "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og kør Diagnose, hvis det gentager sig.",
-            (A::RecordingEngineExited, L::Pl) => "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i uruchom Diagnostykę, jeśli to się powtórzy.",
-            (A::RecordingEngineExited, L::Fr) => "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
+            (A::RecordingEngineExited, L::No) => "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og bruk «Sjekk maskinen» (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg.",
+            (A::RecordingEngineExited, L::En) => "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again.",
+            (A::RecordingEngineExited, L::De) => "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und nutzen Sie „Computer prüfen“ (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt.",
+            (A::RecordingEngineExited, L::Sv) => "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas.",
+            (A::RecordingEngineExited, L::Da) => "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig.",
+            (A::RecordingEngineExited, L::Pl) => "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy.",
+            (A::RecordingEngineExited, L::Fr) => "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète.",
             // ── RecordingVideoCapture ────────────────────────────────────────
             (A::RecordingVideoCapture, L::No) => "Kameraet leverte ikke bilde — lyden ble lagret og ligger i biblioteket. Sjekk kameratilkoblingen før du tar opp med video igjen.",
             (A::RecordingVideoCapture, L::En) => "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
@@ -1058,8 +995,8 @@ impl AlertText {
             (A::RecordingMux, L::Pl) => "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło.",
             (A::RecordingMux, L::Fr) => "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
             // ── RecordingFailedUnknown ───────────────────────────────────────
-            (A::RecordingFailedUnknown, L::No) => "Noe gikk galt under opptak — sjekk at lydenhet og lagringsmappe er klare",
-            (A::RecordingFailedUnknown, L::En) => "Something went wrong during recording — check that the audio device and save folder are ready",
+            (A::RecordingFailedUnknown, L::No) => "Noe gikk galt under opptak — sjekk at lydkilde og lagringsmappe er klare",
+            (A::RecordingFailedUnknown, L::En) => "Something went wrong during recording — check that the sound source and save folder are ready",
             (A::RecordingFailedUnknown, L::De) => "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind",
             (A::RecordingFailedUnknown, L::Sv) => "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
             (A::RecordingFailedUnknown, L::Da) => "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
@@ -1591,8 +1528,8 @@ mod tests {
         }
         assert_eq!(
             AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Rode NT-USB")]),
-            "Lydenheten «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
-             bruker den vanlige lydenheten i stedet."
+            "Lydkilden «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
+             bruker den vanlige lydkilden i stedet."
         );
     }
 

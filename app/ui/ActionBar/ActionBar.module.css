@@ -17,6 +17,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
+  min-height: var(--actionbar-h);
+  box-sizing: border-box;
   padding: var(--sp-3) 0;
   background: var(--bg);
   border-top: 1px solid var(--line);
@@ -25,6 +27,7 @@
 .hint {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ink-3);
   font-size: var(--fs-sm);
 }

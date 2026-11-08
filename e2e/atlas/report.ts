@@ -299,10 +299,16 @@ function writeIndex(
 
   const md = `# Atlas — SundayRec slik appen ER
 
-Hvert bilde er ett skjermbilde av appen slik den står på \`main\` i dag: D3-skallet
-(topplinje + bunnlinje, tre destinasjoner og et tannhjul), D2-kontrollrommet på
-OPPTAK, og V1-runden (diagnoserad, hevede treffflater, rettede tekster).
-Ingenting her er et forslag — dette er den visuelle regresjonsbasen.
+Hvert bilde er ett skjermbilde av appen slik den står på denne grenen: v0.28.0
+med designrunden i november 2026 oppå — **luft** (tetthetstokens på 4/8-rutenettet
+og en maksbredde på sidene), **handlingslinje** (Start, «Neste» og eksport står
+fast nederst), **seksjoner** (Innstillinger delt i Kirke og språk · Tidsplan ·
+Legg ut · Opptaket · Oppdateringer og personvern · Hjelp og feilsøking · Om)
+og **ny tekst** på alle sju språk (ordlista: lydkilde, miksebord, lydjustering,
+opptaksmotor). Ingenting her er et forslag — dette er den visuelle
+regresjonsbasen. Scene-id-ene er uendret fra før runden, så de to
+atlasene kan sammenlignes fil for fil, også der navnet på stedet er byttet
+(\`redigering--*\` er nå **Bibliotek**, \`eksport--*\` heter **Eksport**).
 
 Arkivet fra v0.15 ligger i [\`../atlas-v015/\`](../atlas-v015/INDEX.md), sammen
 med IA-uttrekket i [\`../ATLAS.md\`](../ATLAS.md). De to viser appen slik den
@@ -348,6 +354,20 @@ det, er en scene som ikke står stille.
 
 ${sections.join("\n\n")}
 ${missing.length ? `\n**Ikke fotografert i denne kjøringen:** ${missing.map((m) => `\`${m}\``).join(", ")}.\n` : ""}
+## Riggtest før neste slipp
+
+Designrunden er ikke sluppet. Før den går i en utgivelse skal en ekte Mac og
+en ekte Windows-PC (1180×760, og ned til 1000×760) bekrefte:
+
+- [ ] Start-knappen og «Neste» er synlige i handlingslinja, også med «Lyd fra»-kortet åpent og i lyd-steget i biblioteket.
+- [ ] Ingen side ruller sidelengs, og treffflatene er store nok med mus og med fingeren.
+- [ ] «Vis i Finder» heter «Vis i Utforsker» på Windows, og knappen åpner mappen med fila valgt.
+- [ ] Opptak-kortene stiller hele spørsmål («Hvilken lydkilde?», «Hvor lagres opptakene?», «Hvilken kvalitet?», «Ta med video», «Ta opp automatisk», «Hvem får beskjed hvis noe går galt?»).
+- [ ] Første gang, steg 1–6: det er tydelig at man trykker «Bruk denne lydkilden» og så «Neste».
+- [ ] Lydjusteringen (mikseren) leses uten lydbakgrunn: hverdagsord i tittelen, fagordet under.
+- [ ] Innstillinger: innholdslista øverst hopper til riktig seksjon, og «Tidsplan → Spesialopptak» står tett fra venstre.
+- [ ] Teksten leses naturlig på de fem språkene som ikke er fotografert (sv, da, de, fr, pl) — av noen som snakker dem.
+
 ## Hvordan scenene lages
 
 Scenetabellen ligger i \`e2e/atlas/scenes.ts\`. Hver scene er

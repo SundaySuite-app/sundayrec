@@ -184,19 +184,19 @@ test.describe("engine codes render as catalogue sentences", () => {
     await expect(notes.locator("li")).toHaveCount(6);
     // Katalogens norske setning — ikke motorens engelske reserve, som aldri
     // krysser IPC-en i det hele tatt.
-    await expect(notes).toContainText("forsvinner vekketimeren");
-    await expect(notes).toContainText("«Wake on RTC from S5»");
-    await expect(notes).toContainText("ligger i systemkurven");
+    await expect(notes).toContainText("forsvinner den");
+    await expect(notes).toContainText("oppstartsinnstillinger (BIOS)");
+    await expect(notes).toContainText("ligger i systemfeltet");
     // MUTASJONSPRØVEN: bytt `tDyn(…wakeIssue, code)` mot `code`, og denne blir
     // rød — rå-koder på skjermen er nøyaktig det oppslaget finnes for å unngå.
     await expect(notes).not.toContainText("winS5NeedsBios");
 
     await page.getByTestId("church-language-control-input").selectOption("en");
 
-    await expect(notes).toContainText("the wake timer goes with it");
-    await expect(notes).toContainText("“Wake on RTC from S5”");
+    await expect(notes).toContainText("it disappears");
+    await expect(notes).toContainText("startup settings (BIOS)");
     await expect(notes).toContainText("sits in the system tray");
-    await expect(notes).not.toContainText("vekketimeren");
+    await expect(notes).not.toContainText("forsvinner den");
   });
 
   test("a coded preflight finding interpolates its number and follows a language switch", async ({
@@ -289,8 +289,8 @@ test.describe("engine codes render as catalogue sentences", () => {
     const banner = page.getByTestId("banner-preflight");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(
-      "Lydenheten «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
-        "Kobles den ikke til før start, tas opptaket fra den vanlige lydenheten.",
+      "Lydkilden «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
+        "Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
     );
     // MUTASJONSPRØVEN: slå opp `deviceMissing` for begge kodene i `preflightText`,
     // og linja over blir rød; la `specialDeviceMissing` falle ut av katalogen,
@@ -306,7 +306,7 @@ test.describe("engine codes render as catalogue sentences", () => {
     const banner = page.getByTestId("banner-preflight");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(
-      "Lydenheten som er valgt i innstillingene er ikke tilkoblet.",
+      "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
     );
     await expect(banner).not.toContainText("spesialopptaket");
   });

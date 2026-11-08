@@ -383,7 +383,7 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
                 Warning,
                 "Selected audio device was not found",
                 format!("Settings point at \"{sel}\", but it is not among the devices right now."),
-                "Connect the device, or pick another one under Settings → Sound.",
+                "Connect the sound source, or pick another one on the Record page.",
             ));
         }
     }
@@ -403,7 +403,7 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
                 "Settings force {} (not \"Auto\").",
                 rate_label(&input.settings.sample_rate_mode)
             ),
-            "If the sound card runs a different rate, ffmpeg resamples and you may get stutter. Pick \"Auto\" under Settings → Sound unless you have a concrete reason.",
+            "If the sound card runs a different rate, ffmpeg resamples and you may get stutter. Choose \"Auto\" again unless you have a concrete reason.",
         ));
     }
 
@@ -436,7 +436,7 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             Critical,
             "Cannot write to the save folder",
             "The save folder is not writable.",
-            "Pick a folder you have write access to under Settings → Storage.",
+            "Pick a folder you have write access to, under “Where are recordings saved?” on the Record page.",
         ));
     }
 
@@ -525,7 +525,7 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             Critical,
             "The test recording got no sound",
             "A short probe against the selected audio device produced no sound at all.",
-            "Check that the right device is selected under Settings → Sound, that the cable is in, and that no other program is holding the microphone. Then run Diagnose again.",
+            "Check that the right sound source is chosen on the Record page, that the cable is in, and that no other program is holding the microphone. Then run the check again.",
         ));
     }
     if input.settings.video_enabled && input.video_ok == Some(false) {

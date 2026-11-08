@@ -37,7 +37,7 @@ function finding(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     code: "SR-AUDIO-01",
     severity: "critical",
-    title: "Ingen lydenhet funnet",
+    title: "Ingen lydkilde funnet",
     detail: "Verken Windows-lyd, ASIO eller ffmpeg fant en mikrofon/lydkort.",
     hint: "Sjekk at lydkortet er tilkoblet og driveren installert.",
     ...over,
@@ -182,10 +182,10 @@ test.describe("diagnose", () => {
     await page.getByTestId("adv-diagnose-run").click();
 
     const known = page.locator('[data-code="SR-AUDIO-01"]');
-    await expect(known).toContainText("Ingen lydenhet funnet");
+    await expect(known).toContainText("Ingen lydkilde funnet");
     await expect(known).not.toContainText("Marsboere");
     await expect(known).toContainText(
-      "Sjekk at lydkortet er koblet til og at driveren er installert",
+      "Sjekk at miksebordet eller lydkortet er koblet til og at driveren er installert",
     );
     // The FACT line is always the engine's — it carries numbers the report
     // sends only as finished prose. Documented in diagnose-core.ts.

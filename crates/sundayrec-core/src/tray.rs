@@ -343,13 +343,13 @@ fn quit_label(l: Lang) -> &'static str {
 }
 fn diagnose_label(l: Lang) -> &'static str {
     match l {
-        Lang::No => "Diagnoser system…",
-        Lang::En => "Run diagnostics…",
-        Lang::De => "Diagnose starten…",
-        Lang::Sv => "Kör diagnostik…",
-        Lang::Da => "Kør diagnostik…",
-        Lang::Pl => "Uruchom diagnostykę…",
-        Lang::Fr => "Lancer le diagnostic…",
+        Lang::No => "Sjekk maskinen…",
+        Lang::En => "Check this computer…",
+        Lang::De => "Computer prüfen…",
+        Lang::Sv => "Kontrollera datorn…",
+        Lang::Da => "Tjek computeren…",
+        Lang::Pl => "Sprawdź komputer…",
+        Lang::Fr => "Vérifier l’ordinateur…",
     }
 }
 fn open_folder_label(l: Lang) -> &'static str {

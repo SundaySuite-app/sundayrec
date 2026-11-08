@@ -84,7 +84,7 @@ import { loadTrash, trashCount, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
 import { Chip } from "../../ui/Chip/Chip";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
-import { reveal } from "../../ui/reveal";
+import { reveal, revealLabel } from "../../ui/reveal";
 import { TextField } from "../../ui/TextField/TextField";
 import { toast } from "../../ui/toast";
 import { spanOfSeconds } from "../record/record-core";
@@ -486,7 +486,7 @@ function Row({
           testId="library-row-reveal"
           onClick={() => void reveal(row.entry.id ?? null)}
         >
-          {t("app.done.show")}
+          {revealLabel()}
         </Button>
         <Button
           variant="quiet"

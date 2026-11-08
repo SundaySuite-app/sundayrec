@@ -138,13 +138,13 @@ describe("app i18n", () => {
   // leser appen på det språket — uten at noen gate ser forskjell på en kortere
   // setning og en fattigere.
   it.each([
-    ["no", /mikrofonen åpen/i],
-    ["en", /microphone open/i],
-    ["sv", /mikrofonen öppen/i],
-    ["da", /mikrofonen åben/i],
-    ["de", /Mikrofon im Hintergrund offen/i],
-    ["fr", /microphone ouvert/i],
-    ["pl", /mikrofon otwarty/i],
+    ["no", /mikrofonen er åpen/i],
+    ["en", /microphone stays open/i],
+    ["sv", /mikrofonen är öppen/i],
+    ["da", /mikrofonen er åben/i],
+    ["de", /Mikrofon bleibt offen/i],
+    ["fr", /microphone reste ouvert/i],
+    ["pl", /mikrofon pozostaje otwarty/i],
   ] as Array<[(typeof ACTIVE_LOCALES)[number], RegExp]>)(
     "forhåndsbufferen sier at den holder mikrofonen åpen (%s)",
     async (lang, needle) => {

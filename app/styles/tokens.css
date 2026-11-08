@@ -178,6 +178,10 @@
   --traffic-lights-w: 84px;
   --topbar-h: 44px;
   --bottombar-h: 56px;
+  /* Handlingslinja (`ActionBar`): 12 + 12 padding, 40 px knapp, 1 px kant, med
+     litt luft for en to-linjers hint. Brukes til å løfte varsler og
+     rulle-padding over linja. */
+  --actionbar-h: 65px;
 
   /*
    * ── Tetthet ───────────────────────────────────────────────────────────

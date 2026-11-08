@@ -34,7 +34,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import { t, tn } from "../../i18n";
+import { t, tDyn, tf } from "../../i18n";
 import { confirmIfRecordingImminent } from "../../settings/guards";
 import {
   loadVideoDevices,
@@ -52,11 +52,24 @@ import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { useSetting } from "../../settings/use-setting";
 import { cameraExpandable, cameraValue } from "../record/control-core";
+import { motionWord, resolutionWord } from "./camera-words-core";
 
 export interface CameraCardProps {
   expanded: boolean;
   onExpand: () => void;
   highlight?: boolean;
+}
+
+/** «Full HD, jevn bevegelse». Ukjent bilderate (0) gir bare oppløsningen. */
+function deliversText(maxHeight: number, maxFps: number): string {
+  const res = tDyn("app.setup.camera.res", resolutionWord(maxHeight));
+  const motion = motionWord(maxFps);
+  return motion
+    ? tf("app.setup.camera.delivers", {
+        res,
+        motion: tDyn("app.setup.camera.motion", motion),
+      })
+    : tf("app.setup.camera.deliversNoMotion", { res });
 }
 
 export function CameraCard({ expanded, onExpand, highlight }: CameraCardProps) {
@@ -169,12 +182,9 @@ function CameraPicker() {
         if (!alive) return;
         setCapability(
           cap && cap.supportedResolutions.length > 0
-            ? // Bilderaten er TELLINGEN («1 bilde» / «5 klatek»), oppløsningen
-              // er en vanlig innsetting. `tn` binder `{n}` til count og tar
-              // resten som params — se `app/i18n/index.ts`.
-              tn("app.setup.camera.delivers", cap.maxFps, {
-                height: cap.maxHeight,
-              })
+            ? // To tall blir to ord («Full HD, jevn bevegelse»), se
+              // `camera-words-core.ts`. Ordene bor i katalogen.
+              deliversText(cap.maxHeight, cap.maxFps)
             : t("app.setup.camera.probeFailed"),
         );
       })

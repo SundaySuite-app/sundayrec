@@ -59,7 +59,9 @@ test.describe("log file", () => {
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_COPIED__))
       .toEqual([TAIL]);
-    await expect(page.getByTestId("toast-host")).toContainText("Logg kopiert");
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "Feilloggen er kopiert",
+    );
   });
 
   test("an empty log is called out instead of copying nothing", async ({
@@ -73,7 +75,7 @@ test.describe("log file", () => {
     await page.getByTestId("adv-log-copy").click();
 
     await expect(page.getByTestId("toast-host")).toContainText(
-      "Loggen er tom ennå.",
+      "Feilloggen er tom ennå.",
     );
     expect(await page.evaluate(() => (window as any).__E2E_COPIED__)).toEqual(
       [],

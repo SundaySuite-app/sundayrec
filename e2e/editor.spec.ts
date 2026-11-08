@@ -320,7 +320,7 @@ test.describe("editor", () => {
     await waitForSuggestion(page);
 
     const result = page.getByTestId("editor-result");
-    await expect(result).toHaveText("Resultat: 10 min 0 s (av 10 min 0 s)");
+    await expect(result).toHaveText("Ferdig lengde: 10 min 0 s av 10 min 0 s");
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
 
     await page.getByTestId("editor-keep-sermon").click();
@@ -328,7 +328,7 @@ test.describe("editor", () => {
     // Ett klikk: kuttene er satt, resultatlinja sier hva som blir igjen, og
     // kortet er borte fordi spørsmålet er besvart.
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
-    await expect(result).toHaveText("Resultat: 3 min 30 s (av 10 min 0 s)");
+    await expect(result).toHaveText("Ferdig lengde: 3 min 30 s av 10 min 0 s");
     await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
     // Gullvinduet står igjen på prekenen, nå som kuttgrenser.
     await expect(page.getByTestId("editor-keep")).toHaveAttribute(
@@ -339,7 +339,7 @@ test.describe("editor", () => {
     // …og ett klikk tar det tilbake.
     await page.getByTestId("editor-undo").click();
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
-    await expect(result).toHaveText("Resultat: 10 min 0 s (av 10 min 0 s)");
+    await expect(result).toHaveText("Ferdig lengde: 10 min 0 s av 10 min 0 s");
     await expect(page.getByTestId("editor-suggestion")).toBeVisible();
   });
 
@@ -353,7 +353,7 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
     await expect(page.getByTestId("editor-result")).toHaveText(
-      "Resultat: 10 min 0 s (av 10 min 0 s)",
+      "Ferdig lengde: 10 min 0 s av 10 min 0 s",
     );
     // Ingenting er endret, så det er ingenting å bekrefte ved lukking.
     await expect(page.getByTestId("editor-dirty")).toHaveCount(0);
@@ -618,7 +618,7 @@ test.describe("editor", () => {
     // 600 sekunder → 0:10:00, og resultatlinja er enig med den.
     await expect(page.getByTestId("editor-total")).toHaveText("0:10:00");
     await expect(page.getByTestId("editor-result")).toContainText(
-      `(av ${Math.round(DURATION / 60)} min 0 s)`,
+      `av ${Math.round(DURATION / 60)} min 0 s`,
     );
   });
 
@@ -795,7 +795,7 @@ test.describe("editor", () => {
     await openEditor(page, { editor_auto_process: AUTO_PROCESS_DEAD_LEFT });
     await page.getByTestId("editor-steps-row-sound").click();
     await expect(page.getByTestId("editor-channel-note")).toContainText(
-      "Venstre kanal er stille",
+      "Ingen lyd på venstre side",
     );
 
     await goToExport(page);

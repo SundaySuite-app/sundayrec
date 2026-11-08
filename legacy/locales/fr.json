@@ -2,7 +2,7 @@
   "app": {
     "page": {
       "record": "Enregistrement",
-      "edit": "Montage",
+      "edit": "Bibliothèque",
       "export": "Export",
       "setup": "Réglages"
     },
@@ -60,22 +60,22 @@
       "trashEmptyDesc": "Les enregistrements que vous supprimez arrivent d’abord ici.",
       "back": "Retour à la bibliothèque",
       "restore": "Remettre en place",
-      "deleteNow": "Supprimer maintenant",
+      "deleteNow": "Supprimer définitivement",
       "deleteSoon": "Supprimé au prochain nettoyage",
       "deleteTomorrow": "Supprimé demain",
       "deleteInDays": "Supprimé dans {n} jours"
     },
     "record": {
-      "noSource": "Vous n’avez pas choisi d’où vient le son",
+      "noSource": "Vous n’avez pas choisi de source audio",
       "noSourceDesc": "Choisissez la table de mixage — ou le microphone de l’ordinateur si c’est ce que vous utilisez.",
-      "chooseSound": "Choisir le son",
+      "chooseSound": "Choisir la source audio",
       "sub": "Appuyez sur Démarrer quand le culte commence.",
       "listening": "À l’écoute",
       "soundFrom": "Source du son",
       "start": "Démarrer l’enregistrement",
-      "whyBlocked": "Démarrer est bloqué jusqu’à ce que le son soit choisi. Nous n’enregistrons jamais depuis une source que personne n’a choisie.",
-      "canStart": "Vous pouvez démarrer quand même — l’enregistrement restera silencieux jusqu’au retour de la table de mixage.",
-      "startHint": "Espace démarre l’enregistrement.",
+      "whyBlocked": "Le démarrage est bloqué tant qu’aucune source audio n’est choisie. Nous n’enregistrons jamais depuis une source que personne n’a choisie.",
+      "canStart": "Vous pouvez démarrer quand même — l’enregistrement restera silencieux tant que la table de mixage n’est pas revenue.",
+      "startHint": "La barre d’espace démarre l’enregistrement.",
       "useBuiltIn": "Utiliser le microphone de l’ordinateur",
       "nextAuto": "Prochain enregistrement automatique",
       "nextAutoWhen": "{day} à {time}",
@@ -94,8 +94,8 @@
       }
     },
     "setup": {
-      "q1": "Quel son ?",
-      "q2": "Où vont les enregistrements ?",
+      "q1": "Quelle source audio ?",
+      "q2": "Où sauvegarder les enregistrements ?",
       "q3": "Quelle qualité ?",
       "q4": "Quelle église ?",
       "q5": "Qui est averti si quelque chose ne va pas ?",
@@ -112,25 +112,25 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "sound": {
-        "lede": "Choisissez la source de l’enregistrement et vérifiez que nous l’entendons.",
-        "deviceWithPair": "{name} · canaux {l}–{r}",
+        "lede": "Choisissez la source audio à enregistrer et vérifiez que nous l’entendons.",
+        "deviceWithPair": "{name} · entrée {l}–{r}",
         "gone": "{name} introuvable",
         "goneDesc": "Vérifiez qu’il est allumé et que le câble est branché.",
         "noneDesc": "Nous n’enregistrons jamais depuis une source que personne n’a choisie.",
         "builtIn": "Le microphone de l’ordinateur",
-        "builtInDesc": "Pour tester seulement, ou si vous n’avez pas de table de mixage.",
-        "external": "USB / Externe",
+        "builtInDesc": "Uniquement pour essayer, ou si vous n’avez pas de table de mixage.",
+        "external": "Branché par câble",
         "mixer": {
-          "one": "Table de mixage · {n} canal",
-          "other": "Table de mixage · {n} canaux"
+          "one": "Table de mixage · {n} entrée",
+          "other": "Table de mixage · {n} entrées"
         },
-        "whichChannels": "Quels canaux ?",
-        "pairLabel": "Canaux {l} et {r}",
-        "channelHint": "Ceux qui reçoivent du son s’allument.",
+        "whichChannels": "Quelles entrées de la table de mixage ?",
+        "pairLabel": "Entrées {l} et {r}",
+        "channelHint": "Choisissez la paire qui porte le son à enregistrer — une entrée pour la gauche, une pour la droite. Celles qui ont du son s’allument.",
         "testHint": "Parlez dans le microphone ou jouez quelques notes.",
-        "useThis": "Utiliser celui-ci",
+        "useThis": "Utiliser cette source",
         "noChange": "Rien n’a changé.",
-        "empty": "Aucun périphérique audio trouvé",
+        "empty": "Aucune source audio trouvée",
         "emptyDesc": "Pas même le microphone de l’ordinateur. Vérifiez l’accès dans Réglages Système → Confidentialité.",
         "retry": "Rechercher à nouveau"
       },
@@ -151,9 +151,9 @@
       },
       "qualityLede": "Une qualité plus élevée donne des fichiers plus gros. La plupart des gens restent sur Bonne.",
       "qDesc": {
-        "mp3": "MP3. Convient au web et au partage. Environ 1 Go pour 10 heures.",
-        "flac": "FLAC. Tout ce qui est entré, sans perte. Environ 5 Go pour 10 heures.",
-        "wav": "WAV. Non compressé, comme doit l’être une archive. Environ 10 Go pour 10 heures."
+        "mp3": "Convient au web et au partage. Environ 1 Go pour 10 heures · MP3",
+        "flac": "Tout ce qui est entré, sans perte. Environ 5 Go pour 10 heures · FLAC",
+        "wav": "Non compressé, comme il se doit pour une archive. Environ 10 Go pour 10 heures · WAV"
       },
       "qualityCustom": "Personnalisé · {format} {bitrate}",
       "qualityCustomDesc": "Cette combinaison ne fait pas partie des trois. Choisissez une carte pour changer.",
@@ -165,7 +165,7 @@
         "languageLabel": "Langue de l’application",
         "languageDesc": "Le changement est immédiat.",
         "language": "Langue : {language}",
-        "languagePaused": "Cette langue est temporairement indisponible dans la nouvelle configuration — l’application affiche {language} pour l’instant."
+        "languagePaused": "Cette langue est temporairement indisponible — l’application s’affiche en {language} pour l’instant."
       },
       "notify": {
         "lede": "L’ordinateur vous prévient toujours quand quelque chose ne va pas — vous qui êtes devant.",
@@ -186,26 +186,35 @@
         "permissionUnknown": "Impossible à lire sur cet ordinateur. Envoyez une notification de test pour vérifier qu’elles arrivent.",
         "permissionDeniedError": "Personne ne voit les notifications d’erreur tant qu’elles ne sont pas réactivées.",
         "sendTest": "Envoyer une notification de test",
-        "openSettings": "Ouvrir les réglages",
+        "openSettings": "Ouvrir les réglages système",
         "testSent": "La notification de test a été envoyée. Si elle n’est pas apparue, ouvrez les réglages et activez les notifications pour SundayRec.",
         "testSentDenied": "La notification de test a été envoyée, mais les notifications sont désactivées — elle n’apparaîtra pas avant leur réactivation.",
         "testFailed": "La notification de test n’a pas pu être envoyée.",
         "openSettingsFailed": "Impossible d’ouvrir les réglages de notification. Ouvrez-les depuis les réglages du système."
       },
       "camera": {
-        "title": "Inclure la caméra",
+        "title": "Inclure la vidéo",
         "desc": "Enregistrer la vidéo en même temps que le son.",
         "noneChosen": "Aucune caméra choisie",
         "pick": "Caméra",
         "keepAudio": "Conserver un fichier audio séparé",
         "keepAudioDesc": "Un fichier audio seul à côté de la vidéo.",
-        "delivers": {
-          "one": "La caméra fournit au maximum {height}p · {n} image par seconde.",
-          "other": "La caméra fournit au maximum {height}p · {n} images par seconde."
-        },
-        "probeFailed": "Nous n’avons pas pu lire les capacités de la caméra. L’enregistrement utilisera ce que la caméra fournit réellement, jusqu’à 1080p.",
+        "delivers": "La caméra fournit {res}, {motion}.",
+        "deliversNoMotion": "La caméra fournit {res}.",
+        "probeFailed": "Nous n’avons pas pu lire ce que la caméra sait faire. L’enregistrement utilise le meilleur de ce que la caméra fournit réellement, jusqu’à Full HD.",
         "none": "Aucune caméra trouvée",
-        "noneDesc": "Branchez une caméra, ou désactivez « Inclure la caméra »."
+        "noneDesc": "Branchez une caméra, ou désactivez « Inclure la vidéo ».",
+        "res": {
+          "uhd": "4K",
+          "fhd": "Full HD",
+          "hd": "HD",
+          "sd": "résolution plus basse"
+        },
+        "motion": {
+          "smooth": "mouvement très fluide",
+          "normal": "mouvement fluide",
+          "low": "mouvement un peu saccadé"
+        }
       },
       "auto": {
         "title": "Enregistrer automatiquement",
@@ -234,9 +243,9 @@
         "6": "Dimanche"
       },
       "advanced": {
-        "soundLink": "Son avancé",
-        "preroll": "Tampon de pré-enregistrement",
-        "prerollDesc": "Le son capté avant que vous appuyiez sur Démarrer. La mémoire tampon garde le microphone ouvert en arrière-plan aussi longtemps que l’application est prête à enregistrer.",
+        "soundLink": "Plus d’options d’enregistrement",
+        "preroll": "Garder le son d’avant le démarrage",
+        "prerollDesc": "L’application écoute en arrière-plan pour que les secondes avant l’appui sur Démarrer ne soient pas perdues. Le microphone reste ouvert tant que l’application est prête à enregistrer.",
         "prerollChoice": {
           "0": "Désactivé",
           "15": "15 secondes",
@@ -262,7 +271,7 @@
           "360": "6 heures"
         },
         "split": "Découper les longs enregistrements",
-        "splitDesc": "Commence un nouveau fichier à intervalles réguliers, pour qu’aucun fichier ne devienne énorme.",
+        "splitDesc": "Chaque partie devient un fichier à part. Utile pour les longs enregistrements : de petits fichiers sont plus faciles à modifier et à envoyer, et si quelque chose tourne mal, seule la dernière partie est en danger.",
         "splitEvery": "Nouveau fichier après",
         "splitChoice": {
           "30": "30 minutes",
@@ -276,29 +285,29 @@
         "autoDeleteAfter": "Supprimer après (jours)",
         "autoDeleteConfirm": "Supprimer les enregistrements plus tôt",
         "autoDeleteRange": "Saisissez un nombre entre 1 et 3650.",
-        "diag": "Partager des diagnostics anonymes",
+        "diag": "Envoyer des statistiques d’utilisation anonymes",
         "diagDesc": "Jamais de son, de noms ni de fichiers. Vous pouvez voir exactement ce qui est envoyé.",
         "diagPreviewTitle": "Ce qui est envoyé",
         "diagPreviewNext": "Voici exactement ce qui sera envoyé la prochaine fois.",
-        "diagPreviewHistory": "Les diagnostics sont désactivés. Ceci montre la forme des données d’après votre propre historique local — rien n’est envoyé.",
+        "diagPreviewHistory": "Les statistiques sont désactivées. Voici à quoi ressembleraient les données, tirées de votre propre historique sur cet ordinateur — rien n’est envoyé.",
         "diagPreviewEmpty": "Rien à envoyer pour le moment.",
         "diagPreviewFailed": "Impossible de récupérer l’aperçu.",
         "diagDelete": "Supprimer mes données",
         "diagDeleteTitle": "Supprimer vos données ?",
-        "diagDeleteBody": "Votre identifiant anonyme est remplacé par un nouveau, et les rapports non encore envoyés sont effacés. SundayRec demande ensuite au serveur de supprimer tout ce qui s’y trouve sous l’ancien identifiant.",
-        "diagDeleteConfirm": "Oui, effacer et changer d’identifiant",
-        "diagDeleted": "Les données sont effacées localement, et vous avez un nouvel identifiant anonyme.",
+        "diagDeleteBody": "Les statistiques pas encore envoyées sont effacées. SundayRec demande ensuite la suppression de tout ce qui a déjà été envoyé depuis cet ordinateur. L’ordinateur reçoit un nouveau numéro anonyme, afin que les nouveaux chiffres ne puissent pas être reliés aux anciens.",
+        "diagDeleteConfirm": "Oui, supprimer les données",
+        "diagDeleted": "Les données sont effacées et l’ordinateur a un nouveau numéro anonyme.",
         "diagDeleteFailed": "Impossible de supprimer les données. Réessayez.",
         "update": "Mises à jour",
-        "updateDesc": "La version stable est recommandée. La bêta reçoit les nouveautés en premier.",
+        "updateDesc": "« Normal » est recommandé. « Essayer les nouveautés en premier » vous donne les nouvelles versions avant qu’elles soient bien éprouvées.",
         "autoUpdate": "Mettre à jour automatiquement",
         "autoUpdateDesc": "Vérifie chaque heure s’il existe une version plus récente. Rien n’est téléchargé avant votre accord.",
-        "updateStable": "Stable",
-        "updateBeta": "Bêta",
-        "updateBetaTitle": "Passer aux mises à jour bêta ?",
-        "updateBetaBody": "La bêta vous parvient avant d’avoir été éprouvée lors d’un vrai culte, et peut contenir des erreurs qui ruinent un enregistrement. N’utilisez pas la bêta sur l’ordinateur qui enregistre le culte. Vous pouvez revenir en arrière à tout moment.",
-        "updateBetaConfirm": "Oui, utiliser la bêta",
-        "updateBetaCancel": "Rester sur stable",
+        "updateStable": "Normal (recommandé)",
+        "updateBeta": "Essayer les nouveautés en premier",
+        "updateBetaTitle": "Essayer les nouvelles versions en premier ?",
+        "updateBetaBody": "Ces versions vous parviennent avant d’avoir été essayées lors d’un vrai culte, et peuvent contenir des erreurs qui ruinent un enregistrement. Ne les utilisez pas sur l’ordinateur qui enregistre le culte. Vous pouvez revenir en arrière à tout moment.",
+        "updateBetaConfirm": "Oui, essayer en premier",
+        "updateBetaCancel": "Rester sur normal",
         "updateCheck": "Rechercher des mises à jour maintenant",
         "updateChecking": "Recherche de mises à jour…",
         "updateUpToDate": "Vous êtes à jour",
@@ -312,33 +321,33 @@
         "updateFailed": "Impossible de rechercher les mises à jour",
         "updateBusyRecording": "Mise à jour impossible pendant un enregistrement",
         "updateNotesLabel": "Nouveautés",
-        "log": "Journal",
-        "logDesc": "Pour dépanner avec nous. Aucun son et aucun mot de passe.",
+        "log": "Journal d’erreurs",
+        "logDesc": "Un fichier qui montre ce que l’application a fait, et les erreurs éventuelles. Il aide la personne qui cherche la panne. Aucun son, aucun mot de passe.",
         "show": "Afficher",
         "copy": "Copier",
-        "logShowFailed": "Impossible d’ouvrir le dossier du journal.",
-        "logEmpty": "Le journal est encore vide.",
-        "logCopied": "Journal copié",
-        "logCopyFailed": "Impossible de copier le journal.",
-        "profile": "Profil de réglages",
-        "profileDesc": "Emportez la configuration sur un autre ordinateur. Les mots de passe ne sont jamais inclus.",
+        "logShowFailed": "Impossible d’ouvrir le dossier du journal d’erreurs.",
+        "logEmpty": "Le journal d’erreurs est encore vide.",
+        "logCopied": "Journal d’erreurs copié",
+        "logCopyFailed": "Impossible de copier le journal d’erreurs.",
+        "profile": "Transférer la configuration vers un autre ordinateur",
+        "profileDesc": "Enregistrez les réglages dans un fichier, puis chargez-les sur l’autre ordinateur. Les mots de passe ne sont jamais inclus.",
         "licenses": "Licences",
         "licensesDesc": "Les logiciels tiers sur lesquels SundayRec repose, et ffmpeg (GPL) avec l'emplacement de son code source.",
         "licensesOpen": "Afficher les licences",
         "licensesClose": "Fermer",
         "licensesFailed": "Le texte des licences est introuvable. Essayez de réinstaller l'application.",
         "licensesFrameTitle": "Licences et mentions des tiers",
-        "export": "Exporter",
-        "import": "Importer",
-        "importTitle": "Importer les réglages ?",
-        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier que vous choisissez. Le périphérique audio, la caméra, le dossier des enregistrements et « Lancer automatiquement avec l’ordinateur » restent tels qu’ils sont ici. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
-        "importConfirm": "Oui, importer",
-        "exported": "Les réglages ont été exportés.",
-        "exportFailed": "Impossible d’exporter les réglages : {err}",
-        "imported": "Les réglages ont été importés.",
-        "importFailed": "Impossible d’importer les réglages : {err}",
-        "importNotProfile": "Ce fichier n’est pas un profil de réglages SundayRec, ou il est endommagé. Rien n’a été modifié.",
-        "importTooLarge": "Ce fichier est trop volumineux pour être un profil de réglages. Rien n’a été modifié.",
+        "export": "Enregistrer la configuration",
+        "import": "Charger la configuration",
+        "importTitle": "Charger la configuration ?",
+        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier que vous choisissez. La source audio, la caméra, le dossier des enregistrements et « Lancer automatiquement avec l’ordinateur » restent tels qu’ils sont ici. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
+        "importConfirm": "Oui, charger la configuration",
+        "exported": "La configuration a été enregistrée.",
+        "exportFailed": "Impossible d’enregistrer la configuration : {err}",
+        "imported": "La configuration a été chargée.",
+        "importFailed": "Impossible de charger la configuration : {err}",
+        "importNotProfile": "Ce fichier n’est pas une configuration SundayRec, ou il est endommagé. Rien n’a été modifié.",
+        "importTooLarge": "Ce fichier est trop volumineux pour être une configuration. Rien n’a été modifié.",
         "schedTitle": "Autres horaires et enregistrements ponctuels",
         "schedDesc": "L’horaire hebdomadaire se règle sur la page Enregistrement, dans la carte « Enregistrer automatiquement ». Ici, vous en ajoutez d’autres.",
         "schedTimes": "Horaires hebdomadaires",
@@ -359,8 +368,8 @@
         "specialNeedsDate": "Choisissez d’abord une date.",
         "specialPast": "La date est passée — aucun enregistrement ne démarrera.",
         "specialDeviceSame": "Comme l’enregistrement habituel",
-        "specialDevice": "Périphérique audio pour cet enregistrement",
-        "specialDeviceHint": "Choisissez un périphérique audio propre si cet enregistrement doit venir d’une autre carte son. S’il n’est pas connecté au démarrage de l’enregistrement, le périphérique habituel est utilisé — et vous êtes prévenu.",
+        "specialDevice": "Source audio de cet enregistrement",
+        "specialDeviceHint": "Choisissez une source audio à part si cet enregistrement doit venir d’autre chose que d’habitude. Si elle n’est pas branchée au démarrage, la source habituelle est utilisée — et vous êtes prévenu.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (non connecté actuellement)",
         "wake": "Sortir l’ordinateur de veille",
@@ -374,34 +383,34 @@
           "unknown": "Nous ne savons pas encore si cet ordinateur peut être réveillé."
         },
         "wakeIssue": {
-          "macArmNoPowerOn": "Un Mac Apple Silicon ne peut pas démarrer depuis l’état complètement éteint — uniquement depuis la veille.",
-          "macIntelManualPowerOn": "Un Mac Intel peut démarrer depuis l’état éteint, mais vous devez activer « Démarrer ou réveiller » manuellement dans Réglages Système → Batterie.",
-          "winTimerDiesWithApp": "Le réveil est programmé par SundayRec pendant qu’il tourne. Si vous quittez complètement SundayRec, la minuterie de réveil disparaît.",
-          "winS5NeedsBios": "Le réveil depuis l’état complètement éteint (S5) exige que « Wake on RTC from S5 » soit activé dans le BIOS — un logiciel ne peut pas l’activer.",
-          "linuxUnsupported": "Linux n’est pas pris en charge pour le réveil automatique depuis SundayRec.",
-          "platformUnsupported": "Cette plateforme n’est pas prise en charge pour le réveil automatique."
+          "macArmNoPowerOn": "Ce Mac ne peut pas se rallumer tout seul s’il est complètement éteint — il doit être en veille.",
+          "macIntelManualPowerOn": "Ce Mac peut se rallumer depuis l’état éteint, mais vous devez activer vous-même « Démarrer ou réveiller » dans Réglages Système → Batterie.",
+          "winTimerDiesWithApp": "Le réveil est programmé par SundayRec pendant qu’il tourne. Si vous quittez complètement SundayRec, il disparaît.",
+          "winS5NeedsBios": "Pour que l’ordinateur puisse se réveiller depuis l’état éteint, il faut l’activer dans ses réglages de démarrage (BIOS). SundayRec ne peut pas le faire à votre place — laissez plutôt l’ordinateur en veille.",
+          "linuxUnsupported": "Le réveil automatique ne fonctionne pas sous Linux.",
+          "platformUnsupported": "Le réveil automatique ne fonctionne pas sur ce type d’ordinateur."
         },
         "wakeAdvice": {
-          "macKeepAsleep": "Laissez la machine en veille (ne l’éteignez pas) une fois les préparatifs terminés.",
-          "macDisableStandby": "Désactivez la veille profonde (standby) — elle peut empêcher la machine de se réveiller.",
-          "macStayPluggedIn": "L’alimentation secteur doit être branchée — un Mac ne se réveille pas de façon fiable sur batterie.",
-          "winKeepAppRunning": "Laissez SundayRec en marche — il démarre automatiquement à l’ouverture de session et reste dans la zone de notification.",
-          "winSleepNotShutdown": "Mettez la machine en veille (Sleep/Hibernate) au lieu de l’éteindre.",
-          "winStayPluggedIn": "L’alimentation secteur devrait être branchée — beaucoup de portables désactivent les minuteries de réveil sur batterie.",
-          "winCheckBios": "Si le réveil de test échoue, cherchez « Wake on RTC » dans le BIOS et activez « Autoriser les minuteries de réveil » dans les options d’alimentation.",
-          "useMacOrWindows": "Utilisez un Mac ou un PC Windows pour activer le réveil automatique."
+          "macKeepAsleep": "Laissez l’ordinateur en veille — ne l’éteignez pas.",
+          "macDisableStandby": "Désactivez la « veille prolongée » (standby) dans les réglages d’énergie — sinon l’ordinateur risque de ne pas se réveiller.",
+          "macStayPluggedIn": "Laissez l’ordinateur branché sur le secteur — un Mac ne se réveille pas de façon fiable sur batterie.",
+          "winKeepAppRunning": "Laissez SundayRec en marche — il démarre tout seul à l’ouverture de session et se trouve dans la zone de notification, près de l’horloge.",
+          "winSleepNotShutdown": "Mettez l’ordinateur en veille au lieu de l’éteindre.",
+          "winStayPluggedIn": "Laissez l’ordinateur branché sur le secteur — beaucoup de portables ne se réveillent pas sur batterie.",
+          "winCheckBios": "Si le réveil d’essai ne fonctionne pas : vérifiez que « Autoriser les minuteries de réveil » est activé dans les options d’alimentation et « Wake on RTC » dans le BIOS.",
+          "useMacOrWindows": "Le réveil automatique ne fonctionne que sous Mac et Windows."
         },
-        "wakeArm": "Activer le réveil",
+        "wakeArm": "Programmer le réveil",
         "wakeArmWord": {
-          "idle": "Déclarez le réveil auprès du système d’exploitation maintenant. Un mot de passe administrateur peut être demandé.",
-          "ok": "Le réveil est déclaré auprès du système d’exploitation.",
-          "autoRecordOff": "Aucun réveil à déclarer — « Enregistrer automatiquement » est désactivé.",
-          "nothingUpcoming": "Aucun réveil à déclarer — rien n’est programmé pour la suite.",
+          "idle": "Programme le réveil dans l’ordinateur maintenant. Peut demander un mot de passe administrateur.",
+          "ok": "Le réveil est programmé dans l’ordinateur.",
+          "autoRecordOff": "Aucun réveil à programmer — « Enregistrer automatiquement » est désactivé.",
+          "nothingUpcoming": "Aucun réveil à programmer — rien n’est prévu.",
           "needsAdmin": "Un mot de passe administrateur est nécessaire — réessayez et répondez à la demande.",
           "disabled": "Activez d’abord « Sortir l’ordinateur de veille ».",
           "unsupported": "Cet ordinateur ne peut pas être réveillé par l’application.",
-          "cancelled": "Vous avez annulé — rien n’a été déclaré.",
-          "failed": "Le réveil n’a pas été déclaré."
+          "cancelled": "Vous avez annulé — rien n’a été programmé.",
+          "failed": "Le réveil n’a pas été programmé."
         },
         "wakeTest": "Tester le réveil dans 2 min",
         "wakeTestIdle": "Programmez un vrai réveil dans deux minutes, et voyez si l’ordinateur se réveille vraiment.",
@@ -416,12 +425,12 @@
           "testFail": "Réveil de test échoué"
         },
         "wakeHistoryReason": {
-          "noResume": "aucune reprise observée",
+          "noResume": "l’ordinateur ne s’est pas réveillé",
           "tooLate": "arrivé trop tard",
           "onBattery": "sur batterie"
         },
-        "audioTech": "Technologie audio",
-        "diagnoseReportWhere": "Collez le rapport dans un ticket GitHub, ou envoyez-le à dev@sundaysuite.app.",
+        "audioTech": "À propos de la technologie audio",
+        "diagnoseReportWhere": "Envoyez le rapport à la personne qui vous aide, ou à dev@sundaysuite.app.",
         "publishDesc": "Après un export, l’app peut ouvrir la page sur laquelle vous publiez, avec le titre et la description prêts à copier. SundayRec n’envoie rien lui-même.",
         "publishWhere": "Où publiez-vous ?",
         "publishChannelName": {
@@ -429,7 +438,7 @@
           "none": "Aucune"
         },
         "publishChannelDesc": {
-          "soundcloud": "Souvent aussi votre flux de podcast (RSS)",
+          "soundcloud": "Souvent aussi votre podcast",
           "youtube": "Envoi dans YouTube Studio",
           "spotify": "Podcast dans Spotify for Creators",
           "custom": "Par exemple WordPress ou votre hébergeur de podcast",
@@ -441,7 +450,8 @@
         "publishUrlInvalid": "Cela ne ressemble pas à une adresse web",
         "publishTemplate": "Description type",
         "publishTemplateDesc": "Remplie à l’export, où elle peut être modifiée. {title}, {speaker}, {date} et {church} sont remplacés.",
-        "publishTemplatePlaceholder": "Sermon de {church}, {date}. Orateur : {speaker}."
+        "publishTemplatePlaceholder": "Sermon de {church}, {date}. Orateur : {speaker}.",
+        "audioTechNote": "Le texte ci-dessous est une mention de licence de Steinberg et reste en anglais."
       },
       "sections": {
         "nav": "Aller à",
@@ -453,40 +463,40 @@
         "updates": "Mises à jour et confidentialité",
         "updatesDesc": "Vous décidez si l'application cherche de nouvelles versions et si elle envoie des statistiques anonymes.",
         "help": "Aide et dépannage",
-        "helpDesc": "Si quelque chose ne fonctionne pas : vérifier l'ordinateur, récupérer le journal, ou transférer les réglages vers un autre ordinateur.",
+        "helpDesc": "Si quelque chose ne fonctionne pas : vérifier l’ordinateur, récupérer le journal d’erreurs, ou transférer la configuration vers un autre ordinateur.",
         "about": "À propos",
         "aboutDesc": "Licences et mentions des logiciels sur lesquels SundayRec est construit."
       }
     },
     "diagnose": {
-      "title": "Diagnostic",
-      "desc": "Vérifie le son, les autorisations, le moteur et le disque, et rédige un rapport que vous pouvez transmettre.",
-      "run": "Lancer",
-      "running": "En cours…",
-      "failed": "Le diagnostic n’a pas pu être lancé : {err}",
+      "title": "Vérifier l’ordinateur",
+      "desc": "Vérifie la source audio, les autorisations, le moteur d’enregistrement et le disque, et produit un rapport à transmettre.",
+      "run": "Lancer la vérification",
+      "running": "Vérification …",
+      "failed": "La vérification n’a pas pu s’exécuter : {err}",
       "probeSkipped": "Le test du son n’a pas été lancé : {why}",
       "copy": "Copier le rapport complet",
       "copied": "Le rapport est copié",
       "copyFailed": "Impossible de copier le rapport",
       "savedTo": "Enregistré dans",
-      "devicesTitle": "Tous les périphériques audio que l’enregistreur voit",
-      "noDevices": "Aucun périphérique audio trouvé",
-      "ipcTitle": "Commandes restées sans réponse durant cette session ({n})",
-      "test": "Enregistrement de test (~10 s)",
+      "devicesTitle": "Toutes les sources audio que l’application voit",
+      "noDevices": "Aucune source audio trouvée",
+      "ipcTitle": "Parties de l’application qui n’ont pas répondu cette fois ({n})",
+      "test": "Enregistrement d’essai (10 s)",
       "testRunning": "Enregistrement du test…",
       "testBlocked": "Impossible pendant un enregistrement.",
-      "testOk": "L’enregistrement de test est terminé — {signal}.",
-      "testFail": "L’enregistrement de test a échoué : {why}",
+      "testOk": "L’enregistrement d’essai s’est bien passé — {signal}.",
+      "testFail": "L’enregistrement d’essai a échoué : {why}",
       "r": {
-        "devices": "Périphériques audio trouvés",
-        "selected": "Périphérique choisi",
+        "devices": "Sources audio trouvées",
+        "selected": "Source audio choisie",
         "mic": "Accès au microphone",
-        "engine": "Moteur audio (ffmpeg)",
+        "engine": "Moteur d’enregistrement (ffmpeg)",
         "probe": "Test du son"
       },
       "v": {
         "notFound": "introuvable",
-        "defaultDevice": "Périphérique par défaut",
+        "defaultDevice": "Valeur par défaut de l’ordinateur",
         "ffmpegOk": "Disponible",
         "ffmpegMissing": "Introuvable",
         "unknown": "Impossible à déterminer",
@@ -502,7 +512,7 @@
         }
       },
       "testErr": {
-        "deviceNotFound": "périphérique audio introuvable",
+        "deviceNotFound": "source audio introuvable",
         "permissionDenied": "accès au microphone refusé",
         "ffmpegError": "le moteur d’enregistrement a échoué",
         "noAudio": "aucun son dans l’enregistrement"
@@ -518,12 +528,12 @@
           "hint": "Réinstallez SundayRec — le moteur d’enregistrement est fourni avec l’application."
         },
         "audio01": {
-          "title": "Aucun périphérique audio trouvé",
-          "hint": "Vérifiez que la carte son est branchée et que le pilote est installé. Sur un PC partagé : le service audio est-il lancé ?"
+          "title": "Aucune source audio trouvée",
+          "hint": "Vérifiez que la table de mixage ou la carte son est branchée et que son pilote est installé. Sur un PC partagé : le service audio est-il actif ?"
         },
         "audio02": {
-          "title": "Le périphérique audio choisi n’a pas été trouvé",
-          "hint": "Branchez le périphérique, ou choisissez-en un autre dans « Quel son ? » sur la page Enregistrement."
+          "title": "La source audio choisie est introuvable",
+          "hint": "Branchez la source audio, ou choisissez-en une autre sous « Quelle source audio ? » sur la page Enregistrement."
         },
         "rate01": {
           "title": "Une fréquence d’échantillonnage fixe est sélectionnée",
@@ -531,7 +541,7 @@
         },
         "video01": {
           "title": "La vidéo est activée, mais aucune caméra n’a été trouvée",
-          "hint": "Branchez la caméra, ou désactivez « Inclure la caméra » sur la page Enregistrement."
+          "hint": "Branchez la caméra, ou désactivez « Inclure la vidéo » sur la page Enregistrement."
         },
         "video02": {
           "title": "La caméra n’a donné aucune image",
@@ -543,7 +553,7 @@
         },
         "disk02": {
           "title": "Impossible d’écrire dans le dossier d’enregistrement",
-          "hint": "Choisissez un dossier où vous avez le droit d’écrire dans « Où vont les enregistrements ? » sur la page Enregistrement."
+          "hint": "Choisissez un dossier dans lequel vous pouvez écrire, sous « Où sauvegarder les enregistrements ? » sur la page Enregistrement."
         },
         "perm01": {
           "title": "L’accès au microphone est refusé",
@@ -555,15 +565,15 @@
         },
         "engine01": {
           "title": "Le dernier enregistrement s’est terminé par une erreur",
-          "hint": "Le code d’erreur figure sur la ligne au-dessus. Lancez un enregistrement de test pour voir si cela fonctionne maintenant."
+          "hint": "Le code d’erreur est sur la ligne au-dessus. Faites un enregistrement d’essai pour voir si cela fonctionne maintenant."
         },
         "capture01": {
           "title": "Le dernier enregistrement montrait des signes de saccades",
-          "hint": "Fermez les autres programmes lourds, vérifiez le câble et l’alimentation de la carte son, et que la fréquence d’échantillonnage est sur « Auto ». Refaites ensuite un enregistrement et voyez si les chiffres baissent."
+          "hint": "Fermez les autres programmes lourds et vérifiez le câble et l’alimentation de la carte son. Faites ensuite un nouvel enregistrement et voyez si les chiffres baissent."
         },
         "capture02": {
           "title": "Le test du son n’a reçu aucun son",
-          "hint": "Vérifiez que le bon périphérique est choisi dans « Quel son ? » sur la page Enregistrement, que le câble est branché, et qu’aucun autre programme ne retient le microphone. Relancez ensuite le diagnostic."
+          "hint": "Vérifiez que la bonne source audio est choisie sous « Quelle source audio ? » sur la page Enregistrement, que le câble est branché et qu’aucun autre programme n’utilise le microphone. Relancez ensuite la vérification."
         },
         "crash01": {
           "title": "L’application a planté",
@@ -574,12 +584,12 @@
           "hint": "L’application les a relancées d’elle-même, donc rien ne s’est arrêté. Si cela se répète, joignez ce rapport — les noms ci-dessus disent quelle partie est instable."
         },
         "log01": {
-          "title": "Le fichier journal n’est pas actif",
+          "title": "Le journal d’erreurs n’est pas actif",
           "hint": "En général, cela signifie que le dossier de l’application n’a pas pu être créé. Redémarrez l’application ; si cela persiste, vérifiez l’espace disque et les autorisations."
         },
         "log02": {
-          "title": "Une partie du journal manque",
-          "hint": "Le journal est incomplet parce que l’enregistrement a été prioritaire — c’est le bon ordre des choses. Un disque lent mérite un coup d’œil avant le prochain long enregistrement."
+          "title": "Des parties du journal d’erreurs manquent",
+          "hint": "Le journal d’erreurs est incomplet parce que l’enregistrement a eu la priorité — c’est le bon choix. Un disque lent mérite un coup d’œil avant le prochain long enregistrement."
         },
         "ok": {
           "title": "Aucun problème détecté",
@@ -605,11 +615,11 @@
       "next": "Suivant",
       "back": "Retour",
       "skipSound": "Continuer sans son",
-      "gate": "« Suivant » s’active dès que nous entendons du son.",
-      "gateReason": "Nous n’entendons encore aucun son. Parlez dans le microphone, ou allumez la table de mixage.",
+      "gate": "Choisissez une source audio et appuyez sur « Utiliser cette source ». « Suivant » s’active dès que nous entendons du son.",
+      "gateReason": "Nous n’entendons pas encore de son. Parlez dans le microphone, ou allumez la table de mixage.",
       "readyTitle": "Prêt pour dimanche",
-      "readyDesc": "C’est la même chose que vous retrouverez dans Réglages (la roue dentée) et sur l’écran Enregistrement par la suite.",
-      "fixHere": "Tout ici peut être corrigé tout de suite — la ligne ouvre l’écran sur place, et vous restez dans la configuration.",
+      "readyDesc": "C’est la même chose que vous retrouverez dans Réglages (la roue dentée) et sur la page Enregistrement par la suite.",
+      "fixHere": "Appuyez sur « Configurer » ou « Modifier » sur une ligne pour la corriger tout de suite. Vous restez ici.",
       "notifyTodo": "Les notifications sont désactivées — personne n’est averti si un enregistrement échoue.",
       "open": "Ouvrir SundayRec",
       "progress": "Progression",
@@ -645,7 +655,9 @@
       "title": "L’enregistrement est sauvegardé",
       "show": "Afficher dans le Finder",
       "ok": "Terminé",
-      "revealFailed": "Fichier introuvable sur le disque."
+      "revealFailed": "Fichier introuvable sur le disque.",
+      "showWin": "Afficher dans l’Explorateur",
+      "showOther": "Afficher dans le dossier"
     },
     "editor": {
       "stepCut": "Coupe",
@@ -663,7 +675,7 @@
       "keepLabel": "{name} · {span}",
       "handleStart": "Là où commence la prédication",
       "handleEnd": "Là où finit la prédication",
-      "result": "Résultat : {kept} (sur {total})",
+      "result": "Durée finale : {kept} sur {total}",
       "seconds": "{n} s",
       "minutesSeconds": "{m} min {s} s",
       "pause": "Pause",
@@ -672,8 +684,8 @@
       "redo": "Rétablir",
       "nothingToUndo": "Rien à annuler pour l’instant.",
       "nothingToRedo": "Rien à rétablir.",
-      "notSermonDesc": "Choisissez le bon bloc. Nous le retiendrons pour la prochaine fois.",
-      "blockOption": "Bloc {n} — {at} · {span}",
+      "notSermonDesc": "Choisissez la bonne partie. Nous nous en souviendrons la prochaine fois.",
+      "blockOption": "Partie {n} — {at} · {span}",
       "stepSound": "Son",
       "nextSound": "Suivant : Son",
       "nextExport": "Suivant : Export",
@@ -704,33 +716,33 @@
         "clicks": "Nous avons retiré les clics et crépitements",
         "clean": "L’enregistrement était propre."
       },
-      "advancedMixer": "Avancé : ouvrir le mixeur",
-      "hideMixer": "Masquer le mixeur",
-      "mixerTitle": "Mixeur audio avancé",
-      "mixerUseDesc": "Le mixeur remplace « {profile} ». Aucun mastering n’est ajouté par-dessus — vous pilotez toute la chaîne.",
-      "mxEq": "Équilibre tonal",
+      "advancedMixer": "Régler le son soi-même",
+      "hideMixer": "Masquer les réglages du son",
+      "mixerTitle": "Réglages du son",
+      "mixerUseDesc": "Quand c’est activé, vos propres réglages remplacent « {profile} ». Aucun traitement automatique n’est ajouté par-dessus.",
+      "mxEq": "Timbre",
       "mx": {
-        "hpf": "Coupe-bas",
-        "denoise": "Réduction de bruit",
-        "dereverb": "Réduction de réverbération",
-        "gate": "Porte de bruit",
-        "comp": "Compresseur",
-        "deesser": "Atténuation des sifflantes",
-        "limiter": "Limiteur",
-        "gain": "Niveau de sortie",
+        "hpf": "Supprimer le grondement grave",
+        "denoise": "Supprimer le souffle",
+        "dereverb": "Moins d’écho de la salle",
+        "gate": "Atténuer les passages calmes",
+        "comp": "Égaliser la parole forte et faible",
+        "deesser": "Sifflantes plus douces",
+        "limiter": "Éviter que le son sature",
+        "gain": "Volume final",
         "freq": "Fréquence",
-        "reduction": "Réduction",
+        "reduction": "Combien",
         "strength": "Intensité",
-        "threshold": "Seuil",
-        "ratio": "Taux",
-        "attack": "Attaque",
-        "release": "Relâchement",
-        "makeup": "Compensation",
+        "threshold": "Se déclenche à",
+        "ratio": "Intensité",
+        "attack": "Réagit après",
+        "release": "Relâche après",
+        "makeup": "Relever ensuite",
         "intensity": "Intensité",
-        "ceiling": "Plafond",
-        "eqMud": "250 Hz — atténuer la boue",
-        "eqPresence": "3,5 kHz — présence",
-        "eqAir": "10 kHz — air"
+        "ceiling": "Jamais plus fort que",
+        "eqMud": "Moins sourd (250 Hz)",
+        "eqPresence": "Parole plus claire (3,5 kHz)",
+        "eqAir": "Plus de brillance et d’air (10 kHz)"
       },
       "exFormat": "Format",
       "exWhere": "Où",
@@ -746,12 +758,22 @@
       "includeVideoDesc": "L’enregistrement a une piste vidéo. Sans cela, l’export sera uniquement audio.",
       "videoLocksFormat": "Le format est MP4 tant que la vidéo est incluse.",
       "about": "env. {mb} Mo",
-      "level": "Niveau : {lufs} LUFS",
-      "levelCapped": "Niveau : {lufs} LUFS (limité par les crêtes)",
+      "level": "Volume : adapté au web",
+      "levelCapped": "Volume : un peu plus bas que prévu (pics forts dans le son)",
       "exported": "Exporté",
       "exportAgain": "Exporter dans un autre format",
       "toLibrary": "Vers la bibliothèque",
-      "exportFailed": "L’export s’est arrêté. Réessayez."
+      "exportFailed": "L’export s’est arrêté. Réessayez.",
+      "mxHelp": {
+        "hpf": "Terme technique : coupe-bas",
+        "denoise": "Terme technique : réduction de bruit",
+        "dereverb": "Terme technique : réduction de réverbération",
+        "gate": "Terme technique : porte de bruit (noise gate)",
+        "comp": "Terme technique : compresseur",
+        "deesser": "Terme technique : de-esser",
+        "limiter": "Terme technique : limiteur",
+        "eq": "Terme technique : EQ (égaliseur)"
+      }
     },
     "export": {
       "lastEdited": "Dernière modification",
@@ -775,7 +797,7 @@
       "publishCopy": "Copier",
       "publishCopied": "Copié",
       "publishCopyFailed": "Impossible de copier. Sélectionnez le texte et copiez-le vous-même.",
-      "publishNothing": "Aucun lien https valide dans Réglages → Avancé ; rien n’a été ouvert.",
+      "publishNothing": "Aucun lien https valide dans Réglages → Publication ; rien n’a été ouvert.",
       "publishFailed": "Impossible d’ouvrir la page. Ouvrez-la vous-même dans le navigateur."
     },
     "span": {
@@ -851,7 +873,7 @@
     "alreadyEmpty": "La corbeille est vide",
     "undo": "Annuler",
     "undoFailed": "Impossible de tout récupérer — regardez dans la corbeille.",
-    "restoreFailed": "Restauration impossible",
+    "restoreFailed": "Impossible de remettre en place",
     "deleteForever": "Supprimer définitivement",
     "confirmPurgeOne": "Supprimer «{name}» définitivement ?",
     "confirmEmpty": {
@@ -877,7 +899,7 @@
     "nextPreviewPrefix": "Prochain enregistrement"
   },
   "audio": {
-    "guardDevice": "Changer de périphérique audio"
+    "guardDevice": "Changer de source audio"
   },
   "general": {
     "notifyStart": "Notification de bureau au démarrage de l’enregistrement",
@@ -885,7 +907,7 @@
     "saveFailed": "Impossible d’enregistrer le réglage"
   },
   "error": {
-    "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
+    "tryAgainHint": "Si le problème persiste, ouvrez Réglages → Aide et dépannage → Vérifier l’ordinateur, ou redémarrez l’application.",
     "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet.",
     "settingsLoadFailed": "Impossible de lire les réglages — affichage des valeurs par défaut. Les modifications effectuées maintenant peuvent être perdues.",
     "settingsLoadRetry": "Réessayer",
@@ -897,10 +919,10 @@
     "emptyDesc": "Sélectionnez un fichier audio ou vidéo pour commencer le montage. Vous pouvez rogner le début et la fin, ou couper des passages au milieu.",
     "openFile": "Ouvrir un fichier…",
     "loading": "Chargement du fichier audio…",
-    "dragHint": "Cliquez et glissez pour marquer une coupe",
-    "cutsTitle": "Zones coupées",
-    "cutsNone": "Supprimer toutes les coupes",
-    "deleteCut": "Supprimer la coupe",
+    "dragHint": "Cliquez et glissez pour marquer une partie à couper",
+    "cutsTitle": "Parties coupées",
+    "cutsNone": "Annuler toutes les coupes",
+    "deleteCut": "Annuler la coupe",
     "save": "Exporter",
     "cancel": "Annuler",
     "saveOk": "✓ Enregistré",
@@ -994,14 +1016,14 @@
     "autoEnhance": "✨ Amélioration audio automatique (un clic)",
     "autoEnhanceFail": "Impossible d’analyser l’audio (nécessite la version éditeur).",
     "autoEnhancing": "✨ Analyse en cours…",
-    "chanBalanced": "Les canaux sont équilibrés ✓",
-    "chanBothDead": "Les deux canaux sont très faibles",
-    "chanDeadLeft": "Canal gauche muet (vérifiez le câble)",
-    "chanDeadRight": "Canal droit muet (vérifiez le câble)",
-    "chanImbalance": "Niveau inégal entre les canaux",
-    "chanMono": "Enregistrement mono",
-    "chanUnusableLeft": "Canal gauche trop faible pour être sauvé — le canal droit est copié sur les deux (vérifiez le câble)",
-    "chanUnusableRight": "Canal droit trop faible pour être sauvé — le canal gauche est copié sur les deux (vérifiez le câble)",
+    "chanBalanced": "Gauche et droite sont aussi fortes l’une que l’autre ✓",
+    "chanBothDead": "Le son est très faible à gauche comme à droite",
+    "chanDeadLeft": "Pas de son à gauche (vérifiez le câble)",
+    "chanDeadRight": "Pas de son à droite (vérifiez le câble)",
+    "chanImbalance": "La gauche et la droite n’ont pas la même force",
+    "chanMono": "L’enregistrement n’a qu’un seul canal (mono)",
+    "chanUnusableLeft": "Le côté gauche est trop faible pour être sauvé — le droit est utilisé des deux côtés (vérifiez le câble)",
+    "chanUnusableRight": "Le côté droit est trop faible pour être sauvé — le gauche est utilisé des deux côtés (vérifiez le câble)",
     "channelRepair": "Réparation des canaux",
     "codecH264": "H.264 (universel)",
     "codecH265": "H.265 (fichier plus petit)",
@@ -1025,7 +1047,7 @@
     "metaSpeaker": "ORATEUR",
     "metaTitle": "Métadonnées",
     "metaTitle2": "TITRE",
-    "useMixer": "🎛 Mixeur audio avancé (remplace le traitement de la voix)",
+    "useMixer": "🎛 Réglages du son (remplacent le traitement de la voix)",
     "videoCodec": "Codec vidéo",
     "videoFormat": "Format vidéo",
     "vocalChain": "Traitement de la voix",
@@ -1074,7 +1096,7 @@
     "errorFfmpegMissing": "Erreur interne : le composant d’enregistrement est manquant — réinstallez l’application",
     "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes",
     "errorStartTimeout": "L’enregistrement n’a pas démarré à temps — vérifiez que le microphone (et la caméra) sont branchés, et que SundayRec est autorisé sous Réglages Système → Confidentialité et sécurité",
-    "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
+    "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète.",
     "errorVideoCapture": "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
     "errorCameraFormat": "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez.",
     "errorCameraPermission": "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra",
@@ -1084,7 +1106,7 @@
     "qualityReasons": "Cause : {r}",
     "qualityAction": "Afficher l’enregistrement",
     "errorInvalidOpts": "Réglages d’enregistrement non valides — redémarrez et réessayez",
-    "errorNoSaveFolder": "Aucun dossier de sauvegarde choisi — allez sur la page Enregistrement et choisissez-en un dans la carte « Où vont les enregistrements ? »",
+    "errorNoSaveFolder": "Aucun dossier d’enregistrement n’est choisi — allez sur la page Enregistrement et choisissez-le dans la carte « Où sauvegarder les enregistrements ? »",
     "errorUnknown": "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts",
     "reconnectSecs": "s",
     "reconnecting": "Source audio déconnectée — reconnexion en cours",
@@ -1098,19 +1120,19 @@
     "qrNoAudio": "Aucun son n’a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
     "qrSilent": "L’enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",
     "qrGapFail": "Des parties du son manquent ou sont silencieuses — saccades ou coupures.",
-    "qrDropsFail": "De nombreuses coupures du périphérique audio.",
+    "qrDropsFail": "De nombreuses coupures de la source audio.",
     "qrSampleRate": "La fréquence d’échantillonnage a été forcée hors de celle du périphérique — la conversion peut provoquer des coupures.",
     "qrGapWarn": "Un petit trou ou un silence dans l’enregistrement.",
     "qrLowSignal": "Signal faible — envisagez d’augmenter le gain.",
-    "qrDropsWarn": "Quelques coupures du périphérique audio.",
+    "qrDropsWarn": "Quelques coupures de la source audio.",
     "qrClean": "Enregistrement régulier, aucune coupure."
   },
   "video": {
     "guardDevice": "Changer de caméra"
   },
   "onboarding": {
-    "promptTitle": "Partager des diagnostics anonymes ?",
-    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à SundaySuite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Avancé.",
+    "promptTitle": "Envoyer des statistiques d’utilisation anonymes ?",
+    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à SundaySuite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Mises à jour et confidentialité.",
     "rePromptTitle": "Nous vous reposons la question",
     "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },
@@ -1145,7 +1167,7 @@
     "micRestricted": "L’accès au microphone est bloqué par un administrateur système ou le contrôle parental. L’enregistrement ne fonctionnera pas tant que le blocage persiste.",
     "cameraDenied": "L’accès à la caméra est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Caméra et activez SundayRec.",
     "cameraRestricted": "L’accès à la caméra est bloqué par un administrateur système ou le contrôle parental. L’enregistrement vidéo ne fonctionnera pas tant que le blocage persiste.",
-    "ffmpegMissing": "Le moteur audio intégré (ffmpeg) est introuvable. La vidéo, l’export et le montage ne fonctionneront pas — réinstallez l’application."
+    "ffmpegMissing": "Le moteur d’enregistrement (ffmpeg) est introuvable. La vidéo, l’export et le montage ne fonctionneront pas — réinstallez l’application."
   },
   "progress": {
     "etaCalculating": "estimation …",
@@ -1156,7 +1178,7 @@
     "etaHoursMinutes": "environ {h} h {m} min restantes"
   },
   "notify": {
-    "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n’est pas conservé.",
+    "prerollDead": "« Garder le son d’avant le démarrage » ne fonctionne pas pour l’instant — le son d’avant l’appui sur Démarrer n’est pas conservé.",
     "recoverySkipped": "Un enregistrement interrompu n’a pas pu être entièrement récupéré : {file}",
     "deviceMissing": "Le périphérique audio « {device} » n’est pas connecté.",
     "diskLow": "L’espace disque commence à manquer — {freeGb} Go libres. L’enregistrement s’arrêtera de lui-même si le disque est plein.",

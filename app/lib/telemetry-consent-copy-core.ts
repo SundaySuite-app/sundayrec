@@ -29,10 +29,10 @@ export interface PromptCopy {
 /** The first-ask wording, matching index.html's static fallbacks. */
 export const FIRST_ASK: PromptCopy = {
   titleKey: "onboarding.promptTitle",
-  titleFallback: "Del anonym diagnostikk?",
+  titleFallback: "Send anonym bruksstatistikk?",
   descKey: "onboarding.promptDesc",
   descFallback:
-    "SundayRec kan sende anonym feil- og bruksstatistikk til SundaySuite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Avansert.",
+    "SundayRec kan sende anonym feil- og bruksstatistikk til SundaySuite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Oppdateringer og personvern.",
 };
 
 /** The wording for someone whose recorded answer predates a scope widening. */

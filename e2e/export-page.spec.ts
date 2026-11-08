@@ -351,8 +351,8 @@ test.describe("eksportering", () => {
     await page.getByTestId("editor-export-go").click();
     const receipt = page.getByTestId("editor-exported");
     await expect(receipt).toBeVisible();
-    await expect(receipt).toContainText("Nivå: −16 LUFS");
-    await expect(receipt).not.toContainText("begrenset");
+    await expect(receipt).toContainText("Lydstyrke: passe for nett");
+    await expect(receipt).not.toContainText("litt lavere");
   });
 
   test("et opptak med for høye topper lander lavere — og kvitteringen sier hvorfor", async ({
@@ -370,7 +370,7 @@ test.describe("eksportering", () => {
     await expect(receipt).toBeVisible();
     // Det OPPNÅDDE nivået, ikke det ønskede — og grunnen ved siden av.
     await expect(receipt).toContainText(
-      "Nivå: −20,8 LUFS (begrenset av topper)",
+      "Lydstyrke: litt lavere enn ønsket (sterke topper i lyden)",
     );
     await expect(receipt).not.toContainText("−16");
   });
@@ -438,7 +438,7 @@ test.describe("eksportering", () => {
     await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
     // Ingen fane: at en fil er åpen er `loadState`, ikke en rute-akse.
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
-    await expect(page.getByTestId("app-heading")).toHaveText("Redigering");
+    await expect(page.getByTestId("app-heading")).toHaveText("Bibliotek");
     await expect(page.getByTestId("library-row")).toHaveCount(1);
   });
 });
