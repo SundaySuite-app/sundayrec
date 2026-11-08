@@ -60,6 +60,18 @@ export interface CameraCardProps {
   highlight?: boolean;
 }
 
+/** «Full HD, jevn bevegelse». Ukjent bilderate (0) gir bare oppløsningen. */
+function deliversText(maxHeight: number, maxFps: number): string {
+  const res = tDyn("app.setup.camera.res", resolutionWord(maxHeight));
+  const motion = motionWord(maxFps);
+  return motion
+    ? tf("app.setup.camera.delivers", {
+        res,
+        motion: tDyn("app.setup.camera.motion", motion),
+      })
+    : tf("app.setup.camera.deliversNoMotion", { res });
+}
+
 export function CameraCard({ expanded, onExpand, highlight }: CameraCardProps) {
   const s = settings.value;
   const on = s.videoEnabled === true;
@@ -172,13 +184,7 @@ function CameraPicker() {
           cap && cap.supportedResolutions.length > 0
             ? // To tall blir to ord («Full HD, jevn bevegelse»), se
               // `camera-words-core.ts`. Ordene bor i katalogen.
-              tf("app.setup.camera.delivers", {
-                res: tDyn(
-                  "app.setup.camera.res",
-                  resolutionWord(cap.maxHeight),
-                ),
-                motion: tDyn("app.setup.camera.motion", motionWord(cap.maxFps)),
-              })
+              deliversText(cap.maxHeight, cap.maxFps)
             : t("app.setup.camera.probeFailed"),
         );
       })

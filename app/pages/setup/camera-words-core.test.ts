@@ -19,8 +19,12 @@ describe("kamera i ord", () => {
     [50, "smooth"],
     [30, "normal"],
     [24, "normal"],
+    [23.976, "normal"],
     [15, "low"],
     [1, "low"],
+    [0, null],
+    [-1, null],
+    [Number.NaN, null],
   ] as const)("%i bilder i sekundet er %s", (fps, word) => {
     expect(motionWord(fps)).toBe(word);
   });

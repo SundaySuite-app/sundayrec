@@ -19,9 +19,15 @@ export function resolutionWord(maxHeight: number): ResolutionWord {
   return "sd";
 }
 
-/** Bilder i sekundet → ordet. 50+ er svært jevnt, 24+ er jevnt (film, 25/30). */
-export function motionWord(maxFps: number): MotionWord {
+/**
+ * Bilder i sekundet → ordet. 50+ er svært jevnt, ~24+ er jevnt (film, 25/30).
+ * Grensen er 23.9, ikke 24: film kommer som 23.976, og den skal ikke kalles
+ * hakkete. Ukjent (0, negativ, NaN) gir `null` — da sier vi ingenting om
+ * bevegelse i stedet for å påstå at kameraet er hakkete.
+ */
+export function motionWord(maxFps: number): MotionWord | null {
+  if (!Number.isFinite(maxFps) || maxFps <= 0) return null;
   if (maxFps >= 50) return "smooth";
-  if (maxFps >= 24) return "normal";
+  if (maxFps >= 23.9) return "normal";
   return "low";
 }

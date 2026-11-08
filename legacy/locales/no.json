@@ -200,6 +200,7 @@
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden av videoen.",
         "delivers": "Kameraet leverer {res}, {motion}.",
+        "deliversNoMotion": "Kameraet leverer {res}.",
         "probeFailed": "Vi fikk ikke lest hva kameraet klarer. Opptaket bruker det beste kameraet faktisk gir, opptil Full HD.",
         "none": "Finner ikke noe kamera",
         "noneDesc": "Koble til et kamera, eller slå av «Ta med video».",
