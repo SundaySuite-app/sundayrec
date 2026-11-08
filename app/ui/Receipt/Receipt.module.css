@@ -1,7 +1,7 @@
 .receipt {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--good);

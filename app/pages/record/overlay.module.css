@@ -65,7 +65,7 @@
   justify-content: center;
   gap: var(--sp-2) var(--sp-4);
   color: var(--ink-2);
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
 }
 
 .hint {

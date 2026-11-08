@@ -1,8 +1,8 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-pill);
   font-size: var(--fs-sm);
   font-weight: 600;

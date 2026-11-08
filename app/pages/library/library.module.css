@@ -22,13 +22,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin: calc(-1 * var(--sp-2)) 0 0;
 }
 
 .sub {
-  margin: 0;
+  margin: var(--sp-1) 0 0;
   color: var(--ink-2);
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
 }
 
 /* Søkefeltet og «Åpne fil…» på samme rad, ytterst til høyre. */
@@ -152,7 +151,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin: calc(-1 * var(--sp-2)) 0 0;
 }
 
 .trashFoot {

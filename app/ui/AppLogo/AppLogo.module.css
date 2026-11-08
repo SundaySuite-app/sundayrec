@@ -12,7 +12,7 @@
    * gjør at et merke uten sin egen clipPath — eller et som blir byttet ut senere
    * — ikke plutselig maler firkantet inn i topplinja.
    */
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 

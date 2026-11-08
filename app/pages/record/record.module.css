@@ -27,13 +27,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin: calc(-1 * var(--sp-2)) 0 0;
 }
 
 .sub {
-  margin: 0;
+  margin: var(--sp-1) 0 0;
   color: var(--ink-2);
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
 }
 
 /*
@@ -91,8 +90,8 @@
 
 .label {
   color: var(--ink-3);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
+  font-size: var(--label-fs);
+  letter-spacing: var(--label-ls);
   text-transform: uppercase;
 }
 

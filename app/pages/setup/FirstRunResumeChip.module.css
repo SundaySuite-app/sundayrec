@@ -15,8 +15,8 @@
   align-items: center;
   justify-self: start;
   align-self: start;
-  gap: 6px;
-  padding: 9px 16px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
   border-radius: var(--r-pill);
   border: 1px solid var(--gold-line);
   background: var(--gold-soft);

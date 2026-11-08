@@ -3,7 +3,7 @@
   grid-template-columns: 1fr auto;
   gap: var(--sp-4);
   align-items: center;
-  padding: var(--sp-3) 0;
+  padding: var(--sp-4) 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -17,26 +17,26 @@
 
 .labelLine {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3);
   align-items: center;
   flex-wrap: wrap;
 }
 
 .label {
   font-weight: 600;
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
 }
 
 .description {
   font-size: var(--fs-sm);
   color: var(--ink-3);
-  margin-top: 1px;
+  margin-top: var(--sp-1);
 }
 
 .controlCell {
   display: grid;
   justify-items: end;
-  gap: 3px;
+  gap: var(--sp-1);
 }
 
 .control {

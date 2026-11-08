@@ -40,13 +40,13 @@
    korttittelen er innstillingens navn og verdien står med liten grå skrift. */
 .title {
   color: var(--ink-3);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
+  font-size: var(--label-fs);
+  letter-spacing: var(--label-ls);
   text-transform: uppercase;
 }
 
 .value {
-  margin-top: 2px;
+  margin-top: var(--sp-1);
   font-size: var(--fs-md);
   overflow-wrap: anywhere;
 }
@@ -54,7 +54,7 @@
 /* Hvorfor svaret holder, eller hva som mangler. Dempet: den er begrunnelsen,
    ikke svaret. */
 .detail {
-  margin-top: 2px;
+  margin-top: var(--sp-1);
   font-size: var(--fs-base);
   color: var(--ink-2);
 }
@@ -73,7 +73,8 @@
   background: var(--raised);
   border: 1px solid var(--line-2);
   border-radius: var(--r-pill);
-  padding: 5px var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  min-height: 30px;
   cursor: pointer;
 }
 

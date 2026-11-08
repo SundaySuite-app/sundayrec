@@ -22,7 +22,7 @@
 .topbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3);
   min-height: var(--topbar-h);
   padding: 0 var(--sp-4);
   background: var(--surface);
@@ -52,7 +52,7 @@
  * der er tittellinjen ekte og topplinja begynner der den skal.
  */
 :global(.platform-darwin) .topbar {
-  padding-left: 84px;
+  padding-left: var(--traffic-lights-w);
 }
 
 /*
@@ -71,7 +71,7 @@
  * bokstavsekvenser har rett i å rope på den.
  */
 .church {
-  padding-left: 10px;
+  padding-left: var(--sp-3);
   border-left: 1px solid var(--line-2);
   font-size: var(--fs-sm);
   color: var(--ink-2);
@@ -101,12 +101,30 @@
   overflow-y: auto;
 }
 
+/*
+ * Lesebredden: hvert barn av `<main>` (overskriften og sidens blokker) får
+ * samme maks-bredde og sentreres, så en side på en bred skjerm ikke blir en
+ * rad som strekker seg fra kant til kant. `width: 100%` fordi `margin-inline:
+ * auto` i en flex-kolonne ellers krymper barnet til innholdet.
+ * Redigeringens bølgeform bruker full bredde: den eier sin egen rad.
+ */
+.main > * {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
 .h1 {
-  margin: 0;
+  /* Tett på undertittelen under: blokkavstanden (`--gap-page`) er for stor
+     mellom en overskrift og linja som hører til den, så den trekkes tilbake
+     til ett hakk. ÉN regel her i stedet for en negativ margin per side.
+     `margin-inline: auto` etter shorthanden så lesebredden over vinner. */
+  margin: 0 0 calc(var(--sp-1) - var(--gap-page));
+  margin-inline: auto;
   font-size: var(--fs-h1);
   font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 /* Fokusringen på overskriften ville vært støy: den får fokus av hvert
@@ -187,8 +205,8 @@
   min-height: 44px;
   border: 0;
   background: transparent;
-  padding: 4px var(--sp-3);
-  border-radius: 10px;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-sm);
   font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1.2;

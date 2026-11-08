@@ -13,12 +13,12 @@
 .sub {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--gap-page);
 }
 
 .lede {
   margin: 0;
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
   color: var(--ink-2);
 }
 
@@ -30,9 +30,9 @@
 
 .sectionLabel {
   margin: var(--sp-4) 0 0;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -58,7 +58,7 @@
   font: inherit;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
-  padding: 5px 11px;
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-pill);
   border: 1px solid var(--line-2);
   background: var(--raised);
@@ -130,7 +130,7 @@
   background: var(--raised);
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
-  padding: 7px var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .time:focus-visible {
