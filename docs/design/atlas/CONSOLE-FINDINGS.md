@@ -30,10 +30,8 @@ _Ingen. Ingen scene ga `console.error` eller `pageerror` utover harness-støyen.
 
 ## Harness-støy (forventet, ikke gjeld)
 
-| Antall | Melding |
-| --- | --- |
-| 19 | Failed to load resource: net::ERR_UNKNOWN_URL_SCHEME |
+_Ingen._
 
 ---
 
-Scener fotografert: 146. Ekte funn: 0. Støy-treff: 19.
+Scener fotografert: 142. Ekte funn: 0. Støy-treff: 0.
