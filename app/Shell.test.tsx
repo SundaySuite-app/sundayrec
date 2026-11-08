@@ -418,8 +418,11 @@ describe("Shell", () => {
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
     expect(html).toContain('data-testid="setup-church"');
     expect(html).toContain('data-testid="setup-advanced"');
-    // Rammen står: leden sier hva lista er, fordi ingen kortrad har sagt det.
-    expect(html).toContain('data-testid="setup-advanced-lede"');
+    // Seksjonene med overskrift og innholdsliste har erstattet «Avansert»-
+    // leden; kirkeprofilens egen lede viser at rammen (ikke-innebygd) står.
+    expect(html).toContain('data-testid="setup-toc"');
+    expect(html).toContain('data-testid="setup-sec-recording"');
+    expect(html).toContain('data-testid="setup-church-lede"');
     expect(html).not.toContain('data-testid="setup-row-sound"');
     navigate("record");
   });

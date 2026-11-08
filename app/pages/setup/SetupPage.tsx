@@ -13,8 +13,9 @@
  *
  *   • **kirkeprofilen** — navnet og språket, spørsmål 4. Det er ikke noe man
  *     tar stilling til fem minutter før gudstjenesten; det settes én gang.
- *   • **Avansert** — opptaksmotor, forhåndsbuffer, oppdateringer, logg,
- *     flere tider. Alt som har en trygg standard.
+ *   • **Resten** — tidsplan, utlegging, opptaksvalg, oppdateringer, feilsøking
+ *     og lisenser, delt i seksjoner med en innholdsliste øverst
+ *     (`AdvancedPage.tsx`).
  *
  * Én flate, ikke to faner: `?goto=settings:general` (den gamle System-fanen) og
  * tannhjulet lander på det samme, og det er hele skjermen.
@@ -36,12 +37,14 @@
 
 import { useEffect } from "preact/hooks";
 
-import { t } from "../../i18n";
+import { t, tDyn } from "../../i18n";
 import { navigate, route } from "../../router/router";
 import { loadAudioDevices } from "../../state/devices";
 import { refreshDiskSpace } from "../../state/disk";
 import { AdvancedPage } from "./AdvancedPage";
 import { ChurchPage } from "./ChurchPage";
+import { SETTINGS_SECTIONS } from "./sections";
+import { SettingsSection } from "./SettingsSection";
 import { FirstRunResumeChip } from "./FirstRunResumeChip";
 import { isControlId } from "../record/control-core";
 import styles from "./setup.module.css";
@@ -58,6 +61,15 @@ export function isSetupTab(tab: string | undefined): tab is SetupTab {
     tab === "church" ||
     tab === "notify"
   );
+}
+
+/** Hopp til en seksjon: rull dit og flytt fokus til overskriften, så en
+ *  tastatur- eller skjermleserbruker havner der synet gjør. */
+function jumpTo(id: string): void {
+  const section = document.getElementById(id);
+  if (!section) return;
+  section.scrollIntoView({ block: "start" });
+  document.getElementById(`${id}-h`)?.focus({ preventScroll: true });
 }
 
 export function SetupPage() {
@@ -85,15 +97,29 @@ export function SetupPage() {
           `FirstRun.tsx` — så chippen som fører tilbake må stå her også, ikke
           bare på OPPTAK. */}
       <FirstRunResumeChip />
-      <ChurchPage />
-      {/*
-        Seksjonsnavnet, ikke en fane: «Avansert» er halve denne skjermen, og
-        uten navnet ville lista under sett ut som en fortsettelse av
-        kirkeprofilen. `?goto=settings:general` lander her, på begge.
-      */}
-      <div data-testid="setup-advanced-label" class={styles.sectionLabel}>
-        {t("app.setup.advanced.title")}
-      </div>
+      <nav aria-label={t("app.setup.sections.nav")} data-testid="setup-toc">
+        <ul class={styles.toc}>
+          <li aria-hidden="true" class={styles.tocLabel}>
+            {t("app.setup.sections.nav")}
+          </li>
+          {SETTINGS_SECTIONS.map((section) => (
+            <li key={section.id}>
+              <button
+                type="button"
+                class={styles.tocLink}
+                data-testid={`setup-toc-${section.id}`}
+                onClick={() => jumpTo(section.id)}
+              >
+                {tDyn("app.setup.sections", section.key)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <SettingsSection id="sec-church" sectionKey="church">
+        {/* Setningen under overskriften er kirkeprofilens egen «lede». */}
+        <ChurchPage />
+      </SettingsSection>
       <AdvancedPage />
     </div>
   );

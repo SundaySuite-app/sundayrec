@@ -141,7 +141,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     // forever; the app is on defaults and fully alive.
     expect(await settingsImportPayloads(page)).toHaveLength(0);
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
-    await expect(page.getByTestId("setup-advanced-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-sec-recording")).toBeVisible();
     expect((await storedSettings(page)).updateChannel).toBe("stable");
   });
 

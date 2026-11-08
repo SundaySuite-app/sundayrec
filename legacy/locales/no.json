@@ -234,8 +234,6 @@
         "6": "Søndag"
       },
       "advanced": {
-        "title": "Avansert",
-        "lede": "Ting de fleste aldri trenger å røre. Alt her har en trygg standard.",
         "soundLink": "Avansert lyd",
         "preroll": "Forhåndsbuffer",
         "prerollDesc": "Lyd som tas med fra før du trykket Start. Bufferen holder mikrofonen åpen i bakgrunnen så lenge appen er klar til opptak.",
@@ -424,7 +422,6 @@
         },
         "audioTech": "Lyd-teknologi",
         "diagnoseReportWhere": "Lim rapporten inn i et GitHub-issue, eller send den til dev@sundaysuite.app.",
-        "publishTitle": "Legg ut",
         "publishDesc": "Etter en eksport kan appen åpne siden dere laster opp på, med tittel og beskrivelse klare til å kopieres. SundayRec laster ikke opp noe selv.",
         "publishWhere": "Hvor legger dere ut?",
         "publishChannelName": {
@@ -445,6 +442,20 @@
         "publishTemplate": "Fast beskrivelse",
         "publishTemplateDesc": "Fylles inn i eksporten, der den kan endres. {tittel}, {taler}, {dato} og {kirke} byttes ut.",
         "publishTemplatePlaceholder": "Preken fra {kirke}, {dato}. Taler: {taler}."
+      },
+      "sections": {
+        "nav": "Hopp til",
+        "church": "Kirke og språk",
+        "schedule": "Tidsplan",
+        "publish": "Legg ut",
+        "recording": "Opptaket",
+        "recordingDesc": "Hvordan selve opptaket skal gå: lyd fra før Start, stopp ved stillhet, maks lengde, deling i flere filer og sletting av gamle opptak.",
+        "updates": "Oppdateringer og personvern",
+        "updatesDesc": "Du bestemmer om appen ser etter nye versjoner, og om den sender anonym statistikk.",
+        "help": "Hjelp og feilsøking",
+        "helpDesc": "Hvis noe ikke virker: sjekk maskinen, hent loggen, eller flytt oppsettet til en annen maskin.",
+        "about": "Om",
+        "aboutDesc": "Lisenser og merknader for programvaren SundayRec er bygget på."
       }
     },
     "diagnose": {
@@ -696,7 +707,6 @@
       "advancedMixer": "Avansert: åpne mikseren",
       "hideMixer": "Skjul mikseren",
       "mixerTitle": "Avansert lydmikser",
-      "mixerUse": "Bruk mikseren",
       "mixerUseDesc": "Mikseren erstatter «{profile}». Ingen mastring legges oppå — du styrer hele kjeden.",
       "mxEq": "Klangbalanse",
       "mx": {

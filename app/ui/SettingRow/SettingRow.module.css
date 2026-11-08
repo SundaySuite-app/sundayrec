@@ -7,6 +7,19 @@
   border-bottom: 1px solid var(--line);
 }
 
+.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.stacked .controlCell {
+  justify-items: stretch;
+}
+
+.stacked .control {
+  flex-wrap: wrap;
+}
+
 .row:last-child {
   border-bottom: 0;
 }

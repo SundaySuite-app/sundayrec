@@ -41,17 +41,13 @@ export function PublishCard() {
   }));
 
   return (
-    <Card
-      title={t("app.setup.advanced.publishTitle")}
-      description={t("app.setup.advanced.publishDesc")}
-      anchor="publish"
-      testId="advanced-publish"
-    >
+    <Card anchor="publish" testId="advanced-publish">
       <BoundRadioCards
         setting="publishTarget"
         label={t("app.setup.advanced.publishWhere")}
         options={options}
         columns={2}
+        stacked
         testId="adv-publish-target"
       />
       {target === "custom" ? (
@@ -90,6 +86,7 @@ function TemplateRow() {
       description={t("app.setup.advanced.publishTemplateDesc")}
       receipt={bound.receipt}
       error={bound.error}
+      stacked
       testId="adv-publish-template"
     >
       {(ids) => (

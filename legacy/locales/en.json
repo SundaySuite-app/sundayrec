@@ -234,8 +234,6 @@
         "6": "Sunday"
       },
       "advanced": {
-        "title": "Advanced",
-        "lede": "Things most people never need to touch. Everything here has a safe default.",
         "soundLink": "Advanced sound",
         "preroll": "Pre-roll buffer",
         "prerollDesc": "Sound kept from before you pressed Start. The buffer holds the microphone open in the background for as long as the app is ready to record.",
@@ -424,7 +422,6 @@
         },
         "audioTech": "Audio technology",
         "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app.",
-        "publishTitle": "Publishing",
         "publishDesc": "After an export the app can open the page you upload to, with the title and description ready to copy. SundayRec does not upload anything itself.",
         "publishWhere": "Where do you publish?",
         "publishChannelName": {
@@ -445,6 +442,20 @@
         "publishTemplate": "Standard description",
         "publishTemplateDesc": "Filled in on export, where it can be changed. {title}, {speaker}, {date} and {church} are replaced.",
         "publishTemplatePlaceholder": "Sermon from {church}, {date}. Speaker: {speaker}."
+      },
+      "sections": {
+        "nav": "Jump to",
+        "church": "Church and language",
+        "schedule": "Schedule",
+        "publish": "Publishing",
+        "recording": "The recording",
+        "recordingDesc": "How the recording itself should work: sound from before Start, stopping on silence, maximum length, splitting into several files and deleting old recordings.",
+        "updates": "Updates and privacy",
+        "updatesDesc": "You decide whether the app checks for new versions and whether it sends anonymous statistics.",
+        "help": "Help and troubleshooting",
+        "helpDesc": "If something is not working: check the machine, get the log, or move your setup to another machine.",
+        "about": "About",
+        "aboutDesc": "Licenses and notices for the software SundayRec is built on."
       }
     },
     "diagnose": {
@@ -696,7 +707,6 @@
       "advancedMixer": "Advanced: open the mixer",
       "hideMixer": "Hide the mixer",
       "mixerTitle": "Advanced sound mixer",
-      "mixerUse": "Use the mixer",
       "mixerUseDesc": "The mixer replaces “{profile}”. No mastering is added on top — you drive the whole chain.",
       "mxEq": "Tone balance",
       "mx": {

@@ -1187,8 +1187,8 @@ export const SCENES: Scene[] = [
     id: "innstillinger--systemkortet",
     page: "Innstillinger",
     state:
-      "Avansert › System — diagnosedata, oppdatering, logg, profil, diagnose",
-    recipe: "rull til `advanced-system`",
+      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg, profil, diagnose",
+    recipe: "rull til `advanced-help`",
     boot: settingsScene(CHOSEN, {
       ...HEALTHY,
       telemetry_consent_get: {
@@ -1200,9 +1200,9 @@ export const SCENES: Scene[] = [
         active: true,
       },
     }),
-    wait: "advanced-system",
+    wait: "advanced-help",
     act: async (page) => {
-      await page.getByTestId("advanced-system").scrollIntoViewIfNeeded();
+      await page.getByTestId("advanced-help").scrollIntoViewIfNeeded();
     },
     full: true,
   },

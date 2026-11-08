@@ -90,12 +90,7 @@ import {
 
 export function ScheduleCard() {
   return (
-    <Card
-      title={t("app.setup.advanced.schedTitle")}
-      description={t("app.setup.advanced.schedDesc")}
-      anchor="schedule"
-      testId="advanced-schedule"
-    >
+    <Card anchor="schedule" testId="advanced-schedule">
       <WeeklyTimes />
       <Specials />
       <WakeRow />
@@ -341,85 +336,98 @@ function Specials() {
         label={t("app.setup.advanced.specialAdd")}
         description={t("app.setup.advanced.specialDeviceHint")}
         error={error}
+        stacked
         testId="adv-special-add"
       >
         {(ids) => (
           <>
-            <TextField
-              value={draft.name}
-              placeholder={t("app.setup.advanced.specialDefaultName")}
-              onInput={(next) => setDraft({ ...draft, name: next })}
-              labelId={ids.labelId}
-              testId="adv-special-add-name"
-            />
-            <input
-              type="date"
-              value={draft.date}
-              aria-label={t("app.setup.advanced.specialDate")}
-              data-testid="adv-special-add-date"
-              class={styles.time}
-              onInput={(event) => {
-                setError(null);
-                setDraft({
-                  ...draft,
-                  date: (event.target as HTMLInputElement).value,
-                });
-              }}
-            />
-            <input
-              type="time"
-              value={draft.start}
-              aria-label={t("app.setup.advanced.specialStart")}
-              data-testid="adv-special-add-start"
-              class={styles.time}
-              onInput={(event) =>
-                setDraft({
-                  ...draft,
-                  start: (event.target as HTMLInputElement).value,
-                })
-              }
-            />
-            <Select
-              value={String(draft.minutes)}
-              options={DURATION_CHOICES.map((n) => ({
-                value: String(n),
-                label: tf("app.setup.auto.minutes", { n }),
-              }))}
-              onChange={(next) => setDraft({ ...draft, minutes: Number(next) })}
-              testId="adv-special-add-duration"
-            />
-            {/* `hidden` og likevel navnet: en `aria-labelledby`-referanse
+            <div class={styles.formLines}>
+              <div class={styles.formLine}>
+                <div class={styles.formGrow}>
+                  <TextField
+                    value={draft.name}
+                    placeholder={t("app.setup.advanced.specialDefaultName")}
+                    onInput={(next) => setDraft({ ...draft, name: next })}
+                    labelId={ids.labelId}
+                    testId="adv-special-add-name"
+                  />
+                </div>
+                <input
+                  type="date"
+                  value={draft.date}
+                  aria-label={t("app.setup.advanced.specialDate")}
+                  data-testid="adv-special-add-date"
+                  class={styles.time}
+                  onInput={(event) => {
+                    setError(null);
+                    setDraft({
+                      ...draft,
+                      date: (event.target as HTMLInputElement).value,
+                    });
+                  }}
+                />
+                <input
+                  type="time"
+                  value={draft.start}
+                  aria-label={t("app.setup.advanced.specialStart")}
+                  data-testid="adv-special-add-start"
+                  class={styles.time}
+                  onInput={(event) =>
+                    setDraft({
+                      ...draft,
+                      start: (event.target as HTMLInputElement).value,
+                    })
+                  }
+                />
+              </div>
+              <div class={styles.formLine}>
+                <Select
+                  value={String(draft.minutes)}
+                  options={DURATION_CHOICES.map((n) => ({
+                    value: String(n),
+                    label: tf("app.setup.auto.minutes", { n }),
+                  }))}
+                  onChange={(next) =>
+                    setDraft({ ...draft, minutes: Number(next) })
+                  }
+                  testId="adv-special-add-duration"
+                />
+                <div class={styles.formGrow}>
+                  {/* `hidden` og likevel navnet: en `aria-labelledby`-referanse
                 til et skjult element teller med i det tilgjengelige navnet. */}
-            <span id={deviceLabelId} hidden>
-              {t("app.setup.advanced.specialDevice")}
-            </span>
-            <Select
-              value={draft.deviceId ?? SAME_AS_USUAL}
-              options={[
-                {
-                  value: SAME_AS_USUAL,
-                  label: t("app.setup.advanced.specialDeviceSame"),
-                },
-                ...specialDeviceOptions(devices, draft.deviceId),
-              ]}
-              onChange={(next) =>
-                setDraft({
-                  ...draft,
-                  deviceId: next === SAME_AS_USUAL ? null : next,
-                })
-              }
-              labelId={deviceLabelId}
-              describedBy={ids.describedBy}
-              testId="adv-special-add-device"
-            />
-            <Button
-              variant="secondary"
-              busy={busy}
-              testId="adv-special-add-save"
-              onClick={() => void add()}
-            >
-              {t("app.setup.advanced.specialAdd")}
-            </Button>
+                  <span id={deviceLabelId} hidden>
+                    {t("app.setup.advanced.specialDevice")}
+                  </span>
+                  <Select
+                    value={draft.deviceId ?? SAME_AS_USUAL}
+                    options={[
+                      {
+                        value: SAME_AS_USUAL,
+                        label: t("app.setup.advanced.specialDeviceSame"),
+                      },
+                      ...specialDeviceOptions(devices, draft.deviceId),
+                    ]}
+                    onChange={(next) =>
+                      setDraft({
+                        ...draft,
+                        deviceId: next === SAME_AS_USUAL ? null : next,
+                      })
+                    }
+                    labelId={deviceLabelId}
+                    describedBy={ids.describedBy}
+                    testId="adv-special-add-device"
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  busy={busy}
+                  testId="adv-special-add-save"
+                  onClick={() => void add()}
+                >
+                  {t("app.setup.advanced.specialAdd")}
+                </Button>
+              </div>
+            </div>
           </>
         )}
       </SettingRow>

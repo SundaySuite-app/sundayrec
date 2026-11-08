@@ -28,6 +28,75 @@
   gap: var(--gap-stack);
 }
 
+/* AdvancedPage er bare en samling seksjoner: de skal være barn av `.page`. */
+.advanced {
+  display: contents;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  /* Hopper man hit fra innholdslista, skal overskriften ikke sitte helt i
+     kanten. */
+  scroll-margin-top: var(--sp-4);
+}
+
+.sectionHead {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sectionHead:focus {
+  outline: none;
+}
+
+.sectionIntro {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--ink-2);
+}
+
+/* Innholdslista øverst: små knapper som hopper til en seksjon. */
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tocLabel {
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-right: var(--sp-2);
+}
+
+.tocLink {
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.tocLink:hover {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
 .sectionLabel {
   margin: var(--sp-4) 0 0;
   font-size: var(--label-fs);
@@ -35,6 +104,26 @@
   letter-spacing: var(--label-ls);
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* Et skjema på flere linjer inni en stablet SettingRow: hver linje bryter for
+   seg, og feltene som kan vokse (navn, lydenhet) tar resten av bredden. */
+.formLines {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.formLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.formGrow {
+  flex: 1 1 14rem;
+  min-width: 0;
 }
 
 /* En rad med knapper nederst på en underside. */

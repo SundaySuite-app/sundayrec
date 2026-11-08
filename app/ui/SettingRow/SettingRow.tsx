@@ -56,6 +56,12 @@ export interface SettingRowProps {
   disabled?: boolean;
   children: ComponentChildren | ((ids: RowIds) => ComponentChildren);
   testId?: string;
+  /**
+   * Kontrollen står under teksten i full bredde, ikke til høyre for den.
+   * For brede kontroller (kortvalg, flerlinjefelt, skjemarader) — i to
+   * kolonner ville teksten fått en kolonne bare for seg selv.
+   */
+  stacked?: boolean;
 }
 
 export function SettingRow({
@@ -66,6 +72,7 @@ export function SettingRow({
   disabled = false,
   children,
   testId,
+  stacked = false,
 }: SettingRowProps) {
   const base = useId();
   const labelId = `${base}-label`;
@@ -85,7 +92,7 @@ export function SettingRow({
     <div
       data-testid={testId}
       data-disabled={disabled ? "true" : undefined}
-      class={`${styles.row} ${disabled ? styles.disabled : ""}`}
+      class={`${styles.row} ${stacked ? styles.stacked : ""} ${disabled ? styles.disabled : ""}`}
     >
       <div class={styles.text}>
         <div class={styles.labelLine}>

@@ -240,8 +240,6 @@
         "6": "Niedziela"
       },
       "advanced": {
-        "title": "Zaawansowane",
-        "lede": "Rzeczy, których większość nigdy nie musi ruszać. Wszystko tutaj ma bezpieczne ustawienie domyślne.",
         "soundLink": "Zaawansowany dźwięk",
         "preroll": "Bufor wstępny",
         "prerollDesc": "Dźwięk zachowany z czasu przed naciśnięciem Start. Bufor trzyma mikrofon otwarty w tle tak długo, jak aplikacja jest gotowa do nagrywania.",
@@ -430,7 +428,6 @@
         },
         "audioTech": "Technologia dźwięku",
         "diagnoseReportWhere": "Wklej raport do zgłoszenia na GitHubie albo wyślij go na dev@sundaysuite.app.",
-        "publishTitle": "Publikowanie",
         "publishDesc": "Po eksporcie aplikacja może otworzyć stronę, na którą przesyłacie pliki, z tytułem i opisem gotowymi do skopiowania. SundayRec sam niczego nie przesyła.",
         "publishWhere": "Gdzie publikujecie?",
         "publishChannelName": {
@@ -451,6 +448,20 @@
         "publishTemplate": "Stały opis",
         "publishTemplateDesc": "Wypełniany przy eksporcie, gdzie można go zmienić. {title}, {speaker}, {date} i {church} są zastępowane.",
         "publishTemplatePlaceholder": "Kazanie z {church}, {date}. Mówca: {speaker}."
+      },
+      "sections": {
+        "nav": "Przejdź do",
+        "church": "Parafia i język",
+        "schedule": "Harmonogram",
+        "publish": "Publikowanie",
+        "recording": "Nagranie",
+        "recordingDesc": "Jak ma przebiegać samo nagranie: dźwięk sprzed Startu, zatrzymanie przy ciszy, maksymalna długość, dzielenie na kilka plików i usuwanie starych nagrań.",
+        "updates": "Aktualizacje i prywatność",
+        "updatesDesc": "Ty decydujesz, czy aplikacja szuka nowych wersji i czy wysyła anonimowe statystyki.",
+        "help": "Pomoc i rozwiązywanie problemów",
+        "helpDesc": "Jeśli coś nie działa: sprawdź komputer, pobierz dziennik albo przenieś ustawienia na inny komputer.",
+        "about": "O programie",
+        "aboutDesc": "Licencje i uwagi dotyczące oprogramowania, na którym zbudowano SundayRec."
       }
     },
     "diagnose": {
@@ -702,7 +713,6 @@
       "advancedMixer": "Zaawansowane: otwórz mikser",
       "hideMixer": "Ukryj mikser",
       "mixerTitle": "Zaawansowany mikser dźwięku",
-      "mixerUse": "Użyj miksera",
       "mixerUseDesc": "Mikser zastępuje „{profile}”. Na wierzchu nie ma żadnego masteringu — sterujesz całym łańcuchem.",
       "mxEq": "Balans barwy",
       "mx": {

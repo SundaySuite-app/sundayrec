@@ -127,10 +127,16 @@ export function BoundRadioCards<K extends ScalarSettingKey>({
   description,
   options,
   columns,
+  stacked = false,
   disabled = false,
   confirmIf,
   testId,
-}: BoundBase<K> & { options: readonly RadioOption[]; columns?: 1 | 2 }) {
+}: BoundBase<K> & {
+  options: readonly RadioOption[];
+  columns?: 1 | 2;
+  /** Kortene i full bredde under teksten — se `SettingRow`. */
+  stacked?: boolean;
+}) {
   const bound = useSetting(setting, { kind: "radio", confirmIf });
   return (
     <SettingRow
@@ -139,6 +145,7 @@ export function BoundRadioCards<K extends ScalarSettingKey>({
       receipt={bound.receipt}
       error={bound.error}
       disabled={disabled}
+      stacked={stacked}
       testId={testId}
     >
       {(ids) => (
