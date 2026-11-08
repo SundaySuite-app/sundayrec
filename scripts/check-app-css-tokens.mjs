@@ -20,6 +20,15 @@
  *   - `#abc`, `#aabbcc`, `#aabbccdd` — heksadesimale farger
  *   - `rgb(…)`, `rgba(…)`, `hsl(…)`, `hsla(…)` — funksjonelle farger
  *
+ * ## Avstander (gap / padding / margin)
+ *
+ *   Samme eierskapsprinsipp for avstand: en avstand er `var(--sp-*)` eller et
+ *   semantisk navn (`--gap-page`, `--pad-card`…) fra `tokens.css`. Gaten avviser
+ *   en positiv px-verdi i `gap`, `row-gap`, `column-gap`, `padding*` og
+ *   `margin*` — unntatt 0, 1px og 2px (hårlinjer og optiske justeringer).
+ *   NEGATIVE verdier (`margin: -18px 0 0 -7px` på redigeringens håndtak) er
+ *   geometri, ikke luft, og telles ikke.
+ *
  * Alt annet er lov: `var(--gold)`, `currentColor`, `transparent`, `inherit`,
  * `none`. Navngitte CSS-farger (`red`, `white`) fanges IKKE av et regex som
  * ikke skal ha falske treff på ord i klassenavn og kommentarer — den formen
@@ -80,6 +89,34 @@ export function findColorLiterals(css) {
   return found.sort((a, b) => a.line - b.line);
 }
 
+/** Avstands-egenskaper: gap, padding, margin og langformene. */
+const SPACING_DECL =
+  /(^|[\s;{])((?:row-|column-)?gap|(?:padding|margin)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?)\s*:\s*([^;}]*)/g;
+/** En positiv px-verdi som ikke står etter minus eller i et ord/tall. */
+const PX = /(?<![\w.-])(\d*\.?\d+)px\b/g;
+const PX_ALLOWED = new Set([0, 1, 2]);
+
+/** px-literaler i avstand, som `{ line, text }`. */
+export function findSpacingLiterals(css) {
+  const cleaned = stripComments(css);
+  const found = [];
+  cleaned.split("\n").forEach((line, i) => {
+    SPACING_DECL.lastIndex = 0;
+    let d;
+    while ((d = SPACING_DECL.exec(line)) !== null) {
+      // Verdier inne i var(--x, 12px)-fallback teller også; de skal være tokens.
+      PX.lastIndex = 0;
+      let m;
+      while ((m = PX.exec(d[3])) !== null) {
+        if (!PX_ALLOWED.has(Number(m[1]))) {
+          found.push({ line: i + 1, text: `${d[2]}: ${m[0]}` });
+        }
+      }
+    }
+  });
+  return found;
+}
+
 /** Hver `.css` under `app/`, som repo-relative stier. */
 function cssFiles(dir) {
   const out = [];
@@ -137,6 +174,20 @@ function selfTest() {
     "en fargefri regel ga funn",
   );
 
+  const sp = findSpacingLiterals(`
+.a { gap: 10px; }
+.b { padding: 0 var(--sp-3) 14px; }
+.c { margin-top: 3px; }
+.d { margin: 1px 0 2px; padding: 0; gap: var(--sp-2); }
+.e { margin: -18px 0 0 -7px; }
+.f { font-size: 13px; width: 40px; border-radius: 9px; }
+/* gap: 99px */
+`);
+  say(
+    sp.length === 3,
+    `avstandsgaten ventet 3 funn, fikk ${sp.length}: ${sp.map((h) => h.text).join(", ")}`,
+  );
+
   if (problems.length) {
     console.error("check-app-css-tokens SELVTEST FEILET:");
     for (const p of problems) console.error("  ✗ " + p);
@@ -169,9 +220,11 @@ function main() {
   let total = 0;
   for (const rel of files) {
     if (rel === TOKENS_FILE) continue;
-    const hits = findColorLiterals(
-      fs.readFileSync(path.join(ROOT, rel), "utf8"),
-    );
+    const text = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    const hits = [
+      ...findColorLiterals(text),
+      ...findSpacingLiterals(text),
+    ].sort((a, b) => a.line - b.line);
     if (hits.length === 0) continue;
     total += hits.length;
     console.error(`\n${rel}`);
@@ -180,15 +233,15 @@ function main() {
 
   if (total > 0) {
     console.error(
-      `\n✗ ${total} fargeliteral(er) i app/-CSS.\n` +
-        `  Alt visuelt går gjennom var(--…). Legg fargen i ${TOKENS_FILE}\n` +
-        `  og bruk tokenet — ellers kan ikke eieren fargejustere appen ett sted.`,
+      `\n✗ ${total} literal(er) (farge eller px-avstand) i app/-CSS.\n` +
+        `  Alt visuelt går gjennom var(--…). Legg verdien i ${TOKENS_FILE}\n` +
+        `  og bruk tokenet (avstand: var(--sp-*)) — ellers kan ikke eieren justere appen ett sted.`,
     );
     process.exit(1);
   }
 
   console.log(
-    `✓ ${files.length} CSS-fil(er) i app/ — ingen fargeliteraler utenfor ${TOKENS_FILE}`,
+    `✓ ${files.length} CSS-fil(er) i app/ — ingen farge- eller avstandsliteraler utenfor ${TOKENS_FILE}`,
   );
 }
 

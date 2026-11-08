@@ -18,7 +18,7 @@
 }
 
 .title {
-  margin: 0 0 6px;
+  margin: 0 0 var(--sp-2);
   font-size: 19px;
   font-weight: 700;
   line-height: 1.2;
@@ -33,7 +33,7 @@
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--sp-3);
   margin-top: var(--sp-5);
 }
 

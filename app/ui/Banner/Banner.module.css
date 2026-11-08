@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  padding: var(--sp-4) 18px;
+  padding: var(--sp-4) var(--sp-5);
   border-radius: var(--r);
   font-weight: 600;
 }
@@ -13,14 +13,14 @@
 }
 
 .title {
-  font-size: var(--fs-body);
+  font-size: var(--fs-md);
 }
 
 .detail {
   font-size: var(--fs-base);
   font-weight: 400;
   color: var(--ink-2);
-  margin-top: 2px;
+  margin-top: var(--sp-1);
   /* F1-P1: et releasenotat kan ha linjeskift forfatteren la inn med vilje —
      bevar dem i stedet for å kollapse dem til ett mellomrom. Alle andre
      `detail`-tekster er allerede énlinjers uten `\n`, så dette gjengir dem

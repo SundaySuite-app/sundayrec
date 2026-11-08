@@ -14,9 +14,9 @@
 }
 
 .stepLabel {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -25,7 +25,7 @@
    dekorative, så tilstanden bor i attributtet og ikke i en tekst ingen ser. */
 .dots {
   display: flex;
-  gap: 7px;
+  gap: var(--sp-2);
   margin: 0;
   padding: 0;
   list-style: none;

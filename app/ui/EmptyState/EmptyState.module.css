@@ -12,7 +12,7 @@
   place-items: center;
   align-content: center;
   text-align: center;
-  gap: 10px;
+  gap: var(--sp-3);
   padding: var(--sp-6) var(--sp-5);
   border: 1px dashed var(--line-2);
   border-radius: var(--r);

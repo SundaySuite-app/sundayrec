@@ -43,15 +43,15 @@
 }
 
 .question {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .answer {
-  margin-top: 2px;
+  margin-top: var(--sp-1);
   font-size: var(--fs-val);
   font-weight: 600;
   color: var(--ink);

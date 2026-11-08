@@ -7,7 +7,7 @@
   display: grid;
   gap: var(--sp-3);
   max-width: 640px;
-  padding: 18px var(--sp-5);
+  padding: var(--sp-5);
   border-radius: var(--r);
   border: 1px solid var(--gold-line);
   background: var(--surface);

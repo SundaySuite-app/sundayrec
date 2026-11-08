@@ -4,7 +4,7 @@
   bottom: var(--sp-6);
   z-index: var(--z-toast);
   display: grid;
-  gap: 10px;
+  gap: var(--sp-3);
   justify-items: end;
   max-width: min(460px, calc(100vw - var(--sp-8)));
 }

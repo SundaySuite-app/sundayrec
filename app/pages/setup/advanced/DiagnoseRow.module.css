@@ -35,7 +35,7 @@
   gap: var(--sp-2);
   align-items: baseline;
   font-size: var(--fs-base);
-  padding: 3px 0;
+  padding: var(--sp-1) 0;
 }
 
 .mark {

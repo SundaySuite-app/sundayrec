@@ -1,6 +1,6 @@
 .tabs {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
   padding: var(--sp-1);
   border: 1px solid var(--line);
   border-radius: var(--r);
@@ -13,11 +13,11 @@
 .tab {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-2);
   border: 0;
   background: transparent;
-  padding: 9px 18px;
-  border-radius: 9px;
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--r-sm);
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--ink-2);

@@ -1,12 +1,12 @@
 .vu {
   display: grid;
-  gap: 10px;
+  gap: var(--sp-3);
 }
 
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3);
 }
 
 .word {
