@@ -154,6 +154,7 @@ import {
   settings,
 } from "../../state/settings";
 import { LOW_DISK_MINUTES } from "../../state/status-line";
+import { ActionBar } from "../../ui/ActionBar/ActionBar";
 import { Banner } from "../../ui/Banner/Banner";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
@@ -357,9 +358,10 @@ export function RecordPage() {
 
           {/*
             Måleren er MONTERINGEN som er vakten: ingen måler i treet, ingen
-            `start_vu`. Se toppen av fila.
+            `start_vu`. Se toppen av fila. Når kilde-kortet er utfoldet viser
+            det sin egen måler (`sound-vu`), så sidens skjules: ÉN måler.
           */}
-          {live || starting ? null : (
+          {live || starting || open.includes("sound") ? null : (
             <Card testId="record-meter">
               <VuMeter
                 testId="record-vu"
@@ -370,37 +372,6 @@ export function RecordPage() {
                 off={source.kind === "no-source"}
               />
             </Card>
-          )}
-
-          <Button
-            variant="record"
-            size="lg"
-            block
-            busy={starting}
-            disabled={!source.canStart}
-            disabledReason={t("app.record.whyBlocked")}
-            testId="record-start"
-            onClick={() => void handleStart()}
-          >
-            {t("app.record.start")}
-          </Button>
-
-          {source.kind === "no-source" ? (
-            <p data-testid="record-why-blocked" class={styles.why}>
-              {t("app.record.whyBlocked")}
-            </p>
-          ) : source.kind === "source-missing" ? (
-            <p data-testid="record-can-start" class={styles.why}>
-              {t("app.record.canStart")}
-            </p>
-          ) : (
-            // F2-T3: samme slisse de to andre hintene bruker — den står tom
-            // når kilden er klar, og en tom slisse er nøyaktig der en snarvei
-            // kan nevnes uten å legge en ekstra linje til en side som alt har
-            // to varianter av den fra før.
-            <p data-testid="record-start-hint" class={styles.why}>
-              {t("app.record.startHint")}
-            </p>
           )}
 
           {/*
@@ -428,6 +399,40 @@ export function RecordPage() {
       </div>
 
       <Done />
+
+      <ActionBar
+        hint={
+          source.kind === "no-source" ? (
+            <p data-testid="record-why-blocked" class={styles.why}>
+              {t("app.record.whyBlocked")}
+            </p>
+          ) : source.kind === "source-missing" ? (
+            <p data-testid="record-can-start" class={styles.why}>
+              {t("app.record.canStart")}
+            </p>
+          ) : (
+            // F2-T3: samme slisse de to andre hintene bruker — den står tom
+            // når kilden er klar, og en tom slisse er nøyaktig der en snarvei
+            // kan nevnes uten å legge en ekstra linje til en side som alt har
+            // to varianter av den fra før.
+            <p data-testid="record-start-hint" class={styles.why}>
+              {t("app.record.startHint")}
+            </p>
+          )
+        }
+      >
+        <Button
+          variant="record"
+          size="lg"
+          busy={starting}
+          disabled={!source.canStart}
+          disabledReason={t("app.record.whyBlocked")}
+          testId="record-start"
+          onClick={() => void handleStart()}
+        >
+          {t("app.record.start")}
+        </Button>
+      </ActionBar>
     </div>
   );
 }

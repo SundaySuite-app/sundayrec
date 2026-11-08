@@ -1,4 +1,4 @@
-/* Første gang — linjalen, skjermen og foten. */
+/* Første gang — linjalen og skjermen. Foten er `ActionBar`. */
 
 .wrap {
   display: flex;
@@ -49,20 +49,9 @@
   background: var(--good);
 }
 
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-3);
-  margin-top: var(--sp-2);
-}
-
-/* «Neste åpnes når vi hører lyd» — under knappen den handler om. */
+/* «Neste åpnes når vi hører lyd» — hintet i handlingslinja. */
 .gate {
   margin: 0;
-  text-align: right;
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
 }
 
 /*

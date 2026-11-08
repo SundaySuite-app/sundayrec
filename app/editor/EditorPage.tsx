@@ -65,6 +65,7 @@ import { spanOfSeconds } from "../pages/record/record-core";
 import { spanText } from "../pages/record/span-text";
 import { navigate } from "../router/router";
 import { Banner } from "../ui/Banner/Banner";
+import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
 import { Card } from "../ui/Card/Card";
 import { Select } from "../ui/Select/Select";
@@ -240,49 +241,7 @@ function CutStep() {
  */
 function NextStep({ step }: { step: Step }) {
   return (
-    <div class={styles.nextRow}>
-      <Button
-        variant="primary"
-        size="lg"
-        testId="editor-next"
-        onClick={() => {
-          if (step === "cut") activeStep.value = "sound";
-          else navigate("export");
-        }}
-      >
-        {step === "cut"
-          ? t("app.editor.nextSound")
-          : t("app.editor.nextExport")}
-      </Button>
-    </div>
-  );
-}
-
-function Head() {
-  const total = duration.value;
-  // Bibliotekets form, ikke resultatlinjas: «hvor lenge varte opptaket» er
-  // ikke et sekundspørsmål, og raden i Bibliotek sier det samme om det samme
-  // opptaket. Sekundene hører hjemme i RESULTATET, der ti sekunder er
-  // forskjellen på å ha med velsignelsen eller ikke.
-  const sub = [fileName.value, spanText(spanOfSeconds(total))]
-    .filter(Boolean)
-    .join(DOT);
-
-  return (
-    <div class={styles.head}>
-      <p data-testid="editor-sub" class={styles.sub}>
-        <span>{sub}</span>
-        <Summary />
-        {dirty.value ? (
-          <span
-            data-testid="editor-dirty"
-            class={styles.dot}
-            title={t("tooltip.unsavedChanges")}
-            role="img"
-            aria-label={t("tooltip.unsavedChanges")}
-          />
-        ) : null}
-      </p>
+    <ActionBar testId="editor-actions">
       {/*
         «Til biblioteket» — og ingen navigering. Etter D3 ER dette biblioteket:
         REDIGERING viser lista igjen i samme øyeblikk fila lukkes, på den samme
@@ -303,6 +262,55 @@ function Head() {
       >
         {t("app.editor.toLibrary")}
       </Button>
+      <Button
+        variant="primary"
+        size="lg"
+        testId="editor-next"
+        onClick={() => {
+          if (step === "cut") activeStep.value = "sound";
+          else navigate("export");
+        }}
+      >
+        {step === "cut"
+          ? t("app.editor.nextSound")
+          : t("app.editor.nextExport")}
+      </Button>
+    </ActionBar>
+  );
+}
+
+function Head() {
+  const total = duration.value;
+  // Bibliotekets form, ikke resultatlinjas: «hvor lenge varte opptaket» er
+  // ikke et sekundspørsmål, og raden i Bibliotek sier det samme om det samme
+  // opptaket. Sekundene hører hjemme i RESULTATET, der ti sekunder er
+  // forskjellen på å ha med velsignelsen eller ikke.
+  //
+  // Filnavnet står bare her når overskriften er noe annet (datoen): er det
+  // selve overskriften, er det å gjenta det støy.
+  const name = fileName.value;
+  const sub = [
+    name && name !== editorHeading() ? name : "",
+    spanText(spanOfSeconds(total)),
+  ]
+    .filter(Boolean)
+    .join(DOT);
+
+  return (
+    <div class={styles.head}>
+      <p data-testid="editor-sub" class={styles.sub}>
+        <span>{sub}</span>
+        <Summary />
+        {dirty.value ? (
+          <span
+            data-testid="editor-dirty"
+            class={styles.dot}
+            title={t("tooltip.unsavedChanges")}
+            role="img"
+            aria-label={t("tooltip.unsavedChanges")}
+          />
+        ) : null}
+      </p>
     </div>
   );
 }

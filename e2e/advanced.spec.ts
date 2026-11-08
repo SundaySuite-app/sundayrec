@@ -168,9 +168,11 @@ test.describe("opptaksradene", () => {
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("setup-church")).toBeVisible();
-    await expect(page.getByTestId("setup-advanced-label")).toHaveText(
-      "Avansert",
-    );
+    // Resten er delt i seksjoner med overskrift (og en innholdsliste øverst).
+    await expect(page.getByTestId("setup-toc")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Opptaket", level: 2 }),
+    ).toBeVisible();
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
   });
 });

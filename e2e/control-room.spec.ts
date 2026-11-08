@@ -436,7 +436,7 @@ test.describe("rammen kommer tilbake når kortet lukkes", () => {
       "data-embedded",
       "true",
     );
-    await expect(page.getByTestId("setup-advanced-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-sec-recording")).toBeVisible();
     await expect(page.getByTestId("setup-church-lede")).toBeVisible();
   });
 });
@@ -460,9 +460,10 @@ test.describe("VU-regelen med et utfoldet kilde-kort", () => {
     // rød, og det er kollapsen.
     await page.getByTestId("record-change-source").click();
 
-    // To målere på skjermen: sidens egen, og «Hvilken lyd?» sin.
-    await expect(page.getByTestId("record-vu")).toBeVisible();
+    // ÉN måler på skjermen: kortet er åpent og viser sin egen («Hvilken
+    // lyd?»), så sidens egen er skjult — to like målere var støy.
     await expect(page.getByTestId("sound-vu")).toBeVisible();
+    await expect(page.getByTestId("record-vu")).toHaveCount(0);
 
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();

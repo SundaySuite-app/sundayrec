@@ -117,7 +117,7 @@ bare drar fila inn på siden menigheten bruker.
 
 Hvilken side knappen åpner (SoundCloud, YouTube, Spotify for Creators eller
 en egen lenke), og den faste beskrivelsen, settes én gang under
-**Innstillinger → Avansert → Legg ut**. Innloggingen på SoundCloud er
+**Innstillinger → Legg ut**. Innloggingen på SoundCloud er
 menighetens egen, i nettleseren. Appen kjenner ikke passordet.
 
 ## Når noe ser feil ut
@@ -134,7 +134,7 @@ stående til noen har sett den — den forsvinner ikke av seg selv:
 
 Er du usikker på hva som er galt, eller vil sende oss et konkret bevis:
 
-1. Gå til tannhjulet (**Innstillinger**) → **Avansert** → **Diagnose** →
+1. Gå til tannhjulet (**Innstillinger**) → **Hjelp og feilsøking** → **Diagnose** →
    trykk **«Kjør»**. Du får fem svar (enheter, valgt enhet, mikrofontilgang,
    motor, lydprøve) — et rødt kryss viser hva som er galt.
 2. Trykk **«Kopier full rapport»**. Rapporten inneholder ingen lyd og ingen

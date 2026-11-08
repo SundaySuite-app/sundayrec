@@ -84,7 +84,7 @@ async function openEditor(page: Page, over: Fixtures = {}) {
     "data-state",
     "ready",
   );
-  await expect(page.getByTestId("editor-sub")).toContainText("Gudstjeneste");
+  await expect(page.getByTestId("app-heading")).toContainText("Gudstjeneste");
 }
 
 /** Vent til analysen er ferdig — forslagskortet er beviset på at den er det. */
@@ -1225,7 +1225,7 @@ test.describe("editor", () => {
       "data-state",
       "ready",
     );
-    await expect(page.getByTestId("editor-sub")).toContainText("Kveldsmøte");
+    await expect(page.getByTestId("app-heading")).toContainText("Kveldsmøte");
   });
 
   test("«Til biblioteket» lukker opptaket uten å spørre", async ({ page }) => {

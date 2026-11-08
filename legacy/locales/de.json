@@ -234,8 +234,6 @@
         "6": "Sonntag"
       },
       "advanced": {
-        "title": "Erweitert",
-        "lede": "Dinge, die die meisten nie anfassen müssen. Alles hier hat eine sichere Voreinstellung.",
         "soundLink": "Erweiterte Toneinstellungen",
         "preroll": "Vorlaufpuffer",
         "prerollDesc": "Ton von vor dem Druck auf Start, der mit aufgenommen wird. Der Puffer hält das Mikrofon im Hintergrund offen, solange die App aufnahmebereit ist.",
@@ -424,7 +422,6 @@
         },
         "audioTech": "Audio-Technologie",
         "diagnoseReportWhere": "Fügen Sie den Bericht in ein GitHub-Issue ein, oder senden Sie ihn an dev@sundaysuite.app.",
-        "publishTitle": "Veröffentlichen",
         "publishDesc": "Nach einem Export kann die App die Seite öffnen, auf die Sie hochladen – mit Titel und Beschreibung zum Kopieren bereit. SundayRec lädt selbst nichts hoch.",
         "publishWhere": "Wo veröffentlichen Sie?",
         "publishChannelName": {
@@ -445,6 +442,20 @@
         "publishTemplate": "Feste Beschreibung",
         "publishTemplateDesc": "Wird beim Export eingesetzt und kann dort geändert werden. {title}, {speaker}, {date} und {church} werden ersetzt.",
         "publishTemplatePlaceholder": "Predigt aus {church}, {date}. Sprecher: {speaker}."
+      },
+      "sections": {
+        "nav": "Gehe zu",
+        "church": "Gemeinde und Sprache",
+        "schedule": "Zeitplan",
+        "publish": "Veröffentlichen",
+        "recording": "Die Aufnahme",
+        "recordingDesc": "Wie die Aufnahme selbst ablaufen soll: Ton von vor dem Start, Stopp bei Stille, maximale Länge, Aufteilen in mehrere Dateien und Löschen alter Aufnahmen.",
+        "updates": "Updates und Datenschutz",
+        "updatesDesc": "Du entscheidest, ob die App nach neuen Versionen sucht und ob sie anonyme Statistiken sendet.",
+        "help": "Hilfe und Fehlersuche",
+        "helpDesc": "Wenn etwas nicht funktioniert: den Rechner prüfen, das Protokoll holen oder die Einstellungen auf einen anderen Rechner übertragen.",
+        "about": "Über",
+        "aboutDesc": "Lizenzen und Hinweise zur Software, auf der SundayRec aufbaut."
       }
     },
     "diagnose": {
@@ -696,7 +707,6 @@
       "advancedMixer": "Erweitert: Audiomixer öffnen",
       "hideMixer": "Audiomixer ausblenden",
       "mixerTitle": "Erweiterter Audiomixer",
-      "mixerUse": "Audiomixer verwenden",
       "mixerUseDesc": "Der Audiomixer ersetzt „{profile}“. Es kommt kein Mastering obendrauf — Sie steuern die ganze Kette.",
       "mxEq": "Klangbalance",
       "mx": {

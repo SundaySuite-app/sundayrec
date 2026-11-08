@@ -13,13 +13,13 @@
  * Den gamle formen sa «voks for å fylle, og krymp så mye som helst». Andre
  * halvdel var feilen: `min-height: 0` lar en flex-boks bli KORTERE enn
  * innholdet sitt, og med `overflow: visible` blir resten stående og renne
- * utenfor boksen. Samtidig står `.nextRow` nederst med `margin-top: auto`,
+ * utenfor boksen. Samtidig står handlingslinja (`ActionBar`) nederst med `margin-top: auto`,
  * altså festet til bunnen av DENNE boksen — så den havnet oppå innholdet som
  * hadde rent ut under den.
  *
  * To regler som hver for seg er riktige, uenige i skjøten: «fyll høyden» og
  * «knappen nederst». På main kolliderte de ikke, men bare fordi avspillings-
- * knappen tilfeldigvis lå 15 px under `.nextRow`; D3s tetthetspass flyttet
+ * knappen tilfeldigvis lå 15 px under handlingslinja; D3s tetthetspass flyttet
  * innholdet 36 px opp, og da lå den under. Proben fant det, ikke øyet.
  *
  * `0` i midten (flex-shrink) er hele fiksen: boksen er ALDRI kortere enn
@@ -297,13 +297,6 @@
   flex: 1 0 auto;
 }
 
-.nextRow {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: auto;
-  padding-top: var(--sp-4);
-}
-
 /* Tittel + forklaring til venstre, kontrollen til høyre. Formen SettingRow
    har, uten lagringsmodellen: her lagres ingenting før eksporten. */
 .autoRow {
@@ -386,12 +379,23 @@
 }
 
 .sliderRow {
-  display: flex;
+  display: grid;
+  /* Faste kolonner: navn | glider | verdi. Alle radene i mikseren, også
+     Klangbalanse og Forsterkning, står dermed rett under hverandre. */
+  grid-template-columns: 12rem minmax(0, 1fr);
   align-items: center;
   gap: var(--sp-3);
   padding-left: var(--sp-3);
 }
 
-.sliderRow > span:first-child {
-  min-width: 110px;
+/* Skyveren og avlesningen (Slider-komponentens egen innpakning) fyller det
+   andre sporet: glideren tar resten, avlesningen har fast bredde. */
+.sliderRow > span:last-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7ch;
+  width: 100%;
+}
+
+.sliderRow input[type="range"] {
+  width: 100%;
 }

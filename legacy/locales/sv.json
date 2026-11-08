@@ -234,8 +234,6 @@
         "6": "Söndag"
       },
       "advanced": {
-        "title": "Avancerat",
-        "lede": "Saker som de flesta aldrig behöver röra. Allt här har ett tryggt standardval.",
         "soundLink": "Avancerat ljud",
         "preroll": "Förbuffert",
         "prerollDesc": "Ljud som tas med från innan du tryckte på Start. Bufferten håller mikrofonen öppen i bakgrunden så länge appen är redo att spela in.",
@@ -424,7 +422,6 @@
         },
         "audioTech": "Ljudteknik",
         "diagnoseReportWhere": "Klistra in rapporten i ett GitHub-issue, eller skicka den till dev@sundaysuite.app.",
-        "publishTitle": "Publicering",
         "publishDesc": "Efter en export kan appen öppna sidan ni laddar upp på, med titel och beskrivning redo att kopieras. SundayRec laddar inte upp något själv.",
         "publishWhere": "Var lägger ni upp?",
         "publishChannelName": {
@@ -445,6 +442,20 @@
         "publishTemplate": "Fast beskrivning",
         "publishTemplateDesc": "Fylls i vid export, där den kan ändras. {title}, {speaker}, {date} och {church} byts ut.",
         "publishTemplatePlaceholder": "Predikan från {church}, {date}. Talare: {speaker}."
+      },
+      "sections": {
+        "nav": "Hoppa till",
+        "church": "Kyrka och språk",
+        "schedule": "Schema",
+        "publish": "Publicering",
+        "recording": "Inspelningen",
+        "recordingDesc": "Hur själva inspelningen ska fungera: ljud från före Start, stopp vid tystnad, maxlängd, delning i flera filer och radering av gamla inspelningar.",
+        "updates": "Uppdateringar och integritet",
+        "updatesDesc": "Du bestämmer om appen letar efter nya versioner och om den skickar anonym statistik.",
+        "help": "Hjälp och felsökning",
+        "helpDesc": "Om något inte fungerar: kontrollera datorn, hämta loggen eller flytta inställningarna till en annan dator.",
+        "about": "Om",
+        "aboutDesc": "Licenser och meddelanden för den programvara SundayRec bygger på."
       }
     },
     "diagnose": {
@@ -696,7 +707,6 @@
       "advancedMixer": "Avancerat: öppna mixern",
       "hideMixer": "Dölj mixern",
       "mixerTitle": "Avancerad ljudmixer",
-      "mixerUse": "Använd mixern",
       "mixerUseDesc": "Mixern ersätter ”{profile}”. Ingen mastring läggs ovanpå — du styr hela kedjan.",
       "mxEq": "Klangbalans",
       "mx": {

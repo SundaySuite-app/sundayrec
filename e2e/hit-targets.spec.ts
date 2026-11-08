@@ -464,9 +464,13 @@ test.describe("treffflater", () => {
     await expect(page.getByTestId("library-row")).toHaveCount(2);
 
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    // To rader × «Slett» + «Endre» (autoslett) + «Papirkurv».
-    expect(ghosts.length).toBe(4);
-    for (const g of ghosts) {
+    // «Endre» (autoslett) + «Papirkurv».
+    expect(ghosts.length).toBe(2);
+    // To rader × «Vis i Finder» + «Slett»: dempede knapper (`quiet`), med
+    // samme treffgulv som ghost-knappene.
+    const quiets = await measure(page, 'button[data-variant="quiet"]');
+    expect(quiets.length).toBe(4);
+    for (const g of [...ghosts, ...quiets]) {
       expect(g.hitH, `library/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
         GHOST_FLOOR - PROBE_STEP,
       );

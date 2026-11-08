@@ -1,12 +1,17 @@
 /**
- * Avansert — canvasens artboard 5.4.
+ * Resten av Innstillinger — canvasens artboard 5.4, delt i seksjoner.
  *
- * ÉN liste. Ingen faner, ingen seksjoner med egne overskrifter, ingen kort som
- * grupperer to rader fordi de tilfeldigvis het noe likt. Grunnen står i
- * canvasens egen beslutning: «Alt som har en leser i Rust og som noen faktisk
- * trenger, som én liste med ett ord per rad.»
+ * Fram til S2 var dette ÉN flat liste under «Avansert», uten overskrifter. Det
+ * var riktig så lenge listen var kort; nå har den tidsplan, utlegging,
+ * opptaksvalg, oppdateringer, feilsøking og lisenser, og en frivillig som
+ * leter etter «flere tider» skal ikke måtte lese seg gjennom alt. Hver
+ * seksjon har en overskrift og én setning (`SettingsSection`), og
+ * innholdslista øverst på siden (`SetupPage`) hopper mellom dem.
  *
- * ## Hva som IKKE er her, og hvorfor
+ * Tidsplanen er ikke «avansert»: en frivillig trenger den. Kirkeprofilen
+ * (første seksjon) bor i `SetupPage`.
+ *
+ ## Hva som IKKE er her, og hvorfor
  *
  * - **«Spør om redigering etter opptak», «Beskytt opptak», «Start med
  *   maskinen»** — tre av de fire uten bakendleser (ATLAS §2.6). «Start med
@@ -62,7 +67,8 @@ import { PublishCard } from "./advanced/PublishCard";
 import { ScheduleCard } from "./advanced/ScheduleCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";
 import { UpdateRow } from "./advanced/UpdateRow";
-import { SubPage } from "./SubPage";
+import { SettingsSection } from "./SettingsSection";
+import styles from "./setup.module.css";
 
 /** Sekundene forhåndsbufferen tilbyr. 0 = av — den ENE bryteren. */
 const PREROLL_CHOICES = [0, 15, 30];
@@ -91,78 +97,121 @@ export function AdvancedPage() {
   }, [anchor]);
 
   return (
-    <SubPage lede={t("app.setup.advanced.lede")} testId="setup-advanced">
-      {/*
-        Ankeret heter fortsatt «engine»: Lyd-sida lenker hit for «Avansert
-        lyd», og lenka skal lande på opptaksinnstillingene. Selve motorvalget
-        (Windows' DirectShow-luke) gikk ut i C3b — det er én opptaksmotor nå.
-      */}
-      <Card testId="advanced-recording" anchor="engine">
-        <BoundSelect
-          setting="preRollSeconds"
-          label={t("app.setup.advanced.preroll")}
-          description={t("app.setup.advanced.prerollDesc")}
-          options={PREROLL_CHOICES.map((n) => ({
-            value: String(n),
-            label: tDyn("app.setup.advanced.prerollChoice", String(n)),
-          }))}
-          testId="adv-preroll"
-        />
-        <SilenceRows />
-        <BoundSelect
-          setting="manualMaxMinutes"
-          label={t("app.setup.advanced.maxLen")}
-          description={t("app.setup.advanced.maxLenDesc")}
-          options={MAX_LEN_CHOICES.map((n) => ({
-            value: String(n),
-            label: tDyn("app.setup.advanced.maxLenChoice", String(n)),
-          }))}
-          testId="adv-maxlen"
-        />
-        <SplitRows />
-        {/*
-          Bibliotekets bunnlinje lenker hit («Slettes automatisk etter 90 dager
-          · Endre»), og `AdvancedPage` ruller til `route.anchor`. Ankeret er en
-          bar `id` og ikke et `Card`-anker, fordi radene deler kort med resten
-          av opptaksinnstillingene — et andre kort bare for å ha et anker ville
-          delt en liste canvasen viser som én.
-        */}
-        <div id="autodelete">
-          <AutoDeleteRows />
-        </div>
-      </Card>
+    // `display: contents` (se `.advanced`): seksjonene er barn av SetupPage sin
+    // kolonne, så de har samme avstand som kirkeseksjonen over.
+    <div data-testid="setup-advanced" class={styles.advanced}>
+      <SettingsSection
+        id="sec-schedule"
+        sectionKey="schedule"
+        intro={t("app.setup.advanced.schedDesc")}
+      >
+        <ScheduleCard />
+      </SettingsSection>
 
-      <Card testId="advanced-system">
-        <TelemetryRow />
-        {/*
-          Bryteren FØR raden den styrer: «Oppdater automatisk» av betyr at
-          ingenting under skjer av seg selv, og rekkefølgen skal lese slik.
-          Den manuelle knappen i raden under er med vilje ugatet — PRIVACY.md
-          har den som sitt ene unntak, fordi et trykk der er eieren som spør.
-        */}
-        <BoundToggle
-          setting="autoUpdate"
-          label={t("app.setup.advanced.autoUpdate")}
-          description={t("app.setup.advanced.autoUpdateDesc")}
-          testId="adv-auto-update"
-        />
-        <UpdateRow />
-        <LogRow />
-        <ProfileRow />
-        {/*
-          Diagnosen sist i systemkortet, og det er rekkefølgen som mener noe:
-          loggen og profilen er filer man HENTER, diagnosen er et spørsmål man
-          STILLER. Den er også den eneste raden her som folder ut et svar under
-          seg, så alt annet i kortet blir stående der det var når den gjør det.
-        */}
-        <DiagnoseRow />
-      </Card>
+      <SettingsSection
+        id="sec-publish"
+        sectionKey="publish"
+        intro={t("app.setup.advanced.publishDesc")}
+      >
+        <PublishCard />
+      </SettingsSection>
 
-      <PublishCard />
-      <ScheduleCard />
-      <AsioAttribution />
-      <LicensesCard />
-    </SubPage>
+      <SettingsSection
+        id="sec-recording"
+        sectionKey="recording"
+        intro={t("app.setup.sections.recordingDesc")}
+      >
+        {/*
+          Ankeret heter fortsatt «engine»: Lyd-sida lenker hit for «Avansert
+          lyd», og lenka skal lande på opptaksinnstillingene. Selve motorvalget
+          (Windows' DirectShow-luke) gikk ut i C3b — det er én opptaksmotor nå.
+        */}
+        <Card testId="advanced-recording" anchor="engine">
+          <BoundSelect
+            setting="preRollSeconds"
+            label={t("app.setup.advanced.preroll")}
+            description={t("app.setup.advanced.prerollDesc")}
+            options={PREROLL_CHOICES.map((n) => ({
+              value: String(n),
+              label: tDyn("app.setup.advanced.prerollChoice", String(n)),
+            }))}
+            testId="adv-preroll"
+          />
+          <SilenceRows />
+          <BoundSelect
+            setting="manualMaxMinutes"
+            label={t("app.setup.advanced.maxLen")}
+            description={t("app.setup.advanced.maxLenDesc")}
+            options={MAX_LEN_CHOICES.map((n) => ({
+              value: String(n),
+              label: tDyn("app.setup.advanced.maxLenChoice", String(n)),
+            }))}
+            testId="adv-maxlen"
+          />
+          <SplitRows />
+          {/*
+            Bibliotekets bunnlinje lenker hit («Slettes automatisk etter 90
+            dager · Endre»), og `AdvancedPage` ruller til `route.anchor`.
+            Ankeret er en bar `id` og ikke et `Card`-anker, fordi radene deler
+            kort med resten av opptaksinnstillingene — et andre kort bare for
+            å ha et anker ville delt en liste canvasen viser som én.
+          */}
+          <div id="autodelete">
+            <AutoDeleteRows />
+          </div>
+        </Card>
+      </SettingsSection>
+
+      <SettingsSection
+        id="sec-updates"
+        sectionKey="updates"
+        intro={t("app.setup.sections.updatesDesc")}
+      >
+        <Card testId="advanced-updates">
+          <TelemetryRow />
+          {/*
+            Bryteren FØR raden den styrer: «Oppdater automatisk» av betyr at
+            ingenting under skjer av seg selv, og rekkefølgen skal lese slik.
+            Den manuelle knappen i raden under er med vilje ugatet — PRIVACY.md
+            har den som sitt ene unntak, fordi et trykk der er eieren som spør.
+          */}
+          <BoundToggle
+            setting="autoUpdate"
+            label={t("app.setup.advanced.autoUpdate")}
+            description={t("app.setup.advanced.autoUpdateDesc")}
+            testId="adv-auto-update"
+          />
+          <UpdateRow />
+        </Card>
+      </SettingsSection>
+
+      <SettingsSection
+        id="sec-help"
+        sectionKey="help"
+        intro={t("app.setup.sections.helpDesc")}
+      >
+        <Card testId="advanced-help">
+          <LogRow />
+          <ProfileRow />
+          {/*
+            Diagnosen sist, og det er rekkefølgen som mener noe: loggen og
+            profilen er filer man HENTER, diagnosen er et spørsmål man STILLER.
+            Den er også den eneste raden her som folder ut et svar under seg,
+            så alt annet i kortet blir stående der det var når den gjør det.
+          */}
+          <DiagnoseRow />
+        </Card>
+      </SettingsSection>
+
+      <SettingsSection
+        id="sec-about"
+        sectionKey="about"
+        intro={t("app.setup.sections.aboutDesc")}
+      >
+        <AsioAttribution />
+        <LicensesCard />
+      </SettingsSection>
+    </div>
   );
 }
 

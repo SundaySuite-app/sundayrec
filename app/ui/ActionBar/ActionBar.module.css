@@ -1,0 +1,38 @@
+/*
+ * Sticky nederst i `#main` (se PageShell): tynn toppkant og sidens egen
+ * bakgrunn, så innholdet som ruller under ikke skinner gjennom. Bredden følger
+ * `--measure` via `.main > *` i PageShell, eller via max-width her når linja
+ * står inni en side-rot.
+ */
+.bar {
+  position: sticky;
+  /* Mot `<main>`s padding-bunn, ikke innenfor den: sticky-kanten ligger
+     innenfor paddingen til rullebeholderen, og uten dette ville linja stått
+     tomme 32 px over bunnlinja og overlappet innholdet ved enden av siden. */
+  bottom: calc(var(--pad-page-b) * -1);
+  /* Står på bunnen av en side som er kortere enn vinduet også. */
+  margin-top: auto;
+  z-index: var(--z-page);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}

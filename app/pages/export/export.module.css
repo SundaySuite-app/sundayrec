@@ -13,8 +13,8 @@
 
 /*
  * ⚠️ `flex: 1 0 auto`, samme skjøt som REDIGERING — se notatet over `.page` i
- * `app/editor/editor.module.css`. Her er bunn-festet `.exportBar` i stedet for
- * `.nextRow`, men formen er identisk: en boks som får krympe under innholdet
+ * `app/editor/editor.module.css`. Her er bunn-festet handlingslinja (`ActionBar`)
+ * som der, og formen er identisk: en boks som får krympe under innholdet
  * sitt, med en søsken festet til bunnen av den. Rettet begge steder samtidig,
  * fordi det er ETT mønster og ikke to.
  */
@@ -109,18 +109,6 @@
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink-2);
-}
-
-/* Forutsigelsen til venstre, den store knappen til høyre — nederst, fordi det
-   er der man er ferdig med å lese. */
-.exportBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  margin-top: auto;
-  padding-top: var(--sp-4);
-  flex-wrap: wrap;
 }
 
 /* ── Uten en åpen fil ──────────────────────────────────────────────────── */
