@@ -16,7 +16,7 @@
 }
 
 .value {
-  font-size: 13.5px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink-2);
   /* Avlesningen skal ikke skyve naboen sin mens man drar. */

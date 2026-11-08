@@ -183,11 +183,11 @@ export function MixerPanel() {
   const on = useMixer.value;
 
   return (
-    <Card testId="editor-mixer" title={t("app.editor.mixerTitle")}>
+    <Card testId="editor-mixer">
       <div class={styles.autoRow}>
         <div class={styles.autoGrow}>
           <b id="editor-mixer-label" class={styles.autoTitle}>
-            {t("app.editor.mixerUse")}
+            {t("app.editor.mixerTitle")}
           </b>
           <div id="editor-mixer-desc" class={styles.hint}>
             {tf("app.editor.mixerUseDesc", {
