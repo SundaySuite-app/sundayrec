@@ -79,6 +79,27 @@
 }
 
 /*
+ * Dempet: nøytral tekst, ingen kant. For den tredje og fjerde handlingen på en
+ * rad («Vis i Finder», «Slett») — de gjør noe, men er ikke det man kom for, og
+ * skal ikke ha aksentfargen `ghost` har. Slett er også «dempet», ikke rød:
+ * det er en angrebar handling (papirkurven), og en rød knapp på hver rad ville
+ * vært støy.
+ */
+.quiet {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  padding-left: var(--sp-3);
+  padding-right: var(--sp-3);
+}
+
+.quiet:hover {
+  background: var(--raised);
+  color: var(--ink);
+  filter: none;
+}
+
+/*
  * Farlig: rød KANT, aldri rød fyll. Canvasens sett 7 — en destruktiv handling
  * skal aldri være den knappen øyet lander på først, og en rød primærknapp er
  * nøyaktig det.

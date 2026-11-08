@@ -416,31 +416,45 @@ function Row({
         <div data-testid="library-row-when" class={styles.title}>
           {rowTitle(row)}
         </div>
+        {/* Varighet, lydstyrke, video, filnavn og notat: ÉN linje. */}
         <div class={styles.meta}>
-          <span data-testid="library-row-span">
-            {spanLabel(row.durationSec)}
-          </span>
-          {formatLufs(row.loudnessLufs) !== null ? (
-            <span data-testid="library-row-lufs">
-              {tf("app.library.loudness", {
-                lufs: formatLufs(row.loudnessLufs) ?? "",
-              })}
-            </span>
-          ) : null}
-          {row.hasVideo ? (
-            <Chip tone="neutral" testId="library-row-video">
-              {t("app.library.video")}
-            </Chip>
-          ) : null}
+          {[
+            <span key="span" data-testid="library-row-span">
+              {spanLabel(row.durationSec)}
+            </span>,
+            formatLufs(row.loudnessLufs) !== null ? (
+              <span key="lufs" data-testid="library-row-lufs">
+                {tf("app.library.loudness", {
+                  lufs: formatLufs(row.loudnessLufs) ?? "",
+                })}
+              </span>
+            ) : null,
+            row.hasVideo ? (
+              <Chip key="video" tone="neutral" testId="library-row-video">
+                {t("app.library.video")}
+              </Chip>
+            ) : null,
+            <span key="name" data-testid="library-row-name">
+              {row.filename}
+            </span>,
+            row.note ? (
+              <span key="note" data-testid="library-row-note">
+                {row.note}
+              </span>
+            ) : null,
+          ]
+            .filter(Boolean)
+            .flatMap((node, i) =>
+              i === 0
+                ? [node]
+                : [
+                    <span key={`dot${i}`} aria-hidden="true">
+                      {DOT.trim()}
+                    </span>,
+                    node,
+                  ],
+            )}
         </div>
-        <div data-testid="library-row-name" class={styles.muted}>
-          {row.filename}
-        </div>
-        {row.note ? (
-          <div data-testid="library-row-note" class={styles.muted}>
-            {row.note}
-          </div>
-        ) : null}
       </div>
       <div class={styles.acts}>
         {/*
@@ -466,7 +480,7 @@ function Row({
           vinduet.
         */}
         <Button
-          variant="secondary"
+          variant="quiet"
           disabled={!row.entry.id}
           disabledReason={t("app.done.revealFailed")}
           testId="library-row-reveal"
@@ -475,7 +489,7 @@ function Row({
           {t("app.done.show")}
         </Button>
         <Button
-          variant="ghost"
+          variant="quiet"
           busy={busy}
           testId="library-row-delete"
           onClick={onDelete}

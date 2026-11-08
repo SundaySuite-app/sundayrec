@@ -102,11 +102,13 @@
   overflow-wrap: anywhere;
 }
 
-/* Varighet og brikker på samme linje under tittelen. */
+/* Varighet, brikker, filnavn og notat på samme linje under tittelen. */
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
+  overflow-wrap: anywhere;
   margin-top: var(--sp-1);
   color: var(--ink-2);
   font-size: var(--fs-sm);

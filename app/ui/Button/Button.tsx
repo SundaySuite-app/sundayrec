@@ -35,7 +35,7 @@ import { useId } from "preact/hooks";
 import styles from "./Button.module.css";
 
 export type ButtonVariant =
-  "primary" | "secondary" | "ghost" | "danger" | "record";
+  "primary" | "secondary" | "ghost" | "quiet" | "danger" | "record";
 
 export interface ButtonProps {
   children: ComponentChildren;
@@ -76,6 +76,7 @@ const VARIANT: Record<ButtonVariant, string> = {
   primary: styles.primary,
   secondary: styles.secondary,
   ghost: styles.ghost,
+  quiet: styles.quiet,
   danger: styles.danger,
   record: styles.record,
 };
