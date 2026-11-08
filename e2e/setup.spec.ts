@@ -50,10 +50,10 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
 
     await expect(page.getByTestId("record-no-source")).toBeVisible();
     await expect(page.getByTestId("record-no-source-title")).toHaveText(
-      "Du har ikke valgt hvor lyden kommer fra",
+      "Du har ikke valgt lydkilde",
     );
     await expect(page.getByTestId("record-choose-sound")).toHaveText(
-      "Velg lyd",
+      "Velg lydkilde",
     );
     // …og statuslinjen sier det samme, av den samme grunnen.
     await expect(page.getByTestId("status-text")).toHaveText(
@@ -98,7 +98,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
     await expect(page.getByTestId("record-source")).toBeVisible();
     // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
     await expect(page.getByTestId("record-source-value")).toHaveText(
-      "Behringer X32 · kanal 15–16",
+      "Behringer X32 · inngang 15–16",
     );
     await expect(page.getByTestId("record-change-source")).toHaveText("Endre");
   });

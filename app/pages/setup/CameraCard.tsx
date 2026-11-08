@@ -34,7 +34,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import { t, tn } from "../../i18n";
+import { t, tDyn, tf } from "../../i18n";
 import { confirmIfRecordingImminent } from "../../settings/guards";
 import {
   loadVideoDevices,
@@ -52,6 +52,7 @@ import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { useSetting } from "../../settings/use-setting";
 import { cameraExpandable, cameraValue } from "../record/control-core";
+import { motionWord, resolutionWord } from "./camera-words-core";
 
 export interface CameraCardProps {
   expanded: boolean;
@@ -169,11 +170,14 @@ function CameraPicker() {
         if (!alive) return;
         setCapability(
           cap && cap.supportedResolutions.length > 0
-            ? // Bilderaten er TELLINGEN («1 bilde» / «5 klatek»), oppløsningen
-              // er en vanlig innsetting. `tn` binder `{n}` til count og tar
-              // resten som params — se `app/i18n/index.ts`.
-              tn("app.setup.camera.delivers", cap.maxFps, {
-                height: cap.maxHeight,
+            ? // To tall blir to ord («Full HD, jevn bevegelse»), se
+              // `camera-words-core.ts`. Ordene bor i katalogen.
+              tf("app.setup.camera.delivers", {
+                res: tDyn(
+                  "app.setup.camera.res",
+                  resolutionWord(cap.maxHeight),
+                ),
+                motion: tDyn("app.setup.camera.motion", motionWord(cap.maxFps)),
               })
             : t("app.setup.camera.probeFailed"),
         );

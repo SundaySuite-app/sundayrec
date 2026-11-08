@@ -2,7 +2,7 @@
   "app": {
     "page": {
       "record": "Optagelse",
-      "edit": "Redigering",
+      "edit": "Bibliotek",
       "export": "Eksport",
       "setup": "Indstillinger"
     },
@@ -60,22 +60,22 @@
       "trashEmptyDesc": "Optagelser, du sletter, havner her først.",
       "back": "Tilbage til biblioteket",
       "restore": "Læg tilbage",
-      "deleteNow": "Slet nu",
+      "deleteNow": "Slet for altid",
       "deleteSoon": "Slettes ved næste oprydning",
       "deleteTomorrow": "Slettes i morgen",
       "deleteInDays": "Slettes om {n} dage"
     },
     "record": {
-      "noSource": "Du har ikke valgt, hvor lyden kommer fra",
+      "noSource": "Du har ikke valgt en lydkilde",
       "noSourceDesc": "Vælg mixerpulten — eller computerens egen mikrofon, hvis det er den, I bruger.",
-      "chooseSound": "Vælg lyd",
+      "chooseSound": "Vælg lydkilde",
       "sub": "Tryk på Start, når gudstjenesten begynder.",
       "listening": "Lytter",
       "soundFrom": "Lyd fra",
       "start": "Start optagelse",
-      "whyBlocked": "Start er spærret, indtil lyden er valgt. Vi optager aldrig fra en kilde, som ingen har valgt.",
-      "canStart": "Du kan starte alligevel — optagelsen bliver stille, indtil mixerpulten er tilbage.",
-      "startHint": "Mellemrum starter optagelsen.",
+      "whyBlocked": "Start er spærret, indtil en lydkilde er valgt. Vi optager aldrig fra en lydkilde, som ingen har valgt.",
+      "canStart": "Du kan starte alligevel — optagelsen er stille, indtil mixerpulten er tilbage.",
+      "startHint": "Mellemrumstasten starter optagelsen.",
       "useBuiltIn": "Brug computerens mikrofon",
       "nextAuto": "Næste automatiske optagelse",
       "nextAutoWhen": "{day} {time}",
@@ -94,8 +94,8 @@
       }
     },
     "setup": {
-      "q1": "Hvilken lyd?",
-      "q2": "Hvor skal optagelserne hen?",
+      "q1": "Hvilken lydkilde?",
+      "q2": "Hvor gemmes optagelserne?",
       "q3": "Hvilken kvalitet?",
       "q4": "Hvilken kirke?",
       "q5": "Hvem får besked, hvis noget går galt?",
@@ -112,25 +112,25 @@
       "save": "Gem",
       "cancel": "Annuller",
       "sound": {
-        "lede": "Vælg det, I optager fra, og tjek, at vi hører det.",
-        "deviceWithPair": "{name} · kanal {l}–{r}",
+        "lede": "Vælg den lydkilde, I optager fra, og tjek, at vi kan høre den.",
+        "deviceWithPair": "{name} · indgang {l}–{r}",
         "gone": "Kan ikke finde {name}",
         "goneDesc": "Tjek, at den er tændt, og at kablet sidder i.",
-        "noneDesc": "Vi optager aldrig fra en kilde, som ingen har valgt.",
+        "noneDesc": "Vi optager aldrig fra en lydkilde, som ingen har valgt.",
         "builtIn": "Computerens egen mikrofon",
-        "builtInDesc": "Kun til test, eller hvis I ikke har en mixerpult.",
-        "external": "USB / Ekstern",
+        "builtInDesc": "Kun til afprøvning, eller hvis I ikke har en mixerpult.",
+        "external": "Tilsluttet med kabel",
         "mixer": {
-          "one": "Mixerpult · {n} kanal",
-          "other": "Mixerpult · {n} kanaler"
+          "one": "Mixerpult · {n} indgang",
+          "other": "Mixerpult · {n} indgange"
         },
-        "whichChannels": "Hvilke kanaler?",
-        "pairLabel": "Kanal {l} og {r}",
-        "channelHint": "De, der har lyd nu, lyser.",
+        "whichChannels": "Hvilke indgange på mixerpulten?",
+        "pairLabel": "Indgang {l} og {r}",
+        "channelHint": "Vælg det par, der har den lyd, I vil optage — én indgang til venstre og én til højre. De, der har lyd lige nu, lyser.",
         "testHint": "Tal i mikrofonen, eller spil lidt.",
-        "useThis": "Brug denne",
+        "useThis": "Brug denne lydkilde",
         "noChange": "Ingenting er ændret.",
-        "empty": "Kan ikke finde nogen lydenheder",
+        "empty": "Kan ikke finde nogen lydkilder",
         "emptyDesc": "Ikke engang computerens egen mikrofon. Tjek adgangen under Systemindstillinger → Anonymitet.",
         "retry": "Søg igen"
       },
@@ -151,9 +151,9 @@
       },
       "qualityLede": "Højere kvalitet giver større filer. De fleste bliver stående på God.",
       "qDesc": {
-        "mp3": "MP3. Passer til nettet og deling. Ca. 1 GB pr. 10 timer.",
-        "flac": "FLAC. Alt det, der kom ind, uden tab. Ca. 5 GB pr. 10 timer.",
-        "wav": "WAV. Ukomprimeret, som et arkiv skal være. Ca. 10 GB pr. 10 timer."
+        "mp3": "Passer til nettet og deling. Ca. 1 GB pr. 10 timer · MP3",
+        "flac": "Alt, hvad der kom ind, uden tab. Ca. 5 GB pr. 10 timer · FLAC",
+        "wav": "Ukomprimeret, som et arkiv skal være. Ca. 10 GB pr. 10 timer · WAV"
       },
       "qualityCustom": "Brugerdefineret · {format} {bitrate}",
       "qualityCustomDesc": "Denne kombination er ikke en af de tre. Vælg et kort for at skifte.",
@@ -165,7 +165,7 @@
         "languageLabel": "Sprog i appen",
         "languageDesc": "Skifter med det samme.",
         "language": "Sprog: {language}",
-        "languagePaused": "Dette sprog er midlertidigt utilgængeligt i den nye opsætning — appen viser {language} indtil videre."
+        "languagePaused": "Dette sprog er midlertidigt utilgængeligt — appen viser {language} indtil videre."
       },
       "notify": {
         "lede": "Computeren siger altid til, når noget går galt — til den, der står ved den.",
@@ -175,7 +175,7 @@
         "notificationsOffDesc": "Slå notifikationer til for SundayRec i systemindstillingerne — ellers ser ingen, at en optagelse fejler.",
         "onMachineUnverifiedDesc": "Fejl vises her. Send en testnotifikation for at se, at de kommer frem.",
         "remind": "Påmindelse før automatisk optagelse",
-        "remindDesc": "Så nogen kan nå at tænde mixerpulten.",
+        "remindDesc": "Så nogen når at tænde for mixerpulten.",
         "remindChip": "Ingen fast tid",
         "remindGate": "Slå »Optag automatisk« til først.",
         "remindOff": "Fra",
@@ -186,26 +186,34 @@
         "permissionUnknown": "Kan ikke læses på denne computer. Send en testnotifikation for at se, at de kommer frem.",
         "permissionDeniedError": "Ingen ser fejlnotifikationerne, før notifikationer slås til igen.",
         "sendTest": "Send testnotifikation",
-        "openSettings": "Åbn indstillinger",
+        "openSettings": "Åbn systemindstillinger",
         "testSent": "Testnotifikationen er sendt. Kom den ikke frem, så åbn indstillingerne og slå notifikationer til for SundayRec.",
         "testSentDenied": "Testnotifikationen er sendt, men notifikationer er slået fra — den vises ikke, før de slås til.",
         "testFailed": "Testnotifikationen kunne ikke sendes.",
         "openSettingsFailed": "Kunne ikke åbne notifikationsindstillingerne. Åbn dem fra systemindstillingerne."
       },
       "camera": {
-        "title": "Tag kamera med",
+        "title": "Tag video med",
         "desc": "Optag video sammen med lyden.",
         "noneChosen": "Intet kamera valgt",
         "pick": "Kamera",
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden af videoen.",
-        "delivers": {
-          "one": "Kameraet leverer højst {height}p · {n} billede i sekundet.",
-          "other": "Kameraet leverer højst {height}p · {n} billeder i sekundet."
-        },
-        "probeFailed": "Vi kunne ikke læse, hvad kameraet kan. Optagelsen bruger det, kameraet faktisk leverer, op til 1080p.",
+        "delivers": "Kameraet leverer {res}, {motion}.",
+        "probeFailed": "Vi kunne ikke aflæse, hvad kameraet kan. Optagelsen bruger det bedste, kameraet faktisk leverer, op til Full HD.",
         "none": "Kan ikke finde et kamera",
-        "noneDesc": "Tilslut et kamera, eller slå »Tag kamera med« fra."
+        "noneDesc": "Tilslut et kamera, eller slå »Tag video med« fra.",
+        "res": {
+          "uhd": "4K",
+          "fhd": "Full HD",
+          "hd": "HD",
+          "sd": "lavere opløsning"
+        },
+        "motion": {
+          "smooth": "meget jævn bevægelse",
+          "normal": "jævn bevægelse",
+          "low": "lidt hakkende bevægelse"
+        }
       },
       "auto": {
         "title": "Optag automatisk",
@@ -234,9 +242,9 @@
         "6": "Søndag"
       },
       "advanced": {
-        "soundLink": "Avanceret lyd",
-        "preroll": "Forbuffer",
-        "prerollDesc": "Lyd fra før, du trykkede på Start, tages med. Bufferen holder mikrofonen åben i baggrunden, så længe appen er klar til at optage.",
+        "soundLink": "Flere valg for optagelsen",
+        "preroll": "Tag lyden fra før start med",
+        "prerollDesc": "Appen lytter i baggrunden, så de sekunder, der er før du trykker Start, ikke går tabt. Mikrofonen er åben, så længe appen er klar til at optage.",
         "prerollChoice": {
           "0": "Fra",
           "15": "15 sekunder",
@@ -262,7 +270,7 @@
           "360": "6 timer"
         },
         "split": "Del lange optagelser op",
-        "splitDesc": "Laver en ny fil med jævne mellemrum, så ingen fil bliver enorm.",
+        "splitDesc": "Hver del bliver til sin egen fil. Godt til lange optagelser: mindre filer er nemmere at redigere og uploade, og hvis noget går galt, er det kun den sidste del, der er i fare.",
         "splitEvery": "Ny fil hver",
         "splitChoice": {
           "30": "30 minutter",
@@ -276,29 +284,29 @@
         "autoDeleteAfter": "Slet efter (dage)",
         "autoDeleteConfirm": "Slette optagelser hurtigere",
         "autoDeleteRange": "Skriv et tal mellem 1 og 3650.",
-        "diag": "Del anonym diagnostik",
+        "diag": "Send anonym brugsstatistik",
         "diagDesc": "Aldrig lyd, navne eller filer. Du kan se præcis, hvad der sendes.",
         "diagPreviewTitle": "Hvad der sendes",
         "diagPreviewNext": "Det her er præcis det, der sendes næste gang.",
-        "diagPreviewHistory": "Diagnostikken er slået fra. Det her viser formen på data fra din egen historik lokalt — der sendes ingenting.",
+        "diagPreviewHistory": "Statistik er slået fra. Her ses, hvordan dataene ville se ud, hentet fra din egen historik på computeren — intet sendes.",
         "diagPreviewEmpty": "Der er ingenting at sende lige nu.",
         "diagPreviewFailed": "Kunne ikke hente forhåndsvisningen.",
         "diagDelete": "Slet mine data",
         "diagDeleteTitle": "Slette dine data?",
-        "diagDeleteBody": "Dit anonyme ID bliver skiftet ud med et nyt, og rapporter, der ikke er sendt endnu, tømmes. Derefter beder SundayRec serveren om at slette alt, der ligger der under det gamle ID.",
-        "diagDeleteConfirm": "Ja, tøm og skift ID",
-        "diagDeleted": "Data er tømt lokalt, og du har fået et nyt anonymt ID.",
+        "diagDeleteBody": "Statistik, der endnu ikke er sendt, ryddes. Derefter beder SundayRec om, at alt, der allerede er sendt fra denne computer, slettes. Computeren får et nyt anonymt nummer, så nye tal ikke kan kobles til de gamle.",
+        "diagDeleteConfirm": "Ja, slet dataene",
+        "diagDeleted": "Dataene er ryddet, og computeren har fået et nyt anonymt nummer.",
         "diagDeleteFailed": "Kunne ikke slette data. Prøv igen.",
         "update": "Opdateringer",
-        "updateDesc": "Stabil anbefales. Beta får nye ting først.",
+        "updateDesc": "»Almindelig« anbefales. »Prøv nyt først« giver dig nye versioner, før de er afprøvet ordentligt.",
         "autoUpdate": "Opdater automatisk",
         "autoUpdateDesc": "Søger hver time, om der findes en nyere version. Der hentes ingenting, før du siger ja.",
-        "updateStable": "Stabil",
-        "updateBeta": "Beta",
-        "updateBetaTitle": "Skifte til beta-opdateringer?",
-        "updateBetaBody": "Beta kommer til dig, før den har været igennem en rigtig gudstjeneste, og kan indeholde fejl, der ødelægger en optagelse. Brug ikke beta på den computer, der optager gudstjenesten. Du kan skifte tilbage når som helst.",
-        "updateBetaConfirm": "Ja, brug beta",
-        "updateBetaCancel": "Bliv på stabil",
+        "updateStable": "Almindelig (anbefalet)",
+        "updateBeta": "Prøv nyt først",
+        "updateBetaTitle": "Prøve nye versioner først?",
+        "updateBetaBody": "Disse versioner når dig, før de er prøvet ved en rigtig gudstjeneste, og kan indeholde fejl, der ødelægger en optagelse. Brug det ikke på den computer, der optager gudstjenesten. Du kan skifte tilbage når som helst.",
+        "updateBetaConfirm": "Ja, prøv nyt først",
+        "updateBetaCancel": "Bliv på almindelig",
         "updateCheck": "Søg efter opdateringer nu",
         "updateChecking": "Søger efter opdateringer …",
         "updateUpToDate": "Du er opdateret",
@@ -312,33 +320,33 @@
         "updateFailed": "Kunne ikke søge efter opdateringer",
         "updateBusyRecording": "Kan ikke opdatere, mens der optages",
         "updateNotesLabel": "Hvad er nyt",
-        "log": "Log",
-        "logDesc": "Til fejlsøgning sammen med os. Ingen lyd og ingen adgangskoder.",
+        "log": "Fejllog",
+        "logDesc": "En fil, der viser, hvad appen har gjort, og eventuelle fejl. Den hjælper den, der fejlsøger. Ingen lyd og ingen adgangskoder.",
         "show": "Vis",
         "copy": "Kopiér",
-        "logShowFailed": "Kunne ikke åbne logmappen.",
-        "logEmpty": "Loggen er stadig tom.",
-        "logCopied": "Loggen er kopieret",
-        "logCopyFailed": "Kunne ikke kopiere loggen.",
-        "profile": "Indstillingsprofil",
-        "profileDesc": "Tag opsætningen med til en anden computer. Adgangskoder følger aldrig med.",
+        "logShowFailed": "Kunne ikke åbne mappen med fejllogen.",
+        "logEmpty": "Fejllogen er tom endnu.",
+        "logCopied": "Fejllogen kopieret",
+        "logCopyFailed": "Kunne ikke kopiere fejllogen.",
+        "profile": "Flyt opsætningen til en anden computer",
+        "profileDesc": "Gem indstillingerne i en fil, og hent dem på den anden computer. Adgangskoder er aldrig med.",
         "licenses": "Licenser",
         "licensesDesc": "Den software fra andre, SundayRec er bygget på, og ffmpeg (GPL) med oplysning om, hvor kildekoden findes.",
         "licensesOpen": "Vis licenser",
         "licensesClose": "Luk",
         "licensesFailed": "Licensteksten blev ikke fundet. Prøv at installere appen igen.",
         "licensesFrameTitle": "Licenser og tredjepartsmeddelelser",
-        "export": "Eksportér",
-        "import": "Importér",
-        "importTitle": "Importere indstillinger?",
-        "importBody": "Det her erstatter indstillingerne på denne computer med indholdet i den fil, du vælger. Lydenhed, kamera, optagelsesmappe og »Start automatisk med computeren« forbliver, som de er her. Optagelser, biblioteket og adgangskoder røres ikke.",
-        "importConfirm": "Ja, importér",
-        "exported": "Indstillingerne blev eksporteret.",
-        "exportFailed": "Kunne ikke eksportere indstillingerne: {err}",
-        "imported": "Indstillingerne blev importeret.",
-        "importFailed": "Kunne ikke importere indstillingerne: {err}",
-        "importNotProfile": "Filen er ikke en indstillingsprofil fra SundayRec, eller den er beskadiget. Intet blev ændret.",
-        "importTooLarge": "Filen er for stor til at være en indstillingsprofil. Intet blev ændret.",
+        "export": "Gem opsætning",
+        "import": "Hent opsætning",
+        "importTitle": "Hente opsætning?",
+        "importBody": "Det her erstatter indstillingerne på denne computer med indholdet i den fil, du vælger. Lydkilde, kamera, optagelsesmappe og »Start automatisk med computeren« forbliver, som de er her. Optagelser, biblioteket og adgangskoder røres ikke.",
+        "importConfirm": "Ja, hent opsætningen",
+        "exported": "Opsætningen er gemt.",
+        "exportFailed": "Kunne ikke gemme opsætningen: {err}",
+        "imported": "Opsætningen er hentet.",
+        "importFailed": "Kunne ikke hente opsætningen: {err}",
+        "importNotProfile": "Filen er ikke en opsætning fra SundayRec, eller den er beskadiget. Intet blev ændret.",
+        "importTooLarge": "Filen er for stor til at være en opsætning. Intet blev ændret.",
         "schedTitle": "Flere tider og enkeltoptagelser",
         "schedDesc": "Den ugentlige tid sættes på siden Optagelse, i kortet »Optag automatisk«. Her tilføjer du flere.",
         "schedTimes": "Faste tider",
@@ -359,8 +367,8 @@
         "specialNeedsDate": "Vælg en dato først.",
         "specialPast": "Datoen er passeret — en optagelse starter ikke.",
         "specialDeviceSame": "Samme som den almindelige optagelse",
-        "specialDevice": "Lydenhed til optagelsen",
-        "specialDeviceHint": "Vælg en egen lydenhed, hvis optagelsen skal komme fra et andet lydkort. Er den ikke tilsluttet, når optagelsen starter, bruges den almindelige — og du får besked.",
+        "specialDevice": "Lydkilde for optagelsen",
+        "specialDeviceHint": "Vælg en egen lydkilde, hvis optagelsen skal komme fra noget andet end det sædvanlige. Er den ikke tilsluttet, når optagelsen starter, bruges den sædvanlige — og du får besked.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (ikke tilsluttet nu)",
         "wake": "Væk computeren fra dvale",
@@ -374,36 +382,36 @@
           "unknown": "Vi ved ikke endnu, om denne computer kan vækkes."
         },
         "wakeIssue": {
-          "macArmNoPowerOn": "Apple Silicon kan ikke starte fra helt slukket tilstand — kun fra dvale.",
-          "macIntelManualPowerOn": "En Intel-Mac kan starte fra slukket, men du skal aktivere »Start op eller vækning« manuelt i Systemindstillinger → Batteri.",
-          "winTimerDiesWithApp": "Vækningen sættes af SundayRec, mens programmet kører. Lukker du SundayRec helt, forsvinder vækningstimeren.",
-          "winS5NeedsBios": "Vækning fra helt slukket (S5) kræver, at »Wake on RTC from S5« er slået til i BIOS — det kan ikke aktiveres fra software.",
-          "linuxUnsupported": "Linux understøttes ikke til automatisk vækning fra SundayRec.",
-          "platformUnsupported": "Platformen understøttes ikke til automatisk vækning."
+          "macArmNoPowerOn": "Denne Mac kan ikke tænde sig selv fra helt slukket — den skal stå i dvale.",
+          "macIntelManualPowerOn": "Denne Mac kan tænde sig selv fra slukket, men du skal selv slå »Start op eller væk« til i Systemindstillinger → Batteri.",
+          "winTimerDiesWithApp": "Vækningen sættes af SundayRec, mens programmet kører. Lukker du SundayRec helt, forsvinder den.",
+          "winS5NeedsBios": "Skal computeren kunne vækkes, når den er helt slukket, skal det slås til i computerens startindstillinger (BIOS). Det kan SundayRec ikke gøre for jer — lad hellere computeren stå i dvale.",
+          "linuxUnsupported": "Automatisk vækning virker ikke på Linux.",
+          "platformUnsupported": "Automatisk vækning virker ikke på denne type computer."
         },
         "wakeAdvice": {
-          "macKeepAsleep": "Lad maskinen stå i dvale (sluk den ikke) efter forberedelserne.",
-          "macDisableStandby": "Slå dyb dvale (standby) fra — den kan forhindre, at maskinen vågner.",
-          "macStayPluggedIn": "Strømmen skal være tilsluttet — en Mac vækkes ikke pålideligt på batteri.",
-          "winKeepAppRunning": "Lad SundayRec køre — den starter automatisk ved login og ligger i proceslinjen.",
-          "winSleepNotShutdown": "Sæt maskinen i dvale (Sleep/Hibernate) i stedet for at slukke den.",
-          "winStayPluggedIn": "Strømmen bør være tilsluttet — mange bærbare deaktiverer vækningstimere på batteri.",
-          "winCheckBios": "Hvis testvækningen fejler, så tjek BIOS for »Wake on RTC«, og slå »Tillad vækningstimere« til i strømstyringen.",
-          "useMacOrWindows": "Brug en Mac eller en Windows-pc for at aktivere automatisk vækning."
+          "macKeepAsleep": "Lad computeren stå i dvale — sluk den ikke.",
+          "macDisableStandby": "Slå »dyb dvale« (standby) fra i strømindstillingerne — ellers vågner computeren måske ikke.",
+          "macStayPluggedIn": "Lad computeren sidde i stikkontakten — en Mac vækkes ikke pålideligt på batteri.",
+          "winKeepAppRunning": "Lad SundayRec køre — den starter af sig selv, når du logger ind, og ligger i systembakken ved uret.",
+          "winSleepNotShutdown": "Sæt computeren i dvale, sluk den ikke.",
+          "winStayPluggedIn": "Lad computeren sidde i stikkontakten — mange bærbare vækkes ikke på batteri.",
+          "winCheckBios": "Virker prøvevækningen ikke: tjek, at »Tillad vækningstimere« er slået til i strømstyringen, og at »Wake on RTC« er slået til i BIOS.",
+          "useMacOrWindows": "Automatisk vækning virker kun på Mac og Windows."
         },
-        "wakeArm": "Aktivér vækning",
+        "wakeArm": "Læg vækning ind",
         "wakeArmWord": {
-          "idle": "Registrér vækningen i styresystemet nu. Kan kræve administratoradgangskode.",
-          "ok": "Vækningen er registreret i styresystemet.",
-          "autoRecordOff": "Ingen vækninger at registrere — »Optag automatisk« er slået fra.",
-          "nothingUpcoming": "Ingen vækninger at registrere — der er ikke planlagt noget fremover.",
+          "idle": "Læg vækningen ind i computeren nu. Kan kræve administratoradgangskode.",
+          "ok": "Vækningen er lagt ind i computeren.",
+          "autoRecordOff": "Ingen vækninger at lægge ind — »Optag automatisk« er slået fra.",
+          "nothingUpcoming": "Ingen vækninger at lægge ind — intet er planlagt fremover.",
           "needsAdmin": "Kræver en administratoradgangskode — prøv igen, og svar på spørgsmålet.",
           "disabled": "Slå »Væk computeren fra dvale« til først.",
           "unsupported": "Denne computer kan ikke vækkes af appen.",
-          "cancelled": "Du afbrød — der er ikke registreret noget.",
-          "failed": "Vækningen blev ikke registreret."
+          "cancelled": "Du afbrød — intet blev lagt ind.",
+          "failed": "Vækningen blev ikke lagt ind."
         },
-        "wakeTest": "Test vækning om 2 min",
+        "wakeTest": "Prøv vækning om 2 min",
         "wakeTestIdle": "Planlæg en rigtig vækning to minutter frem i tiden, og se, om computeren faktisk vågner.",
         "wakeTestScheduled": "Planlagt til kl. {time} — lad computeren sove for at se, om den vågner.",
         "wakeHistoryTitle": "Vækningshistorik",
@@ -416,12 +424,12 @@
           "testFail": "Testvækningen mislykkedes"
         },
         "wakeHistoryReason": {
-          "noResume": "ingen genoptagelse observeret",
+          "noResume": "computeren vågnede ikke",
           "tooLate": "kom for sent",
           "onBattery": "kørte på batteri"
         },
-        "audioTech": "Lydteknologi",
-        "diagnoseReportWhere": "Indsæt rapporten i et GitHub-issue, eller send den til dev@sundaysuite.app.",
+        "audioTech": "Om lydteknologien",
+        "diagnoseReportWhere": "Send rapporten til den, der hjælper jer, eller til dev@sundaysuite.app.",
         "publishDesc": "Efter en eksport kan appen åbne siden, I uploader på, med titel og beskrivelse klar til at kopiere. SundayRec uploader ikke noget selv.",
         "publishWhere": "Hvor lægger I ud?",
         "publishChannelName": {
@@ -429,7 +437,7 @@
           "none": "Ingen"
         },
         "publishChannelDesc": {
-          "soundcloud": "Ofte også jeres podcast (RSS)",
+          "soundcloud": "Ofte også jeres podcast",
           "youtube": "Upload i YouTube Studio",
           "spotify": "Podcast i Spotify for Creators",
           "custom": "For eksempel WordPress eller jeres podcastvært",
@@ -441,7 +449,8 @@
         "publishUrlInvalid": "Det ligner ikke en webadresse",
         "publishTemplate": "Fast beskrivelse",
         "publishTemplateDesc": "Udfyldes ved eksport, hvor den kan ændres. {title}, {speaker}, {date} og {church} erstattes.",
-        "publishTemplatePlaceholder": "Prædiken fra {church}, {date}. Taler: {speaker}."
+        "publishTemplatePlaceholder": "Prædiken fra {church}, {date}. Taler: {speaker}.",
+        "audioTechNote": "Teksten nedenfor er licensvilkår fra Steinberg og står på engelsk."
       },
       "sections": {
         "nav": "Gå til",
@@ -453,40 +462,40 @@
         "updates": "Opdateringer og privatliv",
         "updatesDesc": "Du bestemmer, om appen leder efter nye versioner, og om den sender anonym statistik.",
         "help": "Hjælp og fejlfinding",
-        "helpDesc": "Hvis noget ikke virker: tjek maskinen, hent loggen, eller flyt opsætningen til en anden maskine.",
+        "helpDesc": "Hvis noget ikke virker: tjek computeren, hent fejllogen, eller flyt opsætningen til en anden computer.",
         "about": "Om",
         "aboutDesc": "Licenser og bemærkninger for den software, SundayRec er bygget på."
       }
     },
     "diagnose": {
-      "title": "Diagnose",
-      "desc": "Tjekker lyd, adgang, motor og disk, og laver en rapport, du kan sende videre.",
-      "run": "Kør",
-      "running": "Kører …",
-      "failed": "Diagnosen kunne ikke køres: {err}",
+      "title": "Tjek computeren",
+      "desc": "Tjekker lydkilde, adgang, optagelsesmotor og disk og laver en rapport, du kan sende videre.",
+      "run": "Start tjek",
+      "running": "Tjekker …",
+      "failed": "Tjekket kunne ikke køres: {err}",
       "probeSkipped": "Lydprøven blev ikke kørt: {why}",
       "copy": "Kopiér hele rapporten",
       "copied": "Rapporten er kopieret",
       "copyFailed": "Kunne ikke kopiere rapporten",
       "savedTo": "Gemt i",
-      "devicesTitle": "Alle lydenheder, optageren kan se",
-      "noDevices": "Ingen lydenheder fundet",
-      "ipcTitle": "Kommandoer, der ikke svarede i denne session ({n})",
-      "test": "Testoptagelse (~10 s)",
+      "devicesTitle": "Alle lydkilder, appen kan se",
+      "noDevices": "Ingen lydkilder fundet",
+      "ipcTitle": "Dele af appen, der ikke svarede denne gang ({n})",
+      "test": "Prøveoptagelse (10 sek.)",
       "testRunning": "Optager en prøve …",
       "testBlocked": "Går ikke, mens en optagelse er i gang.",
-      "testOk": "Testoptagelsen blev gennemført — {signal}.",
-      "testFail": "Testoptagelsen mislykkedes: {why}",
+      "testOk": "Prøveoptagelsen gik godt — {signal}.",
+      "testFail": "Prøveoptagelsen mislykkedes: {why}",
       "r": {
-        "devices": "Lydenheder fundet",
-        "selected": "Valgt enhed",
+        "devices": "Fundne lydkilder",
+        "selected": "Valgt lydkilde",
         "mic": "Mikrofonadgang",
-        "engine": "Lydmotor (ffmpeg)",
+        "engine": "Optagelsesmotor (ffmpeg)",
         "probe": "Lydprøven"
       },
       "v": {
         "notFound": "ikke fundet",
-        "defaultDevice": "Standardenhed",
+        "defaultDevice": "Computerens standard",
         "ffmpegOk": "Tilgængelig",
         "ffmpegMissing": "Ikke fundet",
         "unknown": "Kan ikke afgøres",
@@ -502,7 +511,7 @@
         }
       },
       "testErr": {
-        "deviceNotFound": "fandt ikke lydenheden",
+        "deviceNotFound": "kunne ikke finde lydkilden",
         "permissionDenied": "mikrofonadgang nægtet",
         "ffmpegError": "optagelsesmotoren fejlede",
         "noAudio": "ingen lyd i optagelsen"
@@ -518,12 +527,12 @@
           "hint": "Installér SundayRec igen — optagelsesmotoren følger med appen."
         },
         "audio01": {
-          "title": "Ingen lydenhed fundet",
-          "hint": "Tjek, at lydkortet er tilsluttet, og at driveren er installeret. På en delt pc: kører lydtjenesten?"
+          "title": "Ingen lydkilde fundet",
+          "hint": "Tjek, at mixerpulten eller lydkortet er tilsluttet, og at driveren er installeret. På en delt pc: kører lydtjenesten?"
         },
         "audio02": {
-          "title": "Den valgte lydenhed blev ikke fundet",
-          "hint": "Tilslut enheden, eller vælg en anden i »Hvilken lyd?« på Optagelse."
+          "title": "Den valgte lydkilde blev ikke fundet",
+          "hint": "Tilslut lydkilden, eller vælg en anden under »Hvilken lydkilde?« på siden Optagelse."
         },
         "rate01": {
           "title": "Der er valgt en fast samplingsrate",
@@ -531,7 +540,7 @@
         },
         "video01": {
           "title": "Video er slået til, men der blev ikke fundet noget kamera",
-          "hint": "Tilslut kameraet, eller slå »Tag kamera med« fra på Optagelse."
+          "hint": "Tilslut kameraet, eller slå »Tag video med« fra på siden Optagelse."
         },
         "video02": {
           "title": "Kameraet gav ikke noget billede",
@@ -543,7 +552,7 @@
         },
         "disk02": {
           "title": "Kan ikke skrive til lagringsmappen",
-          "hint": "Vælg en mappe, du har skriveadgang til, i »Hvor skal optagelserne hen?« på Optagelse."
+          "hint": "Vælg en mappe, du har skriveadgang til, under »Hvor gemmes optagelserne?« på siden Optagelse."
         },
         "perm01": {
           "title": "Mikrofonadgang er nægtet",
@@ -555,15 +564,15 @@
         },
         "engine01": {
           "title": "Den forrige optagelse endte med en fejl",
-          "hint": "Fejlkoden står i linjen ovenfor. Kør en testoptagelse for at se, om det virker nu."
+          "hint": "Fejlkoden står i linjen ovenfor. Lav en prøveoptagelse for at se, om det virker nu."
         },
         "capture01": {
           "title": "Den forrige optagelse viste tegn på hakken",
-          "hint": "Luk andre tunge programmer, tjek kabel og strøm til lydkortet, og at samplingsraten står på »Auto«. Optag så igen, og se, om tallene falder."
+          "hint": "Luk andre tunge programmer, og tjek kabel og strøm til lydkortet. Lav derefter en ny optagelse, og se, om tallene falder."
         },
         "capture02": {
           "title": "Lydprøven fik ingen lyd",
-          "hint": "Tjek, at den rigtige enhed er valgt i »Hvilken lyd?« på Optagelse, at kablet sidder i, og at ingen andre programmer holder mikrofonen. Kør så diagnosen igen."
+          "hint": "Tjek, at den rigtige lydkilde er valgt under »Hvilken lydkilde?« på siden Optagelse, at kablet sidder i, og at intet andet program bruger mikrofonen. Start tjekket igen bagefter."
         },
         "crash01": {
           "title": "Appen er gået ned",
@@ -574,12 +583,12 @@
           "hint": "Appen startede dem igen selv, så ingenting stoppede. Gentager det sig, tag denne rapport med — navnene ovenfor siger, hvilken del der er ustabil."
         },
         "log01": {
-          "title": "Logfilen er ikke aktiv",
+          "title": "Fejllogen er ikke aktiv",
           "hint": "Som regel betyder det, at appmappen ikke kunne oprettes. Genstart appen; bliver det ved, så tjek diskplads og rettigheder."
         },
         "log02": {
-          "title": "Dele af loggen mangler",
-          "hint": "Loggen er ufuldstændig, fordi optagelsen blev prioriteret — det er den rigtige vej rundt. En langsom disk er værd at se på før næste lange optagelse."
+          "title": "Dele af fejllogen mangler",
+          "hint": "Fejllogen er ufuldstændig, fordi optagelsen blev prioriteret — det er den rigtige vej rundt. En langsom disk er værd at kigge på før næste lange optagelse."
         },
         "ok": {
           "title": "Ingen problemer fundet",
@@ -605,11 +614,11 @@
       "next": "Næste",
       "back": "Tilbage",
       "skipSound": "Fortsæt uden lyd",
-      "gate": "»Næste« åbnes, når vi hører lyd.",
-      "gateReason": "Vi hører ingen lyd endnu. Tal i mikrofonen, eller tænd mixerpulten.",
+      "gate": "Vælg en lydkilde, og tryk på »Brug denne lydkilde«. »Næste« åbnes, når vi hører lyd.",
+      "gateReason": "Vi hører ingen lyd endnu. Tal i mikrofonen, eller tænd for mixerpulten.",
       "readyTitle": "Klar til søndag",
-      "readyDesc": "Det her er det samme, du finder under Indstillinger (tandhjulet) og på Optagelse-skærmen senere.",
-      "fixHere": "Alt her kan rettes med det samme — rækken åbner skærmen på stedet, og du bliver i opsætningen.",
+      "readyDesc": "Det her er det samme, du finder under Indstillinger (tandhjulet) og på siden Optagelse senere.",
+      "fixHere": "Tryk på »Sæt op« eller »Ændr« på en række for at rette den med det samme. Du bliver her.",
       "notifyTodo": "Notifikationer er slået fra — ingen får besked, hvis en optagelse fejler.",
       "open": "Åbn SundayRec",
       "progress": "Fremgang",
@@ -645,7 +654,9 @@
       "title": "Optagelsen er gemt",
       "show": "Vis i Finder",
       "ok": "Færdig",
-      "revealFailed": "Fandt ikke filen på disken."
+      "revealFailed": "Fandt ikke filen på disken.",
+      "showWin": "Vis i Stifinder",
+      "showOther": "Vis i mappe"
     },
     "editor": {
       "stepCut": "Klip",
@@ -663,7 +674,7 @@
       "keepLabel": "{name} · {span}",
       "handleStart": "Hvor prædikenen begynder",
       "handleEnd": "Hvor prædikenen slutter",
-      "result": "Resultat: {kept} (af {total})",
+      "result": "Endelig længde: {kept} af {total}",
       "seconds": "{n} s",
       "minutesSeconds": "{m} min {s} s",
       "pause": "Pause",
@@ -672,8 +683,8 @@
       "redo": "Gentag",
       "nothingToUndo": "Der er ikke noget at fortryde endnu.",
       "nothingToRedo": "Der er ikke noget at gentage.",
-      "notSermonDesc": "Vælg den rigtige blok. Vi husker det til næste gang.",
-      "blockOption": "{n}. blok — {at} · {span}",
+      "notSermonDesc": "Vælg den rigtige del. Vi husker det til næste gang.",
+      "blockOption": "Del {n} — {at} · {span}",
       "stepSound": "Lyd",
       "nextSound": "Næste: Lyd",
       "nextExport": "Næste: Eksportér",
@@ -704,33 +715,33 @@
         "clicks": "Vi fjernede klik og knitren",
         "clean": "Optagelsen var ren."
       },
-      "advancedMixer": "Avanceret: åbn mixeren",
-      "hideMixer": "Skjul mixeren",
-      "mixerTitle": "Avanceret lydmixer",
-      "mixerUseDesc": "Mixeren erstatter »{profile}«. Der lægges ingen mastring oven på — du styrer hele kæden.",
-      "mxEq": "Klangbalance",
+      "advancedMixer": "Juster lyden selv",
+      "hideMixer": "Skjul lydjusteringen",
+      "mixerTitle": "Lydjustering",
+      "mixerUseDesc": "Når dette er slået til, bruges dine egne valg i stedet for »{profile}«. Der lægges ingen automatisk behandling ovenpå.",
+      "mxEq": "Klangfarve",
       "mx": {
-        "hpf": "Lavafskæring",
-        "denoise": "Støjreduktion",
-        "dereverb": "Rumdæmpning",
-        "gate": "Støjport",
-        "comp": "Kompressor",
-        "deesser": "Dæmpning af s-lyde",
-        "limiter": "Topbegrænser",
-        "gain": "Slutniveau",
+        "hpf": "Fjern lav brummen",
+        "denoise": "Fjern susen",
+        "dereverb": "Mindre rumklang",
+        "gate": "Dæmp de stille passager",
+        "comp": "Jævn højt og lavt tale ud",
+        "deesser": "Blødere s-lyde",
+        "limiter": "Undgå at lyden forvrænges",
+        "gain": "Endeligt volumen",
         "freq": "Frekvens",
-        "reduction": "Reduktion",
+        "reduction": "Hvor meget",
         "strength": "Styrke",
-        "threshold": "Tærskel",
-        "ratio": "Forhold",
-        "attack": "Attack",
-        "release": "Release",
-        "makeup": "Kompensation",
+        "threshold": "Starter ved",
+        "ratio": "Styrke",
+        "attack": "Reagerer efter",
+        "release": "Slipper efter",
+        "makeup": "Løft bagefter",
         "intensity": "Styrke",
-        "ceiling": "Loft",
-        "eqMud": "250 Hz — dæmp mudder",
-        "eqPresence": "3,5 kHz — nærvær",
-        "eqAir": "10 kHz — luft"
+        "ceiling": "Aldrig højere end",
+        "eqMud": "Mindre dumpt (250 Hz)",
+        "eqPresence": "Tydeligere tale (3,5 kHz)",
+        "eqAir": "Mere lys og luft (10 kHz)"
       },
       "exFormat": "Format",
       "exWhere": "Hvor",
@@ -746,12 +757,22 @@
       "includeVideoDesc": "Optagelsen har et videospor. Uden det bliver eksporten kun lyd.",
       "videoLocksFormat": "Formatet er MP4, så længe videoen er med.",
       "about": "ca. {mb} MB",
-      "level": "Niveau: {lufs} LUFS",
-      "levelCapped": "Niveau: {lufs} LUFS (begrænset af toppene)",
+      "level": "Lydstyrke: passende til nettet",
+      "levelCapped": "Lydstyrke: lidt lavere end tænkt (kraftige toppe i lyden)",
       "exported": "Eksporteret",
       "exportAgain": "Eksportér i et andet format",
       "toLibrary": "Til biblioteket",
-      "exportFailed": "Eksporten stoppede. Prøv igen."
+      "exportFailed": "Eksporten stoppede. Prøv igen.",
+      "mxHelp": {
+        "hpf": "Fagord: lavafskæring",
+        "denoise": "Fagord: støjreduktion",
+        "dereverb": "Fagord: rumdæmpning",
+        "gate": "Fagord: støjport (noise gate)",
+        "comp": "Fagord: kompressor",
+        "deesser": "Fagord: de-esser",
+        "limiter": "Fagord: begrænser",
+        "eq": "Fagord: EQ (equalizer)"
+      }
     },
     "export": {
       "lastEdited": "Senest redigeret",
@@ -775,7 +796,7 @@
       "publishCopy": "Kopiér",
       "publishCopied": "Kopieret",
       "publishCopyFailed": "Kunne ikke kopiere. Markér teksten, og kopiér den selv.",
-      "publishNothing": "Der er intet gyldigt https-link under Indstillinger → Avanceret, så intet blev åbnet.",
+      "publishNothing": "Der er intet gyldigt https-link under Indstillinger → Udgivelse, så intet blev åbnet.",
       "publishFailed": "Kunne ikke åbne siden. Åbn den selv i browseren."
     },
     "span": {
@@ -851,7 +872,7 @@
     "alreadyEmpty": "Papirkurven er tom",
     "undo": "Fortryd",
     "undoFailed": "Kunne ikke hente det hele tilbage — se i papirkurven.",
-    "restoreFailed": "Kunne ikke gendanne",
+    "restoreFailed": "Kunne ikke lægge tilbage",
     "deleteForever": "Slet for altid",
     "confirmPurgeOne": "Slet »{name}« for altid?",
     "confirmEmpty": {
@@ -877,7 +898,7 @@
     "nextPreviewPrefix": "Næste optagelse"
   },
   "audio": {
-    "guardDevice": "Skifte lydenhed"
+    "guardDevice": "Skifte lydkilde"
   },
   "general": {
     "notifyStart": "Skrivebordsnotifikation når optagelse starter",
@@ -885,7 +906,7 @@
     "saveFailed": "Kunne ikke gemme indstillingen"
   },
   "error": {
-    "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",
+    "tryAgainHint": "Hvis problemet fortsætter, så åbn Indstillinger → Hjælp og fejlfinding → Tjek computeren, eller genstart programmet.",
     "ipcFailed": "Noget i baggrunden svarede ikke, så denne visning kan være ufuldstændig.",
     "settingsLoadFailed": "Kunne ikke læse indstillingerne — viser standardindstillinger. Ændringer du foretager nu kan gå tabt.",
     "settingsLoadRetry": "Prøv igen",
@@ -897,10 +918,10 @@
     "emptyDesc": "Vælg en lyd- eller videofil for at begynde at redigere. Du kan klippe i begyndelsen og slutningen eller fjerne stykker fra midten.",
     "openFile": "Åbn fil…",
     "loading": "Indlæser lydfil…",
-    "dragHint": "Klik og træk for at markere et klip",
-    "cutsTitle": "Klippede områder",
-    "cutsNone": "Fjern alle klip",
-    "deleteCut": "Fjern klip",
+    "dragHint": "Klik og træk for at markere en del, der skal klippes væk",
+    "cutsTitle": "Klippede dele",
+    "cutsNone": "Fortryd alle klip",
+    "deleteCut": "Fortryd klip",
     "save": "Eksportér",
     "cancel": "Annuller",
     "saveOk": "✓ Gemt",
@@ -994,14 +1015,14 @@
     "autoEnhance": "✨ Automatisk lydforbedring (ét klik)",
     "autoEnhanceFail": "Kunne ikke analysere lyden (kræver editor-bygget).",
     "autoEnhancing": "✨ Analyserer…",
-    "chanBalanced": "Kanalerne er balancerede ✓",
-    "chanBothDead": "Begge kanaler er meget svage",
-    "chanDeadLeft": "Venstre kanal er stille (tjek kablet)",
-    "chanDeadRight": "Højre kanal er stille (tjek kablet)",
-    "chanImbalance": "Forskellig styrke mellem kanalerne",
-    "chanMono": "Monooptagelse",
-    "chanUnusableLeft": "Venstre kanal er for svag til at redde — højre kopieres til begge (tjek kablet)",
-    "chanUnusableRight": "Højre kanal er for svag til at redde — venstre kopieres til begge (tjek kablet)",
+    "chanBalanced": "Venstre og højre lyd er lige stærke ✓",
+    "chanBothDead": "Lyden er meget svag på både venstre og højre side",
+    "chanDeadLeft": "Ingen lyd i venstre side (tjek kablet)",
+    "chanDeadRight": "Ingen lyd i højre side (tjek kablet)",
+    "chanImbalance": "Venstre og højre side er ikke lige stærke",
+    "chanMono": "Optagelsen har kun én lydkanal (mono)",
+    "chanUnusableLeft": "Venstre side er for svag til at redde — højre bruges på begge sider (tjek kablet)",
+    "chanUnusableRight": "Højre side er for svag til at redde — venstre bruges på begge sider (tjek kablet)",
     "channelRepair": "Kanalreparation",
     "codecH264": "H.264 (universel)",
     "codecH265": "H.265 (mindre fil)",
@@ -1025,7 +1046,7 @@
     "metaSpeaker": "TALER",
     "metaTitle": "Metadata",
     "metaTitle2": "TITEL",
-    "useMixer": "🎛 Avanceret lydmixer (tilsidesætter stemmebehandlingen)",
+    "useMixer": "🎛 Lydjustering (erstatter stemmebehandling)",
     "videoCodec": "Videocodec",
     "videoFormat": "Videoformat",
     "vocalChain": "Stemmebehandling",
@@ -1074,7 +1095,7 @@
     "errorFfmpegMissing": "Intern fejl: optagelseskomponent mangler — geninstallér appen",
     "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder",
     "errorStartTimeout": "Optagelsen kom ikke i gang i tid — tjek, at mikrofonen (og kameraet) er tilsluttet, og at SundayRec har adgang under Systemindstillinger → Anonymitet og sikkerhed",
-    "errorEngineExited": "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og kør Diagnose, hvis det gentager sig.",
+    "errorEngineExited": "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig.",
     "errorVideoCapture": "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen.",
     "errorCameraFormat": "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen.",
     "errorCameraPermission": "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet",
@@ -1084,7 +1105,7 @@
     "qualityReasons": "Årsag: {r}",
     "qualityAction": "Vis optagelse",
     "errorInvalidOpts": "Ugyldige optagelsesindstillinger — genstart og prøv igen",
-    "errorNoSaveFolder": "Der er ikke valgt en mappe at gemme i — gå til siden Optagelse og vælg en i kortet »Hvor skal optagelserne hen?«",
+    "errorNoSaveFolder": "Ingen gemmemappe er valgt — gå til siden Optagelse, og vælg i kortet »Hvor gemmes optagelserne?«",
     "errorUnknown": "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
     "reconnectSecs": "s",
     "reconnecting": "Lydkilden er frakoblet — genopretter forbindelsen",
@@ -1109,8 +1130,8 @@
     "guardDevice": "Skifte kamera"
   },
   "onboarding": {
-    "promptTitle": "Dele anonym diagnostik?",
-    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til SundaySuite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Avanceret.",
+    "promptTitle": "Send anonym brugsstatistik?",
+    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til SundaySuite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Opdateringer og privatliv.",
     "rePromptTitle": "Vi spørger dig igen",
     "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
   },
@@ -1145,7 +1166,7 @@
     "micRestricted": "Mikrofonadgang er spærret af systemadministrator eller forældrekontrol. Optagelse virker ikke, før spærringen ophæves.",
     "cameraDenied": "Kameraadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Kamera og slå SundayRec til.",
     "cameraRestricted": "Kameraadgang er spærret af systemadministrator eller forældrekontrol. Videooptagelse virker ikke, før spærringen ophæves.",
-    "ffmpegMissing": "Den indbyggede lydmotor (ffmpeg) blev ikke fundet. Video, eksport og redigering virker ikke — installer appen igen."
+    "ffmpegMissing": "Optagelsesmotoren (ffmpeg) blev ikke fundet. Video, eksport og redigering virker ikke — geninstaller appen."
   },
   "progress": {
     "etaCalculating": "beregner …",
@@ -1156,7 +1177,7 @@
     "etaHoursMinutes": "ca. {h} t {m} min tilbage"
   },
   "notify": {
-    "prerollDead": "Forbufferen virker ikke — lyd fra før du trykker optag bliver ikke gemt.",
+    "prerollDead": "»Tag lyden fra før start med« virker ikke lige nu — lyd fra før du trykker Start bliver ikke gemt.",
     "recoverySkipped": "En afbrudt optagelse kunne ikke gendannes helt: {file}",
     "deviceMissing": "Lydenheden »{device}« er ikke tilsluttet.",
     "diskLow": "Der begynder at være lidt plads tilbage på disken — {freeGb} GB ledig. Optagelsen stopper af sig selv, hvis disken bliver fuld.",

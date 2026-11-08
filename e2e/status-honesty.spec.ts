@@ -195,7 +195,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
       "Lagret ✓",
     );
     await expect(page.getByTestId("adv-wake-arm")).toContainText(
-      /registrert i operativsystemet/,
+      /lagt inn i maskinen/,
     );
   });
 

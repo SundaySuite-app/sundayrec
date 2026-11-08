@@ -46,8 +46,13 @@ export function AsioAttribution({ os = currentOs() }: { os?: Os } = {}) {
   return (
     <Card
       title={t("app.setup.advanced.audioTech")}
-      description={ASIO_NOTICE}
+      description={t("app.setup.advanced.audioTechNote")}
       testId="advanced-asio-attribution"
-    />
+    >
+      {/* Lisensteksten, ordrett og på engelsk. Den norske setningen over
+          forklarer hvorfor — en frivillig skal ikke tro at appen "mangler
+          oversettelse". */}
+      <p lang="en">{ASIO_NOTICE}</p>
+    </Card>
   );
 }

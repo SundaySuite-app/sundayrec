@@ -53,14 +53,14 @@ afterEach(async () => {
 describe("forhåndssjekk-radens setning for en manglende lydenhet", () => {
   it("navngir spesialopptakets enhet, med samme ord som OS-varselet", () => {
     expect(preflightText(SPECIAL_MISSING)).toBe(
-      "Lydenheten «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
-        "Kobles den ikke til før start, tas opptaket fra den vanlige lydenheten.",
+      "Lydkilden «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
+        "Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
     );
   });
 
   it("den globale enheten beholder akkurat den teksten den alltid har hatt", () => {
     expect(preflightText(GLOBAL_MISSING)).toBe(
-      "Lydenheten som er valgt i innstillingene er ikke tilkoblet.",
+      "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
     );
   });
 

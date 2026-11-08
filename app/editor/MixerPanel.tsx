@@ -1,5 +1,8 @@
 /**
- * «Avansert: åpne mikseren» — hele lydteknikk-bordet, bak én lenke.
+ * «Juster lyden selv» (lydjusteringen) — hele lydteknikk-bordet, bak én lenke.
+ *
+ * Tittelene er hverdagsord («Fjern sus»), og fagordet («støyreduksjon») står i
+ * en dempet linje under — `app.editor.mxHelp.*`.
  *
  * Atlasets §4.6 er grunnen til at det ER bak en lenke: `Lavkutt (HPF)`,
  * `Støygulv −60…−10 dB`, `Romdemping (tilnærmet)`, `De-esser`, `3.5 kHz
@@ -222,10 +225,16 @@ export function MixerPanel() {
                 checked={p[stage.enableKey]}
                 disabled={!on}
                 labelId={`editor-mx-${stage.id}-label`}
+                describedBy={`editor-mx-${stage.id}-help`}
                 onChange={(next) =>
                   patchMixer({ [stage.enableKey]: next } as Partial<Processing>)
                 }
               />
+            </div>
+            {/* Hverdagsordet er tittelen; fagordet står her for den som vil
+                slå det opp eller snakke med en lydtekniker. */}
+            <div id={`editor-mx-${stage.id}-help`} class={styles.hint}>
+              {tDyn("app.editor.mxHelp", stage.id)}
             </div>
             {stage.sliders.map((s) => (
               <div key={s.id} class={styles.sliderRow}>
@@ -252,6 +261,7 @@ export function MixerPanel() {
 
         <div data-testid="editor-mx-eq">
           <b class={styles.stageTitle}>{t("app.editor.mxEq")}</b>
+          <div class={styles.hint}>{tDyn("app.editor.mxHelp", "eq")}</div>
           {EQ_BANDS.map((band) => {
             const gain =
               p.eq.find((b) => b.freqHz === band.freqHz)?.gainDb ?? 0;

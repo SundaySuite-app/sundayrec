@@ -164,7 +164,7 @@ import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { CameraPreview } from "../../ui/CameraPreview/CameraPreview";
 import { alertDialog } from "../../ui/dialog";
-import { reveal } from "../../ui/reveal";
+import { reveal, revealLabel } from "../../ui/reveal";
 import { toast } from "../../ui/toast";
 import { spanText } from "./span-text";
 import { confirmAndStop } from "./stop";
@@ -947,7 +947,7 @@ function LastRecordingCard() {
           testId="record-last-reveal"
           onClick={() => void reveal(last.id ?? null)}
         >
-          {t("app.done.show")}
+          {revealLabel()}
         </Button>
       </div>
     </Card>
@@ -1083,7 +1083,7 @@ function Done() {
           testId="record-done-reveal"
           onClick={() => void reveal(rowId)}
         >
-          {t("app.done.show")}
+          {revealLabel()}
         </Button>
         <Button
           variant="ghost"

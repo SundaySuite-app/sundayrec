@@ -109,7 +109,7 @@ test.describe("telemetry preview", () => {
 
     await page.getByTestId("adv-diag-preview").click();
     const hint = page.getByTestId("dialog-message");
-    await expect(hint).toContainText("Diagnostikk er av");
+    await expect(hint).toContainText("Statistikk er av");
     await expect(hint).toContainText("ingenting sendes");
     // …and it still shows the shape, so "what would you send?" is answerable
     // without granting first.

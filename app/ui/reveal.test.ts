@@ -11,7 +11,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { setLocale } from "../i18n";
 import { clearToasts, toasts } from "./toast";
-import { reveal, revealExport, revealResult } from "./reveal";
+import { reveal, revealExport, revealLabelFor, revealResult } from "./reveal";
 
 function withFakeApi(
   revealRecording: (id: string) => Promise<boolean>,
@@ -124,5 +124,14 @@ describe("revealExport", () => {
     expect(seen).toEqual(["lapp-1"]);
     expect(toasts.value).toHaveLength(1);
     expect(toasts.value[0]?.msg).toBe("Fant ikke fila på disken.");
+  });
+});
+
+describe("revealLabelFor", () => {
+  it("bruker filbehandlerens eget navn per plattform", () => {
+    expect(revealLabelFor("mac")).toBe("Vis i Finder");
+    expect(revealLabelFor("win")).toBe("Vis i Utforsker");
+    expect(revealLabelFor("linux")).toBe("Vis i mappe");
+    expect(revealLabelFor("other")).toBe("Vis i mappe");
   });
 });

@@ -310,7 +310,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
     await expect(page.getByTestId("adv-wake-history-empty")).toHaveCount(0);
     const list = page.getByTestId("adv-wake-history-list");
     await expect(list).toContainText("Gikk glipp av en planlagt vekking");
-    await expect(list).toContainText("ingen gjenopptagelse observert");
+    await expect(list).toContainText("maskinen våknet ikke");
     await expect(list).toContainText("Testvekking lyktes");
 
     await page.getByTestId("adv-wake-clear").click();

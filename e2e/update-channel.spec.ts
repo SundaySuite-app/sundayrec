@@ -39,7 +39,7 @@ test.describe("update channel", () => {
     // … answer the guard's «Ja, bruk beta» …
     const confirmBtn = page.getByTestId("dialog-ok");
     await expect(confirmBtn).toBeVisible();
-    await expect(confirmBtn).toHaveText("Ja, bruk beta");
+    await expect(confirmBtn).toHaveText("Ja, prøv nye ting først");
     await confirmBtn.click();
 
     // … and the save must fire, carrying the channel in the patch.

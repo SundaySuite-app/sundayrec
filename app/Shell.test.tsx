@@ -205,7 +205,7 @@ describe("Shell", () => {
     // fram til knappen for å HØRE hvorfor den er av.
     expect(html).toMatch(/data-testid="record-start"[^>]*aria-disabled="true"/);
     expect(html).not.toMatch(/data-testid="record-start"[^>]* disabled/);
-    expect(html).toContain("Start er sperret til lyden er valgt");
+    expect(html).toContain("Start er sperret til dere har valgt lydkilde");
   });
 
   it("REDIGERING påstår ingenting før opptakene er talt", () => {
@@ -335,7 +335,7 @@ describe("Shell", () => {
     // skal kunne slippes mens LISTA står, som er mesteparten av tiden.
     expect(list).toContain('data-testid="edit-dropzone"');
     // Overskriften er destinasjonens eget navn så lenge ingen fil er åpen.
-    expect(list).toMatch(/data-testid="app-heading"[^>]*>Redigering</);
+    expect(list).toMatch(/data-testid="app-heading"[^>]*>Bibliotek</);
 
     loadState.value = "loading";
     const editing = render(<Shell />);
@@ -362,7 +362,7 @@ describe("Shell", () => {
       startedAtMs: null,
     };
     const html = render(<Shell />);
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Eksportering</);
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Eksport</);
     expect(html).toContain('data-testid="export-last"');
     expect(html).toContain("Sist redigert");
     expect(html).toContain("2026-08-23.mp3");

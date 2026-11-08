@@ -42,6 +42,7 @@
  */
 
 import { t } from "../i18n";
+import { currentOs, type Os } from "../state/platform-core";
 import { toast } from "./toast";
 
 /**
@@ -85,4 +86,22 @@ export async function revealExport(token: string | null): Promise<void> {
     await window.api.revealExport(token),
     t("app.done.revealFailed"),
   );
+}
+
+/**
+ * Knappeteksten for «vis fila i mappen» — filbehandlerens eget navn.
+ *
+ * «Vis i Finder» er meningsløst på Windows, og «Vis i Utforsker» er
+ * meningsløst på Mac. Tre literale nøkler og ikke én med variabel (i18n-gaten
+ * krever det), og `os` er et argument så alle grener kan prøves uten DOM.
+ */
+export function revealLabelFor(os: Os): string {
+  if (os === "mac") return t("app.done.show");
+  if (os === "win") return t("app.done.showWin");
+  return t("app.done.showOther");
+}
+
+/** Samme, for maskinen appen kjører på nå. */
+export function revealLabel(): string {
+  return revealLabelFor(currentOs());
 }
