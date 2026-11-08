@@ -24,7 +24,7 @@
  *
  *   Samme eierskapsprinsipp for avstand: en avstand er `var(--sp-*)` eller et
  *   semantisk navn (`--gap-page`, `--pad-card`…) fra `tokens.css`. Gaten avviser
- *   en positiv px-verdi i `gap`, `row-gap`, `column-gap`, `padding*` og
+ *   en positiv px-verdi i `gap`, `row-gap`, `column-gap`, `grid-gap` (og -row/-column), `padding*` og
  *   `margin*` — unntatt 0, 1px og 2px (hårlinjer og optiske justeringer).
  *   NEGATIVE verdier (`margin: -18px 0 0 -7px` på redigeringens håndtak) er
  *   geometri, ikke luft, og telles ikke.
@@ -91,29 +91,34 @@ export function findColorLiterals(css) {
 
 /** Avstands-egenskaper: gap, padding, margin og langformene. */
 const SPACING_DECL =
-  /(^|[\s;{])((?:row-|column-)?gap|(?:padding|margin)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?)\s*:\s*([^;}]*)/g;
+  /(^|[\s;{])((?:grid-)?(?:(?:row|column)-)?gap|(?:padding|margin)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?)\s*:\s*([^;}]*)/g;
 /** En positiv px-verdi som ikke står etter minus eller i et ord/tall. */
 const PX = /(?<![\w.-])(\d*\.?\d+)px\b/g;
 const PX_ALLOWED = new Set([0, 1, 2]);
 
-/** px-literaler i avstand, som `{ line, text }`. */
+/** px-literaler i avstand, som `{ line, text }`. Skanner HELE teksten, ikke
+ *  linje for linje: en verdi kan bryte over flere linjer
+ *  (`padding:\n 10px 12px;`), og `[^;}]*` stopper først ved `;` eller `}`. */
 export function findSpacingLiterals(css) {
   const cleaned = stripComments(css);
   const found = [];
-  cleaned.split("\n").forEach((line, i) => {
-    SPACING_DECL.lastIndex = 0;
-    let d;
-    while ((d = SPACING_DECL.exec(line)) !== null) {
-      // Verdier inne i var(--x, 12px)-fallback teller også; de skal være tokens.
-      PX.lastIndex = 0;
-      let m;
-      while ((m = PX.exec(d[3])) !== null) {
-        if (!PX_ALLOWED.has(Number(m[1]))) {
-          found.push({ line: i + 1, text: `${d[2]}: ${m[0]}` });
-        }
+  const lineAt = (offset) => cleaned.slice(0, offset).split("\n").length;
+  SPACING_DECL.lastIndex = 0;
+  let d;
+  while ((d = SPACING_DECL.exec(cleaned)) !== null) {
+    const valueStart = d.index + d[0].length - d[3].length;
+    // Verdier inne i var(--x, 12px)-fallback teller også; de skal være tokens.
+    PX.lastIndex = 0;
+    let m;
+    while ((m = PX.exec(d[3])) !== null) {
+      if (!PX_ALLOWED.has(Number(m[1]))) {
+        found.push({
+          line: lineAt(valueStart + m.index),
+          text: `${d[2]}: ${m[0]}`,
+        });
       }
     }
-  });
+  }
   return found;
 }
 
@@ -182,10 +187,18 @@ function selfTest() {
 .e { margin: -18px 0 0 -7px; }
 .f { font-size: 13px; width: 40px; border-radius: 9px; }
 /* gap: 99px */
+.g { grid-gap: 10px; grid-row-gap: 12px; grid-column-gap: 6px; }
+.h {
+  padding:
+    10px
+    var(--sp-3);
+  gap: var(--sp-2)
+    14px;
+}
 `);
   say(
-    sp.length === 3,
-    `avstandsgaten ventet 3 funn, fikk ${sp.length}: ${sp.map((h) => h.text).join(", ")}`,
+    sp.length === 8,
+    `avstandsgaten ventet 8 funn, fikk ${sp.length}: ${sp.map((h) => h.text).join(", ")}`,
   );
 
   if (problems.length) {
