@@ -122,7 +122,11 @@
 }
 
 .formGrow {
+  /* Vokser, men bare til et fornuftig mål: et navnefelt over hele raden skyver
+     dato og tid til høyre kant og lar et stort tomrom stå i midten. Med taket
+     står feltene tett, fra venstre. */
   flex: 1 1 14rem;
+  max-width: 20rem;
   min-width: 0;
 }
 
