@@ -5,6 +5,24 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.29.0 — nytt utseende med mer luft og enklere ord
+
+- **Start er alltid synlig.** Start-knappen, «Neste» i redigeringen og knappen i Eksport
+  står i en fast linje nederst i vinduet. Før kunne Start havne under bunnlinja når
+  «Lyd fra»-kortet var åpent. Feilmeldinger legger seg over linja, ikke oppå knappen.
+- **Mer luft og roligere sider.** Større avstand mellom blokkene og inne i kortene, færre
+  skriftstørrelser, og innholdet strekkes ikke ut over hele bredden på store skjermer.
+  Måleren vises ikke lenger dobbelt på Opptak når «Lyd fra» er åpent.
+- **Innstillingene er delt i sju seksjoner** med snarveier øverst: Kirke og språk,
+  Tidsplan, Legg ut, Opptaket, Oppdateringer og personvern, Hjelp og feilsøking, og Om.
+- **Biblioteket har én tydelig knapp per opptak.** «Rediger» er hovedknappen, mens «Vis i
+  Finder» (på Windows «Vis i Utforsker») og «Slett» er dempet.
+- **Vanlige ord i stedet for fagord.** «Redigering» heter «Bibliotek», «Eksportering»
+  heter «Eksport», mikseren heter «Lydjustering», «Forhåndsbuffer» heter «Ta med lyd fra
+  før Start», «Diagnose» heter «Sjekk maskinen», og «Innstillingsprofil» heter «Flytt
+  oppsettet til en annen maskin». Hver bryter i lydjusteringen har et hverdagsord, med
+  fagordet (for eksempel kompressor) i en linje under. Gjelder alle sju språk.
+
 ## v0.28.0 — ny avspilling i redigeringen og varsel om dempet mikser
 
 - **Kuttene i den eksporterte fila høres ut som i Klipp.** Før hadde fila en kort dukk mot
