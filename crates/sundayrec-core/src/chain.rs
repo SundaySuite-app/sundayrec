@@ -366,7 +366,7 @@ impl Chain {
 
         if v.denoise.enabled {
             // `nr` -> `reduction`. `nf` has no counterpart and is dropped on
-            // purpose (module docs). Same clamp as the ffmpeg builder.
+            // purpose (module docs). The same clamp the ffmpeg filters needed.
             let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, DENOISE_MAX_DB);
             // M2R #11: gated like «Tale»'s. The same `denoise` ungated takes a held chord
             // down by the whole reduction (B2b: -9.6 dB at 10); behind the speech gate the
@@ -981,6 +981,7 @@ mod tests {
     use crate::processing::{
         vocal_chain_presets, DenoiseStage, EqBand, HighpassStage, LimiterStage,
     };
+    use crate::processing::{COMP_MAX_MAKEUP_DB, GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB};
     use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
@@ -1097,7 +1098,7 @@ mod tests {
     }
 
     #[test]
-    fn stage_counts_follow_the_filter_strings() {
+    fn preset_stage_counts_follow_the_preset_text() {
         // speech-punchy: highpass + 3 equalizers + 2 compressors.
         let p = crate::mastering::get_preset_by_id("speech-punchy").expect("preset");
         let c = Chain::from_master_preset(&p).expect("chain");
@@ -1147,7 +1148,7 @@ mod tests {
             .expect("denoise");
         // The preset asks for 20 dB; the stage is capped (B2b, module docs).
         assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
-        // nf (-20) is not a parameter of the filmcraft stage.
+        // nf (-25) is not a parameter of the filmcraft stage.
         assert_eq!(dn.param("noise_floor"), None);
         let dr = c
             .stages()
@@ -1158,7 +1159,7 @@ mod tests {
     }
 
     #[test]
-    fn stage_order_matches_the_ffmpeg_builder() {
+    fn mixer_stage_order_is_the_canonical_one() {
         let p = vocal_chain_presets()
             .into_iter()
             .find(|p| p.id == "voice-noisy-room")
@@ -1618,5 +1619,106 @@ mod tests {
                 "strength {strength}: the held note lost {lost:.1} dB"
             );
         }
+    }
+
+    // ── the mixer clamps (what a hand-rolled/legacy DTO is held to) ─────────────
+
+    fn only_stage(f: impl FnOnce(&mut VocalChain)) -> Stage {
+        let mut v = VocalChain {
+            highpass: HighpassStage {
+                enabled: false,
+                freq_hz: 80,
+            },
+            compressor: crate::processing::CompressorStage {
+                enabled: false,
+                ..Default::default()
+            },
+            ..VocalChain::default()
+        };
+        f(&mut v);
+        let c = Chain::from_vocal_chain(&v);
+        assert_eq!(c.stages().len(), 1, "expected exactly one stage");
+        c.stages()[0].clone()
+    }
+
+    fn comp(threshold_db: f64, makeup_db: f64) -> Stage {
+        only_stage(|v| {
+            v.compressor = crate::processing::CompressorStage {
+                enabled: true,
+                threshold_db,
+                makeup_db,
+                ..Default::default()
+            }
+        })
+    }
+
+    #[test]
+    fn compressor_makeup_is_db_and_clamped_to_zero_through_the_max() {
+        // T2: 2 dB is 2, not the 6.02 dB (x2) a linear reading gave.
+        assert_eq!(comp(-18.0, 2.0).param("makeup"), Some(2.0));
+        assert_eq!(
+            comp(-18.0, 100.0).param("makeup"),
+            Some(COMP_MAX_MAKEUP_DB as f32)
+        );
+        assert_eq!(comp(-18.0, -5.0).param("makeup"), Some(0.0));
+    }
+
+    #[test]
+    fn compressor_threshold_cannot_sink_below_the_floor() {
+        // The stage floor (FILMCRAFT_COMP_MIN_DB) is what bites first; the
+        // COMP_MIN_THRESHOLD_DB clamp upstream of it is masked by it today.
+        assert_eq!(
+            comp(-200.0, 0.0).param("threshold"),
+            Some(FILMCRAFT_COMP_MIN_DB as f32)
+        );
+        assert_eq!(
+            comp(-18.0, 0.0).param("threshold"),
+            Some(-18.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+        );
+    }
+
+    #[test]
+    fn limiter_ceiling_is_clamped_to_minus_24_through_zero() {
+        let lim = |db: f64| {
+            only_stage(|v| {
+                v.limiter = LimiterStage {
+                    enabled: true,
+                    limit_db: db,
+                }
+            })
+            .param("ceiling")
+        };
+        assert_eq!(lim(-100.0), Some(LIMITER_MIN_CEILING_DB as f32));
+        assert_eq!(lim(5.0), Some(0.0));
+        assert_eq!(lim(-1.0), Some(-1.0));
+    }
+
+    #[test]
+    fn gate_threshold_never_goes_above_zero_dbfs() {
+        // T6: a threshold above 0 dBFS would make the gate shut on everything.
+        let gate = |db: f64| {
+            only_stage(|v| {
+                v.gate = crate::processing::GateStage {
+                    enabled: true,
+                    threshold_db: db,
+                    ..Default::default()
+                }
+            })
+            .param("threshold")
+        };
+        assert_eq!(gate(10.0), Some(GATE_MAX_THRESHOLD_DB as f32));
+        assert_eq!(gate(-70.0), Some(-70.0));
+    }
+
+    #[test]
+    fn a_nan_denoise_slider_falls_back_to_the_preset_reduction() {
+        let dn = only_stage(|v| {
+            v.denoise = DenoiseStage {
+                enabled: true,
+                reduction_db: f64::NAN,
+                noise_floor_db: f64::NAN,
+            }
+        });
+        assert_eq!(dn.param("reduction"), Some(12.0));
     }
 }

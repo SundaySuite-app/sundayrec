@@ -817,7 +817,7 @@ samme kjede, og utdragene til Ørene er lagt klar.
 **Modell:** Sonnet · **Gren:** `ombygging/b2c-filterstrenger-ut` · **Pakke:** B2
 
 **Levert 2026-11-10 (denne PR-en), på eierens ja uten lytterunde.** Planen krevde at
-Ørene først hadde lyttet til de tre profilene på minst tre ekte gudstjenester,
+Ørene først hadde lyttet til profilene («Tale», «Tale og musikk» og mikserens `voice-noisy-room`) på minst tre ekte gudstjenester,
 gammel mot ny. Richard sa ja til slettingen 2026-11-10 **uten å ha gjennomført den
 runden**. Det er hans beslutning, og den er tatt med åpne øyne: den eneste
 sammenligningen som fantes, `chain_ab`, finnes ikke lenger, og det er ingen vei

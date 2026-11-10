@@ -26,12 +26,12 @@ hver) står i [GJENNOMFORING.md](GJENNOMFORING.md).
 det samme som ferdig: ingen milepæl har gått gjennom porten (merget → review →
 beta → riggdag → stabil), og 0 av 84 riggpunkter er krysset av.
 
-| Milepæl                      | Levert                                                                                                                                     | Utgitt                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| M1 — Grunnmuren              | A1 #349 #352, A2 #356, A3 #351 #354 #355, A4 #359, A5 #357 #358, C0 #350 #353; M1R #362 #365 #366                                          | v0.26.0-beta.1 (#378)                    |
-| M2 — Ny lyd i redigeringen   | B0 #367 #374, B1 #376 #382, B2a #375, B2b #388, B3 #391 #393; M2R #395–#397 #399                                                           | v0.27.0-beta.1 (#405), B2c (denne PR-en) |
-| M3 — Ny videomotor           | C1 #368 #369 #371, C2 #373 #386, C3 #377 #384 #385, C4 #387 #390, C5 #394 #398; M3R #400–#402 #416                                         | v0.27.0-beta.1 (#405)                    |
-| M4 — Sanntid, fart og resten | B4 #403 #407, B5 #410 #412 #417, B6 #404, D2 #406 #409, D3 #408; M4R-rettelser #416 #420 #421 #422. **D1 er parkert, ikke levert** (under) | 0.28.0, rett til stabil                  |
+| Milepæl                      | Levert                                                                                                                                     | Utgitt                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| M1 — Grunnmuren              | A1 #349 #352, A2 #356, A3 #351 #354 #355, A4 #359, A5 #357 #358, C0 #350 #353; M1R #362 #365 #366                                          | v0.26.0-beta.1 (#378)           |
+| M2 — Ny lyd i redigeringen   | B0 #367 #374, B1 #376 #382, B2a #375, B2b #388, B3 #391 #393; M2R #395–#397 #399                                                           | v0.27.0-beta.1 (#405), B2c #430 |
+| M3 — Ny videomotor           | C1 #368 #369 #371, C2 #373 #386, C3 #377 #384 #385, C4 #387 #390, C5 #394 #398; M3R #400–#402 #416                                         | v0.27.0-beta.1 (#405)           |
+| M4 — Sanntid, fart og resten | B4 #403 #407, B5 #410 #412 #417, B6 #404, D2 #406 #409, D3 #408; M4R-rettelser #416 #420 #421 #422. **D1 er parkert, ikke levert** (under) | 0.28.0, rett til stabil         |
 
 **Åpent fra ombyggingen** (én linje per punkt; detaljene bor i kilden):
 

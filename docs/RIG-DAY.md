@@ -953,8 +953,10 @@ gudstjeneste-opptak eller -materiale for hånden.
       og `chain_ab` 2026-11-10, på eierens ja **uten** gammel-mot-ny-lytting;
       det er ingenting å sammenligne mot lenger. Lytt til den nye kjeden alene:
       eksporter tre ekte gudstjenester (minst ett stort kirkerom, ett
-      brumopptak) med hver av de tre profilene «Tale», «Tale — tydelig» og
-      «Musikk + tale», og skriv ned alt som låter feil (tynn stemme, pumping,
+      brumopptak) med profilene «Tale» (`speech-clear`) og «Tale og musikk»
+      (`music-speech`), og ta én runde i lydjusteringen (mikseren) med
+      `voice-noisy-room` (gated støyfjerning + romklangfjerning, det B2b
+      endret mest). Skriv ned alt som låter feil (tynn stemme, pumping,
       «undervannsklang», en akkord som blir dempet). Feil rettes framover i
       `crates/sundayrec-core/src/chain.rs`.
 - [ ] **(iii) Mikser-default etter dB-fiksen.** Rediger → «Avansert: åpne

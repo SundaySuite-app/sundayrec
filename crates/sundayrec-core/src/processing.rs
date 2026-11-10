@@ -37,15 +37,14 @@
 /// Largest compressor makeup. ffmpeg's `acompressor:makeup` accepted `[0, 36.12] dB`;
 /// the mixer slider stops at 12 dB.
 pub(crate) const COMP_MAX_MAKEUP_DB: f64 = 36.0;
-/// Lowest limiter ceiling we hand ffmpeg. `alimiter:limit` accepts
-/// `[0.0625, 1]` linear = `[−24.08, 0] dB`; the mixer slider stops at −6 dB.
+/// Lowest limiter ceiling. ffmpeg's `alimiter:limit` accepted
+/// `[−24.08, 0] dB`; the mixer slider stops at −6 dB.
 pub(crate) const LIMITER_MIN_CEILING_DB: f64 = -24.0;
-/// Highest gate threshold we hand ffmpeg. `agate:threshold` accepts `[0, 1]`
-/// linear, i.e. anything at or below 0 dBFS; the mixer slider stops at −10 dB.
+/// Highest gate threshold: anything at or below 0 dBFS (ffmpeg's `agate:threshold`
+/// range); the mixer slider stops at −10 dB.
 pub(crate) const GATE_MAX_THRESHOLD_DB: f64 = 0.0;
-/// Lowest compressor threshold we hand ffmpeg. `acompressor:threshold` accepts
-/// `[0.000976563, 1]` linear = `[−60.206, 0] dB` (rounds to −60.2); the mixer
-/// slider stops well above that, but a hand-rolled/legacy DTO is not bound by
+/// Lowest compressor threshold (ffmpeg's `acompressor:threshold` floor, −60.2 dB);
+/// the mixer slider stops well above that, but a hand-rolled/legacy DTO is not bound by
 /// the slider — F2-C-A found this the same way it found the gate's.
 pub(crate) const COMP_MIN_THRESHOLD_DB: f64 = -60.2;
 
@@ -92,10 +91,10 @@ pub enum ChannelRepair {
 /// Does this repair read the RIGHT input channel — i.e. does it need a stereo
 /// source to mean anything?
 ///
-/// On a mono source the right channel does not exist, so `MonoMix` would sum the
-/// left with silence and come out 6 dB down, in a file the UI calls "repaired".
-/// A caller that knows the channel count must therefore check BEFORE building
-/// the chain; there is no error to catch afterwards.
+/// On a mono source there is no right channel, so a stereo repair has nothing to
+/// repair: the chain skips it and the file comes out untouched, in a file the UI
+/// calls "repaired". The request is refused for the user's sake, so a caller that
+/// knows the channel count checks BEFORE building the chain.
 ///
 /// [`ChannelRepair::DuplicateLeft`] is the exception: it reads only the channel
 /// a mono file has, and upmixing mono to dual-mono is exactly what it means. A
@@ -105,8 +104,10 @@ pub fn channel_repair_needs_stereo(repair: ChannelRepair) -> bool {
     match repair {
         ChannelRepair::None | ChannelRepair::DuplicateLeft => false,
         ChannelRepair::GainDb { left_db, right_db } => {
-            // Same ±24 dB clamp and the same "both ~unity is a no-op" as the
-            // chain stage ([`crate::chain::Chain::from_vocal_chain`]).
+            // Same ±24 dB clamp as the chain stage
+            // ([`crate::chain::Chain::from_vocal_chain`]). The no-op test is
+            // close to it but not identical: here "both legs within 0.001 of
+            // unity gain (linear)", there "both legs within 0.001 dB".
             let l = db_to_linear(left_db.clamp(-24.0, 24.0));
             let r = db_to_linear(right_db.clamp(-24.0, 24.0));
             !((l - 1.0).abs() < 1e-3 && (r - 1.0).abs() < 1e-3)
@@ -1053,6 +1054,10 @@ mod tests {
 
     #[test]
     fn preset_lookup_with_measurement_sets_the_noise_floor() {
+        // NB: `noise_floor_db` does not change the sound today — the chain has
+        // ignored `nf` since B2b (filmcraft learns the floor itself). The field
+        // and this test stay as the preset/measurement contract.
+        //
         // WITH a measurement: the church-floor example from the T5 finding, −62
         // dBFS, lands in the preset's denoise stage — not the baked-in −25 guess.
         let measured = vocal_chain_preset_by_id("voice-podcast", Some(-62.0)).unwrap();

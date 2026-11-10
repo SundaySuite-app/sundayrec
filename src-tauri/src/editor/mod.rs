@@ -2914,11 +2914,10 @@ fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppR
     // A top-level channel repair overrides the chain's repair, and applies on its own (in an
     // otherwise-empty chain) when no vocal processing was requested.
     let requested_repair = choice.channel_repair.map(|r| r.to_core());
-    // …but a repair that reads `c1` on a MONO source is nonsense, and ffmpeg does not say so:
-    // it drops the missing term and renders 6 dB down (see `channel_repair_needs_stereo`,
-    // which carries the measurement). Refuse, rather than hand back a quietly attenuated file
-    // the UI calls "repaired". `auto_process` answers `None` for mono, so this only catches a
-    // stale or hand-rolled request.
+    // …but a stereo repair on a MONO source does nothing (the chain skips it). Refuse, for
+    // the user's sake, rather than hand back an untouched file the UI calls "repaired".
+    // `auto_process` answers `None` for mono, so this only catches a stale or hand-rolled
+    // request.
     if let (Some(cr), Some(1)) = (requested_repair, channels) {
         if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
             return Err(AppError::Validation("channel_repair_needs_stereo".into()));
@@ -10054,8 +10053,8 @@ mod tests {
         //
         // The vocal chain no longer runs in ffmpeg (B2c deleted the filter-string
         // builders and the tests that measured them); its levels are held by the
-        // tests in `sundayrec_core::chain`. What stays is the lavfi-based level
-        // probe the channel-diagnosis tests below use.
+        // tests in `sundayrec_core::chain`. What stays is the sidecar lookup the
+        // channel-diagnosis tests below use.
         mod level_probe {
             /// The sidecar, or `None` → the caller SKIPs. In a lane that fetched
             /// the binaries and set `SUNDAYREC_REQUIRE_SIDECAR=1` (ci.yml's
@@ -10065,36 +10064,6 @@ mod tests {
             /// nothing must not look like a green run that measured everything.
             pub(super) fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
                 super::sidecar_or_skip("ffmpeg")
-            }
-
-            /// Peak level (dBFS) of `source` after `filters`, measured with
-            /// `astats`. `filters` reaches ffmpeg as ONE argv element, so its
-            /// commas are the filter parser's, not a shell's.
-            pub(super) fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
-                let out = std::process::Command::new(ffmpeg)
-                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", source])
-                    .args([
-                        "-af",
-                        &format!(
-                            "{filters},astats=measure_perchannel=none:measure_overall=Peak_level"
-                        ),
-                        "-f",
-                        "null",
-                        "-",
-                    ])
-                    .output()
-                    .expect("ffmpeg should run the level measurement");
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                assert!(
-                    out.status.success(),
-                    "ffmpeg refused the chain `{filters}`: {stderr}"
-                );
-                stderr
-                    .lines()
-                    .rev()
-                    .find_map(|l| l.split("Peak level dB:").nth(1))
-                    .and_then(|v| v.trim().parse::<f64>().ok())
-                    .unwrap_or_else(|| panic!("astats printed no peak level: {stderr}"))
             }
         }
 
@@ -10282,11 +10251,9 @@ mod tests {
                 eprintln!("channel diagnosis: −12/−13 dBFS → {code} / {mode}");
             }
 
-            /// A repair that reads `c1` on a MONO file is refused, because
-            /// ffmpeg will not refuse it: `pan=stereo|c0=0.5*c0+0.5*c1` on mono
-            /// drops the missing term and renders 6.02 dB down, silently. This
-            /// test proves BOTH halves — that the export says no, and that the
-            /// thing it is saying no to really does lose 6 dB.
+            /// A stereo repair on a MONO file is refused: it has nothing to repair
+            /// (the chain skips it), so the export says no rather than return an
+            /// untouched file the UI calls "repaired".
             #[test]
             fn mono_source_refuses_a_stereo_only_repair_or_skips() {
                 let Some(ffmpeg) = ffmpeg_or_skip() else {
@@ -10303,19 +10270,7 @@ mod tests {
                 assert!(gen.status.success());
                 let src = src.to_string_lossy().into_owned();
 
-                // Half one: the graph really is lossy on mono. −18.06 dBFS in.
-                let measured = super::level_probe::peak_db(
-                    &ffmpeg,
-                    &sine(1.0),
-                    "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1",
-                );
-                assert!(
-                    (measured - -24.08).abs() <= 0.1,
-                    "a mono `monoMix` should lose 6.02 dB with no error; measured \
-                     {measured:.3} dBFS"
-                );
-
-                // Half two: the seam refuses to build it.
+                // The seam refuses to build it.
                 let mut req =
                     super::export_request(&src, &dir.path().to_string_lossy(), "mp3", &[], 3.0);
                 req.channel_repair = Some(crate::editor::EditorChannelRepair {
@@ -10346,10 +10301,7 @@ mod tests {
                     "the refusal must carry the code the shell has a sentence \
                      for; got {err}"
                 );
-                eprintln!(
-                    "channel repair: mono + monoMix renders {measured:.2} dBFS \
-                     (−6.02 dB, silently) — the export refuses it"
-                );
+                eprintln!("channel repair: mono + monoMix is refused by the export");
             }
         }
     }
