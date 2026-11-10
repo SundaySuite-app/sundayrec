@@ -5,4 +5,18 @@
 
 [advisories]
 ignore = [
+    # RUSTSEC-2026-0459 (CVE-2026-119375): bundled SQLite < 3.54.0 can return
+    # uninitialised page-cache memory when a database is opened together with
+    # a crafted sibling `-wal` file whose page size differs.
+    # UNFIXABLE today: libsqlite3-sys 0.39 has the fix, but sqlx-sqlite 0.9.0
+    # (the newest sqlx) requires `libsqlite3-sys >=0.30.1, <0.38.0`.
+    # NOT EXPOSED: the app only ever opens its OWN database, `sundayrec.sqlite`
+    # in the user's app-data folder (src-tauri/src/lib.rs, db::store::open_pool;
+    # appdata.rs also reads the legacy Roaming copy — the same user's folder).
+    # Profile import is JSON, never a database file. Planting a crafted `-wal`
+    # there requires write access to the user's app data, which already means
+    # full control of the app.
+    # REMOVE when sqlx releases a version that allows libsqlite3-sys >= 0.39 —
+    # bump sqlx and delete this entry in the same PR. (Owner approved 2026-11-10.)
+    "RUSTSEC-2026-0459",
 ]
