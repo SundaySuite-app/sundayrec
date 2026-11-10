@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.29.1 — vedlikehold
+
+- **Den gamle lydkoden er fjernet.** Lyden i redigeringen og eksporten har gått gjennom den
+  nye lydmotoren siden v0.27; reservekoden fra før den er nå slettet. Du skal ikke merke noen
+  forskjell.
+
 ## v0.29.0 — nytt utseende med mer luft og enklere ord
 
 - **Start er alltid synlig.** Start-knappen, «Neste» i redigeringen og knappen i Eksport

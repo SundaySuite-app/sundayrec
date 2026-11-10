@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-11-09. Stabil og beta er v0.29.0 (designrunden, rett til stabil etter eiers ordre)._
+_Sist gått gjennom: 2026-11-10. Stabil og beta er v0.29.1 (vedlikehold etter B2c, rett til stabil etter eiers ordre)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
