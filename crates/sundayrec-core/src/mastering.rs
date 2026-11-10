@@ -1,7 +1,8 @@
 //! Mastering presets — the pure half (P2a, rewritten in B1b).
 //!
 //! A preset is a named loudness target plus the tone/dynamics chain that precedes it. The chain
-//! runs in ffmpeg (or, from B2, in [`crate::chain`]); the level is set in Rust:
+//! runs in Rust ([`crate::chain`], which reads the preset's `filters` text as a compact table
+//! of stages — no ffmpeg ever parses it, B2c); the level is set in Rust:
 //! [`crate::loudness`] measures the processed signal, plans ONE linear gain to the preset's
 //! target and puts a true-peak limiter after it only when the peaks need it, and
 //! [`crate::pcm_stream`] runs that over a stream too long to hold in memory.
@@ -11,7 +12,7 @@
 //! level (B1b): the old two-pass measure/apply strings, their JSON parser, the pass-2 plan and
 //! the read-back of ffmpeg's report are gone.
 
-/// A mastering preset — a named target loudness + the ffmpeg filter chain that
+/// A mastering preset — a named target loudness + the tone/dynamics chain that
 /// precedes the level setting. Mirrors `mastering.ts` `MasterPreset`. `label` and
 /// `description` are the Norwegian user-facing strings (kept verbatim).
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +26,9 @@ pub struct MasterPreset {
     pub target_lra: f64,
     /// Max true peak in dBTP.
     pub true_peak_db: f64,
-    /// ffmpeg filter chain; the level is set in Rust, never here.
+    /// The chain as a comma-separated stage table, written in ffmpeg's filter syntax and read
+    /// by [`crate::chain::Chain::from_filter_string`]. It is the preset table, not a filter
+    /// string handed to ffmpeg (B2c); the level is set in Rust, never here.
     pub filters: String,
 }
 

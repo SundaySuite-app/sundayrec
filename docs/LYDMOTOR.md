@@ -188,20 +188,21 @@ mot mål −16 / tak −1,0. Målet nås med én dry-run (limiteren tok 5,6 dB a
   er identiske: samme LUFS-mål, ny lytting.
 - **Det som forsvinner:** filterstreng-byggerne i `processing.rs` og
   `mastering.rs` slettes **i samme milepæl** som fase 2 godkjennes (beslutning
-  B5 i OMBYGGING.md). Til sammenligningen før godkjenningen lager
-  `examples/chain_ab.rs` begge versjonene av samme utdrag til lytting. Den
-  slettes også når kjeden er godkjent.
-- **Ferdig når:** «Ørene» i [RIG-DAY.md](RIG-DAY.md) har lyttet til de tre
-  profilene på minst tre ekte gudstjenester, gammel mot ny, og eieren har sagt
-  ja.
+  B5 i OMBYGGING.md). **Gjort i B2c (2026-11-10):** byggerne og
+  `examples/chain_ab.rs` er slettet. Eieren sa ja til slettingen **uten** at
+  lytterunden planen krevde (tre ekte gudstjenester, gammel mot ny) var gjennomført;
+  det er hans beslutning, og det finnes ingen reserve eller sammenligning etterpå.
+  Presettabellens tekst (`MasterPreset.filters`) står igjen fordi `chain.rs` leser den.
+- **Ferdig når:** ~~«Ørene» har lyttet gammel mot ny~~ — utgått. «Ørene» i
+  [RIG-DAY.md](RIG-DAY.md) lytter nå til den nye kjeden alene; feil rettes framover.
 
 **Gjort (B2b).** Eksport, nivåanalyse og forhåndslytting tar lyden fra ffmpeg som rå f32
 uten noe `-af` (bare klipp, skjøtefades og konkatenering gjenstår i grafen) og kjører kjeden i
 Rust (`chain::ChainReader`, strømmende, ett blokk i minnet). Det gjelder også eksport uten
 mastring-preset (vokalkjede eller «Normaliser»-gain): den går samme vei og mellomlagres som
-mastret eksport. Mikseren (`processing`) og presetene bygger samme `Chain`. `chain_ab` kan
-prøve en endring uten å røre tabellene: `--set <stadium>[:n].<param>=<verdi>`. Filterstreng-
-byggerne står igjen til B2c.
+mastret eksport. Mikseren (`processing`) og presetene bygger samme `Chain`. `chain_ab` (slettet i B2c)
+kunne prøve en endring uten å røre tabellene. Filterstreng-byggerne og `chain_ab` er borte
+(B2c, 2026-11-10).
 
 Innstillingen er målt på tre ekte opptak (30 s fra `2026-05-17_2`, `31.5.26`, `2026.01.04`, alle
 stille rom, gulv rundt −60 dBFS) og tre syntetiske signaler (holdt akkord mellom to talepartier,
@@ -550,8 +551,10 @@ løser et annet problem enn én frivillig med ett spørsmål.
 
 - **Lyden blir annerledes.** Det er hele poenget, men en endring brukerne
   merker. Derfor lytter Ørene før fase 2 og 3 slippes. Det finnes ingen
-  reserve etterpå (B5), så lyttingen må være grundig: tre ekte gudstjenester,
-  minst ett stort kirkerom og ett brumopptak.
+  reserve etterpå (B5), så lyttingen skulle være grundig: tre ekte gudstjenester,
+  minst ett stort kirkerom og ett brumopptak. **For fase 2 ble den ikke gjort:**
+  eieren godkjente slettingen (B2c) 2026-11-10 uten lytterunde, og risikoen er
+  dermed tatt. Er lyden feil, rettes den framover i `chain.rs`.
 - **Ung kode oppstrøms.** Craten er låst og ligger i repoet. En feil i den
   rettes hos oss (`UPSTREAM.md`) og meldes oppstrøms.
 - **Redigeringen er fortsatt `HARDWARE-UNVERIFIED`.** Fase 5 (avspilling) er den

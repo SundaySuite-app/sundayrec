@@ -2,8 +2,7 @@
 
 _Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status
 2026-11-03: **M1–M4 er levert og merget** (PR-numrene står i
-[PLAN.md](PLAN.md)), med disse unntakene: **B2c venter på eierens lytting**
-(ORENE-B2b), **D1 er parkert** (beslutning 2026-10-19, se pakke D1), og
+[PLAN.md](PLAN.md)), med disse unntakene: **D1 er parkert** (beslutning 2026-10-19, se pakke D1), og
 **ingenting har gått gjennom milepælsporten**: stabil er fortsatt 0.25.3, M4 er i
 ingen beta, og 0 av 84 riggpunkter er krysset av. Åpne punkter, én linje hver:
 [PLAN.md](PLAN.md) §Ombyggingen. Gjennomført i økter lokalt på Macen, én PR per

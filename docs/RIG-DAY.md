@@ -949,6 +949,16 @@ gudstjeneste-opptak eller -materiale for hånden.
       vanlig tale. Kvitteringen viser nivået fila faktisk har
       (`Nivå: −16 LUFS`); «(begrenset av topper)» står bare når en fil
       likevel havner mer enn 0,3 LU under målet.
+- [ ] **(B2c) Den nye lydkjeden alene.** B2c slettet de gamle filterstrengene
+      og `chain_ab` 2026-11-10, på eierens ja **uten** gammel-mot-ny-lytting;
+      det er ingenting å sammenligne mot lenger. Lytt til den nye kjeden alene:
+      eksporter tre ekte gudstjenester (minst ett stort kirkerom, ett
+      brumopptak) med profilene «Tale» (`speech-clear`) og «Tale og musikk»
+      (`music-speech`), og ta én runde i lydjusteringen (mikseren) med
+      `voice-noisy-room` (gated støyfjerning + romklangfjerning, det B2b
+      endret mest). Skriv ned alt som låter feil (tynn stemme, pumping,
+      «undervannsklang», en akkord som blir dempet). Feil rettes framover i
+      `crates/sundayrec-core/src/chain.rs`.
 - [ ] **(iii) Mikser-default etter dB-fiksen.** Rediger → «Avansert: åpne
       mikseren» på et ekte prekenopptak, la standardverdiene stå (kompressor
       på, terskel −18 dB, makeup 2 dB), eksporter, og les integrert loudness + true peak mot en eksport gjort med v0.17.x. Ta med en runde på

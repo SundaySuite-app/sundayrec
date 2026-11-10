@@ -14,10 +14,9 @@
 //!
 //! * Speed: 120 s stereo 48 kHz, one thread. Each filmcraft effect runs with
 //!   `create_effect(id, 48000.0, 2)` (default parameters) in blocks of 1024; the
-//!   loudness meter in blocks of 4800. The ffmpeg chains are SundayRec's own
-//!   strings (`vocal_chain_presets()` / `build_measure_pass_filters()`) run
-//!   with `-threads 1 -filter_threads 1`, decoding a float WAV and writing to
-//!   the null muxer. Medians of several runs (other load makes timing noisy).
+//!   loudness meter in blocks of 4800. Medians of several runs (other load makes
+//!   timing noisy). (Until B2c the same table also timed SundayRec's old ffmpeg
+//!   filter strings; they are deleted, so the comparison column is gone.)
 //! * Quality: (a) 1 kHz pulses 0.5 s on / 0.5 s off over hiss at -45 dBFS RMS,
 //!   RMS in the pauses and in the pulses after 5 s; (b) noise bursts every
 //!   second convolved with an exponentially decaying tail (RT60 1.5 s), RMS in
@@ -28,8 +27,6 @@ use filmcraft_audio_dsp::{create_effect, LoudnessMeter};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
-use sundayrec_core::mastering::master_presets;
-use sundayrec_core::processing::vocal_chain_presets;
 
 const SR: usize = 48_000;
 /// One processed channel plus the delay (samples) to compensate when measuring.
@@ -384,7 +381,7 @@ fn main() {
     std::fs::create_dir_all(&dir).expect("temp dir");
 
     if mode.is_empty() || mode == "speed" {
-        speed(&ff, &dir);
+        speed();
     }
     if mode.is_empty() || mode == "quality" {
         quality(&ff, &dir);
@@ -392,7 +389,7 @@ fn main() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-fn speed(ff: &Path, dir: &Path) {
+fn speed() {
     const RUNS: usize = 5;
     let sig = speed_signal(120);
     println!(
@@ -409,31 +406,6 @@ fn speed(ff: &Path, dir: &Path) {
     let (m, hi) = time_effects(&CHAIN, &sig, RUNS);
     println!("| whole chain | {m:.1} ({hi:.1}) |");
     println!("| LoudnessMeter | {:.0} |", time_meter(&sig, RUNS));
-
-    let wav = dir.join("speed.wav");
-    write_wav(&wav, &sig);
-    let secs = 120.0;
-    println!("\nffmpeg, same file, `-threads 1 -filter_threads 1`, null muxer:");
-    let presets = vocal_chain_presets();
-    let noisy = presets
-        .iter()
-        .find(|p| p.id == "voice-noisy-room")
-        .expect("preset");
-    let chain = noisy.chain.to_filter_string().expect("chain");
-    println!("  voice-noisy-room = {chain}");
-    let masters = master_presets();
-    // Since B1b the level is set in Rust, so there is no loudness filter to time: the chains.
-    let mut rows: Vec<(String, String)> = vec![("voice-noisy-room".into(), chain.clone())];
-    for p in &masters {
-        rows.push((format!("master {} chain", p.id), p.filters.clone()));
-    }
-    for (name, f) in rows {
-        let xs: Vec<f64> = (0..3)
-            .map(|_| secs / ffmpeg_run(ff, &wav, &f, None))
-            .collect();
-        let hi = xs.iter().cloned().fold(f64::MIN, f64::max);
-        println!("| ffmpeg {name} | {:.1} ({hi:.1}) |", median(xs));
-    }
 }
 
 fn quality(ff: &Path, dir: &Path) {
