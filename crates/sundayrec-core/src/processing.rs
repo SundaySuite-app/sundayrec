@@ -1,9 +1,9 @@
 //! Podcast signal processing — channel repair + a configurable vocal chain.
 //!
-//! Pure, deterministic ffmpeg *filter-string builders*. No I/O: every function
-//! takes a config and returns the `-af`/`filter_complex` fragments the editor
-//! seam concatenates and hands to ffmpeg (exactly like [`crate::mastering`]).
-//! That keeps the whole signal-path testable without touching media.
+//! Pure, deterministic configuration and decision logic. No I/O. The ffmpeg
+//! filter-string builders that used to live here were deleted in B2c: the chain
+//! runs in Rust ([`crate::chain`], built from these types), and ffmpeg only
+//! decodes and encodes.
 //!
 //! Two concerns live here:
 //!
@@ -12,50 +12,30 @@
 //!    or a dead/noisy channel from a bad cable. [`diagnose_channels`] looks at
 //!    the measured per-channel peak/RMS and *recommends* a repair (including the
 //!    "one channel is dead → duplicate the good one into stereo" case the user
-//!    asked for), and [`channel_repair_filter`] renders it to a `pan=` filter.
+//!    asked for), and [`channel_repair_needs_stereo`] says whether it needs a stereo source.
 //!
 //! 2. **Vocal chain** ([`VocalChain`]) — the post-capture cleanup/sweetening
 //!    stages a producer reaches for on a spoken-word track, in the canonical
 //!    order (HPF → denoise → de-reverb → gate → EQ → compressor → de-esser →
 //!    limiter → makeup gain). Each stage is independently toggleable with its
-//!    own parameters and sane podcast defaults; disabled stages emit nothing.
-//!    [`VocalChain::build_filters`] returns the ordered, non-empty fragments.
+//!    own parameters and sane podcast defaults. [`crate::chain::Chain::from_vocal_chain`]
+//!    turns it into the filmcraft chain.
 //!
 //! The final loudness stage is intentionally NOT here — loudness normalisation
 //! is [`crate::loudness`]'s one linear gain (and limiter), applied *after* this chain by
 //! the export seam. This module shapes the tone/dynamics; mastering sets the
 //! delivery loudness.
 
-// ── units: when a value gets a `dB` suffix, and when it must NOT ────────────
+// ── limits ──────────────────────────────────────────────────────────────────
 //
-// Every number in this file that a human calls "dB" reaches ffmpeg through one
-// of two DIFFERENT doors, and picking the wrong one is silent — the filter
-// still builds, it just does something else. F2-C-A found three of them.
-//
-// 1. **Linear-amplitude options** (`acompressor:threshold/makeup`,
-//    `agate:threshold`, `alimiter:limit`, `pan` gains). The option's own unit
-//    is a multiplier, so a bare `2` means ×2 (+6.02 dB), not +2 dB. ffmpeg
-//    parses these with `av_strtod`, which understands a `dB` POSTFIX and
-//    converts it for us (`10^(x/20)`): `makeup=2dB` → 1.259 → exactly +2.00 dB
-//    on the meter. So: write the dB number and append `dB`, and ffmpeg does the
-//    conversion at full precision. Never pre-convert to linear and print it —
-//    that is how `−70 dB` became the 3-decimal string `"0"` (an OPEN gate) and
-//    how a +2 dB makeup became +6 dB.
-// 2. **Options whose unit already IS dB** (`afftdn:nr/nf`, `equalizer:g`,
-//    `volume`'s expression). Here the bare number is the dB value. Appending
-//    `dB` would run `av_strtod`'s conversion a second time and land far outside
-//    the option's range (`nf=-25dB` → 0.056, out of `[-80,-20]` → ffmpeg
-//    errors). So: no suffix, and each such site says so at the call.
-//
-// The clamps below exist for the same reason: a linear-amplitude option has a
-// documented range, and a value outside it is not "a bit off" — ffmpeg refuses
-// the whole filter ("Value 0.500000 for parameter 'makeup' out of range
-// [1 - 64]") and the EXPORT FAILS. Since the UI already limits the sliders,
-// these only ever bite a hand-rolled/legacy DTO, which is exactly when we want
-// a quiet clamp rather than a dead export.
+// The clamps below are what a hand-rolled/legacy DTO is held to; the mixer
+// sliders stop well inside them. They date from the ffmpeg filter strings, whose
+// options had hard ranges (outside them ffmpeg refused the filter and the export
+// failed). The Rust chain keeps them as sane bounds, so an old saved value does
+// not turn into a wild setting.
 
-/// Largest compressor makeup we hand ffmpeg. `acompressor:makeup` accepts
-/// `[1, 64]` linear = `[0, 36.12] dB`; the mixer slider stops at 12 dB.
+/// Largest compressor makeup. ffmpeg's `acompressor:makeup` accepted `[0, 36.12] dB`;
+/// the mixer slider stops at 12 dB.
 pub(crate) const COMP_MAX_MAKEUP_DB: f64 = 36.0;
 /// Lowest limiter ceiling we hand ffmpeg. `alimiter:limit` accepts
 /// `[0.0625, 1]` linear = `[−24.08, 0] dB`; the mixer slider stops at −6 dB.
@@ -76,14 +56,7 @@ fn db_to_linear(db: f64) -> f64 {
     10f64.powf(db / 20.0)
 }
 
-/// Format a number for a filter argument — 3 decimals, trailing zeros trimmed,
-/// so `1.0 → "1"`, `0.5 → "0.5"`, `1.4125 → "1.413"`, `-70.0 → "-70"`. Keeps
-/// the filter strings stable and readable (and the unit tests exact).
-///
-/// Three decimals is plenty for a dB number (0.001 dB) and for a millisecond
-/// time constant, but NOT for a linear amplitude: `db_to_linear(-70)` is
-/// 0.000316, which rounds to `"0"`. That is why a dB value is printed as a dB
-/// value with the suffix (see the units note above) and never pre-converted.
+/// `v` if it is finite, otherwise `default` (a NaN/inf slider value must not reach a stage).
 pub(crate) fn finite_or(v: f64, default: f64) -> f64 {
     if v.is_finite() {
         v
@@ -92,21 +65,11 @@ pub(crate) fn finite_or(v: f64, default: f64) -> f64 {
     }
 }
 
-fn coef(v: f64) -> String {
-    let s = format!("{v:.3}");
-    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
-    if trimmed.is_empty() || trimmed == "-" {
-        "0".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
 // ── channel repair ──────────────────────────────────────────────────────────
 
 /// How to repair the channel layout of a recording. Produced by the UI (manual
-/// pick) or by [`diagnose_channels`] (auto recommendation), rendered to a `pan`
-/// filter by [`channel_repair_filter`].
+/// pick) or by [`diagnose_channels`] (auto recommendation), made into a chain stage
+/// by [`crate::chain::Chain::from_vocal_chain`].
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ChannelRepair {
     /// Leave the channels as-is.
@@ -126,62 +89,31 @@ pub enum ChannelRepair {
     GainDb { left_db: f64, right_db: f64 },
 }
 
-/// Build the `pan` filter for a channel repair, or `None` when nothing to do.
-/// All variants emit a stereo output so the downstream chain/encoder sees a
-/// consistent layout. `GainDb` clamps each leg to ±24 dB to keep a runaway
-/// auto-balance from exploding noise.
-pub fn channel_repair_filter(repair: ChannelRepair) -> Option<String> {
-    match repair {
-        ChannelRepair::None => None,
-        ChannelRepair::SwapLr => Some("pan=stereo|c0=c1|c1=c0".to_string()),
-        ChannelRepair::DuplicateLeft => Some("pan=stereo|c0=c0|c1=c0".to_string()),
-        ChannelRepair::DuplicateRight => Some("pan=stereo|c0=c1|c1=c1".to_string()),
-        ChannelRepair::MonoMix => Some("pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1".to_string()),
-        ChannelRepair::GainDb { left_db, right_db } => {
-            // LINEAR here, deliberately — the ONE surviving `coef(db_to_linear(…))`
-            // in this file (see the units note at the top). `pan`'s per-channel
-            // gains live inside a channel EXPRESSION, not in a plain option, and
-            // the suffix is not accepted there: `pan=stereo|c0=6dB*c0|c1=6dB*c1`
-            // is "Error initializing filters" on the bundled sidecar, MEASURED.
-            // The 3-decimal rounding that ruined the −70 dB gate threshold is
-            // harmless at this scale anyway: the ±24 dB clamp keeps the
-            // coefficient in `[0.063, 15.849]`, where a 0.001 step is at most
-            // 0.014 dB.
-            let l = db_to_linear(left_db.clamp(-24.0, 24.0));
-            let r = db_to_linear(right_db.clamp(-24.0, 24.0));
-            // A no-op (both ~unity) needs no filter.
-            if (l - 1.0).abs() < 1e-3 && (r - 1.0).abs() < 1e-3 {
-                None
-            } else {
-                Some(format!("pan=stereo|c0={}*c0|c1={}*c1", coef(l), coef(r)))
-            }
-        }
-    }
-}
-
 /// Does this repair read the RIGHT input channel — i.e. does it need a stereo
 /// source to mean anything?
 ///
-/// ffmpeg does NOT refuse `c1` on a mono input. It silently drops the term, so
-/// `MonoMix` on a mono file (`c0=0.5*c0+0.5*c1`) renders at 0.5× — MEASURED:
-/// a −18.06 dBFS mono sine came out at −24.08 dBFS, a 6.02 dB loss with no
-/// warning, in a file the UI calls "repaired". A caller that knows the channel
-/// count must therefore check BEFORE building the graph; there is no error to
-/// catch afterwards.
+/// On a mono source the right channel does not exist, so `MonoMix` would sum the
+/// left with silence and come out 6 dB down, in a file the UI calls "repaired".
+/// A caller that knows the channel count must therefore check BEFORE building
+/// the chain; there is no error to catch afterwards.
 ///
-/// [`ChannelRepair::DuplicateLeft`] is the exception: `c0=c0|c1=c0` reads only
-/// the channel a mono file has, and upmixing mono to dual-mono is exactly what
-/// it means. A repair that renders NO filter (`None`, a `0/0` `GainDb`) touches
-/// nothing and is fine on any layout.
+/// [`ChannelRepair::DuplicateLeft`] is the exception: it reads only the channel
+/// a mono file has, and upmixing mono to dual-mono is exactly what it means. A
+/// repair that does nothing (`None`, a `0/0` `GainDb`) touches nothing and is
+/// fine on any layout.
 pub fn channel_repair_needs_stereo(repair: ChannelRepair) -> bool {
-    // Asked of the renderer, not of a second list that can drift out of step
-    // with it: no filter, no reference.
-    if channel_repair_filter(repair).is_none() {
-        return false;
+    match repair {
+        ChannelRepair::None | ChannelRepair::DuplicateLeft => false,
+        ChannelRepair::GainDb { left_db, right_db } => {
+            // Same ±24 dB clamp and the same "both ~unity is a no-op" as the
+            // chain stage ([`crate::chain::Chain::from_vocal_chain`]).
+            let l = db_to_linear(left_db.clamp(-24.0, 24.0));
+            let r = db_to_linear(right_db.clamp(-24.0, 24.0));
+            !((l - 1.0).abs() < 1e-3 && (r - 1.0).abs() < 1e-3)
+        }
+        // A variant added later lands on `true` — the safe side.
+        _ => true,
     }
-    // Everything else reads `c1` somewhere in its channel expressions. A
-    // variant added later lands on `true` — the safe side.
-    !matches!(repair, ChannelRepair::DuplicateLeft)
 }
 
 /// Measured per-channel levels (dBFS) feeding [`diagnose_channels`]. Peaks are
@@ -536,7 +468,7 @@ impl Default for LimiterStage {
 }
 
 /// A complete, configurable vocal chain. Stages run in producer-canonical order
-/// (see [`Self::build_filters`]). Every stage is independently toggleable; the
+/// (see [`crate::chain::Chain::from_vocal_chain`]). Every stage is independently toggleable; the
 /// defaults are a sensible "light polish" that only high-passes and gently
 /// compresses, leaving the heavier tools (denoise, de-reverb, gate, EQ, limiter)
 /// off until the user opts in.
@@ -569,128 +501,6 @@ impl Default for VocalChain {
             deesser: DeesserStage::default(),
             limiter: LimiterStage::default(),
             gain_db: 0.0,
-        }
-    }
-}
-
-impl VocalChain {
-    /// Render the enabled stages to ordered ffmpeg filter fragments. The order is
-    /// the standard spoken-word chain:
-    ///
-    /// 1. channel repair (`pan`) — fix the layout before anything measures it,
-    /// 2. high-pass — drop sub-voice rumble so the compressor isn't chasing it,
-    /// 3. denoise (`afftdn`) — clean the broadband floor,
-    /// 4. de-reverb (approx, `agate` expander) — pull room tails,
-    /// 5. gate (`agate`) — close between phrases,
-    /// 6. EQ (`equalizer` per band) — subtractive/additive shaping,
-    /// 7. compressor (`acompressor`) — even the dynamics,
-    /// 8. de-esser (`deesser`) — after comp, which can lift sibilance,
-    /// 9. limiter (`alimiter`) — peak ceiling,
-    /// 10. makeup gain (`volume`).
-    ///
-    /// Returns an empty vec when nothing is enabled (a true pass-through).
-    pub fn build_filters(&self) -> Vec<String> {
-        let mut f: Vec<String> = Vec::new();
-
-        if let Some(pan) = channel_repair_filter(self.channel_repair) {
-            f.push(pan);
-        }
-        if self.highpass.enabled {
-            f.push(format!("highpass=f={}", self.highpass.freq_hz));
-        }
-        if self.denoise.enabled {
-            // NO `dB` suffix: `afftdn`'s `nr`/`nf` are already denominated in dB
-            // (`nr` 0.01…97, `nf` −80…−20), so the bare number IS the dB value.
-            // See the units note at the top of this file.
-            //
-            // Clamped to the ranges ffmpeg accepts: the editor sliders reach
-            // `nr` 0 and `nf` −10, both of which make `afftdn` refuse to start
-            // (exit 222) and kill the whole export. A non-finite value takes
-            // the preset default rather than rendering `NaN`.
-            let nr = finite_or(self.denoise.reduction_db, 12.0).clamp(0.01, 97.0);
-            let nf = finite_or(self.denoise.noise_floor_db, -25.0).clamp(-80.0, -20.0);
-            f.push(format!("afftdn=nr={}:nf={}:tn=1", coef(nr), coef(nf)));
-        }
-        if self.dereverb.enabled {
-            // Map strength 0..1 → a gentle downward expander. Higher strength =
-            // higher threshold (acts on more of the tail) + stronger ratio.
-            let s = self.dereverb.strength.clamp(0.0, 1.0);
-            let threshold_db = -45.0 + 15.0 * s; // −45 … −30 dB
-            let ratio = 1.5 + 1.5 * s; // 1.5 … 3.0
-            f.push(format!(
-                "agate=threshold={}dB:ratio={}:attack=10:release=200:detection=rms",
-                coef(threshold_db),
-                coef(ratio)
-            ));
-        }
-        if self.gate.enabled {
-            f.push(format!(
-                "agate=threshold={}dB:ratio={}:attack={}:release={}",
-                coef(self.gate.threshold_db.min(GATE_MAX_THRESHOLD_DB)),
-                coef(self.gate.ratio),
-                coef(self.gate.attack_ms),
-                coef(self.gate.release_ms)
-            ));
-        }
-        for band in &self.eq {
-            // NO `dB` suffix on `g`: `equalizer`'s gain is a dB number already.
-            f.push(format!(
-                "equalizer=f={}:t=q:w={}:g={}",
-                band.freq_hz,
-                coef(band.q),
-                coef(band.gain_db)
-            ));
-        }
-        if self.compressor.enabled {
-            f.push(format!(
-                "acompressor=threshold={}dB:ratio={}:attack={}:release={}:makeup={}dB",
-                coef(
-                    self.compressor
-                        .threshold_db
-                        .clamp(COMP_MIN_THRESHOLD_DB, 0.0)
-                ),
-                coef(self.compressor.ratio),
-                coef(self.compressor.attack_ms),
-                coef(self.compressor.release_ms),
-                coef(self.compressor.makeup_db.clamp(0.0, COMP_MAX_MAKEUP_DB))
-            ));
-        }
-        if self.deesser.enabled {
-            // `deesser` takes intensity `i` (0..1) and makes `m`/`f` defaults.
-            f.push(format!(
-                "deesser=i={}",
-                coef(self.deesser.intensity.clamp(0.0, 1.0))
-            ));
-        }
-        if self.limiter.enabled {
-            // `level=0` is load-bearing, not a tidy-up. `alimiter`'s `level`
-            // ("auto level") defaults to TRUE, which rescales the output by
-            // `1/limit` afterwards — so the ceiling we just asked for is
-            // multiplied straight back off: a 0 dBFS input came out at 0.0
-            // dBFS with `limit=-1dB`, and a −6 dBFS input that never touched
-            // the limiter came out 1 dB LOUDER. A ceiling that does not cap and
-            // silently adds gain is worse than no limiter. Off, it caps: 0 →
-            // −1.00 dBFS, −6 → −6.00.
-            f.push(format!(
-                "alimiter=limit={}dB:level=0",
-                coef(self.limiter.limit_db.clamp(LIMITER_MIN_CEILING_DB, 0.0))
-            ));
-        }
-        if self.gain_db.abs() > 1e-3 {
-            // NO conversion: `volume`'s argument is an expression, and `dB`
-            // there is the documented postfix — `volume=1.5dB` is +1.5 dB.
-            f.push(format!("volume={}dB", coef(self.gain_db)));
-        }
-        f
-    }
-
-    /// The chain as a single comma-joined filter string, or `None` if empty.
-    pub fn to_filter_string(&self) -> Option<String> {
-        let parts = self.build_filters();
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join(","))
         }
     }
 }
@@ -913,115 +723,22 @@ mod tests {
         assert!((db_to_linear(-6.0) - 0.501).abs() < 1e-2);
     }
 
-    #[test]
-    fn coef_trims_trailing_zeros() {
-        assert_eq!(coef(1.0), "1");
-        assert_eq!(coef(0.5), "0.5");
-        assert_eq!(coef(-1.0), "-1");
-        assert_eq!(coef(2.0), "2");
-    }
-
     // ── channel repair ───────────────────────────────────────────────────────
 
     #[test]
-    fn channel_repair_basic_pans() {
-        assert_eq!(channel_repair_filter(ChannelRepair::None), None);
-        assert_eq!(
-            channel_repair_filter(ChannelRepair::SwapLr).unwrap(),
-            "pan=stereo|c0=c1|c1=c0"
-        );
-        assert_eq!(
-            channel_repair_filter(ChannelRepair::DuplicateLeft).unwrap(),
-            "pan=stereo|c0=c0|c1=c0"
-        );
-        assert_eq!(
-            channel_repair_filter(ChannelRepair::DuplicateRight).unwrap(),
-            "pan=stereo|c0=c1|c1=c1"
-        );
-        assert_eq!(
-            channel_repair_filter(ChannelRepair::MonoMix).unwrap(),
-            "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1"
-        );
-    }
-
-    #[test]
-    fn channel_repair_gain_db_renders_linear_coefs() {
-        // +6 dB right ≈ 1.995× ; left unity.
-        let f = channel_repair_filter(ChannelRepair::GainDb {
-            left_db: 0.0,
-            right_db: 6.0,
-        })
-        .unwrap();
-        assert!(f.starts_with("pan=stereo|c0=1*c0|c1="), "got {f}");
-        assert!(
-            f.contains("c1=1.995*c0") || f.contains("c1=1.995*c1"),
-            "got {f}"
-        );
-    }
-
-    #[test]
-    fn channel_repair_gain_db_zero_is_noop() {
-        assert_eq!(
-            channel_repair_filter(ChannelRepair::GainDb {
-                left_db: 0.0,
-                right_db: 0.0,
-            }),
-            None
-        );
-    }
-
-    #[test]
-    fn channel_repair_gain_db_clamps_extremes() {
-        // +100 dB clamps to +24 dB (≈15.85×), not a wild number.
-        let f = channel_repair_filter(ChannelRepair::GainDb {
-            left_db: 100.0,
-            right_db: 0.0,
-        })
-        .unwrap();
-        assert!(f.contains("c0=15.849*c0"), "got {f}");
-    }
-
-    #[test]
-    fn needs_stereo_matches_what_each_filter_actually_reads() {
-        // Cross-checked against the RENDERED filter, so the predicate cannot
-        // drift away from the strings it is a claim about. An input channel is
-        // read where `c1` appears on the RIGHT of a `cN=` assignment.
-        fn reads_input_c1(filter: &str) -> bool {
-            filter
-                .split('|')
-                .filter_map(|part| part.split_once('='))
-                .any(|(_, rhs)| {
-                    rhs.split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
-                        .any(|tok| tok == "c1")
-                })
-        }
-
-        for repair in [
-            ChannelRepair::None,
-            ChannelRepair::SwapLr,
-            ChannelRepair::DuplicateLeft,
-            ChannelRepair::DuplicateRight,
-            ChannelRepair::MonoMix,
-            ChannelRepair::GainDb {
-                left_db: 0.0,
-                right_db: 6.0,
-            },
-            // A no-op renders nothing, so it needs nothing.
-            ChannelRepair::GainDb {
-                left_db: 0.0,
-                right_db: 0.0,
-            },
-        ] {
-            let expected = channel_repair_filter(repair)
-                .as_deref()
-                .is_some_and(reads_input_c1);
-            assert_eq!(
-                channel_repair_needs_stereo(repair),
-                expected,
-                "{repair:?} renders {:?}",
-                channel_repair_filter(repair)
-            );
-        }
+    fn needs_stereo_only_where_the_right_channel_is_read() {
+        let gain = |l: f64, r: f64| ChannelRepair::GainDb {
+            left_db: l,
+            right_db: r,
+        };
+        assert!(!channel_repair_needs_stereo(ChannelRepair::None));
+        assert!(!channel_repair_needs_stereo(ChannelRepair::DuplicateLeft));
+        assert!(channel_repair_needs_stereo(ChannelRepair::SwapLr));
+        assert!(channel_repair_needs_stereo(ChannelRepair::DuplicateRight));
+        assert!(channel_repair_needs_stereo(ChannelRepair::MonoMix));
+        assert!(channel_repair_needs_stereo(gain(0.0, 6.0)));
+        // A no-op does nothing, so it needs nothing.
+        assert!(!channel_repair_needs_stereo(gain(0.0, 0.0)));
     }
 
     // ── diagnosis ────────────────────────────────────────────────────────────
@@ -1273,316 +990,6 @@ mod tests {
         }
     }
 
-    // ── vocal chain ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn default_chain_is_highpass_then_compressor() {
-        let parts = VocalChain::default().build_filters();
-        assert_eq!(parts.len(), 2, "got {parts:?}");
-        assert_eq!(parts[0], "highpass=f=80");
-        assert!(parts[1].starts_with("acompressor=threshold=-18dB:ratio=3"));
-    }
-
-    #[test]
-    fn fully_disabled_chain_is_passthrough() {
-        let chain = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: CompressorStage {
-                enabled: false,
-                ..CompressorStage::default()
-            },
-            ..VocalChain::default()
-        };
-        assert!(chain.build_filters().is_empty());
-        assert_eq!(chain.to_filter_string(), None);
-    }
-
-    #[test]
-    fn chain_orders_all_stages_canonically() {
-        let chain = VocalChain {
-            channel_repair: ChannelRepair::SwapLr,
-            highpass: HighpassStage {
-                enabled: true,
-                freq_hz: 90,
-            },
-            denoise: DenoiseStage {
-                enabled: true,
-                reduction_db: 12.0,
-                noise_floor_db: -25.0,
-            },
-            dereverb: DereverbStage {
-                enabled: true,
-                strength: 0.5,
-            },
-            gate: GateStage {
-                enabled: true,
-                ..GateStage::default()
-            },
-            eq: vec![EqBand {
-                freq_hz: 3000,
-                gain_db: 2.0,
-                q: 1.0,
-            }],
-            compressor: CompressorStage {
-                enabled: true,
-                ..CompressorStage::default()
-            },
-            deesser: DeesserStage {
-                enabled: true,
-                intensity: 0.4,
-            },
-            limiter: LimiterStage {
-                enabled: true,
-                limit_db: -1.0,
-            },
-            gain_db: 1.5,
-        };
-        let parts = chain.build_filters();
-        // Verify the relative ordering of each filter kind.
-        let idx = |needle: &str| parts.iter().position(|p| p.starts_with(needle)).unwrap();
-        assert!(idx("pan=") < idx("highpass="));
-        assert!(idx("highpass=") < idx("afftdn="));
-        // Two agate stages (dereverb + gate) — both present.
-        assert_eq!(parts.iter().filter(|p| p.starts_with("agate=")).count(), 2);
-        assert!(idx("afftdn=") < idx("agate="));
-        assert!(idx("agate=") < idx("equalizer="));
-        assert!(idx("equalizer=") < idx("acompressor="));
-        assert!(idx("acompressor=") < idx("deesser="));
-        assert!(idx("deesser=") < idx("alimiter="));
-        assert!(idx("alimiter=") < idx("volume="));
-        assert!(parts.last().unwrap().starts_with("volume=1.5dB"));
-    }
-
-    #[test]
-    fn denoise_filter_shape() {
-        // BARE numbers, no `dB` — the other half of the units rule. `afftdn`'s
-        // `nr`/`nf` are already denominated in dB, so a suffix would run
-        // ffmpeg's dB→linear conversion a second time and land `nf=-25dB` on
-        // 0.056, outside the option's [-80, -20] range → hard error.
-        assert_eq!(
-            only(|c| {
-                c.denoise = DenoiseStage {
-                    enabled: true,
-                    reduction_db: 12.0,
-                    noise_floor_db: -25.0,
-                }
-            }),
-            vec!["afftdn=nr=12:nf=-25:tn=1"]
-        );
-    }
-
-    #[test]
-    fn eq_band_renders_equalizer() {
-        // `g` is likewise a dB number already — bare, for the same reason.
-        assert_eq!(
-            only(|c| {
-                c.eq = vec![EqBand {
-                    freq_hz: 250,
-                    gain_db: -2.0,
-                    q: 1.0,
-                }]
-            }),
-            vec!["equalizer=f=250:t=q:w=1:g=-2"]
-        );
-    }
-
-    /// Build a chain with only the stage under test enabled — the two
-    /// default-on stages (highpass, compressor) muted — so `build_filters()`
-    /// returns exactly one fragment.
-    fn only(f: impl FnOnce(&mut VocalChain)) -> Vec<String> {
-        let mut chain = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: CompressorStage {
-                enabled: false,
-                ..CompressorStage::default()
-            },
-            ..VocalChain::default()
-        };
-        f(&mut chain);
-        chain.build_filters()
-    }
-
-    #[test]
-    fn limiter_ceiling_is_db_with_auto_level_off() {
-        // F2-C-A/T3. The ceiling goes over as dB (ffmpeg converts at full
-        // precision), and `level=0` because `alimiter`'s auto-level defaults ON
-        // and multiplies the ceiling straight back off — MEASURED on the
-        // bundled sidecar: `limit=0.891` alone passed a 0 dBFS sine at 0.0 dBFS
-        // and made a −6 dBFS sine −5.0 dBFS. With this string: −1.00 / −6.00.
-        assert_eq!(
-            only(|c| {
-                c.limiter = LimiterStage {
-                    enabled: true,
-                    limit_db: -1.0,
-                }
-            }),
-            vec!["alimiter=limit=-1dB:level=0"]
-        );
-    }
-
-    #[test]
-    fn limiter_ceiling_clamps_to_what_alimiter_can_take() {
-        // `alimiter:limit` is [0.0625, 1] linear = [−24.08, 0] dB. Outside it
-        // ffmpeg refuses the filter and the whole export dies, so a legacy or
-        // hand-rolled DTO gets clamped instead.
-        assert_eq!(
-            only(|c| {
-                c.limiter = LimiterStage {
-                    enabled: true,
-                    limit_db: -40.0,
-                }
-            }),
-            vec!["alimiter=limit=-24dB:level=0"]
-        );
-        assert_eq!(
-            only(|c| {
-                c.limiter = LimiterStage {
-                    enabled: true,
-                    limit_db: 3.0,
-                }
-            }),
-            vec!["alimiter=limit=0dB:level=0"]
-        );
-    }
-
-    #[test]
-    fn compressor_makeup_is_db_not_a_linear_factor() {
-        // F2-C-A/T2. The mixer slider, the `comp_makeup_db` DTO field and the
-        // presets all mean decibels; `acompressor:makeup` is a LINEAR factor in
-        // [1, 64]. MEASURED: `makeup=2` → +6.02 dB, `makeup=2dB` → +2.00 dB.
-        let parts = only(|c| {
-            c.compressor = CompressorStage {
-                enabled: true,
-                makeup_db: 2.0,
-                ..CompressorStage::default()
-            }
-        });
-        assert_eq!(
-            parts,
-            vec!["acompressor=threshold=-18dB:ratio=3:attack=5:release=80:makeup=2dB"]
-        );
-    }
-
-    #[test]
-    fn compressor_makeup_clamps_below_zero_db() {
-        // A negative makeup has no linear representation at all: `makeup=0.5`
-        // is "Value 0.500000 for parameter 'makeup' out of range [1 - 64]" and
-        // ffmpeg exits — a FAILED EXPORT, not a quieter one. Unity is the floor.
-        let parts = only(|c| {
-            c.compressor = CompressorStage {
-                enabled: true,
-                makeup_db: -3.0,
-                ..CompressorStage::default()
-            }
-        });
-        assert!(parts[0].ends_with(":makeup=0dB"), "got {parts:?}");
-        // …and the ceiling, for the same reason: 64 linear is +36.12 dB.
-        let parts = only(|c| {
-            c.compressor = CompressorStage {
-                enabled: true,
-                makeup_db: 90.0,
-                ..CompressorStage::default()
-            }
-        });
-        assert!(parts[0].ends_with(":makeup=36dB"), "got {parts:?}");
-    }
-
-    #[test]
-    fn gate_threshold_is_db_so_low_settings_survive_rounding() {
-        // F2-C-A/T6. `agate:threshold` is linear [0, 1]; the mixer slider runs
-        // down to −70 dB, which is 0.000316 linear — and `coef`'s 3 decimals
-        // turned that into the string "0", i.e. a gate that lets EVERYTHING
-        // through. −65 dB fared no better: "0.001" is −60 dB.
-        assert_eq!(
-            only(|c| {
-                c.gate = GateStage {
-                    enabled: true,
-                    threshold_db: -70.0,
-                    ..GateStage::default()
-                }
-            }),
-            vec!["agate=threshold=-70dB:ratio=2:attack=5:release=120"]
-        );
-        assert_eq!(
-            only(|c| {
-                c.gate = GateStage {
-                    enabled: true,
-                    threshold_db: -65.0,
-                    ..GateStage::default()
-                }
-            }),
-            vec!["agate=threshold=-65dB:ratio=2:attack=5:release=120"]
-        );
-        // Above 0 dBFS there is no linear threshold left to express.
-        assert!(only(|c| {
-            c.gate = GateStage {
-                enabled: true,
-                threshold_db: 6.0,
-                ..GateStage::default()
-            }
-        })[0]
-            .starts_with("agate=threshold=0dB:"),);
-    }
-
-    #[test]
-    fn compressor_threshold_clamps_to_acompressors_real_floor() {
-        // C-A finding: unlike `agate:threshold` (linear [0, 1], i.e. unbounded
-        // in dB — unclamped below), `acompressor:threshold` is linear
-        // [0.000976563, 1], a REAL floor at −60.2 dB. A more negative request
-        // (a hand-rolled/legacy DTO; the mixer slider does not go this low)
-        // must be clamped, or ffmpeg rejects the filter and the export dies.
-        assert_eq!(
-            only(|c| {
-                c.compressor = CompressorStage {
-                    enabled: true,
-                    threshold_db: -70.0,
-                    ..CompressorStage::default()
-                }
-            }),
-            vec!["acompressor=threshold=-60.2dB:ratio=3:attack=5:release=80:makeup=2dB"]
-        );
-        // Above 0 dBFS there is likewise no linear threshold left to express.
-        assert!(only(|c| {
-            c.compressor = CompressorStage {
-                enabled: true,
-                threshold_db: 5.0,
-                ..CompressorStage::default()
-            }
-        })[0]
-            .starts_with("acompressor=threshold=0dB:"));
-        // Comfortably inside the range: passes through untouched.
-        assert!(only(|c| {
-            c.compressor = CompressorStage {
-                enabled: true,
-                threshold_db: -40.0,
-                ..CompressorStage::default()
-            }
-        })[0]
-            .starts_with("acompressor=threshold=-40dB:"));
-    }
-
-    #[test]
-    fn dereverb_expander_threshold_is_db() {
-        // Same filter, same trap: strength 0.4 maps to −39 dB, which as a
-        // linear coefficient rounded to "0.011" (−39.2 dB) — and at the low end
-        // of the range it would have kept rounding towards an open gate.
-        assert_eq!(
-            only(|c| {
-                c.dereverb = DereverbStage {
-                    enabled: true,
-                    strength: 0.4,
-                }
-            }),
-            vec!["agate=threshold=-39dB:ratio=2.1:attack=10:release=200:detection=rms"]
-        );
-    }
-
     // ── presets ──────────────────────────────────────────────────────────────
 
     #[test]
@@ -1594,21 +1001,19 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), presets.len());
         // Every preset produces a non-empty chain except possibly the lightest.
-        for p in &presets {
-            let _ = p.chain.build_filters(); // must not panic
-        }
     }
 
     #[test]
     fn podcast_preset_has_full_chain() {
-        let p = vocal_chain_preset_by_id("voice-podcast", None).unwrap();
-        let parts = p.chain.build_filters();
-        assert!(parts.iter().any(|s| s.starts_with("highpass=")));
-        assert!(parts.iter().any(|s| s.starts_with("afftdn=")));
-        assert!(parts.iter().any(|s| s.starts_with("equalizer=")));
-        assert!(parts.iter().any(|s| s.starts_with("acompressor=")));
-        assert!(parts.iter().any(|s| s.starts_with("deesser=")));
-        assert!(parts.iter().any(|s| s.starts_with("alimiter=")));
+        let c = vocal_chain_preset_by_id("voice-podcast", None)
+            .unwrap()
+            .chain;
+        assert!(c.highpass.enabled);
+        assert!(c.denoise.enabled);
+        assert!(!c.eq.is_empty());
+        assert!(c.compressor.enabled);
+        assert!(c.deesser.enabled);
+        assert!(c.limiter.enabled);
     }
 
     #[test]
@@ -1629,23 +1034,6 @@ mod tests {
         assert_eq!(recommend_vocal_preset(Some(f64::NAN)), "voice-podcast");
     }
 
-    #[test]
-    fn denoise_sliders_are_clamped_to_what_afftdn_accepts() {
-        // The editor sliders reach nr 0 and nf −10; ffmpeg exits 222 on both.
-        let render = |reduction_db: f64, noise_floor_db: f64| {
-            only(|c| {
-                c.denoise = DenoiseStage {
-                    enabled: true,
-                    reduction_db,
-                    noise_floor_db,
-                }
-            })
-        };
-        assert_eq!(render(0.0, -10.0), vec!["afftdn=nr=0.01:nf=-20:tn=1"]);
-        assert_eq!(render(200.0, -300.0), vec!["afftdn=nr=97:nf=-80:tn=1"]);
-        assert_eq!(render(f64::NAN, f64::NAN), vec!["afftdn=nr=12:nf=-25:tn=1"]);
-    }
-
     // ── T5: a real measurement must reach `afftdn:nf`, not the −25 guess ────────
 
     #[test]
@@ -1664,32 +1052,17 @@ mod tests {
     }
 
     #[test]
-    fn preset_lookup_with_measurement_overrides_afftdn_nf_string() {
+    fn preset_lookup_with_measurement_sets_the_noise_floor() {
         // WITH a measurement: the church-floor example from the T5 finding, −62
-        // dBFS, must show up verbatim in the rendered `afftdn=` filter string —
-        // not the preset's baked-in −25 guess.
+        // dBFS, lands in the preset's denoise stage — not the baked-in −25 guess.
         let measured = vocal_chain_preset_by_id("voice-podcast", Some(-62.0)).unwrap();
-        let filters = measured.chain.build_filters();
-        assert!(
-            filters
-                .iter()
-                .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-62:")),
-            "expected nf=-62 from the measurement, got {filters:?}"
-        );
+        assert_eq!(measured.chain.denoise.noise_floor_db, -62.0);
 
         // WITHOUT a measurement: falls back to −25 — for EVERY preset, including
         // `voice-noisy-room`, which used to bake in its own −20 guess.
-        let unmeasured_podcast = vocal_chain_preset_by_id("voice-podcast", None).unwrap();
-        assert!(unmeasured_podcast
-            .chain
-            .build_filters()
-            .iter()
-            .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-25:")));
-        let unmeasured_noisy = vocal_chain_preset_by_id("voice-noisy-room", None).unwrap();
-        assert!(unmeasured_noisy
-            .chain
-            .build_filters()
-            .iter()
-            .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-25:")));
+        for id in ["voice-podcast", "voice-noisy-room"] {
+            let unmeasured = vocal_chain_preset_by_id(id, None).unwrap();
+            assert_eq!(unmeasured.chain.denoise.noise_floor_db, -25.0, "{id}");
+        }
     }
 }

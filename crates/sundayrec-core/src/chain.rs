@@ -5,8 +5,8 @@
 //! ([`crate::processing::vocal_chain_presets`] and [`crate::mastering::master_presets`]).
 //! There is no new table: [`Chain::from_vocal_chain`] reads a [`VocalChain`],
 //! [`Chain::from_filter_string`] reads the `filters` string a [`MasterPreset`]
-//! already carries. Nothing is deleted in B2a: the ffmpeg filter-string builders
-//! live on until the owner's ears have approved this chain (B2c).
+//! already carries (that string is now only a compact way to write the preset table;
+//! no ffmpeg ever sees it). The ffmpeg filter-string builders were deleted in B2c.
 //!
 //! A [`Chain`] is a plain description (a `Vec<Stage>`), so it can be compared and
 //! tested without running any DSP. [`Chain::build`] turns it into a
@@ -50,9 +50,9 @@
 //!
 //! The numbers below are from three real recordings (30 s excerpts of
 //! `2026-05-17_2.mp3`, `31.5.26.mp3`, `2026.01.04.mp3`, all quiet rooms with a
-//! floor around -60 dBFS) and a few synthetic signals, all through `chain_ab`.
-//! The final setting is the owner's ears' (B2c); these are the measured reasons
-//! for where it starts.
+//! floor around -60 dBFS) and a few synthetic signals, all through `chain_ab` (an example target, deleted in B2c).
+//! The owner accepted the setting in B2c without the listening round planned in
+//! RIG-DAY; these are the measured reasons for where it starts.
 //!
 //! * **Compressor: threshold -3 dB.** With identical numbers filmcraft's
 //!   compressor barely compressed (loudness range 9.2 LU against 8.6 for
@@ -285,8 +285,8 @@ impl Chain {
         &self.stages
     }
 
-    /// A chain from stages already made (what `chain_ab --set` uses to try a
-    /// tuning without editing the tables).
+    /// A chain from stages already made (to try a tuning without editing the
+    /// tables).
     pub fn from_stages(stages: Vec<Stage>) -> Chain {
         Chain { stages }
     }
@@ -339,9 +339,9 @@ impl Chain {
         self
     }
 
-    /// The same stage order as [`VocalChain::build_filters`]: channel repair,
+    /// The stage order of the mixer's vocal chain: channel repair,
     /// high-pass, denoise, dereverb, gate, EQ, compressor, de-esser, limiter,
-    /// makeup gain. Clamps are the ones the ffmpeg builder applies.
+    /// makeup gain. The clamps are the ones ffmpeg's filters needed.
     pub fn from_vocal_chain(v: &VocalChain) -> Chain {
         let mut stages = Vec::new();
 

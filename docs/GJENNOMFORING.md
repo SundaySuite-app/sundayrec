@@ -816,24 +816,34 @@ samme kjede, og utdragene til Ørene er lagt klar.
 
 **Modell:** Sonnet · **Gren:** `ombygging/b2c-filterstrenger-ut` · **Pakke:** B2
 
-**Blokkert på eieren.** Dette er ett av to steder i hele planen der en PR venter
-på ører, ikke på kode.
+**Levert 2026-11-10 (denne PR-en), på eierens ja uten lytterunde.** Planen krevde at
+Ørene først hadde lyttet til de tre profilene på minst tre ekte gudstjenester,
+gammel mot ny. Richard sa ja til slettingen 2026-11-10 **uten å ha gjennomført den
+runden**. Det er hans beslutning, og den er tatt med åpne øyne: den eneste
+sammenligningen som fantes, `chain_ab`, finnes ikke lenger, og det er ingen vei
+tilbake. Lytting til den nye kjeden alene står som punkt i RIG-DAY «Ørene»;
+feil rettes framover (beslutning B5).
 
 **Mål:** Siste skritt i beslutning B5 i [OMBYGGING.md](OMBYGGING.md): ingen
 reserve etter godkjenning.
 
-**Sletter:** filterstreng-byggerne i `processing.rs` og `mastering.rs`, og
-`src-tauri/examples/chain_ab.rs`.
+**Slettet:** `VocalChain::build_filters` og `to_filter_string`,
+`channel_repair_filter` og formateringshjelperen `coef` i `processing.rs`; testene som
+bare målte filterstrengene (inkl. `vocal_chain_levels` i `editor/mod.rs`, som kjørte
+strengene gjennom ffmpeg); `src-tauri/examples/chain_ab.rs`; ffmpeg-radene i
+`dsp_bench`.
 
-**Port:** `cargo test --workspace`, `npm run reachability`.
+**Bevisst beholdt:** `MasterPreset.filters` (presettabellen, `chain.rs` leser teksten
+som en tabell over steg, ingen ffmpeg ser den), `dither_filter_for` (dither-steget i
+selve kodingen, ikke tone/dynamikk), `channel_repair_needs_stereo` (skrevet om uten
+`pan=`-strengen), de numeriske klampene, og `proc_filters`-ledningen i
+`editor.rs` (alltid tom siden B2b; en egen opprydding).
 
-**Ferdig når:** Ørene i [RIG-DAY.md](RIG-DAY.md) har lyttet til de **tre**
-profilene på **minst tre ekte gudstjenester**, gammel mot ny, med minst ett
-stort kirkerom og ett brumopptak — og eieren har sagt ja. Først da slettes det.
+**Port:** `cargo test --workspace`, `npm run reachability`, `npm run check`.
 
-**Hvor det bevises:** **Riggen** (Ørene) + Macen (slettingen).
+**Hvor det bevises:** Macen (slettingen). Lyttingen er ikke gjort; se over.
 
-**Startmelding:**
+**Startmelding (brukt):**
 
 > Les `docs/GJENNOMFORING.md` §B2c og `docs/LYDMOTOR.md` fase 2 og §Risiko.
 > Gjennomfør økta som én PR på `ombygging/b2c-filterstrenger-ut`.
@@ -1908,10 +1918,10 @@ er en konsekvens av avhengigheten, ikke av temaet.
 
 ### M2 og M3 — parallelt (eiers beslutning 2026-10-12)
 
-| Arbeidstre     | Kjede                                                                                                                             |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `wt/omb-lyd`   | B0a → B0b → B0c → B1a → B1b; **B2a kan starte så snart B0a er merget** → B2b → B3a → B3b. **B2c ligger åpen til Ørene har svart** |
-| `wt/omb-video` | C1a ∥ C1b (uavhengige) → C1c → C2 → C3a → C3b → C3c; deretter C4a → C4b ∥ C5a → C5b                                               |
+| Arbeidstre     | Kjede                                                                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wt/omb-lyd`   | B0a → B0b → B0c → B1a → B1b; **B2a kan starte så snart B0a er merget** → B2b → B3a → B3b. B2c levert 2026-11-10 på eierens ja, uten lytterunde |
+| `wt/omb-video` | C1a ∥ C1b (uavhengige) → C1c → C2 → C3a → C3b → C3c; deretter C4a → C4b ∥ C5a → C5b                                                            |
 
 Berøringsflatene er disjunkte: lyden bor i `crates/sundayrec-core`
 (`loudness`, `chain`, `mastering`, `processing`) og `app/editor`, videoen i
@@ -1937,7 +1947,7 @@ hel gudstjeneste på Windows).
 - **C3b** mot noe som helst. ~12 000 linjer ut konflikter med alt, og en rebase
   midt i en sletting er der rester blir igjen.
 - **B2c** før eieren har sagt ja. Det er ikke en teknisk sperre, men den er like
-  bindende.
+  bindende. (Eieren sa ja 2026-11-10; B2c er levert.)
 
 ## Milepælsportene
 
@@ -1961,7 +1971,7 @@ Maskinvaren er sjekket 2026-10-12.
 | Flerkanals mikser      | A3 kanalvalg, RIG-DAY (a) og (h), D3s terskel  | Riggdagen (mikseren finnes)                           |
 | USB-webkamera          | C1c og C3c sitt kabeltrekk                     | Riggdagen (kameraet finnes)                           |
 | **HDMI-opptakskort**   | C1s opptakskort-punkt, Caps DirectShow-reserve | **Finnes ikke.** Punktet står åpent, ikke blokkerende |
-| Ekte gudstjenester     | B2c, B3b — Ørene                               | Riggdagen. B2c er blokkert på dette                   |
+| Ekte gudstjenester     | B3b — Ørene (B2c er levert uten lytterunde)    | Riggdagen                                             |
 | Ekte kirkerom med brum | B3b                                            | Riggdagen                                             |
 
 **Det Macen kan mer av enn man tror:** Continuity-kameraet kommer og går som en
