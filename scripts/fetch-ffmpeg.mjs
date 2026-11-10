@@ -194,6 +194,17 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 // ── Archive download (cached, integrity-checked) ───────────────────────────
 
+// ── Retry with a pause ─────────────────────────────────────────────────────
+// GitHub's release downloads answer 504 Gateway Time-out in bursts that last
+// from seconds to minutes. Three attempts back to back (the old loop) all land
+// inside the same burst: v0.29.0's Windows build needed six reruns on
+// 2026-11-09 because every one of them gave up within 20 ms. The pauses below
+// add up to under four minutes — small next to a 25-minute release job, and
+// long enough to ride out most bursts. A 404/410 still skips straight to the
+// next source: that is an answer, not a hiccup.
+const RETRY_WAIT_S = [10, 30, 60, 120];
+const ATTEMPTS = RETRY_WAIT_S.length + 1;
+
 async function archive(url, expected, fallbacks = []) {
   const cached = join(
     cacheDir,
@@ -221,7 +232,12 @@ async function archive(url, expected, fallbacks = []) {
   const failures = [];
   for (const src of sources) {
     const host = new URL(src).host;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        const wait = RETRY_WAIT_S[attempt - 2];
+        console.warn(`  … waiting ${wait} s before attempt ${attempt}`);
+        await new Promise((r) => setTimeout(r, wait * 1000));
+      }
       try {
         const res = await fetch(src, {
           redirect: "follow",
@@ -252,7 +268,9 @@ async function archive(url, expected, fallbacks = []) {
         return buf;
       } catch (err) {
         failures.push(`${host}: ${err.message}`);
-        console.warn(`  ⚠ ${host} attempt ${attempt}/3 failed: ${err.message}`);
+        console.warn(
+          `  ⚠ ${host} attempt ${attempt}/${ATTEMPTS} failed: ${err.message}`,
+        );
         if (err.gone) break;
       }
     }
