@@ -109,6 +109,7 @@ import {
   suggestion,
   type Step,
 } from "./model";
+import { byTestId, focusAfterRender, PLAY_SELECTOR } from "./focus";
 import { teardownPlayback, togglePlay } from "./playback";
 import {
   PLAY_KEYS_ARIA,
@@ -395,14 +396,21 @@ function SuggestionCard() {
           <Button
             variant="primary"
             testId="editor-keep-sermon"
-            onClick={applySermon}
+            onClick={() => {
+              applySermon();
+              // Kortet forsvinner med knappen; spill-knappen er neste steg.
+              focusAfterRender(byTestId(PLAY_SELECTOR));
+            }}
           >
             {t("app.editor.keepSermon")}
           </Button>
           <Button
             variant="secondary"
             testId="editor-keep-all"
-            onClick={keepAll}
+            onClick={() => {
+              keepAll();
+              focusAfterRender(byTestId(PLAY_SELECTOR));
+            }}
           >
             {t("app.editor.keepAll")}
           </Button>
@@ -411,6 +419,8 @@ function SuggestionCard() {
     />
   );
 }
+
+const REMOVE_SELECTOR = '[data-testid="editor-cut-remove"]';
 
 /** Spill/pause, klokka, og resultatet. */
 function Transport() {
@@ -531,7 +541,20 @@ function ManualTools() {
                 <Button
                   variant="ghost"
                   testId="editor-cut-remove"
-                  onClick={() => deleteCut(index)}
+                  onClick={() => {
+                    deleteCut(index);
+                    // Raden er borte: neste rads «Fjern», ellers forrige,
+                    // ellers «Fjern alle» — aldri `<body>`.
+                    focusAfterRender(
+                      () =>
+                        document.querySelectorAll(REMOVE_SELECTOR)[index] ??
+                        null,
+                      () =>
+                        document.querySelectorAll(REMOVE_SELECTOR)[index - 1] ??
+                        null,
+                      byTestId('[data-testid="editor-clear-cuts"]'),
+                    );
+                  }}
                 >
                   {t("editor.deleteCut")}
                 </Button>
