@@ -38,6 +38,7 @@ import { t, tf } from "../i18n";
 import {
   beginWindowHandleDrag,
   invalidateCanvasRect,
+  isWindowPointerDrag,
   onCanvasPointerDown,
   onCanvasPointerLeave,
   onCanvasPointerMove,
@@ -255,7 +256,7 @@ function Handle({
   const flush = (): void => {
     const pending = dragWindow.peek();
     // Musa eier `dragWindow` mens den drar; den registrerer selv.
-    if (!pending || E.handleDrag) return;
+    if (!pending || isWindowPointerDrag()) return;
     dragWindow.value = null;
     setSermonWindow(pending, applied.value);
   };
@@ -284,7 +285,14 @@ function Handle({
           return null;
       }
     })();
-    if (target === null) return;
+    if (target === null) {
+      // En annen tast (⌘Z, Tab, mellomrom …) midt i et hold: registrer det
+      // som er flyttet FØRST. På macOS kommer ingen keyup for en pil som
+      // slippes mens ⌘ er nede, og ⌘Z skal angre et ferdig steg — ikke
+      // ignoreres mot et draft som aldri ble registrert.
+      if (!HANDLE_KEYS.has(event.key)) flush();
+      return;
+    }
     event.preventDefault();
     moveTo(target);
   };
