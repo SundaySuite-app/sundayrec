@@ -461,6 +461,12 @@ export async function cancelExport(): Promise<void> {
  * står med en ubestemt bar og en Avbryt-knapp som faktisk avbryter (se
  * `cancelExport`). Analysen kommer etterpå.
  */
+/** Kuttlista som en sammenlignbar verdi. Håndtaksdrag endrer elementene på
+ *  stedet, så en referanse-sammenligning ville ikke sett dem. */
+function cutsKey(list: readonly { start: number; end: number }[]): string {
+  return list.map((c) => `${c.start}:${c.end}`).join(",");
+}
+
 export async function runExport(
   keptSeconds: number,
   estimate: number | null,
@@ -531,6 +537,11 @@ export async function runExport(
     speaker: exportSpeaker.value.trim(),
     description: currentDescription().trim(),
   };
+
+  // Kuttene slik eksporten ser dem. Fila står åpen mens den går, og
+  // brukeren kan gå tilbake til Klipp og endre noe — da beskriver den
+  // ferdige fila IKKE lenger redigeringen, og den skal ikke merkes lagret.
+  const cutsAtStart = cutsKey(E.cuts);
 
   const params = buildExportRequest({
     kind: video ? "video" : "audio",
@@ -625,9 +636,14 @@ export async function runExport(
     exportedBytes.value = video ? null : estimate;
     exportedLoudness.value = result.loudness ?? null;
     exportedContent.value = content;
-    // Eksporten lyktes — utkastet har gjort jobben sin.
-    clearDraft();
-    clearDirty();
+    // Eksporten lyktes — utkastet har gjort jobben sin. Men bare hvis den
+    // eksporterte det som står nå: et kutt lagt til MENS den gikk er ikke i
+    // fila, og da må både «ulagrede endringer» og utkastet stå igjen (audit
+    // 2026-11-11 🔴 — ellers lukket man uten spørsmål og mistet kuttet).
+    if (cutsKey(E.cuts) === cutsAtStart) {
+      clearDraft();
+      clearDirty();
+    }
     // …og innholdet blir stående ved opptaket til neste gang.
     void keepContent(sourceToken, content);
     return;

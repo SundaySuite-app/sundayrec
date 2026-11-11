@@ -28,10 +28,12 @@ import { E, loadState, resetFileState } from "./model";
 /** Hva stubben har sett. `order` er det testen faktisk er om. */
 let cancels: number;
 let order: string[];
+let deletedDrafts: string[];
 
 function installFakeApi(): void {
   cancels = 0;
   order = [];
+  deletedDrafts = [];
   (globalThis as unknown as { window: unknown }).window = {
     api: {
       editorCancelExport: () => {
@@ -42,7 +44,10 @@ function installFakeApi(): void {
       // `closeFile` river avspillingen og sidevognene ned på veien ut; ingen av
       // dem har noe å si her, men de skal ikke kaste.
       editorWriteSidecar: () => Promise.resolve(true),
-      editorDeleteCutsDraft: () => Promise.resolve(),
+      editorDeleteCutsDraft: (token: string) => {
+        deletedDrafts.push(token);
+        return Promise.resolve();
+      },
     },
     // Lyttingens avslå-timer (`sound.ts`) rydder seg selv gjennom VERTEN, ikke
     // gjennom den globale. Ingen timer er armet her; stubben er bare det som
@@ -183,5 +188,26 @@ describe("confirmDiscard mens en eksport går", () => {
     expect(activeDialog.value).not.toBeNull();
     answerDialog(false);
     expect(await asked).toBe(false);
+  });
+
+  it("«Forkast endringer» sletter utkastet, så kuttene ikke kommer tilbake", async () => {
+    E.dirty = true;
+    const asked = confirmDiscard();
+    answerDialog(true);
+    expect(await asked).toBe(true);
+    expect(deletedDrafts).toEqual([E.sourceToken]);
+  });
+
+  it("nei til å forkaste lar utkastet stå", async () => {
+    E.dirty = true;
+    const asked = confirmDiscard();
+    answerDialog(false);
+    expect(await asked).toBe(false);
+    expect(deletedDrafts).toEqual([]);
+  });
+
+  it("uten ulagrede endringer slettes ingenting", async () => {
+    expect(await confirmDiscard()).toBe(true);
+    expect(deletedDrafts).toEqual([]);
   });
 });
