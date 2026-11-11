@@ -212,6 +212,43 @@ test.describe("editor", () => {
     );
   });
 
+  test("fokus går ikke tapt når knappen man sto på forsvinner", async ({
+    page,
+  }) => {
+    // Audit 2026-11-11: forslagskortet og kuttradenes «Fjern» tok fokuset
+    // med seg til <body>. Tastaturet brukes her med vilje — Enter på knappen.
+    await openEditor(page);
+    await waitForSuggestion(page);
+
+    await page.getByTestId("editor-keep-sermon").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
+    await expect(page.getByTestId("editor-play")).toBeFocused();
+
+    const rows = page.getByTestId("editor-cut-row");
+    await expect(rows).toHaveCount(2);
+    // Første rad fjernes: fokus til den som nå står først.
+    await rows.first().getByTestId("editor-cut-remove").focus();
+    await page.keyboard.press("Enter");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first().getByTestId("editor-cut-remove")).toBeFocused();
+    // Siste rad fjernes: fokus til «Fjern alle», som står igjen.
+    await page.keyboard.press("Enter");
+    await expect(rows).toHaveCount(0);
+    await expect(page.getByTestId("editor-clear-cuts")).toBeFocused();
+  });
+
+  test("«Behold alt» med tastaturet lander på spill-knappen", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-all").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
+    await expect(page.getByTestId("editor-play")).toBeFocused();
+  });
+
   test("unsaved cuts from a previous session come back on reopen", async ({
     page,
   }) => {
