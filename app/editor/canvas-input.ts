@@ -153,6 +153,13 @@ export function onMinimapPointerDown(event: PointerEvent): void {
  * Kalles fra `WaveformHost` — håndtakene er ekte DOM-knapper og ikke tegnede
  * piksler, slik at en tastaturbruker også kan flytte dem.
  */
+/** Drar musa et preken-håndtak akkurat nå? Tastaturet deler `dragWindow`
+ *  med musa og må vite hvem som eier det. */
+let windowPointerDrag = false;
+export function isWindowPointerDrag(): boolean {
+  return windowPointerDrag;
+}
+
 export function beginWindowHandleDrag(
   side: "start" | "end",
   event: PointerEvent,
@@ -172,6 +179,7 @@ export function beginWindowHandleDrag(
     applied,
   });
   if (!window_) return;
+  windowPointerDrag = true;
 
   const move = (e: PointerEvent): void => {
     const raw = xToSec(e.clientX - box.left, box.width);
@@ -188,6 +196,7 @@ export function beginWindowHandleDrag(
   };
 
   const up = (): void => {
+    windowPointerDrag = false;
     dragWindow.value = null;
     if (window_) setSermonWindow(window_, applied);
   };

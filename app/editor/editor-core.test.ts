@@ -119,6 +119,24 @@ describe("vinduet tilbake til kutt", () => {
     ]);
   });
 
+  it("et vindu som gjøres STØRRE tar ikke det gamle hodet og halen med seg", () => {
+    // Feilen: hodet 0–210 ble klemt inn i det nye vinduet og la seg tilbake,
+    // så venstre håndtak kunne aldri gå til venstre (og høyre aldri til høyre).
+    const existing = [
+      { start: 0, end: 210 },
+      { start: 300, end: 330 },
+      { start: 420, end: DURATION },
+    ];
+    expect(windowToCuts({ start: 180, end: 450 }, DURATION, existing)).toEqual([
+      { start: 0, end: 180 },
+      { start: 300, end: 330 },
+      { start: 450, end: DURATION },
+    ]);
+    expect(
+      windowToCuts({ start: 0, end: DURATION }, DURATION, existing),
+    ).toEqual([{ start: 300, end: 330 }]);
+  });
+
   it("dropper kutt i kantene som blir borte i avrunding", () => {
     expect(windowToCuts({ start: 0.2, end: DURATION - 0.2 }, DURATION)).toEqual(
       [],
