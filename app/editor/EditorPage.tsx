@@ -110,6 +110,14 @@ import {
   type Step,
 } from "./model";
 import { teardownPlayback, togglePlay } from "./playback";
+import {
+  PLAY_KEYS_ARIA,
+  playShortcutHint,
+  REDO_KEYS_ARIA,
+  redoShortcutHint,
+  UNDO_KEYS_ARIA,
+  undoShortcutHint,
+} from "./shortcut-labels";
 import { candidatesFor, chooseSermon } from "./sermon";
 import { soundVisited } from "./sound";
 import { SoundStep } from "./SoundStep";
@@ -416,6 +424,8 @@ function Transport() {
         class={styles.play}
         data-testid="editor-play"
         aria-label={playing.value ? t("app.editor.pause") : t("tooltip.play")}
+        title={playShortcutHint()}
+        aria-keyshortcuts={PLAY_KEYS_ARIA}
         onClick={togglePlay}
       >
         {playing.value ? (
@@ -475,6 +485,8 @@ function ManualTools() {
           testId="editor-undo"
           disabled={!canUndo.value}
           disabledReason={t("app.editor.nothingToUndo")}
+          shortcutHint={undoShortcutHint()}
+          keyShortcuts={UNDO_KEYS_ARIA}
           onClick={undoCut}
         >
           {t("trash.undo")}
@@ -484,6 +496,8 @@ function ManualTools() {
           testId="editor-redo"
           disabled={!canRedo.value}
           disabledReason={t("app.editor.nothingToRedo")}
+          shortcutHint={redoShortcutHint()}
+          keyShortcuts={REDO_KEYS_ARIA}
           onClick={redoCut}
         >
           {t("app.editor.redo")}

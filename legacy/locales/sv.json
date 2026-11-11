@@ -684,6 +684,8 @@
       "redo": "Gör om",
       "nothingToUndo": "Ingenting att ångra än.",
       "nothingToRedo": "Ingenting att göra om.",
+      "shortcutHint": "Kortkommando: {keys}",
+      "keySpace": "mellanslag",
       "notSermonDesc": "Välj rätt del. Vi kommer ihåg det till nästa gång.",
       "blockOption": "Del {n} — {at} · {span}",
       "stepSound": "Ljud",

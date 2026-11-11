@@ -130,6 +130,40 @@ export function seekTo(sec: number): void {
   scheduleDraw();
 }
 
+/**
+ * Flytt spillehodet `deltaSec` (piltastene). Som i et redigeringsprogram
+ * fortsetter avspillingen fra det nye stedet hvis den gikk. Bakover inn i et
+ * kutt lander FØR kuttet — `snapOutOfCut` alene ville kastet spillehodet
+ * FORBI det, altså framover, på en tast som betyr «tilbake».
+ */
+export function seekBy(deltaSec: number): void {
+  // `E.playStartSec`, ikke `engineAt`: hver posisjon fra motoren skriver den
+  // (se `onEngineEvent`), og FØR første posisjon — mens lydkortet åpnes — er
+  // den stedet avspillingen ble bedt om å starte. `engineAt` henger da igjen
+  // på forrige økt, så → kort etter mellomrom hoppet fra feil sted (review).
+  const from = E.playStartSec;
+  let target = clampToFile(from + deltaSec);
+  if (deltaSec < 0) {
+    for (const cut of E.cuts) {
+      if (target >= cut.start && target < cut.end) {
+        target = Math.max(0, cut.start - 0.01);
+      }
+    }
+  }
+  seekAndResume(target);
+}
+
+/** Home/End: start eller slutt av programmet. */
+export function seekToEdge(edge: "start" | "end"): void {
+  seekAndResume(edge === "start" ? 0 : playableEnd());
+}
+
+function seekAndResume(sec: number): void {
+  const wasPlaying = E.isPlaying;
+  seekTo(sec);
+  if (wasPlaying && E.playStartSec < playableEnd() - AT_END_SEC) startPlay();
+}
+
 export function togglePlay(): void {
   if (E.isPlaying) {
     stopPlay();

@@ -22,6 +22,7 @@ import {
 } from "./model";
 import {
   CUTS_DEBOUNCE_MS,
+  seekBy,
   seekTo,
   startPlay,
   stopPlay,
@@ -243,6 +244,36 @@ describe("hopp", () => {
     expect(engine.log.find((c) => c.cmd === "open")).toMatchObject({
       listen: { startSec: 700 },
     });
+  });
+});
+
+describe("piltastene (seekBy)", () => {
+  it("→ rett etter mellomrom, mens lydkortet åpner, går fra der avspillingen startet", async () => {
+    // Review av #433: `engineAt` hang igjen fra en tidligere økt (her 0), så
+    // → hoppet til 0:01 i stedet for 20:01.
+    seekTo(1200);
+    startPlay();
+    seekBy(1);
+    expect(E.playStartSec).toBe(1201);
+    await settle();
+    expect(playing.value).toBe(true);
+  });
+
+  it("mens det spiller: fra motorens siste posisjon, og avspillingen fortsetter", async () => {
+    startPlay();
+    await settle();
+    position(300);
+    seekBy(-5);
+    expect(E.playStartSec).toBe(295);
+    await settle();
+    expect(playing.value).toBe(true);
+  });
+
+  it("bakover inn i et kutt lander FØR kuttet, ikke etter", () => {
+    setCuts([{ start: 100, end: 200 }]);
+    seekTo(205);
+    seekBy(-10);
+    expect(E.playStartSec).toBeLessThan(100);
   });
 });
 
