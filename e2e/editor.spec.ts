@@ -343,6 +343,42 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-suggestion")).toBeVisible();
   });
 
+  test("et holdt piltrykk på et preken-håndtak er ETT angre-steg", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+
+    const handle = page.getByTestId("editor-handle-start");
+    const before = Number(await handle.getAttribute("aria-valuenow"));
+    await handle.focus();
+    // Holdt nede: første `down` + ni auto-repeat, så ett slipp.
+    for (let i = 0; i < 10; i++) await page.keyboard.down("ArrowRight");
+    await page.keyboard.up("ArrowRight");
+    await expect(handle).toHaveAttribute("aria-valuenow", String(before + 10));
+
+    // ETT klikk på Angre tar hele holdet tilbake — ikke ett sekund.
+    await page.getByTestId("editor-undo").click();
+    await expect(handle).toHaveAttribute("aria-valuenow", String(before));
+    // …og ett til tar bort «Behold bare prekenen».
+    await page.getByTestId("editor-undo").click();
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
+  });
+
+  test("Home på startshåndtaket flytter det til begynnelsen", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    const handle = page.getByTestId("editor-handle-start");
+    await handle.focus();
+    await page.keyboard.press("Home");
+    await expect(handle).toHaveAttribute("aria-valuenow", "0");
+  });
+
   test("«Behold alt» legger kortet bort uten å røre opptaket", async ({
     page,
   }) => {

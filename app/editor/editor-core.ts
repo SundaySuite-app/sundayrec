@@ -124,6 +124,12 @@ export function windowToCuts(
   if (end < durationSec - EDGE_EPSILON_SEC)
     next.push({ start: end, end: durationSec });
   for (const cut of existing) {
+    // Hodet og halen ER det forrige vinduets kanter, ikke kutt «inne i»
+    // vinduet. Ble de tatt med, ville et vindu som gjøres STØRRE fått det
+    // gamle hodet klemt inn igjen — venstre håndtak kunne aldri gå til venstre
+    // (audit 2026-11-11).
+    if (cut.start <= EDGE_EPSILON_SEC) continue;
+    if (cut.end >= durationSec - EDGE_EPSILON_SEC) continue;
     const s = Math.max(cut.start, start);
     const e = Math.min(cut.end, end);
     if (e > s + EDGE_EPSILON_SEC) next.push({ start: s, end: e });
