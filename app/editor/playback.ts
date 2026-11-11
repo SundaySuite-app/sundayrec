@@ -137,7 +137,11 @@ export function seekTo(sec: number): void {
  * FORBI det, altså framover, på en tast som betyr «tilbake».
  */
 export function seekBy(deltaSec: number): void {
-  const from = E.isPlaying ? engineAt : E.playStartSec;
+  // `E.playStartSec`, ikke `engineAt`: hver posisjon fra motoren skriver den
+  // (se `onEngineEvent`), og FØR første posisjon — mens lydkortet åpnes — er
+  // den stedet avspillingen ble bedt om å starte. `engineAt` henger da igjen
+  // på forrige økt, så → kort etter mellomrom hoppet fra feil sted (review).
+  const from = E.playStartSec;
   let target = clampToFile(from + deltaSec);
   if (deltaSec < 0) {
     for (const cut of E.cuts) {

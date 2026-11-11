@@ -28,6 +28,7 @@ import { createDraftScheduler } from "@lib/pages/editor/draft-scheduler";
 import { signal } from "@preact/signals";
 
 import {
+  dragWindow,
   E,
   manualMode,
   markDirty,
@@ -208,7 +209,10 @@ export function clearCuts(): void {
 export function undoCut(): void {
   // Aldri bytt ut lista under et pågående drag — det foreldreløser dragets
   // endringer og korrumperer historikken ved museslipp. Legacys egen regel.
-  if (E.handleDrag || E.isDragging) return;
+  // Et preken-håndtak i bevegelse (mus eller tastatur) går gjennom
+  // `dragWindow` og registrerer seg når det slippes — et angre midt i ville
+  // blitt skrevet over av den registreringen (review av #433: ⌘Z under drag).
+  if (E.handleDrag || E.isDragging || dragWindow.peek() !== null) return;
   const r = undoSnapshot(
     { history: E.cutHistory, idx: E.cutHistoryIdx },
     E.cuts.length,
@@ -235,7 +239,10 @@ export function undoCut(): void {
 
 /** Gjør om. Samme `markDirty`-historie som `undoCut` — se den. */
 export function redoCut(): void {
-  if (E.handleDrag || E.isDragging) return;
+  // Et preken-håndtak i bevegelse (mus eller tastatur) går gjennom
+  // `dragWindow` og registrerer seg når det slippes — et angre midt i ville
+  // blitt skrevet over av den registreringen (review av #433: ⌘Z under drag).
+  if (E.handleDrag || E.isDragging || dragWindow.peek() !== null) return;
   const r = redoSnapshot({ history: E.cutHistory, idx: E.cutHistoryIdx });
   if (!r) return;
   E.cutHistoryIdx = r.idx;

@@ -28,6 +28,7 @@ import {
   applied,
   clearDirty,
   cuts,
+  dragWindow,
   dirty,
   dismissed,
   E,
@@ -155,6 +156,24 @@ describe("angre/gjør om merker fila som endret", () => {
 });
 
 // ── (b) «Fjern alle kutt» og kortets to svar ────────────────────────────────
+
+describe("angre mens et preken-håndtak er i bevegelse", () => {
+  // Review av #433: ⌘Z midt i et håndtaksdrag ble skrevet over når draget
+  // registrerte seg ved slipp.
+  it("gjør ingenting så lenge `dragWindow` står", () => {
+    addCut(600, 900);
+    dragWindow.value = { start: 100, end: 500 };
+    undoCut();
+    expect(cuts.value).toHaveLength(1);
+    dragWindow.value = null;
+    undoCut();
+    expect(cuts.value).toHaveLength(0);
+    dragWindow.value = { start: 100, end: 500 };
+    redoCut();
+    expect(cuts.value).toHaveLength(0);
+    dragWindow.value = null;
+  });
+});
 
 describe("clearCuts svarer på HELE forslaget", () => {
   // ⚠️ FUNNET, og det er ekte. `clearCuts` nullstiller `applied` — den er
