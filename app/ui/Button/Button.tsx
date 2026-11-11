@@ -57,6 +57,12 @@ export interface ButtonProps {
   block?: boolean;
   type?: "button" | "submit";
   testId?: string;
+  /** Hurtigtasten som gjør det samme, ferdig formulert for verktøytipset
+   *  («Hurtigtast: ⌘Z»). Vises bare når knappen ikke er av — da er det
+   *  `disabledReason` som står der. */
+  shortcutHint?: string;
+  /** `aria-keyshortcuts`, i ARIA-syntaks («Meta+Z Control+Z»). */
+  keyShortcuts?: string;
   /**
    * Knappen folder ut noe: `aria-expanded` + `aria-controls`.
    *
@@ -95,6 +101,8 @@ export function Button({
   testId,
   expanded,
   controls,
+  shortcutHint,
+  keyShortcuts,
   "data-dialog-button": dialogButton,
 }: ButtonProps) {
   const reasonId = useId();
@@ -114,7 +122,8 @@ export function Button({
       aria-expanded={expanded}
       aria-controls={expanded ? controls : undefined}
       aria-describedby={reason ? reasonId : undefined}
-      title={reason}
+      title={reason ?? (off ? undefined : shortcutHint)}
+      aria-keyshortcuts={keyShortcuts}
       class={[
         styles.btn,
         VARIANT[variant],

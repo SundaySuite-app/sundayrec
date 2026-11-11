@@ -684,6 +684,8 @@
       "redo": "Gentag",
       "nothingToUndo": "Der er ikke noget at fortryde endnu.",
       "nothingToRedo": "Der er ikke noget at gentage.",
+      "shortcutHint": "Genvej: {keys}",
+      "keySpace": "mellemrum",
       "notSermonDesc": "Vælg den rigtige del. Vi husker det til næste gang.",
       "blockOption": "Del {n} — {at} · {span}",
       "stepSound": "Lyd",

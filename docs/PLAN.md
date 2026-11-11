@@ -58,6 +58,8 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 - Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
 - Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), klokkehopp tømmer papirkurven (110, trenger lagret sist-kjørt-tid), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn (151; to-prosess-videostien er slettet i C3b, #384), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, `_deliver_tmp` synlig i lagringsmappa, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
 
+- Audit av redigeringen 2026-11-11 (tastatur-PR-en): 🔴/🟠 rettes i egne PR-er. Gjenstår 🟡: Før/Etter-lyttingen viser «kunne ikke spille» etter å ha forlatt steget midt i åpningen (`sound.ts` `toggleListen`, `listenError` nullstilles ikke i `stopListen`), `toggleListen` mangler generasjonsteller som `playGen` (dobbeltklikk mens «Etter» måles), angre etter 50-grensen hopper til tom kuttliste (`cut-history.ts`), og en mulig åpne/lukke-kappløp i `sound.ts` `ensureSession` (ikke sjekket mot Rust). Ingen Delete-snarvei: redigeringen har ikke noe «valgt kutt». J/K/L og snarveier for å lage kutt (I/O) er ikke planlagt.
+
 ## Spike / maskinvare først
 
 Kode, men bare etter et forsøk på ekte maskin.

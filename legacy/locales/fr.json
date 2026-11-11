@@ -684,6 +684,8 @@
       "redo": "Rétablir",
       "nothingToUndo": "Rien à annuler pour l’instant.",
       "nothingToRedo": "Rien à rétablir.",
+      "shortcutHint": "Raccourci : {keys}",
+      "keySpace": "Espace",
       "notSermonDesc": "Choisissez la bonne partie. Nous nous en souviendrons la prochaine fois.",
       "blockOption": "Partie {n} — {at} · {span}",
       "stepSound": "Son",

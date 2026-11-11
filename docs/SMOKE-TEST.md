@@ -1494,6 +1494,14 @@ Targets the "editor is unstable" reports. Run this stress loop after the fixes:
    8 kHz preview transport (and the flag that gated its replacement) is gone.
    - **Expected:** no file sounds low-fi. If one does, it is a bug, not a
      setting.
+6. **Tastaturet som i et redigeringsprogram (2026-11).** Åpne et ekte opptak
+   på Mac OG Windows. Trykk mellomrom uten å ha klikket noe, så etter et klikk
+   på «Klipp manuelt» og etter et klikk på «Angre». Prøv ←/→ (Shift = 5 s),
+   Home/End, ⌘Z/Ctrl+Z og ⇧⌘Z/Ctrl+Y. Trykk mellomrom i Lyd-steget også.
+   - **Expected:** mellomrom spiller/pauser hver gang og trykker ALDRI knappen
+     fokus står på. Lyden starter innen et halvt sekund. I et tekstfelt
+     (eksportnavnet) skriver mellomrom et mellomrom. Piltastene på et
+     preken-håndtak flytter håndtaket, ikke spillehodet.
 
 > [HW] These are interactive webview behaviours (AudioContext lifecycle, the
 > `<audio>` proxy transport, canvas redraw) that the headless gate can't see.

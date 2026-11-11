@@ -684,6 +684,8 @@
       "redo": "Wiederholen",
       "nothingToUndo": "Es gibt noch nichts rückgängig zu machen.",
       "nothingToRedo": "Es gibt nichts zu wiederholen.",
+      "shortcutHint": "Tastenkürzel: {keys}",
+      "keySpace": "Leertaste",
       "notSermonDesc": "Wählen Sie den richtigen Teil. Wir merken uns das für das nächste Mal.",
       "blockOption": "Teil {n} — {at} · {span}",
       "stepSound": "Ton",

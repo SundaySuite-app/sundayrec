@@ -68,6 +68,7 @@ import {
 } from "./sound";
 import { channelCodeKey, SOUND_PROFILES, taleSaidKeys } from "./sound-profiles";
 import styles from "./editor.module.css";
+import { PLAY_KEYS_ARIA, playShortcutHint } from "./shortcut-labels";
 
 export function SoundStep() {
   const profile = soundProfile.value;
@@ -246,6 +247,8 @@ function ListenCard() {
           aria-label={
             listenPlaying.value ? t("app.editor.pause") : t("tooltip.play")
           }
+          title={playShortcutHint()}
+          aria-keyshortcuts={PLAY_KEYS_ARIA}
           onClick={() => void toggleListen()}
         >
           {listenPlaying.value ? (

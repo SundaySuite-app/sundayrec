@@ -688,6 +688,8 @@
       "redo": "Ponów",
       "nothingToUndo": "Nie ma jeszcze czego cofać.",
       "nothingToRedo": "Nie ma czego ponawiać.",
+      "shortcutHint": "Skrót: {keys}",
+      "keySpace": "spacja",
       "notSermonDesc": "Wybierz właściwą część. Zapamiętamy to na następny raz.",
       "blockOption": "Część {n} — {at} · {span}",
       "stepSound": "Dźwięk",

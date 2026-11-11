@@ -613,6 +613,70 @@ test.describe("editor", () => {
       .toBe(true);
   });
 
+  test("mellomrom spiller og pauser — også når fokus står på en knapp", async ({
+    page,
+  }) => {
+    // Eierens funn: mellomrom gjorde ingenting i Redigering, og stod fokus på
+    // en knapp, ble den knappen trykket i stedet.
+    await spyEvents(page);
+    await openEditor(page);
+    await waitForSuggestion(page);
+
+    await page.keyboard.press(" ");
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.at(-1)?.action))
+      .toEqual({ kind: "play" });
+    await expect(page.getByTestId("editor-play")).toHaveAttribute(
+      "aria-label",
+      "Pause",
+    );
+    await page.keyboard.press(" ");
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.at(-1)?.action))
+      .toEqual({ kind: "pause" });
+
+    // Fokus på «Klipp manuelt»: mellomrom spiller, og knappen trykkes IKKE.
+    await page.getByTestId("editor-manual").click();
+    await expect(page.getByTestId("editor-tools")).toBeVisible();
+    await page.keyboard.press(" ");
+    await expect
+      .poll(() => listenCalls(page).then((c) => c.at(-1)?.action))
+      .toEqual({ kind: "play" });
+    await expect(page.getByTestId("editor-tools")).toBeVisible();
+  });
+
+  test("piltastene og Home/End flytter spillehodet", async ({ page }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    const time = page.getByTestId("editor-time");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(time).toHaveText("0:00:01");
+    await page.keyboard.press("Shift+ArrowRight");
+    await expect(time).toHaveText("0:00:06");
+    await page.keyboard.press("ArrowLeft");
+    await expect(time).toHaveText("0:00:05");
+    await page.keyboard.press("End");
+    await expect(time).toHaveText(
+      (await page.getByTestId("editor-total").textContent()) ?? "",
+    );
+    await page.keyboard.press("Home");
+    await expect(time).toHaveText("0:00:00");
+  });
+
+  test("⌘Z / Ctrl+Z angrer kuttene, og gjør om med Shift", async ({ page }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+
+    await page.getByTestId("editor-keep-sermon").click();
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+  });
+
   test("varigheten kommer fra fila, ikke fra en gjetning", async ({ page }) => {
     await openEditor(page);
     // 600 sekunder → 0:10:00, og resultatlinja er enig med den.

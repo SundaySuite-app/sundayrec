@@ -684,6 +684,8 @@
       "redo": "Gjør om",
       "nothingToUndo": "Ingenting å angre ennå.",
       "nothingToRedo": "Ingenting å gjøre om.",
+      "shortcutHint": "Hurtigtast: {keys}",
+      "keySpace": "mellomrom",
       "notSermonDesc": "Velg riktig del. Vi husker det til neste gang.",
       "blockOption": "Del {n} — {at} · {span}",
       "stepSound": "Lyd",

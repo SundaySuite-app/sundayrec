@@ -80,13 +80,18 @@ import { useEffect } from "preact/hooks";
 
 import {
   decideShortcut,
+  isArrowTarget,
   isEditableTarget,
   isInteractiveTarget,
+  type ShortcutAction,
   type ShortcutPage,
 } from "@lib/shortcuts-core";
 
+import { canRedo, canUndo, redoCut, undoCut } from "./editor/cuts";
 import { EditorPage, editorHeading } from "./editor/EditorPage";
-import { loadState } from "./editor/model";
+import { activeStep, loadState } from "./editor/model";
+import { seekBy, seekToEdge, togglePlay } from "./editor/playback";
+import { toggleListen } from "./editor/sound";
 import { locale, resolveStartupLocale, setLocale, t, tDyn, tf } from "./i18n";
 import {
   DropZone,
@@ -296,51 +301,113 @@ const LIBRARY_SEARCH_SELECTOR = '[data-testid="library-search"]';
  */
 function useGlobalShortcuts(): void {
   useEffect(() => {
+    /** Mellomrom som editoren tok på keydown. Keyup-en må også svelges:
+     *  WebKit og WebView2 «klikker» en fokusert knapp på keyup, så uten dette
+     *  spiller mellomrom OG trykker «Angre» (eller den knappen fokus stod på). */
+    let swallowSpaceUp = false;
+
     function onKeyDown(event: KeyboardEvent): void {
       const r = route.peek();
+      const editorLoaded =
+        r.page === "edit" &&
+        r.tab !== TRASH_TAB &&
+        loadState.peek() === "ready";
       // Redigering har to visninger (se filhodet); søket finnes bare i den
       // ene — biblioteklisten, ikke arbeidsflaten og ikke papirkurven.
       const libraryVisible =
         r.page === "edit" && r.tab !== TRASH_TAB && loadState.peek() === "idle";
       const page: ShortcutPage =
-        r.page === "record" ? "record" : libraryVisible ? "library" : "other";
+        r.page === "record"
+          ? "record"
+          : editorLoaded
+            ? "editor"
+            : libraryVisible
+              ? "library"
+              : "other";
+      const target = document.activeElement as HTMLElement | null;
 
       const action = decideShortcut({
         key: event.key,
         meta: event.metaKey,
         ctrl: event.ctrlKey,
+        shift: event.shiftKey,
+        alt: event.altKey,
         page,
         isRecording: isRecording.peek(),
         dialogOpen: activeDialog.peek() !== null,
-        targetIsEditable: isEditableTarget(
-          document.activeElement as HTMLElement | null,
-        ),
-        targetIsInteractive: isInteractiveTarget(
-          document.activeElement as HTMLElement | null,
-        ),
+        targetIsEditable: isEditableTarget(target),
+        targetIsInteractive: isInteractiveTarget(target),
+        targetIsSlider: isArrowTarget(target),
         repeat: event.repeat,
         // Samme vilkår som Start-knappens `disabled`-prop — se
         // `RecordPage.tsx`s `source.canStart`.
         startEnabled: sourceState(settings.peek(), audioDevices.peek())
           .canStart,
+        editorStep: activeStep.peek(),
+        canUndo: canUndo.peek(),
+        canRedo: canRedo.peek(),
       });
       if (action === null) return;
       event.preventDefault();
-
-      if (action === "start") {
-        pendingAction.value = "start-recording";
-        return;
-      }
-      const field = document.querySelector<HTMLInputElement>(
-        LIBRARY_SEARCH_SELECTOR,
-      );
-      field?.focus();
-      field?.select();
+      if (action === "togglePlay") swallowSpaceUp = true;
+      run(action);
     }
+
+    function onKeyUp(event: KeyboardEvent): void {
+      if (event.key !== " " || !swallowSpaceUp) return;
+      swallowSpaceUp = false;
+      event.preventDefault();
+    }
+
+    function run(action: Exclude<ShortcutAction, null>): void {
+      switch (action) {
+        case "start":
+          pendingAction.value = "start-recording";
+          return;
+        case "search": {
+          const field = document.querySelector<HTMLInputElement>(
+            LIBRARY_SEARCH_SELECTOR,
+          );
+          field?.focus();
+          field?.select();
+          return;
+        }
+        case "togglePlay":
+          // Lyd-steget har sin egen avspilling (Før/Etter); Klipp har programmet.
+          if (activeStep.peek() === "sound") void toggleListen();
+          else togglePlay();
+          return;
+        case "seekBack":
+          return seekBy(-SEEK_STEP_SEC);
+        case "seekForward":
+          return seekBy(SEEK_STEP_SEC);
+        case "seekBackLong":
+          return seekBy(-SEEK_STEP_LONG_SEC);
+        case "seekForwardLong":
+          return seekBy(SEEK_STEP_LONG_SEC);
+        case "seekStart":
+          return seekToEdge("start");
+        case "seekEnd":
+          return seekToEdge("end");
+        case "undo":
+          return undoCut();
+        case "redo":
+          return redoCut();
+      }
+    }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 }
+
+/** ←/→ i Redigering: ett sekund, med Shift fem — som de fleste lydredigerere. */
+const SEEK_STEP_SEC = 1;
+const SEEK_STEP_LONG_SEC = 5;
 
 // ── Oppdateringsbanneret ────────────────────────────────────────────────────
 

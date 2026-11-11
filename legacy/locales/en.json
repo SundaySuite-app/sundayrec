@@ -684,6 +684,8 @@
       "redo": "Redo",
       "nothingToUndo": "Nothing to undo yet.",
       "nothingToRedo": "Nothing to redo.",
+      "shortcutHint": "Shortcut: {keys}",
+      "keySpace": "Space",
       "notSermonDesc": "Pick the right part. We will remember it for next time.",
       "blockOption": "Part {n} — {at} · {span}",
       "stepSound": "Sound",
