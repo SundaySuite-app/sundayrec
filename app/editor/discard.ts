@@ -23,6 +23,7 @@
 
 import { t } from "../i18n";
 import { confirmDialog } from "../ui/dialog";
+import { clearDraft } from "./cuts";
 import { cancelExport, exporting } from "./export";
 import { E } from "./model";
 
@@ -35,12 +36,18 @@ export async function confirmDiscard(): Promise<boolean> {
   // `ui/dialog.ts` sier det selv om hvorfor køen serialiserer.
   if (exporting.peek()) return true;
   if (!E.dirty) return true;
-  return confirmDialog({
+  const ok = await confirmDialog({
     title: t("editor.confirmClose"),
     message: t("dialog.discardEditsBody"),
     confirmLabel: t("dialog.discardEdits"),
     danger: true,
   });
+  // «Forkast endringer» betyr forkast: utkastet på disk (det som overlever en
+  // krasj) ville ellers lagt de samme kuttene tilbake neste gang fila åpnes
+  // (audit 2026-11-11 🟠). Lappen er fortsatt fila som står åpen — lukkingen
+  // eller byttet skjer først etter at vi har svart.
+  if (ok) clearDraft();
+  return ok;
 }
 
 /**

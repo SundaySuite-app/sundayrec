@@ -186,6 +186,49 @@ describe("runExport — generasjonsvakten", () => {
     expect(deletedDrafts).toEqual([TOKEN_A]);
   });
 
+  it("et kutt lagt til MENS eksporten gikk holder redigeringen ulagret, og utkastet står", async () => {
+    const call = deferred<{ ok: boolean; outputPath?: string }>();
+    installFakeApi(call.promise);
+    E.cuts = [{ start: 10, end: 20 }];
+
+    const run = runExport(120, 1_000_000);
+    // Tilbake i Klipp mens fila skrives: ett kutt til.
+    E.cuts = [
+      { start: 10, end: 20 },
+      { start: 30, end: 40 },
+    ];
+    E.dirty = true;
+    dirty.value = true;
+    call.resolve({
+      ok: true,
+      outputPath: "/Opptak/2026-08-23 (eksportert).mp3",
+    });
+    await run;
+
+    // Kvitteringen er sann — fila ble laget …
+    expect(exportedPath.value).toBe("/Opptak/2026-08-23 (eksportert).mp3");
+    // … men den har ikke det nye kuttet, så ingenting er «lagret».
+    expect(deletedDrafts).toEqual([]);
+    expect(dirty.value).toBe(true);
+    expect(E.dirty).toBe(true);
+  });
+
+  it("et håndtak dratt på stedet MENS eksporten gikk teller også som en endring", async () => {
+    const call = deferred<{ ok: boolean; outputPath?: string }>();
+    installFakeApi(call.promise);
+    E.cuts = [{ start: 10, end: 20 }];
+
+    const run = runExport(120, 1_000_000);
+    (E.cuts[0] as { end: number }).end = 25;
+    E.dirty = true;
+    dirty.value = true;
+    call.resolve({ ok: true, outputPath: "/Opptak/x.mp3" });
+    await run;
+
+    expect(deletedDrafts).toEqual([]);
+    expect(dirty.value).toBe(true);
+  });
+
   it("en FEILET eksport som lander etter et filbytte skriver ingen feilmelding for fil B", async () => {
     const call = deferred<{ ok: boolean; error?: string }>();
     installFakeApi(call.promise);
