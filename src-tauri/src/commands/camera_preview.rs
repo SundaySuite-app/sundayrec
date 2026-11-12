@@ -13,8 +13,8 @@
 //!
 //! ⚠️ HARDWARE-UNVERIFIED — see docs/RIG-DAY.md (v5).
 
-use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 use crate::camera::preview::{self, SessionKey};
 use crate::error::{AppError, AppResult};

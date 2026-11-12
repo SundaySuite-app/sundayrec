@@ -60,19 +60,19 @@ use sundayrec_core::chain::Chain;
 use sundayrec_core::playback::{CutPlan, PcmOpener};
 
 use producer::{Command, Producer, RING_SEC};
-use rt::{Marker, RtRenderer, Shared, FADE_SEC};
+use rt::{FADE_SEC, Marker, RtRenderer, Shared};
 
 /// What the engine tells the UI.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaybackEvent {
     /// The device has been handed audio up to here.
     Position {
-        gen: u64,
+        r#gen: u64,
         program_secs: f64,
         source_secs: f64,
     },
     /// Generation `gen` played to the end of the programme.
-    Ended { gen: u64 },
+    Ended { r#gen: u64 },
     /// The ring ran dry while playing (`total` so far). Audible as a gap.
     Underrun { total: u64 },
     /// The device reported a glitch (`total` so far).
@@ -102,9 +102,14 @@ pub type Sink = Box<dyn FnMut(PlaybackEvent) + Send + 'static>;
 /// of generation `g` is mapped to source time with the last plan whose generation is `<= g`.
 type Plans = Arc<Mutex<Vec<(u64, CutPlan)>>>;
 
-fn source_secs_at(plans: &Plans, gen: u64, program_secs: f64) -> f64 {
+fn source_secs_at(plans: &Plans, r#gen: u64, program_secs: f64) -> f64 {
     let g = plans.lock().unwrap_or_else(|e| e.into_inner());
-    match g.iter().rev().find(|(from, _)| *from <= gen).or(g.first()) {
+    match g
+        .iter()
+        .rev()
+        .find(|(from, _)| *from <= r#gen)
+        .or(g.first())
+    {
         Some((_, plan)) => plan.program_to_source_secs(program_secs),
         None => program_secs,
     }
@@ -321,15 +326,15 @@ impl Player {
     pub fn seek_program(&self, secs: f64) -> u64 {
         let plan = self.lock_plan();
         let frame = (secs.max(0.0) * f64::from(plan.rate())).round() as u64;
-        let gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
+        let r#gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
         // The command first: the callback, seeing the new generation, discards everything up to
         // its start marker, which the producer pushes when it takes the command.
         let _ = self.cmd.send(Command::Seek {
-            gen,
+            r#gen,
             program_frame: frame,
         });
-        self.shared.requested_gen.store(gen, Ordering::Release);
-        gen
+        self.shared.requested_gen.store(r#gen, Ordering::Release);
+        r#gen
     }
 
     /// Jump to `secs` of SOURCE time (a click on the waveform). Inside a cut: the next keep.
@@ -346,7 +351,7 @@ impl Player {
     pub fn set_plan(&self, plan: CutPlan, at_secs: f64) -> u64 {
         let mut cur = self.lock_plan();
         let frame = (plan.source_to_program_secs(at_secs) * f64::from(plan.rate())).round() as u64;
-        let gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
+        let r#gen = self.shared.requested_gen.load(Ordering::Acquire) + 1;
         {
             // The reporter maps this generation's positions with the new plan, and the older
             // ones (still in the ring for a moment) with the plan they were made under.
@@ -357,16 +362,16 @@ impl Player {
                 .rposition(|(from, _)| *from <= playing)
                 .unwrap_or(0);
             plans.drain(..keep_from);
-            plans.push((gen, plan.clone()));
+            plans.push((r#gen, plan.clone()));
         }
         let _ = self.cmd.send(Command::SetPlan {
-            gen,
+            r#gen,
             plan: plan.clone(),
             program_frame: frame,
         });
-        self.shared.requested_gen.store(gen, Ordering::Release);
+        self.shared.requested_gen.store(r#gen, Ordering::Release);
         *cur = plan;
-        gen
+        r#gen
     }
 
     /// The programme position the device was last handed, seconds.
@@ -438,20 +443,20 @@ fn report(
     let mut told_device = false;
     loop {
         let bits = shared.position_bits.load(Ordering::Acquire);
-        let gen = shared.playing_gen.load(Ordering::Acquire);
-        if gen != 0 && last_pos != Some((gen, bits)) {
-            last_pos = Some((gen, bits));
+        let r#gen = shared.playing_gen.load(Ordering::Acquire);
+        if r#gen != 0 && last_pos != Some((r#gen, bits)) {
+            last_pos = Some((r#gen, bits));
             let program_secs = f64::from_bits(bits);
             sink(PlaybackEvent::Position {
-                gen,
+                r#gen,
                 program_secs,
-                source_secs: source_secs_at(&plans, gen, program_secs),
+                source_secs: source_secs_at(&plans, r#gen, program_secs),
             });
         }
         let ended = shared.ended_gen.load(Ordering::Acquire);
         if ended != last_ended && ended != 0 {
             last_ended = ended;
-            sink(PlaybackEvent::Ended { gen: ended });
+            sink(PlaybackEvent::Ended { r#gen: ended });
         }
         let under = shared.underruns.load(Ordering::Relaxed);
         if under != last_under {
@@ -487,7 +492,7 @@ mod device {
     use cpal::{FromSample, SizedSample};
     use sundayrec_core::stream_fault::StreamFault;
 
-    use crate::recorder::native_capture::stream::{open_host, stream_fault, CpalHostKind};
+    use crate::recorder::native_capture::stream::{CpalHostKind, open_host, stream_fault};
 
     /// Frames the callback renders per pass when the device's format is not `f32`.
     const SCRATCH_FRAMES: usize = 4096;

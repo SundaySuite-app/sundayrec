@@ -167,11 +167,11 @@ pub async fn pump_once(
     // retired since, it is the data the user asked to have erased — never send it.
     let payload_id = payload_install_id(&entry.payload_json);
     let current_id = super::install_id_if_any(pool).await?;
-    if let (Some(p), Some(c)) = (&payload_id, &current_id) {
-        if p != c {
-            super::queue_store::delete_entry(pool, &id).await?;
-            return Ok(PumpOutcome::Dropped);
-        }
+    if let (Some(p), Some(c)) = (&payload_id, &current_id)
+        && p != c
+    {
+        super::queue_store::delete_entry(pool, &id).await?;
+        return Ok(PumpOutcome::Dropped);
     }
     // …and consent is asked again right before the socket, not only before the
     // read: the revoke this guards against lands during the awaits above.
@@ -187,10 +187,10 @@ pub async fn pump_once(
             // this install meanwhile, its DELETE may already have run — before
             // this POST landed — so the report just delivered re-created data the
             // user asked to erase. Park the id again so the next drain removes it.
-            if let Some(p) = payload_id {
-                if super::install_id_if_any(pool).await?.as_deref() != Some(p.as_str()) {
-                    super::park_for_deletion(pool, &p).await?;
-                }
+            if let Some(p) = payload_id
+                && super::install_id_if_any(pool).await?.as_deref() != Some(p.as_str())
+            {
+                super::park_for_deletion(pool, &p).await?;
             }
             Ok(PumpOutcome::Sent)
         }
@@ -571,8 +571,8 @@ mod tests {
     use super::tests_support::*;
     use super::*;
     use crate::telemetry::{consent_set, queue_store as store};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use sundayrec_core::telemetry::queue::{TelemetryEntry, TelemetryStatus};
 
     /// A sender that must never be called. Panicking (rather than recording a
@@ -1052,8 +1052,8 @@ mod net_tests {
     use super::*;
     use crate::telemetry::consent_set;
     use crate::telemetry::queue_store as store;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -1214,10 +1214,11 @@ mod net_tests {
             "the write key must be on the request: {}",
             req.head
         );
-        assert!(req
-            .head
-            .to_lowercase()
-            .contains("content-type: application/json"));
+        assert!(
+            req.head
+                .to_lowercase()
+                .contains("content-type: application/json")
+        );
         assert_eq!(
             req.body, "{\"schema\":1}",
             "the payload must go out byte-for-byte as it was queued"
@@ -1401,14 +1402,18 @@ mod net_tests {
             "{head}"
         );
         // And it carried NOTHING about the machine beyond the id being erased.
-        assert!(!head
-            .to_lowercase()
-            .contains("content-type: application/json"));
+        assert!(
+            !head
+                .to_lowercase()
+                .contains("content-type: application/json")
+        );
         drop(seen);
-        assert!(crate::telemetry::pending_deletions(&pool)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            crate::telemetry::pending_deletions(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     // ── Audit 2026-10-05: the deletion contract and the pump/purge race ──────
@@ -1463,10 +1468,12 @@ mod net_tests {
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(h.connections.load(Ordering::SeqCst), 0);
-        assert!(crate::telemetry::pending_deletions(&pool)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            crate::telemetry::pending_deletions(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

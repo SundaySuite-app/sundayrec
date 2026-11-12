@@ -30,7 +30,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
+    CpalHostKind, StreamSink, build_input_stream_any, find_device, negotiate, open_host,
 };
 use crate::util::lock_recover;
 

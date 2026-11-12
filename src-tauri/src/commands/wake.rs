@@ -15,18 +15,18 @@ use tauri::State;
 
 use sundayrec_core::schedule::upcoming_dates;
 use sundayrec_core::wake::{
-    detect_capabilities, wake_idle_reason, wake_points, WakeCapabilities, WAKE_LEAD_MINUTES,
+    WAKE_LEAD_MINUTES, WakeCapabilities, detect_capabilities, wake_idle_reason, wake_points,
 };
 
 use sundayrec_core::wake::WakeFailureEntry;
 
-use crate::db::store;
 use crate::db::Db;
+use crate::db::store;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    current_platform, get_sleep_config, verify_scheduled_wakes, TestWakeResult, WakeEngine,
-    WakeResult, WakeStatus,
+    TestWakeResult, WakeEngine, WakeResult, WakeStatus, current_platform, get_sleep_config,
+    verify_scheduled_wakes,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -220,12 +220,14 @@ mod tests {
             WAKE_LEAD_MINUTES,
         );
         assert!(expected.is_empty(), "nothing planned, nothing expected");
-        assert!(!wake_points(
-            &upcoming_for_wake(&sunday_profile(true), now()),
-            now(),
-            WAKE_LEAD_MINUTES
-        )
-        .is_empty());
+        assert!(
+            !wake_points(
+                &upcoming_for_wake(&sunday_profile(true), now()),
+                now(),
+                WAKE_LEAD_MINUTES
+            )
+            .is_empty()
+        );
     }
 
     #[test]

@@ -248,7 +248,7 @@ pub fn settings_url() -> Option<&'static str> {
 
 #[cfg(target_os = "macos")]
 mod mac_un {
-    use super::{is_app_bundle, MacAlert, MacAuth, MacSettings};
+    use super::{MacAlert, MacAuth, MacSettings, is_app_bundle};
     use block2::RcBlock;
     use objc2::runtime::Bool;
     use objc2_foundation::{NSBundle, NSError};
@@ -315,7 +315,7 @@ mod mac_un {
 #[cfg(windows)]
 mod windows_reg {
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()

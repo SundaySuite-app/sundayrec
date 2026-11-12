@@ -50,7 +50,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::detect::{derive_attention_codes, PrepAnalysisSegment, SegmentType, SermonSegment};
+use crate::detect::{PrepAnalysisSegment, SegmentType, SermonSegment, derive_attention_codes};
 use crate::shadow::{ShadowComparison, ShadowSettings};
 use crate::trim_feedback::TrimDeltas;
 
@@ -524,16 +524,16 @@ pub fn record_sermon_pick(
         _ => false,
     };
 
-    if let Some(auto) = &correction.auto {
-        if auto.same_bounds(&correction.chosen) {
-            let before = file.sermon_picks.len();
-            file.sermon_picks.retain(|c| !same_baseline(c));
-            return if file.sermon_picks.len() == before {
-                PickOutcome::NotACorrection
-            } else {
-                PickOutcome::Withdrawn
-            };
-        }
+    if let Some(auto) = &correction.auto
+        && auto.same_bounds(&correction.chosen)
+    {
+        let before = file.sermon_picks.len();
+        file.sermon_picks.retain(|c| !same_baseline(c));
+        return if file.sermon_picks.len() == before {
+            PickOutcome::NotACorrection
+        } else {
+            PickOutcome::Withdrawn
+        };
     }
 
     // Replace by REMOVE-then-PUSH, never in place. `sermon_picks` is documented
@@ -854,10 +854,11 @@ mod tests {
         let c = correction(None, 3);
         assert!(c.auto.is_none());
         // "we found no sermon at all" must reach the record as its own reason.
-        assert!(c
-            .attention
-            .iter()
-            .any(|r| r == "no_sermon_block" || r == "speech_at_start"));
+        assert!(
+            c.attention
+                .iter()
+                .any(|r| r == "no_sermon_block" || r == "speech_at_start")
+        );
     }
 
     #[test]
@@ -884,10 +885,11 @@ mod tests {
         assert!(c.candidates.iter().any(|s| s.index == 70));
         assert!(c.candidates.iter().any(|s| s.index == 5));
         // Still in time order after the cap reshuffled the keepers to the front.
-        assert!(c
-            .candidates
-            .windows(2)
-            .all(|w| w[0].start_sec <= w[1].start_sec));
+        assert!(
+            c.candidates
+                .windows(2)
+                .all(|w| w[0].start_sec <= w[1].start_sec)
+        );
     }
 
     // ── What counts as a correction ────────────────────────────────────────────

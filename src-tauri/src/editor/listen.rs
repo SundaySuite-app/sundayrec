@@ -24,13 +24,13 @@
 //! What the engine tells (position, end, underrun, xrun, error) goes to the window as
 //! `editor://listen`, ~30 times a second for the position.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use sundayrec_core::editor::{build_keeps, CutRegion};
+use sundayrec_core::editor::{CutRegion, build_keeps};
 use sundayrec_core::playback::CutPlan;
 
 use super::EditorCutRegion;
@@ -57,14 +57,14 @@ pub enum EditorListenEvent {
     /// The device has been handed audio up to here. `gen` rises with every jump: a position of
     /// an older generation than one already seen is stale.
     Position {
-        gen: u32,
+        r#gen: u32,
         #[serde(rename = "programSecs")]
         program_secs: f64,
         #[serde(rename = "sourceSecs")]
         source_secs: f64,
     },
     /// The programme played to its end.
-    Ended { gen: u32 },
+    Ended { r#gen: u32 },
     /// The ring ran dry while playing: a gap you can hear.
     Underrun { total: u32 },
     /// The sound card reported a glitch.
@@ -81,15 +81,17 @@ impl From<PlaybackEvent> for EditorListenEvent {
     fn from(e: PlaybackEvent) -> Self {
         match e {
             PlaybackEvent::Position {
-                gen,
+                r#gen,
                 program_secs,
                 source_secs,
             } => Self::Position {
-                gen: gen as u32,
+                r#gen: r#gen as u32,
                 program_secs,
                 source_secs,
             },
-            PlaybackEvent::Ended { gen } => Self::Ended { gen: gen as u32 },
+            PlaybackEvent::Ended { r#gen } => Self::Ended {
+                r#gen: r#gen as u32,
+            },
             PlaybackEvent::Underrun { total } => Self::Underrun {
                 total: total as u32,
             },
@@ -280,10 +282,10 @@ pub async fn set_chain(
 #[cfg(feature = "editor")]
 mod real {
     use super::*;
-    use crate::editor::{listen_plan, load_recording, pcm, EditorMasterPreviewRequest};
+    use crate::editor::{EditorMasterPreviewRequest, listen_plan, load_recording, pcm};
     use crate::editor::{ExportEngine, ListenPlan};
-    use crate::playback::source::FfmpegOpener;
     use crate::playback::Programme;
+    use crate::playback::source::FfmpegOpener;
     use sundayrec_core::chain::Chain;
 
     /// Open the session for `source` with the cuts of `req`: paused, at `req.start_sec` (source
@@ -399,7 +401,7 @@ mod tests {
     #[test]
     fn engine_events_reach_the_window_in_their_own_words() {
         let e = EditorListenEvent::from(PlaybackEvent::Position {
-            gen: 3,
+            r#gen: 3,
             program_secs: 1.5,
             source_secs: 61.5,
         });

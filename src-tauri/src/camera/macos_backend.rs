@@ -3,13 +3,13 @@
 
 use std::sync::Arc;
 
-use sundayrec_core::camera_format::{classify_device, fourcc, DeviceClass};
+use sundayrec_core::camera_format::{DeviceClass, classify_device, fourcc};
 
 use super::avfoundation::{self, CameraError as MacError, DeviceKind};
 use super::queue::FrameQueue;
 use super::{
-    pixel_format_of_fourcc, BackendCounters, BackendHandle, CameraError, CameraInfo, CameraKind,
-    Frame, FrameData, VideoFormat,
+    BackendCounters, BackendHandle, CameraError, CameraInfo, CameraKind, Frame, FrameData,
+    VideoFormat, pixel_format_of_fourcc,
 };
 
 /// The common kind of an AVFoundation device. `External` is everything that is

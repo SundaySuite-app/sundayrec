@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use sundayrec_core::loudness::{
-    apply_to_target, measure_planar, plan_gain, GainStage, Meter, MAX_REFINEMENTS, SETTLED_LU,
+    GainStage, MAX_REFINEMENTS, Meter, SETTLED_LU, apply_to_target, measure_planar, plan_gain,
 };
 use sundayrec_core::mastering::master_presets;
 
@@ -300,7 +300,13 @@ fn synthetic_programmes_hit_target_and_ceiling() {
             });
             eprintln!(
                 "{name:30} {:14} in {:6.1} LUFS / {:5.1} dBTP -> gain {:+5.1} dB over {:4.1} dB ({} refinements) | ffmpeg out {oi:6.2} LUFS ({:+.2} LU) {otp:5.2} dBTP",
-                preset.id, m.integrated_lufs, m.true_peak_dbtp, done.plan.gain_db, plan.peak_overshoot_db, done.refinements, oi - preset.target_lufs
+                preset.id,
+                m.integrated_lufs,
+                m.true_peak_dbtp,
+                done.plan.gain_db,
+                plan.peak_overshoot_db,
+                done.refinements,
+                oi - preset.target_lufs
             );
             assert!(
                 (oi - preset.target_lufs).abs() <= TARGET_TOL_LU,

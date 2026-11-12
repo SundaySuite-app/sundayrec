@@ -203,14 +203,14 @@ pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     ));
 
     // Next-recording info line (only when not recording and known).
-    if !state.is_recording {
-        if let Some(next) = &state.next_recording_label {
-            items.push(TrayItem::item(
-                format!("{}: {next}", next_label(lang)),
-                TrayAction::None,
-                false,
-            ));
-        }
+    if !state.is_recording
+        && let Some(next) = &state.next_recording_label
+    {
+        items.push(TrayItem::item(
+            format!("{}: {next}", next_label(lang)),
+            TrayAction::None,
+            false,
+        ));
     }
 
     items.push(TrayItem::Separator);

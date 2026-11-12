@@ -52,10 +52,10 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use sundayrec_core::telemetry::consent::{
-    evaluate, parse_record, ConsentRecord, TelemetryConsent, CONSENT_VERSION,
+    CONSENT_VERSION, ConsentRecord, TelemetryConsent, evaluate, parse_record,
 };
 use sundayrec_core::telemetry::queue::{TelemetryEntry, TelemetryQueueStatus, TelemetryStatus};
-use sundayrec_core::telemetry::{TelemetryPayload, TelemetryPreview, TELEMETRY_SCHEMA};
+use sundayrec_core::telemetry::{TELEMETRY_SCHEMA, TelemetryPayload, TelemetryPreview};
 
 use crate::db::store;
 use crate::error::AppResult;

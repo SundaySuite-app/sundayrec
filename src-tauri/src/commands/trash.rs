@@ -8,7 +8,7 @@
 use sqlx::SqlitePool;
 use tauri::{AppHandle, State};
 
-use crate::db::{store, Db};
+use crate::db::{Db, store};
 use crate::error::{AppError, AppResult};
 use crate::settings;
 use crate::trash::{self, TrashEntry};
@@ -145,7 +145,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::db::store::{insert_recording, open_pool, RecordingRow};
+    use crate::db::store::{RecordingRow, insert_recording, open_pool};
 
     /// A migrated database in a temp dir.
     async fn world() -> (SqlitePool, tempfile::TempDir) {
@@ -324,10 +324,12 @@ mod tests {
             recording_id: None,
         };
         assert_eq!(trash::drop_history_rows(&pool, &[legacy]).await.unwrap(), 1);
-        assert!(store::recording_file_path(&pool, &id)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            store::recording_file_path(&pool, &id)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

@@ -469,7 +469,7 @@ pub async fn update_recording_note(
 
 // ── Wake-failure / test-wake history ─────────────────────────────────────────
 
-use sundayrec_core::wake::{WakeFailureEntry, WakeFailureKind, WAKE_FAILURE_MAX};
+use sundayrec_core::wake::{WAKE_FAILURE_MAX, WakeFailureEntry, WakeFailureKind};
 
 /// Map a stored kind string to the core enum (defensive — the CHECK constraint
 /// already guarantees one of the three).

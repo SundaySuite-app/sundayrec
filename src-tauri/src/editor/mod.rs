@@ -975,7 +975,7 @@ fn to_feedback_segments(
 /// an empty file, because "nobody has corrected this recording yet" is the
 /// normal case, not an error.
 fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::RecordingFeedback, ()> {
-    use sundayrec_core::feedback::{RecordingFeedback, FEEDBACK_SCHEMA};
+    use sundayrec_core::feedback::{FEEDBACK_SCHEMA, RecordingFeedback};
     let Some(path) = resolve_sidecar(media_path, EditorSidecar::Feedback) else {
         return Err(());
     };
@@ -1127,7 +1127,7 @@ pub fn record_shadow_observation(
 /// Reads the bytes only when within the 100 MB limit. A missing file surfaces
 /// as an error (the renderer should not have asked for an absent recording).
 pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
-    use sundayrec_core::editor::{inline_decision, InlineDecision};
+    use sundayrec_core::editor::{InlineDecision, inline_decision};
     let meta = std::fs::metadata(media_path)
         .map_err(|e| AppError::Validation(format!("file_not_found: {e}")))?;
     let size = meta.len();
@@ -1197,10 +1197,10 @@ async fn startup_sweep_in(
     temp_dir: std::path::PathBuf,
 ) -> usize {
     let mut folders: Vec<String> = Vec::new();
-    if let Ok(settings) = crate::settings::load(pool).await {
-        if let Some(save) = settings.save_folder {
-            folders.push(save);
-        }
+    if let Ok(settings) = crate::settings::load(pool).await
+        && let Some(save) = settings.save_folder
+    {
+        folders.push(save);
     }
     if let Ok(rows) = crate::db::store::list_recordings(pool).await {
         for row in rows {
@@ -1955,7 +1955,7 @@ pub async fn peaks<F>(input_path: &str, on_progress: F) -> AppResult<EditorPeaks
 where
     F: Fn(f32),
 {
-    use sundayrec_core::editor::{quantize_peaks, PEAKS_PER_SEC, PEAKS_SAMPLE_RATE};
+    use sundayrec_core::editor::{PEAKS_PER_SEC, PEAKS_SAMPLE_RATE, quantize_peaks};
 
     let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
         return Err(AppError::Validation("file_not_found".into()));
@@ -2199,13 +2199,12 @@ where
         // already be written, but the analysis behind it has not been handed out yet, and the
         // shadow pass and the review queue want it. A read that carried the search answers first,
         // once; after that the sidecar answers, as it always did.
-        if let Some(opened) = open::peek(input_path) {
-            if let Some(detected) = opened.detected().await.transpose()? {
-                if let Some(detection) = detected.take_detection() {
-                    on_progress(1.0);
-                    return Ok((detected.segments.clone(), Some(detection)));
-                }
-            }
+        if let Some(opened) = open::peek(input_path)
+            && let Some(detected) = opened.detected().await.transpose()?
+            && let Some(detection) = detected.take_detection()
+        {
+            on_progress(1.0);
+            return Ok((detected.segments.clone(), Some(detection)));
         }
         if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
             return Ok((cached, None));
@@ -2255,7 +2254,7 @@ fn core_repair_to_dto(r: sundayrec_core::processing::ChannelRepair) -> EditorCha
 /// Build the channel diagnosis from the measured levels.
 #[cfg(feature = "editor")]
 fn diagnosis_from_levels(levels: sundayrec_core::levels::ChannelLevels) -> EditorChannelDiagnosis {
-    use sundayrec_core::processing::{diagnose_channels as core_diagnose, ChannelLevelsDb};
+    use sundayrec_core::processing::{ChannelLevelsDb, diagnose_channels as core_diagnose};
 
     let pl = levels.peak_db_left;
     match levels.peak_db_right {
@@ -2918,10 +2917,10 @@ fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppR
     // the user's sake, rather than hand back an untouched file the UI calls "repaired".
     // `auto_process` answers `None` for mono, so this only catches a stale or hand-rolled
     // request.
-    if let (Some(cr), Some(1)) = (requested_repair, channels) {
-        if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
-            return Err(AppError::Validation("channel_repair_needs_stereo".into()));
-        }
+    if let (Some(cr), Some(1)) = (requested_repair, channels)
+        && sundayrec_core::processing::channel_repair_needs_stereo(cr)
+    {
+        return Err(AppError::Validation("channel_repair_needs_stereo".into()));
     }
     if let Some(cr) = requested_repair {
         match &mut chain {
@@ -3219,10 +3218,10 @@ where
 {
     use std::path::Path;
     use sundayrec_core::editor::{
-        audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
-        collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
-        ffmetadata, is_simple_audio_export, metadata_args, video_export_estimated_bytes,
-        video_filter_complex, video_only_filter_complex, CutRegion, RecordingMetadata,
+        CutRegion, RecordingMetadata, audio_export_filter_complex, audio_simple_export_args,
+        build_keeps, codec_args, collision_free_path, editor_tmp_path, export_disk_is_low,
+        export_estimated_bytes, ffmetadata, is_simple_audio_export, metadata_args,
+        video_export_estimated_bytes, video_filter_complex, video_only_filter_complex,
     };
     use sundayrec_core::mastering::dither_filter_for;
 
@@ -3367,19 +3366,19 @@ where
             (source_rate, probed.as_ref().and_then(|i| i.channels)),
         )
     };
-    if let Ok(free) = fs4::available_space(&out_dir) {
-        if export_disk_is_low(free, estimated_bytes) {
-            tracing::warn!(
-                free_bytes = free,
-                estimated_bytes = ?estimated_bytes,
-                "export refused: not enough free space on the destination volume"
-            );
-            let free_mb = free / 1_000_000;
-            let need_mb = estimated_bytes.unwrap_or(0) / 1_000_000;
-            return Err(AppError::Recording(format!(
-                "disk_low_for_export: {free_mb} MB free, ~{need_mb} MB needed"
-            )));
-        }
+    if let Ok(free) = fs4::available_space(&out_dir)
+        && export_disk_is_low(free, estimated_bytes)
+    {
+        tracing::warn!(
+            free_bytes = free,
+            estimated_bytes = ?estimated_bytes,
+            "export refused: not enough free space on the destination volume"
+        );
+        let free_mb = free / 1_000_000;
+        let need_mb = estimated_bytes.unwrap_or(0) / 1_000_000;
+        return Err(AppError::Recording(format!(
+            "disk_low_for_export: {free_mb} MB free, ~{need_mb} MB needed"
+        )));
     }
 
     // 2. The pre-level graph G — everything that shapes the signal BEFORE
@@ -4032,10 +4031,10 @@ where
     // Lost-cancel guard: a cancel that landed between the check above and this
     // hold found an EMPTY slot, killed nothing, and would otherwise let the
     // render it was aimed at run to completion. The child is reachable now.
-    if engine.is_cancelled() {
-        if let Some(mut c) = engine.take() {
-            let _ = c.kill().await;
-        }
+    if engine.is_cancelled()
+        && let Some(mut c) = engine.take()
+    {
+        let _ = c.kill().await;
     }
 
     // Read-then-wait under the STALL timer: if ffmpeg wedges, the stdout read
@@ -4043,12 +4042,11 @@ where
     // the timer; see [`pump_export_progress`].
     let stall = std::time::Duration::from_millis(timeout_ms);
     let waited: Result<AppResult<std::process::ExitStatus>, ()> = async {
-        if let Some(mut out) = stdout.take() {
-            if pump_export_progress(&mut out, stall, total_sec, span, phase, on_progress).await
+        if let Some(mut out) = stdout.take()
+            && pump_export_progress(&mut out, stall, total_sec, span, phase, on_progress).await
                 == PumpEnd::Stalled
-            {
-                return Err(());
-            }
+        {
+            return Err(());
         }
         // Reclaim the child to await its exit. Gone = a cancel took it. After
         // EOF an exit is imminent; a child that holds on is wedged too.
@@ -4138,7 +4136,7 @@ fn ffmpeg_exit_error(tail: &str) -> AppError {
     // they do mid-recording. Anything else stays the plain "ffmpeg failed" the renderer's
     // `exportErrorKey` deliberately does not recognise — an unclassified failure gets the
     // shell's OWN general sentence, not a guess dressed up as a diagnosis.
-    use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
+    use sundayrec_core::errors::{RecordingErrorCode, classify_recording_error};
     let disk_full = classify_recording_error(&short) == RecordingErrorCode::DiskFull;
     tracing::warn!(disk_full, tail = %short, "export: ffmpeg exited non-zero");
     if disk_full {
@@ -4503,16 +4501,20 @@ mod tests {
     #[cfg(not(feature = "editor"))]
     #[tokio::test]
     async fn peaks_segments_mastering_export_disabled_without_feature() {
-        assert!(peaks("/x.mp4", |_| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        assert!(segments("/x.mp4", false, |_| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
+        assert!(
+            peaks("/x.mp4", |_| {})
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("feature_disabled")
+        );
+        assert!(
+            segments("/x.mp4", false, |_| {})
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("feature_disabled")
+        );
         let req = EditorExportRequest {
             source_token: "t".into(),
             cut_regions: vec![],
@@ -4542,11 +4544,13 @@ mod tests {
             outro: None,
             folder: ExportFolder::Picked("/tmp".into()),
         };
-        assert!(export(&engine, &req, &inputs, false, |_, _| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
+        assert!(
+            export(&engine, &req, &inputs, false, |_, _| {})
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("feature_disabled")
+        );
     }
 
     /// The asset-scope grant is gated like the rest of the editor: feature-off
@@ -4616,11 +4620,13 @@ mod tests {
     #[cfg(not(feature = "editor"))]
     #[tokio::test]
     async fn probe_disabled_without_feature() {
-        assert!(probe_streams("/x.mp4")
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
+        assert!(
+            probe_streams("/x.mp4")
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("feature_disabled")
+        );
     }
 
     // ── sidecar fs round-trip (gated to neither feature — pure fs) ────────────────
@@ -4982,8 +4988,7 @@ mod tests {
             "one detector baseline, one correction — the settled one"
         );
         assert_eq!(
-            file.sermon_picks[0].chosen.index,
-            2,
+            file.sermon_picks[0].chosen.index, 2,
             "the last pick (ROUNDS is even, so the final chosen block is 2) must be the one on file"
         );
         assert_eq!(
@@ -5569,12 +5574,16 @@ mod tests {
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_skips_zero_and_nonfinite_gain() {
-        assert!(build_pre_chain(None, Some(0.0), None, None)
-            .unwrap()
-            .is_empty());
-        assert!(build_pre_chain(None, Some(f64::NAN), None, None)
-            .unwrap()
-            .is_empty());
+        assert!(
+            build_pre_chain(None, Some(0.0), None, None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            build_pre_chain(None, Some(f64::NAN), None, None)
+                .unwrap()
+                .is_empty()
+        );
         assert!(build_pre_chain(None, None, None, None).unwrap().is_empty());
     }
 
@@ -6066,16 +6075,18 @@ mod tests {
     #[test]
     fn cache_reads_are_missing_file_errors_not_silent_empties() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        assert!(rt
-            .block_on(peaks("/no/such/file.wav", |_| {}))
-            .unwrap_err()
-            .to_string()
-            .contains("file_not_found"));
-        assert!(rt
-            .block_on(segments("/no/such/file.wav", false, |_| {}))
-            .unwrap_err()
-            .to_string()
-            .contains("file_not_found"));
+        assert!(
+            rt.block_on(peaks("/no/such/file.wav", |_| {}))
+                .unwrap_err()
+                .to_string()
+                .contains("file_not_found")
+        );
+        assert!(
+            rt.block_on(segments("/no/such/file.wav", false, |_| {}))
+                .unwrap_err()
+                .to_string()
+                .contains("file_not_found")
+        );
     }
 
     #[cfg(feature = "editor")]
@@ -6252,7 +6263,7 @@ mod tests {
             "the leading code is what the shell matches; got {rendered}"
         );
         // The guard's own decision, on the numbers that sentence reports.
-        use sundayrec_core::editor::{export_disk_is_low, EXPORT_DISK_HEADROOM_BYTES};
+        use sundayrec_core::editor::{EXPORT_DISK_HEADROOM_BYTES, export_disk_is_low};
         assert!(export_disk_is_low(120_000_000, Some(980_000_000)));
         assert!(!export_disk_is_low(
             980_000_000 + EXPORT_DISK_HEADROOM_BYTES,
@@ -6298,7 +6309,7 @@ mod tests {
         // into a hard panic on a lane that never has a real sidecar. The
         // canonical helper also confirms the binary RUNS, so it skips cleanly
         // there instead.
-        use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
+        use crate::media::ffmpeg::tests::{ENV_LOCK, fetched_sidecar};
 
         /// A sidecar, or `None` → the caller SKIPs — unless the lane REQUIRES
         /// one (`SUNDAYREC_REQUIRE_SIDECAR=1`: ci.yml's `check` job,
@@ -6327,7 +6338,7 @@ mod tests {
         /// and return its path. HARDWARE-FREE — lavfi synthesises both streams.
         fn lavfi_source(ffmpeg: &std::path::Path, dir: &std::path::Path) -> String {
             let src = dir.join("source.mp4");
-            let gen = std::process::Command::new(ffmpeg)
+            let r#gen = std::process::Command::new(ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -6347,9 +6358,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the lavfi source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "lavfi source generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
             src.to_string_lossy().into_owned()
         }
@@ -6359,7 +6370,7 @@ mod tests {
         /// it distinguishes, so the detection pass has real work to do.
         fn lavfi_silence_then_tone(ffmpeg: &std::path::Path, dir: &std::path::Path) -> String {
             let src = dir.join("silence_tone.wav");
-            let gen = std::process::Command::new(ffmpeg)
+            let r#gen = std::process::Command::new(ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -6380,9 +6391,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the silence+tone source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "silence+tone generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
             src.to_string_lossy().into_owned()
         }
@@ -6799,7 +6810,7 @@ mod tests {
             secs: f64,
         ) -> String {
             let src = dir.join(name);
-            let gen = std::process::Command::new(ffmpeg)
+            let r#gen = std::process::Command::new(ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -6819,9 +6830,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the dynamic tone source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "dynamic tone generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
             src.to_string_lossy().into_owned()
         }
@@ -6889,7 +6900,7 @@ mod tests {
             volume_expr: &str,
         ) -> String {
             let src = dir.join(name);
-            let gen = std::process::Command::new(ffmpeg)
+            let r#gen = std::process::Command::new(ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -6904,9 +6915,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the tone source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "tone generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
             src.to_string_lossy().into_owned()
         }
@@ -7953,7 +7964,7 @@ mod tests {
         /// definitions to what ffmpeg measures.
         #[test]
         fn the_round_agrees_with_ffmpeg_itself_or_skips() {
-            use sundayrec_core::editor::{peaks_pipe_args, PeakAccumulator, PEAKS_BUCKET_SAMPLES};
+            use sundayrec_core::editor::{PEAKS_BUCKET_SAMPLES, PeakAccumulator, peaks_pipe_args};
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -8739,7 +8750,7 @@ mod tests {
                 "aevalsrc='if(lt(mod(t,1),0.05),0.8*sin(2*PI*1000*t),0)|\
                  if(lt(mod(t,1),0.05),0.8*sin(2*PI*1000*t),0)':s=48000:d={secs}"
             );
-            let gen = std::process::Command::new(ffmpeg)
+            let r#gen = std::process::Command::new(ffmpeg)
                 .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"])
                 .arg(video)
                 .args(["-f", "lavfi", "-i"])
@@ -8767,9 +8778,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the clap source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "clap source generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
             src.to_string_lossy().into_owned()
         }
@@ -9206,7 +9217,7 @@ mod tests {
             // A 96 kHz A/V source. mkv + flac audio, because 96 kHz is exactly
             // the rate an mp4/AAC source container would refuse to hold.
             let src = dir.path().join("src96.mkv");
-            let gen = std::process::Command::new(&ffmpeg)
+            let r#gen = std::process::Command::new(&ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -9228,9 +9239,9 @@ mod tests {
                 .output()
                 .expect("ffmpeg should run to generate the 96 kHz A/V source");
             assert!(
-                gen.status.success(),
+                r#gen.status.success(),
                 "96 kHz A/V source generation failed: {}",
-                String::from_utf8_lossy(&gen.stderr)
+                String::from_utf8_lossy(&r#gen.stderr)
             );
 
             let req = export_request(
@@ -10081,7 +10092,7 @@ mod tests {
         // the recommendation. HARDWARE-FREE — lavfi synthesises every input.
         mod channel_diagnosis_levels {
             use super::level_probe::ffmpeg_or_skip;
-            use crate::editor::{auto_process, export, ExportEngine};
+            use crate::editor::{ExportEngine, auto_process, export};
             use crate::media::ffmpeg::tests::ENV_LOCK;
 
             /// Build a stereo wav whose LEFT and RIGHT legs come from separate
@@ -10103,7 +10114,7 @@ mod tests {
                     "[0:a]{}[l];[1:a]{}[r];[l][r]join=inputs=2:channel_layout=stereo[out]",
                     left.1, right.1
                 );
-                let gen = std::process::Command::new(ffmpeg)
+                let r#gen = std::process::Command::new(ffmpeg)
                     .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", left.0])
                     .args(["-f", "lavfi", "-i", right.0])
                     .args(["-filter_complex", &fc, "-map", "[out]", "-y"])
@@ -10111,9 +10122,9 @@ mod tests {
                     .output()
                     .expect("ffmpeg should run to generate the stereo pair");
                 assert!(
-                    gen.status.success(),
+                    r#gen.status.success(),
                     "stereo pair generation failed: {}",
-                    String::from_utf8_lossy(&gen.stderr)
+                    String::from_utf8_lossy(&r#gen.stderr)
                 );
                 src.to_string_lossy().into_owned()
             }
@@ -10261,13 +10272,13 @@ mod tests {
                 };
                 let dir = tempfile::tempdir().unwrap();
                 let src = dir.path().join("mono.wav");
-                let gen = std::process::Command::new(&ffmpeg)
+                let r#gen = std::process::Command::new(&ffmpeg)
                     .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", &sine(3.0)])
                     .args(["-ac", "1", "-y"])
                     .arg(&src)
                     .output()
                     .expect("ffmpeg should generate the mono source");
-                assert!(gen.status.success());
+                assert!(r#gen.status.success());
                 let src = src.to_string_lossy().into_owned();
 
                 // The seam refuses to build it.

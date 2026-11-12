@@ -40,7 +40,7 @@ use std::sync::Arc;
 use sundayrec_core::audio_analysis::{FRAME_MS, SAMPLE_RATE};
 use sundayrec_core::detect::Detection;
 use sundayrec_core::feedback::build_shadow_observation;
-use sundayrec_core::shadow::{compare, shadow_detection, ShadowSettings, VadScorer};
+use sundayrec_core::shadow::{ShadowSettings, VadScorer, compare, shadow_detection};
 use sundayrec_core::vad::{VadBackend, VadError};
 
 use super::{SileroVad, SileroVadModel};

@@ -34,7 +34,7 @@ use tauri::{AppHandle, State};
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::scheduler::{
-    check_missed, status, MissedRecordingInfo, ScheduleStatus, SchedulerEngine,
+    MissedRecordingInfo, ScheduleStatus, SchedulerEngine, check_missed, status,
 };
 
 /// Wake the supervisor to recompute its timers (call after saving schedule

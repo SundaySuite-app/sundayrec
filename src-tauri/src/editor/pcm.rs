@@ -15,8 +15,8 @@
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use std::sync::Mutex;
@@ -28,7 +28,7 @@ use sundayrec_core::pcm_stream::{self, PcmFormat, STAGED_PREFIX};
 
 use super::program::Program;
 use super::{
-    bail_if_cancelled, ffmpeg_exit_error, spawn_stderr_tail, ExportEngine, EXPORT_PHASE_MEASURING,
+    EXPORT_PHASE_MEASURING, ExportEngine, bail_if_cancelled, ffmpeg_exit_error, spawn_stderr_tail,
 };
 use crate::error::{AppError, AppResult};
 
@@ -269,10 +269,10 @@ where
     let stderr_task = spawn_stderr_tail(child.stderr.take());
     engine.hold(child);
     // Lost-cancel guard, as in `run_export_ffmpeg`.
-    if engine.is_cancelled() {
-        if let Some(mut c) = engine.take() {
-            let _ = c.kill().await;
-        }
+    if engine.is_cancelled()
+        && let Some(mut c) = engine.take()
+    {
+        let _ = c.kill().await;
     }
 
     let frames = Arc::new(AtomicU64::new(0));
@@ -409,19 +409,19 @@ where
     // The parked copy needs room too. Refuse BEFORE spending minutes on the measure, with the
     // same code the output-folder guard uses.
     let need = staged_bytes(fmt, program.seconds());
-    if let Ok(free) = fs4::available_space(std::env::temp_dir()) {
-        if free < need.saturating_add(STAGING_MARGIN_BYTES) {
-            tracing::warn!(
-                free_bytes = free,
-                need_bytes = need,
-                "export refused: no room to stage the processed audio"
-            );
-            return Err(AppError::Recording(format!(
-                "disk_low_for_export: {} MB free, ~{} MB needed",
-                free / 1_000_000,
-                need.saturating_add(STAGING_MARGIN_BYTES) / 1_000_000
-            )));
-        }
+    if let Ok(free) = fs4::available_space(std::env::temp_dir())
+        && free < need.saturating_add(STAGING_MARGIN_BYTES)
+    {
+        tracing::warn!(
+            free_bytes = free,
+            need_bytes = need,
+            "export refused: no room to stage the processed audio"
+        );
+        return Err(AppError::Recording(format!(
+            "disk_low_for_export: {} MB free, ~{} MB needed",
+            free / 1_000_000,
+            need.saturating_add(STAGING_MARGIN_BYTES) / 1_000_000
+        )));
     }
 
     let staged = StagedPcm::new();

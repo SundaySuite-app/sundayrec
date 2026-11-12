@@ -286,17 +286,17 @@ pub fn find_best_device_match<'a>(
     }
     // 5. Brand-word match (after stripping generic vocabulary + Windows prefix).
     let stored_brand = extract_brand_words(&n);
-    if !stored_brand.is_empty() {
-        if let Some(d) = devices.iter().find(|d| {
+    if !stored_brand.is_empty()
+        && let Some(d) = devices.iter().find(|d| {
             let dev_brand = extract_brand_words(&d.name);
             stored_brand.iter().any(|sw| {
                 dev_brand.iter().any(|dw| {
                     dw == sw || dw.starts_with(sw.as_str()) || sw.starts_with(dw.as_str())
                 })
             })
-        }) {
-            return Some(d);
-        }
+        })
+    {
+        return Some(d);
     }
     None
 }

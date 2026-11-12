@@ -54,13 +54,13 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use ringbuf::traits::Consumer;
 use ringbuf::HeapCons;
+use ringbuf::traits::Consumer;
 use sundayrec_core::av_clock::AudioClock;
 use sundayrec_core::video_conform::{ConformStats, Fps, Picture, Slot, VideoConformer};
 use sundayrec_core::video_encoder::VideoEncoder;
 use sundayrec_core::video_track::{
-    black_frame, pack_tight, video_track_args, RawPixelFormat, VideoTrackSpec,
+    RawPixelFormat, VideoTrackSpec, black_frame, pack_tight, video_track_args,
 };
 
 use crate::camera::queue::FrameQueue;
@@ -394,12 +394,12 @@ fn run_track(
         while let Some(frame) = next.take() {
             if !spec_settled {
                 // The first frame decides the encoder's input size/format.
-                if let Some(raw) = raw_format_of(frame.pixel_format) {
-                    if !frame.bottom_up {
-                        spec.width = frame.width;
-                        spec.height = frame.height;
-                        spec.input = raw;
-                    }
+                if let Some(raw) = raw_format_of(frame.pixel_format)
+                    && !frame.bottom_up
+                {
+                    spec.width = frame.width;
+                    spec.height = frame.height;
+                    spec.input = raw;
                 }
                 spec_settled = true;
             }
@@ -572,16 +572,16 @@ impl TrackWriter {
     /// (shorter than the conformer's decide delay) never started one; its MKV
     /// stays absent and the delivery covers the hole.
     fn close(mut self) {
-        if let Some(s) = self.sink.take() {
-            if let Err(e) = s.finish() {
-                tracing::warn!("video track: the encoder did not close cleanly: {e}");
-                self.counters.encoder_failed.store(true, Ordering::Relaxed);
-                // A short fragment fits in the pipe: every write "worked" and
-                // the refusal only shows at EOF, too late to start over. The
-                // choice is still wrong and must not be repeated.
-                if self.encoder != VideoEncoder::Software && !self.mkv_has_video() {
-                    *lock_recover(&self.counters.encoder_fallback) = Some(self.encoder);
-                }
+        if let Some(s) = self.sink.take()
+            && let Err(e) = s.finish()
+        {
+            tracing::warn!("video track: the encoder did not close cleanly: {e}");
+            self.counters.encoder_failed.store(true, Ordering::Relaxed);
+            // A short fragment fits in the pipe: every write "worked" and
+            // the refusal only shows at EOF, too late to start over. The
+            // choice is still wrong and must not be repeated.
+            if self.encoder != VideoEncoder::Software && !self.mkv_has_video() {
+                *lock_recover(&self.counters.encoder_fallback) = Some(self.encoder);
             }
         }
     }
@@ -954,8 +954,8 @@ impl VideoSource for SyntheticSource {
 mod tests {
     use super::*;
     use crate::recorder::native_capture::stream::ClockPair;
-    use ringbuf::traits::{Producer, Split};
     use ringbuf::HeapRb;
+    use ringbuf::traits::{Producer, Split};
 
     #[test]
     fn the_track_takes_the_size_nearest_full_hd_at_full_rate_in_the_cheapest_layout() {

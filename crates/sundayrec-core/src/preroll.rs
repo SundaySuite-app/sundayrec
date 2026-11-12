@@ -131,11 +131,7 @@ pub fn harvest_trim_ms(
     // 0 (→ None below) rather than wrapping around on unsigned subtraction.
     let usable_ms = captured_ms.saturating_sub(safety_margin_ms);
     let trim = requested_ms.min(usable_ms);
-    if trim == 0 {
-        None
-    } else {
-        Some(trim)
-    }
+    if trim == 0 { None } else { Some(trim) }
 }
 
 /// Where (ms from the start of the captured segment) the kept window begins, for

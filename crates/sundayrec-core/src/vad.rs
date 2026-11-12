@@ -848,7 +848,7 @@ mod tests {
     /// seam, this stops compiling and someone re-reads the header.
     #[test]
     fn a_vad_backend_satisfies_the_detector_seam() {
-        use crate::audio_analysis::{FrameScorer, ScoringInput, SegmentType, FRAME_MS};
+        use crate::audio_analysis::{FRAME_MS, FrameScorer, ScoringInput, SegmentType};
 
         struct BareBackendScorer;
 
@@ -919,9 +919,11 @@ mod tests {
     #[test]
     fn model_provenance_constants_are_self_consistent() {
         assert_eq!(VAD_MODEL_SHA256.len(), 64);
-        assert!(VAD_MODEL_SHA256
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            VAD_MODEL_SHA256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
         assert!(VAD_MODEL_SOURCE_URL.ends_with(VAD_MODEL_FILE_NAME));
         assert!(VAD_MODEL_LICENSE.starts_with("MIT"));
         assert_eq!(VAD_STATE_ROWS, 2);

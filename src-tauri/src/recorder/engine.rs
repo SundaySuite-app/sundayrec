@@ -70,7 +70,7 @@ pub use self::payloads::{
     RecordingProgress, VideoProblem,
 };
 use self::supervisor::spawn_supervisor;
-pub(crate) use self::supervisor::{capture_host, SegmentOutcome};
+pub(crate) use self::supervisor::{SegmentOutcome, capture_host};
 // The session takes the keep-awake block through this one door; `crate::power`'s
 // tests drive the same door with a fake blocker.
 #[cfg(test)]
@@ -517,7 +517,7 @@ impl RecorderEngine {
         // is what triggers the OS prompt, and Unknown means we couldn't tell, so
         // we behave exactly as before.
         {
-            use crate::media::permissions::{blocked_message, status, MediaKind};
+            use crate::media::permissions::{MediaKind, blocked_message, status};
             let mic = status(MediaKind::Microphone);
             if let Some(msg) = blocked_message(MediaKind::Microphone, mic) {
                 return Err(AppError::Recording(msg));

@@ -71,9 +71,9 @@
 //! is a constant moving — not a last-ULP difference in a platform's `sin`.
 
 use serde::{Deserialize, Serialize};
-use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+use sundayrec_core::audio_analysis::{FRAME_MS, HeuristicScorer, SAMPLE_RATE};
 use sundayrec_core::detect::{
-    analyse_pcm, detect, Detection, PrepAnalysisSegment, SegmentType, SermonSegment,
+    Detection, PrepAnalysisSegment, SegmentType, SermonSegment, analyse_pcm, detect,
 };
 
 // ── Deterministic signal synthesis ──────────────────────────────────────────

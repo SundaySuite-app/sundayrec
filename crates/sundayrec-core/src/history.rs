@@ -17,7 +17,7 @@
 //! the Electron unlink: the UI text promises «Flyttes til papirkurven, ikke
 //! slettet for godt», and the trash's own 30-day purge is the delete.
 
-use std::path::{Path, MAIN_SEPARATOR};
+use std::path::{MAIN_SEPARATOR, Path};
 
 /// One history row, reduced to the fields the retention decision needs. Mirrors
 /// the relevant subset of the Electron history entry + the Tauri `RecordingRow`.

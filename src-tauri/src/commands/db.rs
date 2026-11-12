@@ -8,10 +8,10 @@ use tauri::AppHandle;
 use tauri::State;
 use ts_rs::TS;
 
-use sundayrec_core::history::{decide_prune, PruneCandidate};
+use sundayrec_core::history::{PruneCandidate, decide_prune};
 
-use crate::db::store::{self, RecordingRow};
 use crate::db::Db;
+use crate::db::store::{self, RecordingRow};
 use crate::error::AppResult;
 use crate::settings;
 

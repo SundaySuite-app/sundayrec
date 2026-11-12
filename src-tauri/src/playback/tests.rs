@@ -118,8 +118,8 @@ impl Dev {
             let n = (frames - done).min(480);
             let deadline = Instant::now() + Duration::from_secs(30);
             while self.r.buffered_frames() < n {
-                let gen = self.p.shared.requested_gen.load(Ordering::Acquire);
-                if self.p.shared.produced_gen.load(Ordering::Acquire) == gen {
+                let r#gen = self.p.shared.requested_gen.load(Ordering::Acquire);
+                if self.p.shared.produced_gen.load(Ordering::Acquire) == r#gen {
                     break;
                 }
                 assert!(Instant::now() < deadline, "the producer stalled");
@@ -132,23 +132,23 @@ impl Dev {
     }
 
     /// Render until generation `gen` has ended.
-    fn until_ended(&mut self, gen: u64) {
+    fn until_ended(&mut self, r#gen: u64) {
         let deadline = Instant::now() + Duration::from_secs(30);
-        while self.p.shared.ended_gen.load(Ordering::Acquire) != gen {
+        while self.p.shared.ended_gen.load(Ordering::Acquire) != r#gen {
             assert!(Instant::now() < deadline, "generation {gen} never ended");
             self.play_paced(480);
         }
     }
 
     /// Render silence-producing blocks until generation `gen` is playing.
-    fn until_playing(&mut self, gen: u64) {
+    fn until_playing(&mut self, r#gen: u64) {
         let ch = self.r.channels();
         let mut buf = vec![0.0f32; 480 * ch];
         let deadline = Instant::now() + Duration::from_secs(20);
-        while self.p.shared.playing_gen.load(Ordering::Acquire) != gen {
+        while self.p.shared.playing_gen.load(Ordering::Acquire) != r#gen {
             assert!(Instant::now() < deadline, "generation {gen} never started");
             self.r.render(&mut buf);
-            if self.p.shared.playing_gen.load(Ordering::Acquire) != gen {
+            if self.p.shared.playing_gen.load(Ordering::Acquire) != r#gen {
                 assert!(buf.iter().all(|x| *x == 0.0), "nothing before the start");
             } else {
                 self.out.extend(buf.iter().step_by(ch));
@@ -159,11 +159,11 @@ impl Dev {
 
     /// After a seek: render (the old audio fades out, then the new generation primes and fades
     /// in) until generation `gen` is playing.
-    fn until_seeked(&mut self, gen: u64) {
+    fn until_seeked(&mut self, r#gen: u64) {
         let ch = self.r.channels();
         let mut buf = vec![0.0f32; 480 * ch];
         let deadline = Instant::now() + Duration::from_secs(20);
-        while self.p.shared.playing_gen.load(Ordering::Acquire) != gen {
+        while self.p.shared.playing_gen.load(Ordering::Acquire) != r#gen {
             assert!(Instant::now() < deadline, "generation {gen} never started");
             self.r.render(&mut buf);
             self.out.extend(buf.iter().step_by(ch));
@@ -217,10 +217,10 @@ fn the_device_clock_drives_the_position_events() {
     // Let the reporter look once more.
     let deadline = Instant::now() + Duration::from_secs(5);
     let last = loop {
-        if let Some(l) = d.positions().last().copied() {
-            if l.0 >= p0 + 1.0 - 1e-9 {
-                break l;
-            }
+        if let Some(l) = d.positions().last().copied()
+            && l.0 >= p0 + 1.0 - 1e-9
+        {
+            break l;
         }
         assert!(Instant::now() < deadline, "no position event for 1 s on");
         std::thread::sleep(Duration::from_millis(5));
@@ -301,8 +301,8 @@ fn new_cuts_while_playing_restart_on_the_new_programme() {
 
     // Cut 1.0 s..2.0 s of the source, and carry on from source 0.5 s.
     let cut = CutPlan::new(&keeps(&[(0.0, 1.0), (2.0, 6.0)]), 6.0, rate);
-    let gen = d.p.set_plan(cut.clone(), 0.5);
-    assert_eq!(gen, 2);
+    let r#gen = d.p.set_plan(cut.clone(), 0.5);
+    assert_eq!(r#gen, 2);
     d.until_seeked(2);
     let p0 = d.p.position_secs();
     assert!((0.5..=0.51).contains(&p0), "programme position {p0}");
@@ -332,10 +332,10 @@ fn new_cuts_while_playing_restart_on_the_new_programme() {
     // 2.x s, which the old plan (programme == source) would have called 1.x s.
     let deadline = Instant::now() + Duration::from_secs(5);
     let last = loop {
-        if let Some(l) = d.positions().last().copied() {
-            if l.0 >= p0 + 1.0 - 1e-9 {
-                break l;
-            }
+        if let Some(l) = d.positions().last().copied()
+            && l.0 >= p0 + 1.0 - 1e-9
+        {
+            break l;
         }
         assert!(
             Instant::now() < deadline,
@@ -452,11 +452,7 @@ fn gain_chain(db: f64, limiter: bool) -> Chain {
 
 fn click(t: f64) -> f32 {
     // Frame 24 000 of a 48 kHz source: 0.5 s, exactly.
-    if t == 0.5 {
-        0.3
-    } else {
-        0.0
-    }
+    if t == 0.5 { 0.3 } else { 0.0 }
 }
 
 /// Play the whole programme with «Før» (`wet == false`) or «Etter` chosen from the start.
@@ -688,8 +684,8 @@ fn a_chain_change_racing_a_seek_or_the_end_is_harmless() {
     d.play_paced(4_800);
     d.p.set_chain(gain_chain(0.0, false));
     d.p.set_chain(gain_chain(6.0, false)); // replaces the one still warming up
-    let gen = d.p.seek_program(2.0);
-    d.until_seeked(gen);
+    let r#gen = d.p.seek_program(2.0);
+    d.until_seeked(r#gen);
     d.play_paced(9_600);
     // The seek's job started with the newest chain: 0.4 · 2 = 0.8.
     let hi = d.out[d.out.len() - 4_800..]
@@ -697,10 +693,10 @@ fn a_chain_change_racing_a_seek_or_the_end_is_harmless() {
         .fold(0.0f32, |m, v| m.max(v.abs()));
     assert!((hi - 0.8).abs() < 0.01, "{hi}");
     // Now to the end, with a change asked for at the last moment.
-    let gen = d.p.seek_program(5.9);
-    d.until_seeked(gen);
+    let r#gen = d.p.seek_program(5.9);
+    d.until_seeked(r#gen);
     d.p.set_chain(gain_chain(-3.0, false));
-    d.until_ended(gen);
+    d.until_ended(r#gen);
     assert_eq!(d.p.stats().underruns, 0);
     d.p.close();
 }

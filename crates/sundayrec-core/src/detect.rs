@@ -846,12 +846,14 @@ mod tests {
         let d = detect(segs);
         assert!(d.sermon.is_none(), "nothing clears the gates");
         assert!(d.offered.is_some(), "the editor is still offered a block");
-        assert!(d
-            .attention_reasons
-            .contains(&reasons::SPEECH_AT_START.to_string()));
-        assert!(d
-            .attention_codes()
-            .contains(&AttentionReason::SpeechAtStart));
+        assert!(
+            d.attention_reasons
+                .contains(&reasons::SPEECH_AT_START.to_string())
+        );
+        assert!(
+            d.attention_codes()
+                .contains(&AttentionReason::SpeechAtStart)
+        );
     }
 
     // ── Attention reasons ───────────────────────────────────────────────────
@@ -963,9 +965,11 @@ mod tests {
         let n = codes.len();
         codes.dedup();
         assert_eq!(codes.len(), n, "two reasons share a code");
-        assert!(codes
-            .iter()
-            .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')));
+        assert!(
+            codes
+                .iter()
+                .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_'))
+        );
     }
 
     #[test]
@@ -1057,7 +1061,7 @@ mod tests {
                 vec![(crate::audio_analysis::SegmentType::Speech, 0.99); input.frames.len()]
             }
         }
-        use crate::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+        use crate::audio_analysis::{FRAME_MS, HeuristicScorer, SAMPLE_RATE};
         // 100 s of a steady 440 Hz tone — the heuristic calls this music.
         let n = SAMPLE_RATE as usize * 100;
         let pcm: Vec<f32> = (0..n)

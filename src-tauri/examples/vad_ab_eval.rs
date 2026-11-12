@@ -49,22 +49,23 @@ mod harness {
     use std::sync::Arc;
 
     use sundayrec_core::ab_eval::{
-        aggregate, evaluate_recording, ground_truths, parse_pooling_spec, render_summary, AbReport,
-        PooledVadScorer, RecordingEvaluation, ScorerSelection, Span, VadHopStats, AB_REPORT_SCHEMA,
-        MIN_CORPUS_FOR_ANY_CONCLUSION, MIN_CORPUS_FOR_A_DIRECTION, SELECTION_IOU_THRESHOLD, SWEEP,
+        AB_REPORT_SCHEMA, AbReport, MIN_CORPUS_FOR_A_DIRECTION, MIN_CORPUS_FOR_ANY_CONCLUSION,
+        PooledVadScorer, RecordingEvaluation, SELECTION_IOU_THRESHOLD, SWEEP, ScorerSelection,
+        Span, VadHopStats, aggregate, evaluate_recording, ground_truths, parse_pooling_spec,
+        render_summary,
     };
     use sundayrec_core::audio_analysis::{
-        classify_and_group_with, extract_features, AnalysisFrame, FrameScorer, HeuristicScorer,
-        ScoringInput, FRAME_MS, SAMPLE_RATE,
+        AnalysisFrame, FRAME_MS, FrameScorer, HeuristicScorer, SAMPLE_RATE, ScoringInput,
+        classify_and_group_with, extract_features,
     };
-    use sundayrec_core::detect::{detect, Detection, PrepAnalysisSegment};
-    use sundayrec_core::editor::{sidecar_path, Sidecar};
+    use sundayrec_core::detect::{Detection, PrepAnalysisSegment, detect};
+    use sundayrec_core::editor::{Sidecar, sidecar_path};
     use sundayrec_core::feedback::{
-        FeedbackSegment, FeedbackSegmentKind, RecordingFeedback, SermonPickCorrection,
-        FEEDBACK_SCHEMA,
+        FEEDBACK_SCHEMA, FeedbackSegment, FeedbackSegmentKind, RecordingFeedback,
+        SermonPickCorrection,
     };
-    use sundayrec_core::shadow::{ShadowSettings, DEFAULT_FRAME_SPEECH_THRESHOLD};
-    use sundayrec_core::vad::{score_pcm, VAD_SAMPLE_RATE};
+    use sundayrec_core::shadow::{DEFAULT_FRAME_SPEECH_THRESHOLD, ShadowSettings};
+    use sundayrec_core::vad::{VAD_SAMPLE_RATE, score_pcm};
     use sundayrec_lib::vad::{SileroVad, SileroVadModel};
 
     /// Extensions the recorder and the editor produce. A directory scan rather
@@ -158,8 +159,10 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
                 })
                 .collect()
         } else {
-            vec![parse_pooling_spec(&pooling, frame_threshold)
-                .ok_or(format!("unknown pooling rule `{pooling}`"))?]
+            vec![
+                parse_pooling_spec(&pooling, frame_threshold)
+                    .ok_or(format!("unknown pooling rule `{pooling}`"))?,
+            ]
         };
         if options.dirs.is_empty() && options.synthetic.is_none() {
             return Err("nothing to do: pass --dir <path> or --synthetic <n>".into());
@@ -467,7 +470,7 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
     /// derived from them is stamped [`sundayrec_core::ab_eval::SYNTHETIC_WARNING_CODE`]
     /// and must never be quoted as a measurement of anything.
     fn synthesize(dir: &Path, count: usize) -> Result<Vec<PathBuf>, String> {
-        use sundayrec_core::wav::{encode_s16le, header, WavSpec};
+        use sundayrec_core::wav::{WavSpec, encode_s16le, header};
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
         let spec = WavSpec {

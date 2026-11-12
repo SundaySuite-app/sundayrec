@@ -176,7 +176,7 @@ pub fn native<R: tauri::Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
 ///
 /// Call once, from `setup`.
 pub fn wire_failure_sources(app: &AppHandle) {
-    use crate::recorder::engine::{RecordingEvent, ERROR_EVENT};
+    use crate::recorder::engine::{ERROR_EVENT, RecordingEvent};
 
     let handle = app.clone();
     app.listen(ERROR_EVENT, move |ev| {
@@ -300,7 +300,7 @@ mod tests {
     /// recorder failures happened" looks like. Pin the round-trip.
     #[test]
     fn the_listener_parses_exactly_what_the_engine_emits() {
-        use crate::recorder::engine::{RecordingEvent, ERROR_EVENT};
+        use crate::recorder::engine::{ERROR_EVENT, RecordingEvent};
 
         // What `engine::emit_error` puts on the wire, verbatim.
         let emitted = serde_json::to_string(&RecordingEvent {

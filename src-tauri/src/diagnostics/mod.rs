@@ -26,15 +26,15 @@
 
 use sqlx::SqlitePool;
 use sundayrec_core::diagnostics::{
-    build_report_markdown, detect_issues, CrashSummary, DiagnosticFinding, DiagnosticsInput,
-    LastErrorInfo, LogFileInfo, SettingsSummary, TaskRestartSummary,
+    CrashSummary, DiagnosticFinding, DiagnosticsInput, LastErrorInfo, LogFileInfo, SettingsSummary,
+    TaskRestartSummary, build_report_markdown, detect_issues,
 };
 use tauri::{AppHandle, Manager};
 
 use crate::audio::devices::list_input_devices;
 use crate::error::AppResult;
 use crate::media::ffmpeg::ffmpeg_version;
-use crate::media::permissions::{status as perm_status, AuthStatus, MediaKind};
+use crate::media::permissions::{AuthStatus, MediaKind, status as perm_status};
 use crate::settings;
 
 use serde::{Deserialize, Serialize};

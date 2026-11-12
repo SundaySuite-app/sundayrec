@@ -69,22 +69,22 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use sundayrec_core::wake::{
-    classify_win_error, compare_expected_to_observed, decide_reschedule, key_of,
-    parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched, parse_pmset_standby,
-    parse_powercfg_waketimers, parse_win_wake_timers, parse_wmic_battery_status, wake_points,
-    SleepConfig, VerifiedWake, WakeErrorReason, WakeIdleReason, WakePlatform, WakeRescheduleAction,
-    WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
+    SleepConfig, VerifiedWake, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS, WakeErrorReason,
+    WakeIdleReason, WakePlatform, WakeRescheduleAction, WinErrorKind, classify_win_error,
+    compare_expected_to_observed, decide_reschedule, key_of, parse_mac_sleep_config,
+    parse_pmset_batt, parse_pmset_sched, parse_pmset_standby, parse_powercfg_waketimers,
+    parse_win_wake_timers, parse_wmic_battery_status, wake_points,
 };
 
 use crate::util::lock_recover;
 use plan::{
-    plan_mac_batt, plan_mac_cancel_all, plan_mac_cancel_one, plan_mac_elevated_schedule,
-    plan_mac_fix_sleep, plan_mac_sched, plan_mac_schedule_one, plan_mac_sleep_config,
-    plan_win_battery_cim, plan_win_battery_wmic, plan_win_fix_wake_timers,
-    plan_win_wake_timers_query, plan_win_waketimers, WAKE_OWNER, WAKE_OWNER_TEST,
+    WAKE_OWNER, WAKE_OWNER_TEST, plan_mac_batt, plan_mac_cancel_all, plan_mac_cancel_one,
+    plan_mac_elevated_schedule, plan_mac_fix_sleep, plan_mac_sched, plan_mac_schedule_one,
+    plan_mac_sleep_config, plan_win_battery_cim, plan_win_battery_wmic, plan_win_fix_wake_timers,
+    plan_win_wake_timers_query, plan_win_waketimers,
 };
-use shell::{run_text, RealShell, Shell};
-use win_timer::{plan_wake_timers, TimerSlot, WaitableTimers};
+use shell::{RealShell, Shell, run_text};
+use win_timer::{TimerSlot, WaitableTimers, plan_wake_timers};
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -736,10 +736,10 @@ async fn observed_wakes(
 ) -> Vec<VerifiedWake> {
     match platform {
         WakePlatform::MacArm | WakePlatform::MacIntel => {
-            if let Some(wakes) = iokit {
-                if !wakes.is_empty() {
-                    return wakes;
-                }
+            if let Some(wakes) = iokit
+                && !wakes.is_empty()
+            {
+                return wakes;
             }
             match run_text(shell, &plan_mac_sched()).await {
                 Ok(out) => parse_pmset_sched(&out, Some(Utc::now().year_ce().1 as i32)),
@@ -1302,9 +1302,11 @@ mod tests {
             vec![("05/30/26 12:05:00".to_string(), WAKE_OWNER_TEST.to_string())],
             "the first test event should have been cancelled by name: {state:?}"
         );
-        assert!(shell
-            .log()
-            .contains(&"pmset schedule cancel wake 05/30/26 12:02:00 SundayRec-test".to_string()));
+        assert!(
+            shell.log().contains(
+                &"pmset schedule cancel wake 05/30/26 12:02:00 SundayRec-test".to_string()
+            )
+        );
         assert_eq!(shell.count("cancelall"), 0);
     }
 

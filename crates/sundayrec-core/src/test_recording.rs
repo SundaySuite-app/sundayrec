@@ -148,11 +148,12 @@ pub fn parse_strongest_rms(stderr: &str) -> Option<f64> {
                 .chars()
                 .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.' || *c == '+')
                 .collect();
-            if let Ok(v) = token.parse::<f64>() {
-                if v.is_finite() && v > strongest {
-                    strongest = v;
-                    found = true;
-                }
+            if let Ok(v) = token.parse::<f64>()
+                && v.is_finite()
+                && v > strongest
+            {
+                strongest = v;
+                found = true;
             }
         }
     }

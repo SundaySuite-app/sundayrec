@@ -147,14 +147,14 @@ pub fn move_once_best_effort(old: &Path, new: &Path) {
             );
         }
         MigrateAction::Move => {
-            if let Some(parent) = new.parent() {
-                if std::fs::create_dir_all(parent).is_err() {
-                    tracing::warn!(
-                        dir = %parent.display(),
-                        "F2-W10: could not create the local app-data directory — leaving the old one in place"
-                    );
-                    return;
-                }
+            if let Some(parent) = new.parent()
+                && std::fs::create_dir_all(parent).is_err()
+            {
+                tracing::warn!(
+                    dir = %parent.display(),
+                    "F2-W10: could not create the local app-data directory — leaving the old one in place"
+                );
+                return;
             }
             match std::fs::rename(old, new) {
                 Ok(()) => {
@@ -371,7 +371,7 @@ pub fn hide_dir_on_windows(dir: &Path) {
     {
         use std::os::windows::ffi::OsStrExt;
 
-        use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN};
+        use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, SetFileAttributesW};
 
         let wide: Vec<u16> = dir
             .as_os_str()

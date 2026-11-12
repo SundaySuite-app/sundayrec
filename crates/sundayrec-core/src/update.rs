@@ -340,16 +340,20 @@ mod tests {
 
     #[test]
     fn only_ready_to_install_is_installable() {
-        assert!(UpdateStatus::ReadyToInstall {
-            version: "1.0.0".into(),
-            notes: None,
-        }
-        .is_ready_to_install());
-        assert!(!UpdateStatus::Downloading {
-            version: "1.0.0".into(),
-            percent: 99
-        }
-        .is_ready_to_install());
+        assert!(
+            UpdateStatus::ReadyToInstall {
+                version: "1.0.0".into(),
+                notes: None,
+            }
+            .is_ready_to_install()
+        );
+        assert!(
+            !UpdateStatus::Downloading {
+                version: "1.0.0".into(),
+                percent: 99
+            }
+            .is_ready_to_install()
+        );
         assert!(!UpdateStatus::Idle.is_ready_to_install());
     }
 
@@ -867,7 +871,7 @@ mod tests {
         // other three together. If the download gate and the relaunch ever
         // disagree about what is at stake, one of them is the one that loses a
         // service — and it is always the more permissive one.
-        use crate::window::{close_action, quit_action, relaunch_plan, CloseAction, QuitAction};
+        use crate::window::{CloseAction, QuitAction, close_action, quit_action, relaunch_plan};
         for state in EVERY_STATE {
             let refused = download_allowed(state).is_err();
             assert_eq!(

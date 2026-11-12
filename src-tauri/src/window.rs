@@ -53,8 +53,8 @@
 //! never clicked headless. The decisions and the notification wording above them
 //! are unit-tested, and `docs/APP-SHELL.md` carries the rig steps.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tauri::{Manager, Window, WindowEvent};
@@ -62,8 +62,8 @@ use tauri::{Manager, Window, WindowEvent};
 use sundayrec_core::lang::Lang;
 use sundayrec_core::timeouts::RecorderTimeouts;
 use sundayrec_core::window::{
-    close_action, hidden_notice, quit_action, quit_notice, wait_outcome, CloseAction, HideReason,
-    QuitAction, QuitNotice, QuitWait, TraySpot, QUIT_REPEAT_FLOOR_MS,
+    CloseAction, HideReason, QUIT_REPEAT_FLOOR_MS, QuitAction, QuitNotice, QuitWait, TraySpot,
+    close_action, hidden_notice, quit_action, quit_notice, wait_outcome,
 };
 
 /// The label of the one window `tauri.conf.json` defines. A close request on any

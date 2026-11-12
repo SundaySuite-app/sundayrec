@@ -29,15 +29,15 @@
 //! sier kjernen «ingenting å prøve»). Se RIG-DAY «Maskinvarekoding på Windows».
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::video_encoder::{
-    conclude, next_probe, plan_session, probe_args, resolve_encoder, start_encoder, SessionPlan,
-    VideoEncoder, VideoEncoderSummary,
+    SessionPlan, VideoEncoder, VideoEncoderSummary, conclude, next_probe, plan_session, probe_args,
+    resolve_encoder, start_encoder,
 };
 use tauri::{AppHandle, Manager};
 
@@ -113,10 +113,10 @@ async fn write_stored(path: &Path, encoder: VideoEncoder) {
 }
 
 fn forget_stored(path: &Path) {
-    if let Err(e) = std::fs::remove_file(path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!("video encoder: could not clear the stored choice: {e}");
-        }
+    if let Err(e) = std::fs::remove_file(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("video encoder: could not clear the stored choice: {e}");
     }
 }
 

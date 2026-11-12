@@ -62,7 +62,7 @@ use std::sync::{Mutex, OnceLock};
 use sqlx::SqlitePool;
 
 use sundayrec_core::feedback::RecordingFeedback;
-use sundayrec_core::telemetry::corrections::{banded_corrections, CorrectionKey, CorrectionReport};
+use sundayrec_core::telemetry::corrections::{CorrectionKey, CorrectionReport, banded_corrections};
 
 use crate::db::store;
 use crate::error::AppResult;
@@ -109,12 +109,12 @@ pub fn observe(before: &BTreeMap<CorrectionKey, u64>, after: &BTreeMap<Correctio
     }
     for (key, then) in before {
         let now = after.get(key).copied().unwrap_or(0);
-        if *then > now {
-            if let Some(slot) = map.get_mut(key) {
-                // Saturating, because the count being retracted may already have
-                // been sent. See the module docs on what that costs.
-                *slot = slot.saturating_sub(then - now);
-            }
+        if *then > now
+            && let Some(slot) = map.get_mut(key)
+        {
+            // Saturating, because the count being retracted may already have
+            // been sent. See the module docs on what that costs.
+            *slot = slot.saturating_sub(then - now);
         }
     }
     map.retain(|_, v| *v > 0);
@@ -137,7 +137,7 @@ pub fn observe_files(before: &RecordingFeedback, after: &RecordingFeedback) {
 pub fn snapshot() -> Vec<CorrectionReport> {
     lock_recover(counts())
         .iter()
-        .filter(|(_, &v)| v > 0)
+        .filter(|&(_, &v)| v > 0)
         .map(|(&key, &count)| CorrectionReport::new(key, count))
         .collect()
 }
@@ -166,7 +166,7 @@ pub fn clear() {
 pub async fn persist(pool: &SqlitePool) -> AppResult<()> {
     let map: BTreeMap<String, u64> = lock_recover(counts())
         .iter()
-        .filter(|(_, &v)| v > 0)
+        .filter(|&(_, &v)| v > 0)
         .map(|(&key, &count)| (key.as_wire(), count))
         .collect();
     store::set_setting(pool, KEY_CORRECTIONS, &serde_json::to_string(&map)?).await
@@ -183,10 +183,10 @@ pub async fn load(pool: &SqlitePool) -> AppResult<()> {
     let mut map = lock_recover(counts());
     map.clear();
     for (key, count) in stored {
-        if let Some(parsed) = CorrectionKey::from_wire(&key) {
-            if count > 0 {
-                map.insert(parsed, count);
-            }
+        if let Some(parsed) = CorrectionKey::from_wire(&key)
+            && count > 0
+        {
+            map.insert(parsed, count);
         }
     }
     Ok(())

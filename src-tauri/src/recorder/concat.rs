@@ -48,14 +48,14 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sundayrec_core::capture::audio_encode_args;
 use sundayrec_core::recorder::{
-    build_concat_args, build_concat_list, concat_inputs, concat_needed, existing_concat_fragments,
-    is_plausible_output, Deliverable,
+    Deliverable, build_concat_args, build_concat_list, concat_inputs, concat_needed,
+    existing_concat_fragments, is_plausible_output,
 };
 use sundayrec_core::recovery::DeliveryMode;
 
@@ -203,21 +203,21 @@ pub(crate) async fn finalize_deliverable_noted(
     // M3R #10: a crash between the delivered mp4 and the removal of the WAV
     // leaves a capture whose delivery is already in the folder. Delivering it
     // again would make a second, sound-only mp4 and a second history row.
-    if let Some(spec) = delivery.filter(|d| d.mode == DeliveryMode::MuxAudioVideo) {
-        if let Some(done) = already_delivered(&primary).await {
-            tracing::info!(
-                capture = %primary,
-                delivery = %done,
-                "recorder: this capture was already delivered — not delivering it again"
-            );
-            if !spec.keep_audio_capture {
-                remove_capture(&primary).await;
-            }
-            return Ok(Finished {
-                path: done,
-                video_dropped: false,
-            });
+    if let Some(spec) = delivery.filter(|d| d.mode == DeliveryMode::MuxAudioVideo)
+        && let Some(done) = already_delivered(&primary).await
+    {
+        tracing::info!(
+            capture = %primary,
+            delivery = %done,
+            "recorder: this capture was already delivered — not delivering it again"
+        );
+        if !spec.keep_audio_capture {
+            remove_capture(&primary).await;
         }
+        return Ok(Finished {
+            path: done,
+            video_dropped: false,
+        });
     }
 
     // Pre-roll existence guard: a stale/missing/empty clip path must NOT take the

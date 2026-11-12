@@ -399,8 +399,8 @@ const INSTALL_IS_DEFERRED: bool = cfg!(windows);
 /// status at [`UpdateStatus::ReadyToInstall`]. NETWORK/GUI-UNVERIFIED.
 #[cfg(feature = "updater")]
 pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateStatus> {
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use sundayrec_core::update::download_percent;
 

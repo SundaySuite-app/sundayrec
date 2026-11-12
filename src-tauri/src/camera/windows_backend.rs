@@ -24,14 +24,14 @@
 //! camera has run through it yet (RIG-DAY (c1c-w)).
 
 use std::collections::HashMap;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use cap_camera_windows as cap;
 use sundayrec_core::camera_format::{
-    duration_to_sample_ns, qpc_ticks_to_ns, FrameStamper, StampSource,
+    FrameStamper, StampSource, duration_to_sample_ns, qpc_ticks_to_ns,
 };
 use sundayrec_mf_util::MediaFoundation;
 
@@ -61,7 +61,7 @@ fn worker() -> Result<&'static Mutex<Sender<Job>>, CameraError> {
             std::thread::Builder::new()
                 .name("camera-com".into())
                 .spawn(move || {
-                    use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+                    use windows_sys::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
                     // SAFETY: plain Win32 call with a null reserved pointer. No
                     // matching `CoUninitialize`: this apartment lasts as long as
                     // the process (see the module docs).
@@ -247,10 +247,10 @@ impl BackendHandle for WinSession {
 
 fn stop_session(id: u64) {
     let _ = call(move |w| {
-        if let Some(handle) = w.sessions.remove(&id) {
-            if let Err(e) = handle.stop_capturing() {
-                tracing::warn!("camera: stop_capturing failed: {e}");
-            }
+        if let Some(handle) = w.sessions.remove(&id)
+            && let Err(e) = handle.stop_capturing()
+        {
+            tracing::warn!("camera: stop_capturing failed: {e}");
         }
     });
 }

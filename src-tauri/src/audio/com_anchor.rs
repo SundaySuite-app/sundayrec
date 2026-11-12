@@ -66,7 +66,7 @@
 /// until the anchor has created the enumerator.
 #[cfg(windows)]
 pub fn ensure() {
-    use std::sync::{mpsc, OnceLock};
+    use std::sync::{OnceLock, mpsc};
 
     static ANCHOR: OnceLock<()> = OnceLock::new();
     ANCHOR.get_or_init(|| {
@@ -74,7 +74,7 @@ pub fn ensure() {
         let spawned = std::thread::Builder::new()
             .name("cpal-com-anchor".into())
             .spawn(move || {
-                use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+                use windows_sys::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
                 // SAFETY: plain Win32 call with a null reserved pointer; the
                 // matching `CoUninitialize` is deliberately never called — this
                 // apartment is meant to last until the process ends.

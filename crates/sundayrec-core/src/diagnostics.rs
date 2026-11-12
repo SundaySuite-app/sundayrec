@@ -419,16 +419,16 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
     }
 
     // Disk.
-    if let Some(free) = input.free_disk_bytes {
-        if free < DISK_WARN_BYTES {
-            out.push(DiagnosticFinding::new(
-                "SR-DISK-01",
-                Warning,
-                "Low free disk space",
-                format!("{} free where recordings are saved.", fmt_bytes(free)),
-                "Free up space, or pick another save folder before a long recording.",
-            ));
-        }
+    if let Some(free) = input.free_disk_bytes
+        && free < DISK_WARN_BYTES
+    {
+        out.push(DiagnosticFinding::new(
+            "SR-DISK-01",
+            Warning,
+            "Low free disk space",
+            format!("{} free where recordings are saved.", fmt_bytes(free)),
+            "Free up space, or pick another save folder before a long recording.",
+        ));
     }
     if input.save_folder_writable == Some(false) {
         out.push(DiagnosticFinding::new(
@@ -540,15 +540,16 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
 
     // Persisted panics. The app crashed; that is worth saying out loud even
     // when everything is fine right now.
-    if let Some(c) = &input.crashes {
-        if c.count > 0 {
-            let when = c.newest.as_deref().unwrap_or("an unknown time");
-            let what = c
-                .newest_message
-                .as_deref()
-                .map(|m| format!(" Latest: {m}"))
-                .unwrap_or_default();
-            out.push(DiagnosticFinding::new(
+    if let Some(c) = &input.crashes
+        && c.count > 0
+    {
+        let when = c.newest.as_deref().unwrap_or("an unknown time");
+        let what = c
+            .newest_message
+            .as_deref()
+            .map(|m| format!(" Latest: {m}"))
+            .unwrap_or_default();
+        out.push(DiagnosticFinding::new(
                 "SR-CRASH-01",
                 Warning,
                 "The app has crashed",
@@ -558,15 +559,15 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
                 ),
                 "Pass this report on — the crash files live in the app folder and are what makes the fault findable.",
             ));
-        }
     }
 
     // Supervised tasks that had to be restarted. One is a hiccup; the count and
     // the NAMES are what turn "it feels flaky" into something actionable.
-    if let Some(r) = &input.task_restarts {
-        if r.count > 0 {
-            let when = r.newest.as_deref().unwrap_or("an unknown time");
-            out.push(DiagnosticFinding::new(
+    if let Some(r) = &input.task_restarts
+        && r.count > 0
+    {
+        let when = r.newest.as_deref().unwrap_or("an unknown time");
+        out.push(DiagnosticFinding::new(
                 "SR-TASK-01",
                 Warning,
                 "Background tasks have had to be restarted",
@@ -581,7 +582,6 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
                 ),
                 "The app restarted them automatically, so nothing stopped. But if it repeats, bring this report — the names above say which part is unstable.",
             ));
-        }
     }
 
     // No log file means the NEXT problem will be as hard to diagnose as the
@@ -1006,12 +1006,14 @@ mod tests {
         input.ffmpeg_version = None;
         input.audio_devices.clear();
         let f = detect_issues(&input);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-FFMPEG-01" && x.severity == DiagnosticSeverity::Critical));
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-AUDIO-01" && x.severity == DiagnosticSeverity::Critical));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-FFMPEG-01" && x.severity == DiagnosticSeverity::Critical)
+        );
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-AUDIO-01" && x.severity == DiagnosticSeverity::Critical)
+        );
         assert!(!f.iter().any(|x| x.code == "SR-OK"));
     }
 
@@ -1044,12 +1046,14 @@ mod tests {
         input.free_disk_bytes = Some(1024 * 1024 * 1024); // 1 GB < 4 GB
         input.save_folder_writable = Some(false);
         let f = detect_issues(&input);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-DISK-01" && x.severity == DiagnosticSeverity::Warning));
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-DISK-02" && x.severity == DiagnosticSeverity::Critical));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-DISK-01" && x.severity == DiagnosticSeverity::Warning)
+        );
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-DISK-02" && x.severity == DiagnosticSeverity::Critical)
+        );
     }
 
     #[test]
@@ -1057,9 +1061,10 @@ mod tests {
         let mut input = sample_input();
         input.mic_permission = Some("denied".to_string());
         let f = detect_issues(&input);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-PERM-01" && x.severity == DiagnosticSeverity::Critical));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-PERM-01" && x.severity == DiagnosticSeverity::Critical)
+        );
     }
 
     #[test]
@@ -1070,9 +1075,11 @@ mod tests {
             message: "USB pulled".into(),
             timestamp: "2026-06-07T12:00:00+02:00".into(),
         });
-        assert!(detect_issues(&input)
-            .iter()
-            .any(|x| x.code == "SR-ENGINE-01"));
+        assert!(
+            detect_issues(&input)
+                .iter()
+                .any(|x| x.code == "SR-ENGINE-01")
+        );
         let md = build_report_markdown(input);
         assert!(md.contains("Last recording error"));
         assert!(md.contains("device_disconnected"));
@@ -1181,9 +1188,10 @@ mod tests {
             ..Default::default()
         });
         let f = detect_issues(&input);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-CAPTURE-01" && x.severity == DiagnosticSeverity::Warning));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-CAPTURE-01" && x.severity == DiagnosticSeverity::Warning)
+        );
         let md = build_report_markdown(input);
         assert!(md.contains("Last recording (technical)"));
         assert!(md.contains("IPC overload"));
@@ -1231,18 +1239,21 @@ mod tests {
         let mut input = sample_input();
         input.capture_ok = Some(false);
         let f = detect_issues(&input);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-CAPTURE-02" && x.severity == DiagnosticSeverity::Critical));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-CAPTURE-02" && x.severity == DiagnosticSeverity::Critical)
+        );
         assert!(!f.iter().any(|x| x.code == "SR-CAPTURE-01"));
 
         // A probe that PASSED, or one that never ran, says nothing.
         let mut ok = sample_input();
         ok.capture_ok = Some(true);
         assert!(!detect_issues(&ok).iter().any(|x| x.code == "SR-CAPTURE-02"));
-        assert!(!detect_issues(&sample_input())
-            .iter()
-            .any(|x| x.code == "SR-CAPTURE-02"));
+        assert!(
+            !detect_issues(&sample_input())
+                .iter()
+                .any(|x| x.code == "SR-CAPTURE-02")
+        );
     }
 
     #[test]
@@ -1251,13 +1262,17 @@ mod tests {
         input.video_ok = Some(false);
         // Video disabled (the default) → a camera that cannot open is not a
         // problem the operator has.
-        assert!(!detect_issues(&input)
-            .iter()
-            .any(|x| x.code == "SR-VIDEO-02"));
+        assert!(
+            !detect_issues(&input)
+                .iter()
+                .any(|x| x.code == "SR-VIDEO-02")
+        );
         input.settings.video_enabled = true;
-        assert!(detect_issues(&input)
-            .iter()
-            .any(|x| x.code == "SR-VIDEO-02" && x.severity == DiagnosticSeverity::Critical));
+        assert!(
+            detect_issues(&input)
+                .iter()
+                .any(|x| x.code == "SR-VIDEO-02" && x.severity == DiagnosticSeverity::Critical)
+        );
     }
 
     #[test]
@@ -1302,9 +1317,11 @@ mod tests {
     fn an_empty_crash_ring_is_silent_and_an_unreadable_one_is_honest() {
         // No crashes → no finding (the healthy fixture already proves this),
         // and the report says so out loud rather than omitting the line.
-        assert!(!detect_issues(&sample_input())
-            .iter()
-            .any(|x| x.code == "SR-CRASH-01"));
+        assert!(
+            !detect_issues(&sample_input())
+                .iter()
+                .any(|x| x.code == "SR-CRASH-01")
+        );
         assert!(build_report_markdown(sample_input()).contains("**Crash reports:** none"));
 
         // Unreadable is NOT the same as none, and the report must not pretend.
@@ -1341,9 +1358,10 @@ mod tests {
         let mut none = sample_input();
         none.log_file = None;
         let f = detect_issues(&none);
-        assert!(f
-            .iter()
-            .any(|x| x.code == "SR-LOG-01" && x.severity == DiagnosticSeverity::Info));
+        assert!(
+            f.iter()
+                .any(|x| x.code == "SR-LOG-01" && x.severity == DiagnosticSeverity::Info)
+        );
         assert!(build_report_markdown(none).contains("**Log file:** not active"));
 
         // A log with dropped lines is present but INCOMPLETE — anyone reading

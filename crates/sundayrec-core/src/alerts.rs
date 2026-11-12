@@ -336,13 +336,27 @@ impl AlertText {
             (A::SchedulerTaskTitle, L::Fr) => "SundayRec — erreur du planificateur",
 
             // ── SchedulerTaskBody ───────────────────────────────────────────
-            (A::SchedulerTaskBody, L::No) => "Planleggeren har en vedvarende feil og kan gå glipp av planlagte opptak. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking.",
-            (A::SchedulerTaskBody, L::En) => "The scheduler has a persistent fault and may miss scheduled recordings. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting.",
-            (A::SchedulerTaskBody, L::De) => "Der Planer hat einen anhaltenden Fehler und verpasst möglicherweise geplante Aufnahmen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche.",
-            (A::SchedulerTaskBody, L::Sv) => "Schemaläggaren har ett ihållande fel och kan missa schemalagda inspelningar. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning.",
-            (A::SchedulerTaskBody, L::Da) => "Planlæggeren har en vedvarende fejl og kan gå glip af planlagte optagelser. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding.",
-            (A::SchedulerTaskBody, L::Pl) => "Harmonogram ma trwały błąd i może pominąć zaplanowane nagrania. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów.",
-            (A::SchedulerTaskBody, L::Fr) => "Le planificateur a une erreur persistante et risque de manquer des enregistrements programmés. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage.",
+            (A::SchedulerTaskBody, L::No) => {
+                "Planleggeren har en vedvarende feil og kan gå glipp av planlagte opptak. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking."
+            }
+            (A::SchedulerTaskBody, L::En) => {
+                "The scheduler has a persistent fault and may miss scheduled recordings. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting."
+            }
+            (A::SchedulerTaskBody, L::De) => {
+                "Der Planer hat einen anhaltenden Fehler und verpasst möglicherweise geplante Aufnahmen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche."
+            }
+            (A::SchedulerTaskBody, L::Sv) => {
+                "Schemaläggaren har ett ihållande fel och kan missa schemalagda inspelningar. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning."
+            }
+            (A::SchedulerTaskBody, L::Da) => {
+                "Planlæggeren har en vedvarende fejl og kan gå glip af planlagte optagelser. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding."
+            }
+            (A::SchedulerTaskBody, L::Pl) => {
+                "Harmonogram ma trwały błąd i może pominąć zaplanowane nagrania. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów."
+            }
+            (A::SchedulerTaskBody, L::Fr) => {
+                "Le planificateur a une erreur persistante et risque de manquer des enregistrements programmés. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage."
+            }
 
             // ── TrashSweepTaskTitle ─────────────────────────────────────────
             (A::TrashSweepTaskTitle, L::No) => "SundayRec — opprydding stoppet",
@@ -354,13 +368,27 @@ impl AlertText {
             (A::TrashSweepTaskTitle, L::Fr) => "SundayRec — nettoyage arrêté",
 
             // ── TrashSweepTaskBody ──────────────────────────────────────────
-            (A::TrashSweepTaskBody, L::No) => "Den automatiske tømmingen av papirkurven har en vedvarende feil, så slettede opptak blir liggende og bruke plass. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking.",
-            (A::TrashSweepTaskBody, L::En) => "Automatic emptying of the trash has a persistent fault, so deleted recordings stay on disk and take up space. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting.",
-            (A::TrashSweepTaskBody, L::De) => "Das automatische Leeren des Papierkorbs hat einen anhaltenden Fehler, sodass gelöschte Aufnahmen liegen bleiben und Platz belegen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche.",
-            (A::TrashSweepTaskBody, L::Sv) => "Den automatiska tömningen av papperskorgen har ett ihållande fel, så raderade inspelningar blir kvar och tar plats. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning.",
-            (A::TrashSweepTaskBody, L::Da) => "Den automatiske tømning af papirkurven har en vedvarende fejl, så slettede optagelser bliver liggende og optager plads. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding.",
-            (A::TrashSweepTaskBody, L::Pl) => "Automatyczne opróżnianie kosza ma trwały błąd, więc usunięte nagrania pozostają na dysku i zajmują miejsce. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów.",
-            (A::TrashSweepTaskBody, L::Fr) => "Le vidage automatique de la corbeille a une erreur persistante : les enregistrements supprimés restent sur le disque et occupent de l'espace. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage.",
+            (A::TrashSweepTaskBody, L::No) => {
+                "Den automatiske tømmingen av papirkurven har en vedvarende feil, så slettede opptak blir liggende og bruke plass. Start appen på nytt; vedvarer det, bruk «Sjekk maskinen» under Innstillinger → Hjelp og feilsøking."
+            }
+            (A::TrashSweepTaskBody, L::En) => {
+                "Automatic emptying of the trash has a persistent fault, so deleted recordings stay on disk and take up space. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting."
+            }
+            (A::TrashSweepTaskBody, L::De) => {
+                "Das automatische Leeren des Papierkorbs hat einen anhaltenden Fehler, sodass gelöschte Aufnahmen liegen bleiben und Platz belegen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche."
+            }
+            (A::TrashSweepTaskBody, L::Sv) => {
+                "Den automatiska tömningen av papperskorgen har ett ihållande fel, så raderade inspelningar blir kvar och tar plats. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning."
+            }
+            (A::TrashSweepTaskBody, L::Da) => {
+                "Den automatiske tømning af papirkurven har en vedvarende fejl, så slettede optagelser bliver liggende og optager plads. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding."
+            }
+            (A::TrashSweepTaskBody, L::Pl) => {
+                "Automatyczne opróżnianie kosza ma trwały błąd, więc usunięte nagrania pozostają na dysku i zajmują miejsce. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów."
+            }
+            (A::TrashSweepTaskBody, L::Fr) => {
+                "Le vidage automatique de la corbeille a une erreur persistante : les enregistrements supprimés restent sur le disque et occupent de l'espace. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage."
+            }
 
             // ── QualityTaskRestarted ────────────────────────────────────────
             (A::QualityTaskRestarted, L::No) => {
@@ -418,8 +446,12 @@ impl AlertText {
             }
 
             // ── PreflightDeviceMissing ──────────────────────────────────────
-            (A::PreflightDeviceMissing, L::No) => "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
-            (A::PreflightDeviceMissing, L::En) => "The sound source selected in settings is not connected.",
+            (A::PreflightDeviceMissing, L::No) => {
+                "Lydkilden som er valgt i innstillingene er ikke tilkoblet."
+            }
+            (A::PreflightDeviceMissing, L::En) => {
+                "The sound source selected in settings is not connected."
+            }
             (A::PreflightDeviceMissing, L::De) => {
                 "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen."
             }
@@ -658,8 +690,12 @@ impl AlertText {
             // Half an hour before a one-off recording on its own device. Says
             // what will happen if nobody acts, in the same words the start's
             // fallback notice uses.
-            (A::PreflightSpecialDeviceMissing, L::No) => "Lydkilden «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
-            (A::PreflightSpecialDeviceMissing, L::En) => "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used.",
+            (A::PreflightSpecialDeviceMissing, L::No) => {
+                "Lydkilden «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden."
+            }
+            (A::PreflightSpecialDeviceMissing, L::En) => {
+                "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used."
+            }
             (A::PreflightSpecialDeviceMissing, L::De) => {
                 "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
                  Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
@@ -907,101 +943,259 @@ impl AlertText {
             }
 
             // ── RecordingDeviceNotFound ──────────────────────────────────────
-            (A::RecordingDeviceNotFound, L::No) => "Lydkilden ble ikke funnet — sjekk USB-tilkoblingen",
-            (A::RecordingDeviceNotFound, L::En) => "Sound source not found — check the USB connection",
-            (A::RecordingDeviceNotFound, L::De) => "Audiogerät nicht gefunden — USB-Verbindung prüfen",
-            (A::RecordingDeviceNotFound, L::Sv) => "Ljudenheten hittades inte — kontrollera USB-anslutningen",
-            (A::RecordingDeviceNotFound, L::Da) => "Lydenheden blev ikke fundet — tjek USB-forbindelsen",
-            (A::RecordingDeviceNotFound, L::Pl) => "Nie znaleziono urządzenia audio — sprawdź połączenie USB",
-            (A::RecordingDeviceNotFound, L::Fr) => "Périphérique audio introuvable — vérifiez la connexion USB",
+            (A::RecordingDeviceNotFound, L::No) => {
+                "Lydkilden ble ikke funnet — sjekk USB-tilkoblingen"
+            }
+            (A::RecordingDeviceNotFound, L::En) => {
+                "Sound source not found — check the USB connection"
+            }
+            (A::RecordingDeviceNotFound, L::De) => {
+                "Audiogerät nicht gefunden — USB-Verbindung prüfen"
+            }
+            (A::RecordingDeviceNotFound, L::Sv) => {
+                "Ljudenheten hittades inte — kontrollera USB-anslutningen"
+            }
+            (A::RecordingDeviceNotFound, L::Da) => {
+                "Lydenheden blev ikke fundet — tjek USB-forbindelsen"
+            }
+            (A::RecordingDeviceNotFound, L::Pl) => {
+                "Nie znaleziono urządzenia audio — sprawdź połączenie USB"
+            }
+            (A::RecordingDeviceNotFound, L::Fr) => {
+                "Périphérique audio introuvable — vérifiez la connexion USB"
+            }
             // ── RecordingPermissionDenied ────────────────────────────────────
-            (A::RecordingPermissionDenied, L::No) => "Mikrofontilgang nektet — åpne Systeminnstillinger og gi tilgang",
-            (A::RecordingPermissionDenied, L::En) => "Microphone access denied — open System Settings and grant access",
-            (A::RecordingPermissionDenied, L::De) => "Mikrofonzugriff verweigert — öffnen Sie die Systemeinstellungen und erteilen Sie den Zugriff",
-            (A::RecordingPermissionDenied, L::Sv) => "Mikrofonåtkomst nekad — öppna Systeminställningar och ge åtkomst",
-            (A::RecordingPermissionDenied, L::Da) => "Mikrofonadgang nægtet — åbn Systemindstillinger og giv adgang",
-            (A::RecordingPermissionDenied, L::Pl) => "Odmowa dostępu do mikrofonu — otwórz Ustawienia systemu i udziel dostępu",
-            (A::RecordingPermissionDenied, L::Fr) => "Accès au microphone refusé — ouvrez les Réglages système et accordez l’accès",
+            (A::RecordingPermissionDenied, L::No) => {
+                "Mikrofontilgang nektet — åpne Systeminnstillinger og gi tilgang"
+            }
+            (A::RecordingPermissionDenied, L::En) => {
+                "Microphone access denied — open System Settings and grant access"
+            }
+            (A::RecordingPermissionDenied, L::De) => {
+                "Mikrofonzugriff verweigert — öffnen Sie die Systemeinstellungen und erteilen Sie den Zugriff"
+            }
+            (A::RecordingPermissionDenied, L::Sv) => {
+                "Mikrofonåtkomst nekad — öppna Systeminställningar och ge åtkomst"
+            }
+            (A::RecordingPermissionDenied, L::Da) => {
+                "Mikrofonadgang nægtet — åbn Systemindstillinger og giv adgang"
+            }
+            (A::RecordingPermissionDenied, L::Pl) => {
+                "Odmowa dostępu do mikrofonu — otwórz Ustawienia systemu i udziel dostępu"
+            }
+            (A::RecordingPermissionDenied, L::Fr) => {
+                "Accès au microphone refusé — ouvrez les Réglages système et accordez l’accès"
+            }
             // ── RecordingDeviceBusy ──────────────────────────────────────────
             (A::RecordingDeviceBusy, L::No) => "Lydkilden er i bruk av et annet program",
             (A::RecordingDeviceBusy, L::En) => "The sound source is in use by another application",
-            (A::RecordingDeviceBusy, L::De) => "Das Audiogerät wird von einem anderen Programm verwendet",
+            (A::RecordingDeviceBusy, L::De) => {
+                "Das Audiogerät wird von einem anderen Programm verwendet"
+            }
             (A::RecordingDeviceBusy, L::Sv) => "Ljudenheten används av ett annat program",
             (A::RecordingDeviceBusy, L::Da) => "Lydenheden bruges af et andet program",
             (A::RecordingDeviceBusy, L::Pl) => "Urządzenie audio jest używane przez inną aplikację",
-            (A::RecordingDeviceBusy, L::Fr) => "Le périphérique audio est déjà utilisé par une autre application",
+            (A::RecordingDeviceBusy, L::Fr) => {
+                "Le périphérique audio est déjà utilisé par une autre application"
+            }
             // ── RecordingDeviceError ─────────────────────────────────────────
-            (A::RecordingDeviceError, L::No) => "Feil ved åpning av lydkilden — prøv å koble til på nytt",
-            (A::RecordingDeviceError, L::En) => "Error opening the sound source — try reconnecting it",
-            (A::RecordingDeviceError, L::De) => "Fehler beim Öffnen des Audiogeräts — versuchen Sie, es erneut anzuschließen",
-            (A::RecordingDeviceError, L::Sv) => "Fel vid öppning av ljudenheten — försök att ansluta den på nytt",
-            (A::RecordingDeviceError, L::Da) => "Fejl ved åbning af lydenheden — prøv at tilslutte den igen",
-            (A::RecordingDeviceError, L::Pl) => "Błąd otwarcia urządzenia audio — spróbuj podłączyć je ponownie",
-            (A::RecordingDeviceError, L::Fr) => "Erreur à l’ouverture du périphérique audio — essayez de le rebrancher",
+            (A::RecordingDeviceError, L::No) => {
+                "Feil ved åpning av lydkilden — prøv å koble til på nytt"
+            }
+            (A::RecordingDeviceError, L::En) => {
+                "Error opening the sound source — try reconnecting it"
+            }
+            (A::RecordingDeviceError, L::De) => {
+                "Fehler beim Öffnen des Audiogeräts — versuchen Sie, es erneut anzuschließen"
+            }
+            (A::RecordingDeviceError, L::Sv) => {
+                "Fel vid öppning av ljudenheten — försök att ansluta den på nytt"
+            }
+            (A::RecordingDeviceError, L::Da) => {
+                "Fejl ved åbning af lydenheden — prøv at tilslutte den igen"
+            }
+            (A::RecordingDeviceError, L::Pl) => {
+                "Błąd otwarcia urządzenia audio — spróbuj podłączyć je ponownie"
+            }
+            (A::RecordingDeviceError, L::Fr) => {
+                "Erreur à l’ouverture du périphérique audio — essayez de le rebrancher"
+            }
             // ── RecordingDeviceDisconnected ──────────────────────────────────
-            (A::RecordingDeviceDisconnected, L::No) => "Lydkilden ble koblet fra under opptak — sjekk tilkoblingen",
-            (A::RecordingDeviceDisconnected, L::En) => "The sound source was disconnected during recording — check the connection",
-            (A::RecordingDeviceDisconnected, L::De) => "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen",
-            (A::RecordingDeviceDisconnected, L::Sv) => "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen",
-            (A::RecordingDeviceDisconnected, L::Da) => "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen",
-            (A::RecordingDeviceDisconnected, L::Pl) => "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie",
-            (A::RecordingDeviceDisconnected, L::Fr) => "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion",
+            (A::RecordingDeviceDisconnected, L::No) => {
+                "Lydkilden ble koblet fra under opptak — sjekk tilkoblingen"
+            }
+            (A::RecordingDeviceDisconnected, L::En) => {
+                "The sound source was disconnected during recording — check the connection"
+            }
+            (A::RecordingDeviceDisconnected, L::De) => {
+                "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen"
+            }
+            (A::RecordingDeviceDisconnected, L::Sv) => {
+                "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen"
+            }
+            (A::RecordingDeviceDisconnected, L::Da) => {
+                "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen"
+            }
+            (A::RecordingDeviceDisconnected, L::Pl) => {
+                "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie"
+            }
+            (A::RecordingDeviceDisconnected, L::Fr) => {
+                "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion"
+            }
             // ── RecordingEngineExited ────────────────────────────────────────
-            (A::RecordingEngineExited, L::No) => "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og bruk «Sjekk maskinen» (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg.",
-            (A::RecordingEngineExited, L::En) => "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again.",
-            (A::RecordingEngineExited, L::De) => "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und nutzen Sie „Computer prüfen“ (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt.",
-            (A::RecordingEngineExited, L::Sv) => "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas.",
-            (A::RecordingEngineExited, L::Da) => "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig.",
-            (A::RecordingEngineExited, L::Pl) => "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy.",
-            (A::RecordingEngineExited, L::Fr) => "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète.",
+            (A::RecordingEngineExited, L::No) => {
+                "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og bruk «Sjekk maskinen» (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg."
+            }
+            (A::RecordingEngineExited, L::En) => {
+                "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again."
+            }
+            (A::RecordingEngineExited, L::De) => {
+                "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und nutzen Sie „Computer prüfen“ (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt."
+            }
+            (A::RecordingEngineExited, L::Sv) => {
+                "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas."
+            }
+            (A::RecordingEngineExited, L::Da) => {
+                "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig."
+            }
+            (A::RecordingEngineExited, L::Pl) => {
+                "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy."
+            }
+            (A::RecordingEngineExited, L::Fr) => {
+                "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète."
+            }
             // ── RecordingVideoCapture ────────────────────────────────────────
-            (A::RecordingVideoCapture, L::No) => "Kameraet leverte ikke bilde — lyden ble lagret og ligger i biblioteket. Sjekk kameratilkoblingen før du tar opp med video igjen.",
-            (A::RecordingVideoCapture, L::En) => "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
-            (A::RecordingVideoCapture, L::De) => "Die Kamera lieferte kein Bild — der Ton wurde gespeichert und liegt in der Bibliothek. Prüfen Sie die Kameraverbindung, bevor Sie wieder mit Video aufnehmen.",
-            (A::RecordingVideoCapture, L::Sv) => "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen.",
-            (A::RecordingVideoCapture, L::Da) => "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen.",
-            (A::RecordingVideoCapture, L::Pl) => "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo.",
-            (A::RecordingVideoCapture, L::Fr) => "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
+            (A::RecordingVideoCapture, L::No) => {
+                "Kameraet leverte ikke bilde — lyden ble lagret og ligger i biblioteket. Sjekk kameratilkoblingen før du tar opp med video igjen."
+            }
+            (A::RecordingVideoCapture, L::En) => {
+                "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again."
+            }
+            (A::RecordingVideoCapture, L::De) => {
+                "Die Kamera lieferte kein Bild — der Ton wurde gespeichert und liegt in der Bibliothek. Prüfen Sie die Kameraverbindung, bevor Sie wieder mit Video aufnehmen."
+            }
+            (A::RecordingVideoCapture, L::Sv) => {
+                "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen."
+            }
+            (A::RecordingVideoCapture, L::Da) => {
+                "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen."
+            }
+            (A::RecordingVideoCapture, L::Pl) => {
+                "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo."
+            }
+            (A::RecordingVideoCapture, L::Fr) => {
+                "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo."
+            }
             // ── RecordingCameraFormat ────────────────────────────────────────
-            (A::RecordingCameraFormat, L::No) => "Kameraet støtter ikke valgt bilderate eller oppløsning — velg en annen videoinnstilling og prøv igjen.",
-            (A::RecordingCameraFormat, L::En) => "The camera does not support the chosen frame rate or resolution — pick another video setting and try again.",
-            (A::RecordingCameraFormat, L::De) => "Die Kamera unterstützt die gewählte Bildrate oder Auflösung nicht — wählen Sie eine andere Videoeinstellung und versuchen Sie es erneut.",
-            (A::RecordingCameraFormat, L::Sv) => "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen.",
-            (A::RecordingCameraFormat, L::Da) => "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen.",
-            (A::RecordingCameraFormat, L::Pl) => "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie.",
-            (A::RecordingCameraFormat, L::Fr) => "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez.",
+            (A::RecordingCameraFormat, L::No) => {
+                "Kameraet støtter ikke valgt bilderate eller oppløsning — velg en annen videoinnstilling og prøv igjen."
+            }
+            (A::RecordingCameraFormat, L::En) => {
+                "The camera does not support the chosen frame rate or resolution — pick another video setting and try again."
+            }
+            (A::RecordingCameraFormat, L::De) => {
+                "Die Kamera unterstützt die gewählte Bildrate oder Auflösung nicht — wählen Sie eine andere Videoeinstellung und versuchen Sie es erneut."
+            }
+            (A::RecordingCameraFormat, L::Sv) => {
+                "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen."
+            }
+            (A::RecordingCameraFormat, L::Da) => {
+                "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen."
+            }
+            (A::RecordingCameraFormat, L::Pl) => {
+                "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie."
+            }
+            (A::RecordingCameraFormat, L::Fr) => {
+                "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez."
+            }
             // ── RecordingCameraPermission ────────────────────────────────────
-            (A::RecordingCameraPermission, L::No) => "Kameratilgang nektet — åpne Systeminnstillinger og gi appen tilgang til kameraet",
-            (A::RecordingCameraPermission, L::En) => "Camera access denied — open System Settings and give the app access to the camera",
-            (A::RecordingCameraPermission, L::De) => "Kamerazugriff verweigert — öffnen Sie die Systemeinstellungen und geben Sie der App Zugriff auf die Kamera",
-            (A::RecordingCameraPermission, L::Sv) => "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran",
-            (A::RecordingCameraPermission, L::Da) => "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet",
-            (A::RecordingCameraPermission, L::Pl) => "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery",
-            (A::RecordingCameraPermission, L::Fr) => "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra",
+            (A::RecordingCameraPermission, L::No) => {
+                "Kameratilgang nektet — åpne Systeminnstillinger og gi appen tilgang til kameraet"
+            }
+            (A::RecordingCameraPermission, L::En) => {
+                "Camera access denied — open System Settings and give the app access to the camera"
+            }
+            (A::RecordingCameraPermission, L::De) => {
+                "Kamerazugriff verweigert — öffnen Sie die Systemeinstellungen und geben Sie der App Zugriff auf die Kamera"
+            }
+            (A::RecordingCameraPermission, L::Sv) => {
+                "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran"
+            }
+            (A::RecordingCameraPermission, L::Da) => {
+                "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet"
+            }
+            (A::RecordingCameraPermission, L::Pl) => {
+                "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery"
+            }
+            (A::RecordingCameraPermission, L::Fr) => {
+                "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra"
+            }
             // ── RecordingCameraBusy ──────────────────────────────────────────
-            (A::RecordingCameraBusy, L::No) => "Kameraet er i bruk av et annet program — lukk det (Teams, Zoom) og prøv igjen",
-            (A::RecordingCameraBusy, L::En) => "The camera is in use by another program — close it (Teams, Zoom) and try again",
-            (A::RecordingCameraBusy, L::De) => "Die Kamera wird von einem anderen Programm verwendet — schließen Sie es (Teams, Zoom) und versuchen Sie es erneut",
-            (A::RecordingCameraBusy, L::Sv) => "Kameran används av ett annat program — stäng det (Teams, Zoom) och försök igen",
-            (A::RecordingCameraBusy, L::Da) => "Kameraet bruges af et andet program — luk det (Teams, Zoom), og prøv igen",
-            (A::RecordingCameraBusy, L::Pl) => "Kamera jest używana przez inny program — zamknij go (Teams, Zoom) i spróbuj ponownie",
-            (A::RecordingCameraBusy, L::Fr) => "La caméra est utilisée par un autre programme — fermez-le (Teams, Zoom) et réessayez",
+            (A::RecordingCameraBusy, L::No) => {
+                "Kameraet er i bruk av et annet program — lukk det (Teams, Zoom) og prøv igjen"
+            }
+            (A::RecordingCameraBusy, L::En) => {
+                "The camera is in use by another program — close it (Teams, Zoom) and try again"
+            }
+            (A::RecordingCameraBusy, L::De) => {
+                "Die Kamera wird von einem anderen Programm verwendet — schließen Sie es (Teams, Zoom) und versuchen Sie es erneut"
+            }
+            (A::RecordingCameraBusy, L::Sv) => {
+                "Kameran används av ett annat program — stäng det (Teams, Zoom) och försök igen"
+            }
+            (A::RecordingCameraBusy, L::Da) => {
+                "Kameraet bruges af et andet program — luk det (Teams, Zoom), og prøv igen"
+            }
+            (A::RecordingCameraBusy, L::Pl) => {
+                "Kamera jest używana przez inny program — zamknij go (Teams, Zoom) i spróbuj ponownie"
+            }
+            (A::RecordingCameraBusy, L::Fr) => {
+                "La caméra est utilisée par un autre programme — fermez-le (Teams, Zoom) et réessayez"
+            }
             // ── RecordingMux ─────────────────────────────────────────────────
-            (A::RecordingMux, L::No) => "Lyd og bilde kunne ikke settes sammen — begge råfilene er beholdt i lagringsmappen, så ingenting er tapt.",
-            (A::RecordingMux, L::En) => "Audio and video could not be combined — both raw files were kept in the save folder, so nothing is lost.",
-            (A::RecordingMux, L::De) => "Ton und Bild konnten nicht zusammengesetzt werden — beide Rohdateien sind im Speicherordner erhalten, es ist also nichts verloren.",
-            (A::RecordingMux, L::Sv) => "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat.",
-            (A::RecordingMux, L::Da) => "Lyd og billede kunne ikke sættes sammen — begge råfiler er beholdt i lagringsmappen, så ingenting er tabt.",
-            (A::RecordingMux, L::Pl) => "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło.",
-            (A::RecordingMux, L::Fr) => "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
+            (A::RecordingMux, L::No) => {
+                "Lyd og bilde kunne ikke settes sammen — begge råfilene er beholdt i lagringsmappen, så ingenting er tapt."
+            }
+            (A::RecordingMux, L::En) => {
+                "Audio and video could not be combined — both raw files were kept in the save folder, so nothing is lost."
+            }
+            (A::RecordingMux, L::De) => {
+                "Ton und Bild konnten nicht zusammengesetzt werden — beide Rohdateien sind im Speicherordner erhalten, es ist also nichts verloren."
+            }
+            (A::RecordingMux, L::Sv) => {
+                "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat."
+            }
+            (A::RecordingMux, L::Da) => {
+                "Lyd og billede kunne ikke sættes sammen — begge råfiler er beholdt i lagringsmappen, så ingenting er tabt."
+            }
+            (A::RecordingMux, L::Pl) => {
+                "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło."
+            }
+            (A::RecordingMux, L::Fr) => {
+                "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu."
+            }
             // ── RecordingFailedUnknown ───────────────────────────────────────
-            (A::RecordingFailedUnknown, L::No) => "Noe gikk galt under opptak — sjekk at lydkilde og lagringsmappe er klare",
-            (A::RecordingFailedUnknown, L::En) => "Something went wrong during recording — check that the sound source and save folder are ready",
-            (A::RecordingFailedUnknown, L::De) => "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind",
-            (A::RecordingFailedUnknown, L::Sv) => "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
-            (A::RecordingFailedUnknown, L::Da) => "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
-            (A::RecordingFailedUnknown, L::Pl) => "Coś poszło nie tak podczas nagrywania — sprawdź, czy urządzenie audio i folder zapisu są gotowe",
-            (A::RecordingFailedUnknown, L::Fr) => "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts",
+            (A::RecordingFailedUnknown, L::No) => {
+                "Noe gikk galt under opptak — sjekk at lydkilde og lagringsmappe er klare"
+            }
+            (A::RecordingFailedUnknown, L::En) => {
+                "Something went wrong during recording — check that the sound source and save folder are ready"
+            }
+            (A::RecordingFailedUnknown, L::De) => {
+                "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind"
+            }
+            (A::RecordingFailedUnknown, L::Sv) => {
+                "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo"
+            }
+            (A::RecordingFailedUnknown, L::Da) => {
+                "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar"
+            }
+            (A::RecordingFailedUnknown, L::Pl) => {
+                "Coś poszło nie tak podczas nagrywania — sprawdź, czy urządzenie audio i folder zapisu są gotowe"
+            }
+            (A::RecordingFailedUnknown, L::Fr) => {
+                "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts"
+            }
             // ── TakeSilence ───────────────────────────────────────────────────
             (A::TakeSilence, L::No) => {
                 "Opptaket er stille — sjekk at lyden kommer fram til SundayRec."
@@ -1026,9 +1220,7 @@ impl AlertText {
             }
 
             // ── TakeQuality ───────────────────────────────────────────────────
-            (A::TakeQuality, L::No) => {
-                "Opptaket mangler lyd — åpne SundayRec og se hva som skjer."
-            }
+            (A::TakeQuality, L::No) => "Opptaket mangler lyd — åpne SundayRec og se hva som skjer.",
             (A::TakeQuality, L::En) => {
                 "The recording is missing sound — open SundayRec and check what is happening."
             }
@@ -1073,21 +1265,31 @@ impl AlertText {
 
             // ── TakeCameraLost ────────────────────────────────────────────────
             (A::TakeCameraLost, L::No) => "Kameraet falt ut — lyden tas fortsatt opp",
-            (A::TakeCameraLost, L::En) => "The camera dropped out — the audio is still being recorded",
-            (A::TakeCameraLost, L::De) => "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen",
+            (A::TakeCameraLost, L::En) => {
+                "The camera dropped out — the audio is still being recorded"
+            }
+            (A::TakeCameraLost, L::De) => {
+                "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen"
+            }
             (A::TakeCameraLost, L::Sv) => "Kameran föll bort — ljudet spelas fortfarande in",
             (A::TakeCameraLost, L::Da) => "Kameraet faldt ud — lyden optages stadig",
             (A::TakeCameraLost, L::Pl) => "Kamera przestała działać — dźwięk nadal jest nagrywany",
-            (A::TakeCameraLost, L::Fr) => "La caméra s'est déconnectée — le son continue d'être enregistré",
+            (A::TakeCameraLost, L::Fr) => {
+                "La caméra s'est déconnectée — le son continue d'être enregistré"
+            }
 
             // ── TakeLevelWeak ─────────────────────────────────────────────────
             (A::TakeLevelWeak, L::No) => "Opptaket er svært svakt — er mikseren dempet?",
             (A::TakeLevelWeak, L::En) => "The recording is very quiet — is the mixer turned down?",
-            (A::TakeLevelWeak, L::De) => "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?",
+            (A::TakeLevelWeak, L::De) => {
+                "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?"
+            }
             (A::TakeLevelWeak, L::Sv) => "Inspelningen är mycket svag — är mixern nedskruvad?",
             (A::TakeLevelWeak, L::Da) => "Optagelsen er meget svag — er mixeren skruet ned?",
             (A::TakeLevelWeak, L::Pl) => "Nagranie jest bardzo ciche — czy mikser jest wyciszony?",
-            (A::TakeLevelWeak, L::Fr) => "L'enregistrement est très faible — la table de mixage est-elle baissée ?",
+            (A::TakeLevelWeak, L::Fr) => {
+                "L'enregistrement est très faible — la table de mixage est-elle baissée ?"
+            }
 
             // ── TakeDiskLow ───────────────────────────────────────────────────
             (A::TakeDiskLow, L::No) => {
@@ -1453,7 +1655,7 @@ mod tests {
         // Norwegian notifications are byte-identical to before: the words for a
         // Norwegian volunteer ARE the canonical label. Another language gets
         // its own words, and the key underneath does not move.
-        use crate::schedule::{missed_recordings, MissedKind, ScheduleSlot};
+        use crate::schedule::{MissedKind, ScheduleSlot, missed_recordings};
         use chrono::NaiveDateTime;
         let slot = ScheduleSlot {
             days: vec![6],

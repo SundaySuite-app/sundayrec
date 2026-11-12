@@ -56,12 +56,12 @@ use ts_rs::TS;
 use sundayrec_core::alerts::AlertText;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::schedule::{
-    active_within, capped_supervisor_sleep_ms, enumeration_base, events_due, fire_after_missed_net,
-    late_start_choice, minutes_until_stop, missed_recordings, next_recording,
-    planned_duration_minutes, prune_specials, resolve_special_device, scheduled_max_minutes,
-    settings_for_special_device, special_device_wanted, supervisor_should_fire, upcoming_dates,
-    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, SpecialDevice,
-    SpecialRecording, TriggerKind, MISSED_WINDOW_MS, STOP_SETTLE_MS,
+    CoveredWindow, MISSED_WINDOW_MS, STOP_SETTLE_MS, ScheduledEvent, ScheduledEventKind,
+    SpecialDevice, SpecialRecording, TriggerKind, active_within, capped_supervisor_sleep_ms,
+    enumeration_base, events_due, fire_after_missed_net, late_start_choice, minutes_until_stop,
+    missed_recordings, next_recording, planned_duration_minutes, prune_specials,
+    resolve_special_device, scheduled_max_minutes, settings_for_special_device,
+    special_device_wanted, supervisor_should_fire, upcoming_dates, upcoming_events,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
@@ -331,50 +331,49 @@ async fn supervisor(
         // Non-admin (no prompt) from the supervisor — the WakeEngine dedups so an
         // unchanged schedule is a cheap no-op. A user-initiated reschedule (which
         // may prompt for admin) goes through the `wake_reschedule` command.
-        if settings.wake_from_sleep {
-            if let Some(wake) = app.try_state::<crate::wake::WakeEngine>() {
-                let res = wake.reschedule(&upcoming, now, true, false).await;
-                // Best-effort from the supervisor (non-admin, no prompt) — but
-                // "best-effort" used to mean `permission`/`disabled`/`cancelled`
-                // were filtered to SILENCE, and `permission` is the failure that
-                // matters most: this pass may not prompt, the interactive
-                // `wake_reschedule` is the only path that can, and if nobody
-                // presses it the machine sleeps through the service. Filtered to
-                // nothing, the first evidence was a missing recording.
-                //
-                // The supervisor re-runs on every settings change and every
-                // timer, so the expected failures are reported ONCE per launch
-                // and silently counted after that
-                // (`background_wake_log_action`). A real failure still logs
-                // every time, and never spends that one report.
-                let quiet_so_far = QUIET_WAKE_REPORTS.load(Ordering::Relaxed);
-                let action =
-                    background_wake_log_action(res.ok, res.reason.as_deref(), quiet_so_far);
-                if action.logs() {
-                    tracing::warn!(
-                        reason = ?res.reason,
-                        message = ?res.message,
-                        "scheduler: background wake reschedule failed — the machine may not \
-                         wake for the next recording. An admin-capable retry is the «Registrer \
-                         vekkinger» button (`wake_reschedule`); further notices of this kind \
-                         are counted, not logged, until the next launch"
-                    );
-                }
-                if action.counts() {
-                    QUIET_WAKE_REPORTS.fetch_add(1, Ordering::Relaxed);
-                }
-                // …and the operator, once per launch per kind. The log answers
-                // "was the wake ever armed?" for whoever debugs; this is the
-                // volunteer's only chance to hear it before the service.
-                if let Some(key) = wake_failure_notice_key(res.ok, res.reason.as_deref()) {
-                    if first_wake_notice(key) {
-                        notify_user(
-                            &app,
-                            APP_TITLE,
-                            &AlertText::WakeNotArmed.text(lang_of(&settings)),
-                        );
-                    }
-                }
+        if settings.wake_from_sleep
+            && let Some(wake) = app.try_state::<crate::wake::WakeEngine>()
+        {
+            let res = wake.reschedule(&upcoming, now, true, false).await;
+            // Best-effort from the supervisor (non-admin, no prompt) — but
+            // "best-effort" used to mean `permission`/`disabled`/`cancelled`
+            // were filtered to SILENCE, and `permission` is the failure that
+            // matters most: this pass may not prompt, the interactive
+            // `wake_reschedule` is the only path that can, and if nobody
+            // presses it the machine sleeps through the service. Filtered to
+            // nothing, the first evidence was a missing recording.
+            //
+            // The supervisor re-runs on every settings change and every
+            // timer, so the expected failures are reported ONCE per launch
+            // and silently counted after that
+            // (`background_wake_log_action`). A real failure still logs
+            // every time, and never spends that one report.
+            let quiet_so_far = QUIET_WAKE_REPORTS.load(Ordering::Relaxed);
+            let action = background_wake_log_action(res.ok, res.reason.as_deref(), quiet_so_far);
+            if action.logs() {
+                tracing::warn!(
+                    reason = ?res.reason,
+                    message = ?res.message,
+                    "scheduler: background wake reschedule failed — the machine may not \
+                     wake for the next recording. An admin-capable retry is the «Registrer \
+                     vekkinger» button (`wake_reschedule`); further notices of this kind \
+                     are counted, not logged, until the next launch"
+                );
+            }
+            if action.counts() {
+                QUIET_WAKE_REPORTS.fetch_add(1, Ordering::Relaxed);
+            }
+            // …and the operator, once per launch per kind. The log answers
+            // "was the wake ever armed?" for whoever debugs; this is the
+            // volunteer's only chance to hear it before the service.
+            if let Some(key) = wake_failure_notice_key(res.ok, res.reason.as_deref())
+                && first_wake_notice(key)
+            {
+                notify_user(
+                    &app,
+                    APP_TITLE,
+                    &AlertText::WakeNotArmed.text(lang_of(&settings)),
+                );
             }
         }
 
@@ -985,19 +984,19 @@ where
             return DeviceChoice::Fallback {
                 wanted,
                 reason: FallbackReason::Error(e.to_string()),
-            }
+            };
         }
         Ok(Err(join)) => {
             return DeviceChoice::Fallback {
                 wanted,
                 reason: FallbackReason::Error(join.to_string()),
-            }
+            };
         }
         Err(_) => {
             return DeviceChoice::Fallback {
                 wanted,
                 reason: FallbackReason::Timeout,
-            }
+            };
         }
     };
     if inputs.is_empty() {
@@ -1627,7 +1626,7 @@ async fn unreported_missed(
     missed: &[crate::notify::MissedSlot],
     now_ms: i64,
 ) -> Vec<crate::notify::MissedSlot> {
-    use sundayrec_core::notify::{seen_decision, SeenScope};
+    use sundayrec_core::notify::{SeenScope, seen_decision};
 
     let mut fresh = Vec::new();
     for slot in missed {
@@ -2025,8 +2024,8 @@ mod tests {
     // injected `now` — no clock, no app, no device.
     use std::collections::HashSet;
     use sundayrec_core::schedule::{
-        active_within, missed_recordings, next_recording, upcoming_events, ScheduleSlot,
-        ScheduledEventKind, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
+        MISSED_WINDOW_MS, ScheduleSlot, ScheduledEventKind, SpecialRecording, TriggerKind,
+        active_within, missed_recordings, next_recording, upcoming_events,
     };
 
     fn dt(s: &str) -> NaiveDateTime {
@@ -2339,15 +2338,17 @@ mod tests {
 
         settings.auto_record_enabled = false;
         assert!(active_within(settings.active_slots(), &[], now, MISSED_WINDOW_MS).is_empty());
-        assert!(missed_recordings(
-            settings.active_slots(),
-            &[],
-            dt("2026-06-07 11:30"),
-            &[],
-            &[],
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            missed_recordings(
+                settings.active_slots(),
+                &[],
+                dt("2026-06-07 11:30"),
+                &[],
+                &[],
+                &HashSet::new()
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -2423,15 +2424,17 @@ mod tests {
         // reported missed.
         let keys: HashSet<String> = triggers.iter().map(|t| t.key.clone()).collect();
         assert_eq!(keys.len(), 2);
-        assert!(missed_recordings(
-            &[sunday_slot()],
-            std::slice::from_ref(&sp),
-            dt("2026-06-07 13:00"),
-            &[],
-            &[],
-            &keys
-        )
-        .is_empty());
+        assert!(
+            missed_recordings(
+                &[sunday_slot()],
+                std::slice::from_ref(&sp),
+                dt("2026-06-07 13:00"),
+                &[],
+                &[],
+                &keys
+            )
+            .is_empty()
+        );
     }
 
     // ── A10: 11:50, after a crash ───────────────────────────────────────────
@@ -2922,7 +2925,7 @@ mod tests {
     fn counting(
         calls: &Arc<AtomicUsize>,
         inputs: Vec<(String, String)>,
-    ) -> impl FnOnce(String) -> AppResult<Vec<(String, String)>> + Send + 'static {
+    ) -> impl FnOnce(String) -> AppResult<Vec<(String, String)>> + Send + 'static + use<> {
         let seen = Arc::clone(calls);
         move |_wanted: String| {
             seen.fetch_add(1, Ordering::SeqCst);
@@ -3561,7 +3564,7 @@ mod tests {
 
     #[test]
     fn the_missing_special_preflight_names_the_device() {
-        use sundayrec_core::preflight::{assemble_findings_for, PreflightFacts};
+        use sundayrec_core::preflight::{PreflightFacts, assemble_findings_for};
         // Everything fine except the device — the facts the scheduler's run
         // reaches `assemble_findings_for` with.
         let facts = PreflightFacts {
@@ -3730,7 +3733,7 @@ mod tests {
     #[test]
     fn the_plan_adopts_a_manual_take_that_has_no_end_of_its_own() {
         let slot = TriggerKind::Slot(0);
-        let adopt = |owned, state, gen, deadline| should_adopt(owned, state, gen, deadline);
+        let adopt = |owned, state, r#gen, deadline| should_adopt(owned, state, r#gen, deadline);
         // A manual take, no deadline, nobody's claim: adopted.
         assert!(adopt(None, RecorderState::Recording, 5, None));
         assert!(

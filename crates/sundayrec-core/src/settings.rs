@@ -668,12 +668,12 @@ impl Settings {
             ch.channel_l = clamp_i32(ch.channel_l, 0, 31);
             ch.channel_r = clamp_i32(ch.channel_r, 0, 31);
         }
-        if !self.device_channels.is_empty() {
-            if let Some(id) = self.device_id.as_deref() {
-                let pair = self.device_channels.get(id);
-                self.input_channel_l = pair.map(|p| p.channel_l);
-                self.input_channel_r = pair.map(|p| p.channel_r);
-            }
+        if !self.device_channels.is_empty()
+            && let Some(id) = self.device_id.as_deref()
+        {
+            let pair = self.device_channels.get(id);
+            self.input_channel_l = pair.map(|p| p.channel_l);
+            self.input_channel_r = pair.map(|p| p.channel_r);
         }
     }
 
@@ -787,19 +787,19 @@ impl Settings {
             // entry must not take the whole plan with it — a missing Sunday slot
             // is a missed recording. The dropped entries are named by position
             // (`slots[2]`) so the warning in `settings::load` has a trail.
-            if matches!(key.as_str(), "slots" | "specialRecordings") {
-                if let serde_json::Value::Array(items) = &v {
-                    let mut good = Vec::new();
-                    for (i, item) in items.iter().enumerate() {
-                        if reads(&key, &serde_json::Value::Array(vec![item.clone()])) {
-                            good.push(item.clone());
-                        } else {
-                            dropped.push(format!("{key}[{i}]"));
-                        }
+            if matches!(key.as_str(), "slots" | "specialRecordings")
+                && let serde_json::Value::Array(items) = &v
+            {
+                let mut good = Vec::new();
+                for (i, item) in items.iter().enumerate() {
+                    if reads(&key, &serde_json::Value::Array(vec![item.clone()])) {
+                        good.push(item.clone());
+                    } else {
+                        dropped.push(format!("{key}[{i}]"));
                     }
-                    kept.insert(key, serde_json::Value::Array(good));
-                    continue;
                 }
+                kept.insert(key, serde_json::Value::Array(good));
+                continue;
             }
             dropped.push(key);
         }
@@ -849,10 +849,10 @@ pub fn resolve_save_folder(
     save_folder: Option<&str>,
     documents_dir: Option<&std::path::Path>,
 ) -> Result<std::path::PathBuf, NoSaveFolder> {
-    if let Some(f) = save_folder {
-        if !f.trim().is_empty() {
-            return Ok(std::path::PathBuf::from(f));
-        }
+    if let Some(f) = save_folder
+        && !f.trim().is_empty()
+    {
+        return Ok(std::path::PathBuf::from(f));
     }
     match documents_dir {
         Some(d) if !d.as_os_str().is_empty() => Ok(d.join(DEFAULT_SAVE_SUBFOLDER)),

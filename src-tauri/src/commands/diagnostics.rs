@@ -7,7 +7,7 @@
 use tauri::{AppHandle, State};
 
 use crate::db::Db;
-use crate::diagnostics::{run_diagnostics as run, DiagnosticsReport};
+use crate::diagnostics::{DiagnosticsReport, run_diagnostics as run};
 use crate::error::AppResult;
 use crate::preflight::run_preflight as preflight;
 use sundayrec_core::preflight::PreflightFinding;

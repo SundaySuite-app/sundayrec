@@ -136,14 +136,18 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(seen_trim(&pool, 5_000).await.unwrap(), 1);
-        assert!(seen_get(&pool, SeenScope::Missed, "old")
-            .await
-            .unwrap()
-            .is_none());
-        assert!(seen_get(&pool, SeenScope::Missed, "new")
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            seen_get(&pool, SeenScope::Missed, "old")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            seen_get(&pool, SeenScope::Missed, "new")
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -158,14 +162,18 @@ mod tests {
             .await
             .unwrap();
         trim_at_startup(&pool, now).await;
-        assert!(seen_get(&pool, SeenScope::Missed, "last-sunday")
-            .await
-            .unwrap()
-            .is_some());
-        assert!(seen_get(&pool, SeenScope::Missed, "a-month-ago")
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            seen_get(&pool, SeenScope::Missed, "last-sunday")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            seen_get(&pool, SeenScope::Missed, "a-month-ago")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

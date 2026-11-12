@@ -87,13 +87,13 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::diagnostics::{DiagnosticFinding, DiagnosticSeverity};
-use crate::redact::{redact_secrets, scrub_paths, USER_PLACEHOLDER};
+use crate::redact::{USER_PLACEHOLDER, redact_secrets, scrub_paths};
 use crate::selftest::{
-    RecordingTelemetry, SelfTestReport, SelfTestVerdict, FAIL_DROPS, FAIL_GAP_SEC, FAIL_XRUNS,
+    FAIL_DROPS, FAIL_GAP_SEC, FAIL_XRUNS, RecordingTelemetry, SelfTestReport, SelfTestVerdict,
     WARN_GAP_SEC,
 };
 use crate::settings::{ChannelMode, FileFormat, FilenamePattern, SampleRate, Settings};
-use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
+use crate::test_recording::{TestRecordingSignal, classify_signal, size_is_plausible};
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
 pub mod consent;
@@ -1439,10 +1439,10 @@ pub fn derive_reason_codes(r: &SelfTestReport) -> Vec<QualityReason> {
     }
 
     // WARN conditions.
-    if let (Some(forced), Some(native)) = (r.forced_sample_rate, r.native_sample_rate) {
-        if forced != native {
-            out.push(QualityReason::ForcedRateMismatch);
-        }
+    if let (Some(forced), Some(native)) = (r.forced_sample_rate, r.native_sample_rate)
+        && forced != native
+    {
+        out.push(QualityReason::ForcedRateMismatch);
     }
     if (WARN_GAP_SEC..FAIL_GAP_SEC).contains(&r.gap_sec) {
         out.push(QualityReason::SmallGap);
@@ -1463,7 +1463,7 @@ pub fn derive_reason_codes(r: &SelfTestReport) -> Vec<QualityReason> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::selftest::{selftest_verdict, SelfTestFacts};
+    use crate::selftest::{SelfTestFacts, selftest_verdict};
     use serde_json::Value;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2727,14 +2727,16 @@ mod tests {
 
     #[test]
     fn a_finding_without_a_usable_code_is_dropped() {
-        assert!(finding_report(&DiagnosticFinding {
-            code: "«»".into(),
-            severity: DiagnosticSeverity::Critical,
-            title: String::new(),
-            detail: String::new(),
-            hint: String::new(),
-        })
-        .is_none());
+        assert!(
+            finding_report(&DiagnosticFinding {
+                code: "«»".into(),
+                severity: DiagnosticSeverity::Critical,
+                title: String::new(),
+                detail: String::new(),
+                hint: String::new(),
+            })
+            .is_none()
+        );
     }
 
     // ── The payload itself ───────────────────────────────────────────────────

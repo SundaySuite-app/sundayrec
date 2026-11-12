@@ -24,11 +24,11 @@ use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
 use sundayrec_core::editor::{
-    audio_export_filter_complex, build_keeps, codec_args, ConcatFormat, CutRegion,
+    ConcatFormat, CutRegion, audio_export_filter_complex, build_keeps, codec_args,
 };
 use sundayrec_core::loudness::plan_gain;
 use sundayrec_core::mastering::get_preset_by_id;
-use sundayrec_core::pcm_stream::{measure, render, settle, PcmFormat};
+use sundayrec_core::pcm_stream::{PcmFormat, measure, render, settle};
 
 /// A child process whose stdout we read; killed and reaped on drop.
 struct ChildReader {

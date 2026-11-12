@@ -79,8 +79,8 @@
 
 use std::collections::VecDeque;
 
-use crate::pcm_stream::{for_each_block, PcmFormat};
-use crate::processing::{channel_crackles, ChannelLevelsDb};
+use crate::pcm_stream::{PcmFormat, for_each_block};
+use crate::processing::{ChannelLevelsDb, channel_crackles};
 
 /// The rate the analysis reads the file at.
 pub const ANALYSIS_RATE: u32 = 16_000;
@@ -905,10 +905,10 @@ impl FloorTracker {
         let bin = hist_bin(f64::from(db));
         self.hist[bin] += 1;
         self.ring.push_back(bin as u16);
-        if self.ring.len() > TRACK_WINDOW_HOPS {
-            if let Some(old) = self.ring.pop_front() {
-                self.hist[old as usize] -= 1;
-            }
+        if self.ring.len() > TRACK_WINDOW_HOPS
+            && let Some(old) = self.ring.pop_front()
+        {
+            self.hist[old as usize] -= 1;
         }
         self.since += 1;
         if self.since >= TRACK_EVERY && self.ring.len() >= TRACK_MIN_HOPS {

@@ -73,8 +73,8 @@ use serde::{Deserialize, Serialize};
 use crate::audio_analysis::{FrameScorer, ScoringInput, SegmentType};
 use crate::feedback::RecordingFeedback;
 use crate::shadow::{
-    pool_onto_frames, PoolingRule, ShadowSettings, DEFAULT_FRAME_SPEECH_THRESHOLD,
-    DEFAULT_HOP_SPEECH_THRESHOLD,
+    DEFAULT_FRAME_SPEECH_THRESHOLD, DEFAULT_HOP_SPEECH_THRESHOLD, PoolingRule, ShadowSettings,
+    pool_onto_frames,
 };
 use crate::vad::VadFrame;
 
@@ -1335,12 +1335,12 @@ fn render_distribution(label: &str, d: &ErrorDistribution) -> String {
 mod tests {
     use super::*;
     use crate::audio_analysis::extract_features;
-    use crate::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+    use crate::audio_analysis::{FRAME_MS, HeuristicScorer, SAMPLE_RATE};
     use crate::feedback::{
         FeedbackSegment, FeedbackSegmentKind, SermonPickCorrection, TrimAdjustment,
     };
     use crate::trim_feedback::TrimDeltas;
-    use crate::vad::{VadBackend, VadError, VAD_HOP_SEC, VAD_SAMPLE_RATE, VAD_WINDOW_SAMPLES};
+    use crate::vad::{VAD_HOP_SEC, VAD_SAMPLE_RATE, VAD_WINDOW_SAMPLES, VadBackend, VadError};
 
     // ── The sweep ──────────────────────────────────────────────────────────
     //
@@ -1363,12 +1363,16 @@ mod tests {
                 PoolingRule::FractionOver
             ]
         );
-        assert!(SWEEP
-            .iter()
-            .all(|s| s.frame_speech_threshold == SWEEP[0].frame_speech_threshold));
-        assert!(SWEEP
-            .iter()
-            .all(|s| s.hop_speech_threshold == SWEEP[0].hop_speech_threshold));
+        assert!(
+            SWEEP
+                .iter()
+                .all(|s| s.frame_speech_threshold == SWEEP[0].frame_speech_threshold)
+        );
+        assert!(
+            SWEEP
+                .iter()
+                .all(|s| s.hop_speech_threshold == SWEEP[0].hop_speech_threshold)
+        );
         // Silero's own conventional operating point, on both grids.
         assert_eq!(SWEEP[0].frame_speech_threshold, 0.5);
         assert_eq!(SWEEP[0].hop_speech_threshold, 0.5);

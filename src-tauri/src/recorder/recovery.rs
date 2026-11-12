@@ -19,13 +19,13 @@ use std::path::{Path, PathBuf};
 use sqlx::SqlitePool;
 use tauri::AppHandle;
 
-use sundayrec_core::recovery::{recoverable_deliverables, DeliveryMode, SessionManifest};
+use sundayrec_core::recovery::{DeliveryMode, SessionManifest, recoverable_deliverables};
 
 use crate::commands::path_guard;
-use crate::db::store::{insert_recording, RecordingRow};
+use crate::db::store::{RecordingRow, insert_recording};
 use crate::recorder::concat::{
-    finalize_deliverable_noted, output_is_valid, park_video_into, video_is_readable,
-    warn_video_dropped, DeliverySpec, Finished,
+    DeliverySpec, Finished, finalize_deliverable_noted, output_is_valid, park_video_into,
+    video_is_readable, warn_video_dropped,
 };
 
 /// `<app-data>/recovery` — where NEW session manifests are written. Created on
@@ -283,14 +283,13 @@ pub(crate) fn referenced_preroll_clips(
             let Ok(body) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            if let Ok(m) = SessionManifest::from_json(&body) {
-                if let Some(name) = m
+            if let Ok(m) = SessionManifest::from_json(&body)
+                && let Some(name) = m
                     .preroll_clip_path
                     .as_deref()
                     .and_then(|c| Path::new(c).file_name())
-                {
-                    keep.insert(name.to_owned());
-                }
+            {
+                keep.insert(name.to_owned());
             }
         }
     }
@@ -430,22 +429,22 @@ pub(crate) async fn scan_recovery_dir(
                 // then delete — a file underneath that writer, so leave the
                 // manifest for the next launch instead. (2026-07-31: recovery
                 // "salvaged" a file an orphan kept appending to for 12 min.)
-                if policy.probe_writers {
-                    if let Some(busy) = still_being_written(&manifest).await {
-                        tracing::warn!(
-                            session = %manifest.session_id,
-                            fragment = %busy,
-                            "recovery: fragment still growing — a writer is alive; skipping this session for now"
-                        );
-                        warn_recovery_skipped(
-                            app,
-                            "still_writing",
-                            &busy,
-                            "An interrupted recording could not be recovered yet — another process \
+                if policy.probe_writers
+                    && let Some(busy) = still_being_written(&manifest).await
+                {
+                    tracing::warn!(
+                        session = %manifest.session_id,
+                        fragment = %busy,
+                        "recovery: fragment still growing — a writer is alive; skipping this session for now"
+                    );
+                    warn_recovery_skipped(
+                        app,
+                        "still_writing",
+                        &busy,
+                        "An interrupted recording could not be recovered yet — another process \
                              is still writing to the file. Trying again at the next start.",
-                        );
-                        continue;
-                    }
+                    );
+                    continue;
                 }
                 // M3R #12: the video files whose sound is gone, found BEFORE the
                 // finish — afterwards a merged fragment's WAV is gone too.
@@ -482,10 +481,10 @@ pub(crate) async fn scan_recovery_dir(
                 let _ = tokio::fs::remove_file(&path).await;
                 // The clip is deleted only if the guard would let a person open
                 // it: a manifest's word alone does not name a file to remove.
-                if let Some(clip) = &manifest.preroll_clip_path {
-                    if path_guard::checked_input_file_for_home(clip, home).is_ok() {
-                        let _ = tokio::fs::remove_file(clip).await;
-                    }
+                if let Some(clip) = &manifest.preroll_clip_path
+                    && path_guard::checked_input_file_for_home(clip, home).is_ok()
+                {
+                    let _ = tokio::fs::remove_file(clip).await;
                 }
                 // Decoupled capture: drop the now-orphaned per-session capture
                 // folder — best-effort, only removes it if EMPTY.
@@ -495,14 +494,13 @@ pub(crate) async fn scan_recovery_dir(
                 // source, so the folder correctly survives in that case. All
                 // deliverables share one capture folder, so the first is enough
                 // to locate it.
-                if manifest.delivery_encode.is_some() {
-                    if let Some(cap_dir) = manifest
+                if manifest.delivery_encode.is_some()
+                    && let Some(cap_dir) = manifest
                         .deliverables
                         .first()
                         .and_then(|d| Path::new(&d.primary_path).parent())
-                    {
-                        let _ = tokio::fs::remove_dir(cap_dir).await;
-                    }
+                {
+                    let _ = tokio::fs::remove_dir(cap_dir).await;
                 }
             }
             Err(e) => {
@@ -718,10 +716,10 @@ async fn count_failed_attempt(path: &Path, manifest: &SessionManifest) {
         recovery_attempts: attempts,
         ..manifest.clone()
     };
-    if let Ok(body) = counted.to_json() {
-        if let Err(e) = crate::util::write_atomic_async(path, body.as_bytes()).await {
-            tracing::debug!("recovery: could not record the failed attempt: {e}");
-        }
+    if let Ok(body) = counted.to_json()
+        && let Err(e) = crate::util::write_atomic_async(path, body.as_bytes()).await
+    {
+        tracing::debug!("recovery: could not record the failed attempt: {e}");
     }
 }
 
@@ -1079,8 +1077,8 @@ mod tests {
     use super::*;
     use crate::db::store::{list_recordings, open_pool};
     use sundayrec_core::recovery::{
-        has_recoverable_audio, recoverable_deliverables, AudioEncodeManifest, DeliverableManifest,
-        DeliveryMode,
+        AudioEncodeManifest, DeliverableManifest, DeliveryMode, has_recoverable_audio,
+        recoverable_deliverables,
     };
 
     /// A fully-migrated pool over a temp-dir database file (mirrors the db/settings

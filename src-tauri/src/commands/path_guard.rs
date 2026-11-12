@@ -323,7 +323,7 @@ fn deepest_existing_canonical(path: &Path, raw: &str) -> AppResult<PathBuf> {
                 _ => {
                     return Err(AppError::Validation(format!(
                         "cannot resolve any ancestor of path: {raw}"
-                    )))
+                    )));
                 }
             },
         }

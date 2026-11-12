@@ -31,8 +31,8 @@ use ts_rs::TS;
 
 use sundayrec_core::settings::Settings;
 use sundayrec_core::test_recording::{
-    build_astats_args, classify_ffmpeg_error, classify_signal, parse_strongest_rms,
-    size_is_plausible, TestRecordingError, TestRecordingSignal, TEST_DURATION_SEC,
+    TEST_DURATION_SEC, TestRecordingError, TestRecordingSignal, build_astats_args,
+    classify_ffmpeg_error, classify_signal, parse_strongest_rms, size_is_plausible,
 };
 
 /// Wait for a spawned ffmpeg `child` to exit, bounded by `timeout`. The capture
