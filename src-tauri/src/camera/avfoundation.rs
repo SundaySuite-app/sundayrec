@@ -91,15 +91,15 @@
 //! (docs/RIG-DAY.md).
 
 use std::cell::Cell;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use dispatch2::{DispatchQueue, DispatchRetained};
-use objc2::rc::{autoreleasepool, Retained};
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{available, define_class, msg_send, AnyThread, DefinedClass};
+use objc2::{AnyThread, DefinedClass, available, define_class, msg_send};
 use objc2_av_foundation::{
     AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceDiscoverySession, AVCaptureDeviceFormat,
     AVCaptureDeviceInput, AVCaptureDevicePosition, AVCaptureDeviceType,
@@ -111,19 +111,19 @@ use objc2_core_media::{
     CMClock, CMSampleBuffer, CMTime, CMTimeFlags, CMVideoFormatDescriptionGetDimensions,
 };
 use objc2_core_video::{
-    kCVPixelBufferPixelFormatTypeKey, kCVReturnSuccess, CVPixelBuffer, CVPixelBufferGetBaseAddress,
-    CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRow,
-    CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetHeight, CVPixelBufferGetHeightOfPlane,
-    CVPixelBufferGetPixelFormatType, CVPixelBufferGetPlaneCount, CVPixelBufferGetWidth,
-    CVPixelBufferIsPlanar, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
-    CVPixelBufferUnlockBaseAddress,
+    CVPixelBuffer, CVPixelBufferGetBaseAddress, CVPixelBufferGetBaseAddressOfPlane,
+    CVPixelBufferGetBytesPerRow, CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetHeight,
+    CVPixelBufferGetHeightOfPlane, CVPixelBufferGetPixelFormatType, CVPixelBufferGetPlaneCount,
+    CVPixelBufferGetWidth, CVPixelBufferIsPlanar, CVPixelBufferLockBaseAddress,
+    CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress, kCVPixelBufferPixelFormatTypeKey,
+    kCVReturnSuccess,
 };
 use objc2_foundation::{
-    ns_string, NSArray, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSString,
+    NSArray, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSString, ns_string,
 };
 use sundayrec_core::camera_format::{
-    fourcc, mach_ticks_to_ns, min_frame_duration_for_rate, should_log_count, usb_model_id,
-    FrameDuration, UsbModelId, NATIVE_FIRST_FRAME_TIMEOUT,
+    FrameDuration, NATIVE_FIRST_FRAME_TIMEOUT, UsbModelId, fourcc, mach_ticks_to_ns,
+    min_frame_duration_for_rate, should_log_count, usb_model_id,
 };
 
 use crate::media::permissions::{self, AuthStatus, MediaKind};
@@ -512,7 +512,7 @@ pub(crate) fn timebase() -> (u32, u32) {
         numer: u32,
         denom: u32,
     }
-    extern "C" {
+    unsafe extern "C" {
         fn mach_timebase_info(info: *mut MachTimebaseInfo) -> i32;
     }
     static TIMEBASE: OnceLock<(u32, u32)> = OnceLock::new();
@@ -1112,7 +1112,7 @@ mod tests {
 
     // ── The camera proof (needs a camera and camera permission) ──────────────
 
-    extern "C" {
+    unsafe extern "C" {
         fn mach_absolute_time() -> u64;
     }
 

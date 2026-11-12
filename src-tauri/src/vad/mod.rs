@@ -46,9 +46,9 @@ use std::sync::Arc;
 pub mod shadow;
 
 use sundayrec_core::vad::{
-    resolve_input_slots, resolve_output_slots, VadBackend, VadError, VadInputSlots, VadOutputSlots,
     VAD_MODEL_FILE_NAME, VAD_MODEL_LEN, VAD_MODEL_SHA256, VAD_SAMPLE_RATE, VAD_STATE_ROWS,
-    VAD_STATE_WIDTH, VAD_WINDOW_SAMPLES,
+    VAD_STATE_WIDTH, VAD_WINDOW_SAMPLES, VadBackend, VadError, VadInputSlots, VadOutputSlots,
+    resolve_input_slots, resolve_output_slots,
 };
 use tract_onnx::prelude::*;
 
@@ -332,7 +332,7 @@ impl VadBackend for SileroVad {
 mod tests {
     use super::*;
     use sundayrec_core::vad::{
-        VadFramer, VadStream, VAD_CONTEXT_SAMPLES, VAD_HOP_SAMPLES, VAD_MODEL_SOURCE_URL,
+        VAD_CONTEXT_SAMPLES, VAD_HOP_SAMPLES, VAD_MODEL_SOURCE_URL, VadFramer, VadStream,
     };
 
     /// Deterministic synthetic speech: a source-filter voice, generated in
@@ -748,7 +748,7 @@ mod tests {
     /// exclude each other.
     #[test]
     fn ffmpeg_decoded_speech_scores_high_or_skips() {
-        use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
+        use crate::media::ffmpeg::tests::{ENV_LOCK, fetched_sidecar};
         use sundayrec_core::wav::{self, WavSpec};
 
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

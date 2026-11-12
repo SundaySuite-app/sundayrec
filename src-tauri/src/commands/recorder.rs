@@ -87,10 +87,10 @@ use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::recorder::engine::{RecorderEngine, RecorderStatePayload, RecordingOpts};
 use crate::recorder::native_capture::preroll::{
-    preroll_settings_from, NativePrerollEngine, PrerollClip, PrerollStatus,
+    NativePrerollEngine, PrerollClip, PrerollStatus, preroll_settings_from,
 };
 use crate::settings;
-use crate::test_recording::{run_test_recording as run_test, TestRecordingResult};
+use crate::test_recording::{TestRecordingResult, run_test_recording as run_test};
 
 /// Everything the renderer may say about a manual start — and, on purpose,
 /// nothing that names a place on disk.
@@ -745,10 +745,8 @@ pub async fn run_test_recording(
     }
     crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingSelftest);
     let result = run_test(&s).await;
-    if preroll_was_running {
-        if let Some(ps) = preroll_settings_from(&s) {
-            preroll.start(app, ps);
-        }
+    if preroll_was_running && let Some(ps) = preroll_settings_from(&s) {
+        preroll.start(app, ps);
     }
     result
 }
@@ -1196,10 +1194,12 @@ mod tests {
         run(&deps, page_request())
             .await
             .expect("start should succeed");
-        assert!(!deps
-            .steps()
-            .iter()
-            .any(|s| matches!(s, Step::HarvestStart(_))));
+        assert!(
+            !deps
+                .steps()
+                .iter()
+                .any(|s| matches!(s, Step::HarvestStart(_)))
+        );
         deps.at(&Step::StopPreroll);
     }
 

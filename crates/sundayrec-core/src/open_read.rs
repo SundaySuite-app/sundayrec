@@ -35,9 +35,9 @@
 //!
 //! No process, no clock, no file here: the shell owns the pipe.
 
-use crate::editor::{PeakAccumulator, PEAKS_BUCKET_SAMPLES, PEAKS_SAMPLE_RATE};
+use crate::editor::{PEAKS_BUCKET_SAMPLES, PEAKS_SAMPLE_RATE, PeakAccumulator};
 use crate::levels::{ChannelLevels, SILENCE_FLOOR_DB};
-use crate::tale::{SpeechAnalysis, SpeechAnalyzer, ANALYSIS_RATE};
+use crate::tale::{ANALYSIS_RATE, SpeechAnalysis, SpeechAnalyzer};
 
 // ───────────────────────────── the resampler ─────────────────────────────
 
@@ -79,11 +79,7 @@ pub struct Resampler {
 }
 
 fn gcd(a: u64, b: u64) -> u64 {
-    if b == 0 {
-        a
-    } else {
-        gcd(b, a % b)
-    }
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 /// Modified Bessel function of the first kind, order 0 (power series).
@@ -191,10 +187,10 @@ impl Resampler {
     /// Make every output the input so far allows. `flush` pretends the input goes on as silence.
     fn drain(&mut self, out: &mut Vec<f32>, total: Option<u64>) {
         loop {
-            if let Some(t) = total {
-                if self.next >= t {
-                    break;
-                }
+            if let Some(t) = total
+                && self.next >= t
+            {
+                break;
             }
             let pos = self.next * self.step;
             let centre = (pos / self.phases) as i64;
@@ -347,11 +343,7 @@ impl ChannelMeter {
             // A NaN or infinite sample has no level; call it silence rather than poison the sums.
             self.seg.extend(now.iter().map(|&x| {
                 let a = x.abs();
-                if a <= f32::MAX {
-                    a
-                } else {
-                    0.0
-                }
+                if a <= f32::MAX { a } else { 0.0 }
             }));
             let (peak, sumsq) = peak_and_sumsq(&self.seg[start..]);
             self.peak = self.peak.max(peak);

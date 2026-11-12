@@ -57,11 +57,7 @@ fn db_to_linear(db: f64) -> f64 {
 
 /// `v` if it is finite, otherwise `default` (a NaN/inf slider value must not reach a stage).
 pub(crate) fn finite_or(v: f64, default: f64) -> f64 {
-    if v.is_finite() {
-        v
-    } else {
-        default
-    }
+    if v.is_finite() { v } else { default }
 }
 
 // ── channel repair ──────────────────────────────────────────────────────────

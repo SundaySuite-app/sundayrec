@@ -437,8 +437,8 @@ pub fn banded_corrections(file: &RecordingFeedback) -> BTreeMap<CorrectionKey, u
 mod tests {
     use super::*;
     use crate::feedback::{
-        record_sermon_pick, record_trim_adjustment, FeedbackSegment, FeedbackSegmentKind,
-        SermonPickCorrection,
+        FeedbackSegment, FeedbackSegmentKind, SermonPickCorrection, record_sermon_pick,
+        record_trim_adjustment,
     };
     use crate::trim_feedback::TrimDeltas;
 
@@ -739,9 +739,11 @@ mod tests {
 
         let projected = banded_corrections(&file);
         assert_eq!(projected.len(), 1);
-        assert!(projected
-            .keys()
-            .all(|k| k.signal == CorrectionSignal::SermonStart));
+        assert!(
+            projected
+                .keys()
+                .all(|k| k.signal == CorrectionSignal::SermonStart)
+        );
     }
 
     #[test]

@@ -59,7 +59,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use sundayrec_core::camera_reconnect::{same_picture, Action, CameraWatch, Health, Presence};
+use sundayrec_core::camera_reconnect::{Action, CameraWatch, Health, Presence, same_picture};
 
 use super::queue::FrameQueue;
 use super::{BackendCounters, BackendHandle, CameraError, CaptureHealth, Frame, VideoFormat};

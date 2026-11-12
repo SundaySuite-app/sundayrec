@@ -443,7 +443,7 @@ mod tests {
         let mut r = Rig::new();
         r.run(2_000, true, Presence::Listed);
         r.run(2_000, false, Presence::Unlisted); // closed
-                                                 // Gone for a minute: never an open attempt.
+        // Gone for a minute: never an open attempt.
         assert_eq!(r.run(60_000, false, Presence::Unlisted), None);
         // The id is listed again: the attempt comes at once.
         let (_, a) = r.run(1_000, false, Presence::Listed).expect("an action");

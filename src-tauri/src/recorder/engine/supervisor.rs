@@ -34,7 +34,7 @@ use sundayrec_core::alerts::AlertText;
 use sundayrec_core::errors::RecordingErrorCode;
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::selftest::RecordingTelemetry;
-use sundayrec_core::stream_fault::{reconnect_keeps_rate_pin, StreamFault};
+use sundayrec_core::stream_fault::{StreamFault, reconnect_keeps_rate_pin};
 use tauri::{AppHandle, Emitter};
 
 use crate::audio::device_watch::BackoffOutcome;
@@ -52,7 +52,7 @@ use super::finalize::{
     session_manifest,
 };
 use super::payloads::{RecordingEvent, RecordingFinished};
-use super::{now_ms, StateWriter, FINISHED_EVENT, RECONNECTED_EVENT, RECONNECTING_EVENT};
+use super::{FINISHED_EVENT, RECONNECTED_EVENT, RECONNECTING_EVENT, StateWriter, now_ms};
 
 /// Why the current segment's capture stopped — drives what the supervisor does
 /// next. Returned by the native `run_native_segment`.
@@ -192,10 +192,10 @@ impl Drop for SupervisorPanicGuard {
         if !std::thread::panicking() {
             return;
         }
-        if fail_panicked_supervisor(&self.state) {
-            if let Some(f) = self.on_failed.take() {
-                f();
-            }
+        if fail_panicked_supervisor(&self.state)
+            && let Some(f) = self.on_failed.take()
+        {
+            f();
         }
     }
 }
@@ -600,7 +600,9 @@ async fn run_session(
                                         );
                                     }
                                     BackoffOutcome::Stopped => {
-                                        tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
+                                        tracing::info!(
+                                            "recorder: stop requested during reconnect back-off — finalizing"
+                                        );
                                         break 'session;
                                     }
                                 }
@@ -765,8 +767,8 @@ async fn run_session(
                                                 // WAV/MKV behind on purpose).
                                                 let _ = tokio::fs::remove_dir(&cap_dir).await;
                                                 tracing::error!(
-                                                "recorder: giving up — respawn budget exhausted"
-                                            );
+                                                    "recorder: giving up — respawn budget exhausted"
+                                                );
                                                 break 'run;
                                             }
                                         }
@@ -878,10 +880,12 @@ mod tests {
             sundayrec_core::recorder::is_fatal_reconnect_error(denied.code),
             "a refused permission must end the reconnect loop"
         );
-        assert!(denied
-            .into_app_error()
-            .to_string()
-            .contains("device_permission_denied: no access"));
+        assert!(
+            denied
+                .into_app_error()
+                .to_string()
+                .contains("device_permission_denied: no access")
+        );
 
         let gone = NativeStartError::new(
             RecordingErrorCode::DeviceNotFound,

@@ -25,7 +25,7 @@
 
 use crate::ffmpeg::Platform;
 use crate::settings::ChannelMode;
-use crate::video_encoder::{push_encoder_args, resolve_encoder, VideoEncoder};
+use crate::video_encoder::{VideoEncoder, push_encoder_args, resolve_encoder};
 
 // ── The recording's video knobs (v0.15: constants, no longer settings) ────────
 //

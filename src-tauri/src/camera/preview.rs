@@ -66,11 +66,11 @@ use std::time::Duration;
 
 use fast_image_resize::images::Image;
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
-use sundayrec_core::video_track::{pack_tight, RawPixelFormat, VideoTrackSpec};
+use sundayrec_core::video_track::{RawPixelFormat, VideoTrackSpec, pack_tight};
 
 use super::queue::FrameQueue;
 use super::{Frame, PixelFormat};
-use crate::recorder::native_capture::video::{raw_format_of, VideoSource};
+use crate::recorder::native_capture::video::{VideoSource, raw_format_of};
 
 /// The width of a preview picture.
 pub const PREVIEW_WIDTH: u32 = 640;
@@ -681,16 +681,16 @@ pub fn take_for_recording(key: &SessionKey) -> Taken {
         // device (Windows: the second open fails, and the recording is black).
         // It is waited for only so long; then the opening is cancelled (its
         // camera is stopped when it arrives) and the recording opens its own.
-        if let Some(Session::Opening { key: k, .. }) = guard.as_ref() {
-            if k.camera == key.camera {
-                let left = deadline.saturating_duration_since(std::time::Instant::now());
-                if !left.is_zero() {
-                    let (g, _) = CHANGED
-                        .wait_timeout(guard, left)
-                        .unwrap_or_else(PoisonError::into_inner);
-                    guard = g;
-                    continue;
-                }
+        if let Some(Session::Opening { key: k, .. }) = guard.as_ref()
+            && k.camera == key.camera
+        {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if !left.is_zero() {
+                let (g, _) = CHANGED
+                    .wait_timeout(guard, left)
+                    .unwrap_or_else(PoisonError::into_inner);
+                guard = g;
+                continue;
             }
         }
         break;
@@ -876,13 +876,13 @@ mod tests {
     use super::*;
     use crate::recorder::native_capture::stream::ClockPair;
     use crate::recorder::native_capture::video::{
-        SinkFactory, SlotSink, SyntheticSource, VideoTrack, VideoTrackConfig, PAIR_RING,
-        QUEUE_FRAMES,
+        PAIR_RING, QUEUE_FRAMES, SinkFactory, SlotSink, SyntheticSource, VideoTrack,
+        VideoTrackConfig,
     };
-    use ringbuf::traits::{Producer, Split};
     use ringbuf::HeapRb;
+    use ringbuf::traits::{Producer, Split};
     use std::time::Instant;
-    use sundayrec_core::video_conform::{slot_count, Fps};
+    use sundayrec_core::video_conform::{Fps, slot_count};
     use sundayrec_core::video_encoder::VideoEncoder;
 
     /// The one camera session is a process-wide singleton; tests that use it
@@ -1015,8 +1015,8 @@ mod tests {
     fn frames_the_picture_cannot_use_are_counted_not_fatal() {
         let mut e = PreviewEncoder::default();
         // Bottom-up rows, an odd size, and a layout with no raw form.
-        assert!(e
-            .encode(&Frame::from_bytes(
+        assert!(
+            e.encode(&Frame::from_bytes(
                 1,
                 4,
                 4,
@@ -1024,9 +1024,10 @@ mod tests {
                 true,
                 vec![0; 24]
             ))
-            .is_none());
-        assert!(e
-            .encode(&Frame::from_bytes(
+            .is_none()
+        );
+        assert!(
+            e.encode(&Frame::from_bytes(
                 1,
                 3,
                 3,
@@ -1034,9 +1035,10 @@ mod tests {
                 false,
                 vec![0; 14]
             ))
-            .is_none());
-        assert!(e
-            .encode(&Frame::from_bytes(
+            .is_none()
+        );
+        assert!(
+            e.encode(&Frame::from_bytes(
                 1,
                 4,
                 4,
@@ -1044,10 +1046,11 @@ mod tests {
                 false,
                 vec![0; 24]
             ))
-            .is_none());
+            .is_none()
+        );
         // Too few bytes for the size it claims.
-        assert!(e
-            .encode(&Frame::from_bytes(
+        assert!(
+            e.encode(&Frame::from_bytes(
                 1,
                 64,
                 64,
@@ -1055,7 +1058,8 @@ mod tests {
                 false,
                 vec![0; 10]
             ))
-            .is_none());
+            .is_none()
+        );
     }
 
     #[test]

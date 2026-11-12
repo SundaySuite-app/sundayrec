@@ -21,13 +21,13 @@
 //! live. One warning per recording session — a disk hovering at the threshold
 //! must not produce a toast every minute for an hour.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Listener, Manager};
 
-use sundayrec_core::notify::{code, should_warn_low_disk, BackendWarning};
+use sundayrec_core::notify::{BackendWarning, code, should_warn_low_disk};
 use sundayrec_core::preflight::video_active;
 use sundayrec_core::recorder::RecorderState;
 
@@ -164,10 +164,10 @@ async fn observe(
 /// `<Documents>/SundayRec` that hasn't been created yet) would otherwise make
 /// the probe fail rather than report the disk the recording is landing on.
 fn save_folder(app: &AppHandle, configured: Option<&str>) -> Option<std::path::PathBuf> {
-    if let Ok(folder) = crate::save_folder::resolve(app, configured) {
-        if folder.exists() {
-            return Some(folder);
-        }
+    if let Ok(folder) = crate::save_folder::resolve(app, configured)
+        && folder.exists()
+    {
+        return Some(folder);
     }
     crate::save_folder::documents_dir(app)
 }

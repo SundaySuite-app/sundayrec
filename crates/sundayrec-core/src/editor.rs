@@ -264,10 +264,10 @@ pub fn codec_args(
         _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(256)],
     };
     // amr already carries its forced `-ar 8000`; never emit a second one.
-    if !args.iter().any(|a| a == "-ar") {
-        if let Some(rate) = output_sample_rate(fmt, source_rate) {
-            args.extend([s("-ar"), rate.to_string()]);
-        }
+    if !args.iter().any(|a| a == "-ar")
+        && let Some(rate) = output_sample_rate(fmt, source_rate)
+    {
+        args.extend([s("-ar"), rate.to_string()]);
     }
     args
 }
@@ -1368,10 +1368,11 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
                 sample_rate = val.parse::<u32>().ok().filter(|r| *r > 0);
             }
             "duration" => {
-                if let Ok(d) = val.parse::<f64>() {
-                    if d.is_finite() && d > 0.0 {
-                        duration_sec = d;
-                    }
+                if let Ok(d) = val.parse::<f64>()
+                    && d.is_finite()
+                    && d > 0.0
+                {
+                    duration_sec = d;
                 }
             }
             _ => {}
@@ -2518,9 +2519,10 @@ mod tests {
         };
         let args = audio_simple_export_args(&seg, "wav", None, Some(24), None);
         assert!(args.contains(&"-vn".to_string()));
-        assert!(args
-            .windows(2)
-            .any(|w| w[0] == "-c:a" && w[1] == "pcm_s24le"));
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-c:a" && w[1] == "pcm_s24le")
+        );
         assert!(args.ends_with(&["-rf64".to_string(), "auto".to_string()]));
     }
 
@@ -3209,7 +3211,7 @@ mod tests {
     #[test]
     fn the_disk_guard_refuses_only_what_obviously_cannot_fit() {
         let need = 1_000_000_000u64; // 1 GB of export
-                                     // Room for the file AND the headroom: fine.
+        // Room for the file AND the headroom: fine.
         assert!(!export_disk_is_low(
             need + EXPORT_DISK_HEADROOM_BYTES,
             Some(need)
@@ -3518,11 +3520,7 @@ mod tests {
                 // A shape with sign changes and a few near-full-scale spikes, so
                 // max-abs actually has to pick.
                 let base = ((i as f64 * 0.37).sin() * 20000.0) as i16;
-                if i % 173 == 0 {
-                    -32000
-                } else {
-                    base
-                }
+                if i % 173 == 0 { -32000 } else { base }
             })
             .collect();
         let bytes = samples.iter().flat_map(|s| s.to_le_bytes()).collect();

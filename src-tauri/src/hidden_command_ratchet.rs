@@ -113,13 +113,13 @@ pub(crate) fn strip_to_code(src: &str) -> String {
 
     // Copy `b[from..to]` through untouched.
     macro_rules! keep {
-        ($from:expr, $to:expr) => {
+        ($from:expr_2021, $to:expr_2021) => {
             out[$from..$to].copy_from_slice(&b[$from..$to]);
         };
     }
     // Blank `b[from..to]`, but keep its newlines so lines stay aligned.
     macro_rules! blank {
-        ($from:expr, $to:expr) => {
+        ($from:expr_2021, $to:expr_2021) => {
             for k in $from..$to {
                 if b[k] == b'\n' {
                     out[k] = b'\n';
@@ -209,14 +209,14 @@ pub(crate) fn strip_to_code(src: &str) -> String {
             continue;
         }
         // ── char literal, but never a lifetime ───────────────────────────────
-        if b[i] == b'\'' {
-            if let Some(end) = char_literal_end(b, i) {
-                blank!(i, end);
-                i = end;
-                continue;
-            }
-            // A lifetime tick (`'a`, `'static`, `'_`): ordinary code.
+        if b[i] == b'\''
+            && let Some(end) = char_literal_end(b, i)
+        {
+            blank!(i, end);
+            i = end;
+            continue;
         }
+        // A lifetime tick (`'a`, `'static`, `'_`): ordinary code.
         keep!(i, i + 1);
         i += 1;
     }
@@ -258,11 +258,7 @@ pub(crate) fn line_starts(code: &str) -> Vec<usize> {
     let mut v = vec![0usize];
     v.extend(code.bytes().enumerate().filter_map(
         |(i, c)| {
-            if c == b'\n' {
-                Some(i + 1)
-            } else {
-                None
-            }
+            if c == b'\n' { Some(i + 1) } else { None }
         },
     ));
     v

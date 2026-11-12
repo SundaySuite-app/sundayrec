@@ -665,7 +665,7 @@ mod tests {
     /// rett etter `-fps_mode cfr`.
     #[test]
     fn every_encoder_and_path_gets_a_keyframe_every_two_seconds() {
-        use crate::video_track::{video_track_args, RawPixelFormat, VideoTrackSpec};
+        use crate::video_track::{RawPixelFormat, VideoTrackSpec, video_track_args};
 
         let keyint = |args: &[String], fps: u32| {
             let at = args

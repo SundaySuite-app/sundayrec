@@ -219,11 +219,11 @@ fn redact_keyed_values(line: &str) -> String {
         if i > value_start {
             out.extend_from_slice(SECRET_PLACEHOLDER.as_bytes());
         }
-        if let Some(q) = quote {
-            if i < bytes.len() {
-                out.push(q);
-                i += 1;
-            }
+        if let Some(q) = quote
+            && i < bytes.len()
+        {
+            out.push(q);
+            i += 1;
         }
     }
     // Every byte copied came from a valid UTF-8 string and was never split, so

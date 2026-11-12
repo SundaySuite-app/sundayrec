@@ -10,7 +10,7 @@ use std::time::Duration;
 use sundayrec_core::alerts::AlertText;
 use tauri::{AppHandle, Manager};
 
-use crate::db::{store, Db};
+use crate::db::{Db, store};
 use crate::settings;
 
 /// Long enough that startup — device enumeration, the scheduler, crash

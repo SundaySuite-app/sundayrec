@@ -36,8 +36,8 @@ use sqlx::SqlitePool;
 
 use sundayrec_core::selftest::RecordingTelemetry;
 use sundayrec_core::telemetry::{
-    crash_report, finding_report, quality_report, sanitize_language, wake_failure_report,
-    CorrectionReport, CounterReport, FindingReport, TelemetryPayload, NIL_INSTALL_ID,
+    CorrectionReport, CounterReport, FindingReport, NIL_INSTALL_ID, TelemetryPayload, crash_report,
+    finding_report, quality_report, sanitize_language, wake_failure_report,
 };
 
 use crate::db::store;

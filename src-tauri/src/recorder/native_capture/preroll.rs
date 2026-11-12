@@ -65,23 +65,23 @@ use serde::{Deserialize, Serialize};
 use sundayrec_core::audio::MeterBanks;
 use sundayrec_core::notify::BackendWarning;
 use sundayrec_core::preroll::{
-    fade_out_tail_s16le, harvest_trim_ms, preroll_captured_ms, preroll_fade_out_frames,
-    preroll_keep_bytes, preroll_kept_ms, preroll_restart_delay, preroll_segments_to_drop,
-    preroll_segments_to_retain, preroll_start_offset_ms, preroll_tail_slices,
     NATIVE_HARVEST_SAFETY_MARGIN_MS, PREROLL_NATIVE_SEGMENT_S, PREROLL_SEGMENT_CAP_S,
-    RESTART_GAP_MS,
+    RESTART_GAP_MS, fade_out_tail_s16le, harvest_trim_ms, preroll_captured_ms,
+    preroll_fade_out_frames, preroll_keep_bytes, preroll_kept_ms, preroll_restart_delay,
+    preroll_segments_to_drop, preroll_segments_to_retain, preroll_start_offset_ms,
+    preroll_tail_slices,
 };
 use sundayrec_core::wav::{self, WavSpec};
 use tauri::AppHandle;
 use ts_rs::TS;
 
 use crate::audio::asio::build_route_plan;
-use crate::audio::vu::{emit_vu_levels, VU_SAMPLE_INTERVAL};
+use crate::audio::vu::{VU_SAMPLE_INTERVAL, emit_vu_levels};
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, negotiate, open_host, ring_capacity, CpalHostKind,
-    StreamSink,
+    CpalHostKind, StreamSink, build_input_stream_any, find_device, negotiate, open_host,
+    ring_capacity,
 };
-use crate::recorder::native_capture::writer::{patch_sizes, FLUSH_EVERY};
+use crate::recorder::native_capture::writer::{FLUSH_EVERY, patch_sizes};
 use crate::util::lock_recover;
 
 /// Bound on joining the stream thread (it polls its stop flag every sampler
@@ -231,7 +231,7 @@ pub struct PrerollSegmentFile {
 struct PrerollRun {
     /// Generation, so a supervisor that lost the race can tell whether the run
     /// in the slot is still the one it published.
-    gen: u64,
+    r#gen: u64,
     stream_stop: Arc<AtomicBool>,
     writer_stop: Arc<AtomicBool>,
     stream_join: Option<JoinHandle<()>>,
@@ -259,7 +259,7 @@ pub struct NativePrerollEngine {
     /// answer an adopting caller without opening anything.
     channels: Arc<AtomicU16>,
     /// Run-generation counter.
-    gen: Arc<AtomicU64>,
+    r#gen: Arc<AtomicU64>,
     /// Where segment files live (local-app-data `tmp`, F2-W10; tests pass a
     /// tempdir).
     tmp_dir: PathBuf,
@@ -338,11 +338,11 @@ impl NativePrerollEngine {
         let active = Arc::clone(&self.active);
         let run = Arc::clone(&self.run);
         let channels = Arc::clone(&self.channels);
-        let gen = Arc::clone(&self.gen);
+        let r#gen = Arc::clone(&self.r#gen);
         let tmp_dir = self.tmp_dir.clone();
 
         let task = tauri::async_runtime::spawn(async move {
-            preroll_loop(app, active, run, channels, gen, tmp_dir, settings).await;
+            preroll_loop(app, active, run, channels, r#gen, tmp_dir, settings).await;
         });
         *lock_recover(&self.task) = Some(task);
     }
@@ -443,7 +443,7 @@ async fn preroll_loop(
     active: Arc<AtomicBool>,
     run_slot: Arc<Mutex<Option<PrerollRun>>>,
     channels: Arc<AtomicU16>,
-    gen: Arc<AtomicU64>,
+    r#gen: Arc<AtomicU64>,
     tmp_dir: PathBuf,
     settings: PrerollSettings,
 ) {
@@ -454,7 +454,7 @@ async fn preroll_loop(
     let mut warned_dead = false;
 
     while active.load(Ordering::SeqCst) {
-        match spawn_preroll_run(&app, &tmp_dir, &settings, &run_slot, &gen, &channels).await {
+        match spawn_preroll_run(&app, &tmp_dir, &settings, &run_slot, &r#gen, &channels).await {
             Ok(mut err_rx) => {
                 attempt = 0;
                 warned_dead = false;
@@ -556,7 +556,7 @@ async fn spawn_preroll_run(
     tmp_dir: &Path,
     settings: &PrerollSettings,
     slot: &Arc<Mutex<Option<PrerollRun>>>,
-    gen: &Arc<AtomicU64>,
+    r#gen: &Arc<AtomicU64>,
     channels: &Arc<AtomicU16>,
 ) -> Result<tokio::sync::mpsc::Receiver<String>, String> {
     let sink: VuSink = {
@@ -568,7 +568,7 @@ async fn spawn_preroll_run(
             let _ = emit_vu_levels(&app, m);
         })
     };
-    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let my_gen = r#gen.fetch_add(1, Ordering::SeqCst) + 1;
     let stack = spawn_preroll_stack(tmp_dir, settings, my_gen, sink).await?;
     let PrerollStack {
         run,
@@ -595,7 +595,7 @@ async fn spawn_preroll_run(
             let mine = {
                 let mut guard = lock_recover(slot);
                 match guard.as_ref() {
-                    Some(r) if r.gen == my_gen => guard.take(),
+                    Some(r) if r.r#gen == my_gen => guard.take(),
                     _ => None,
                 }
             };
@@ -616,7 +616,7 @@ async fn spawn_preroll_run(
 async fn spawn_preroll_stack(
     tmp_dir: &Path,
     settings: &PrerollSettings,
-    gen: u64,
+    r#gen: u64,
     vu_sink: VuSink,
 ) -> Result<PrerollStack, String> {
     let device_name = settings.audio_device_name.clone();
@@ -755,7 +755,7 @@ async fn spawn_preroll_stack(
 
     Ok(PrerollStack {
         run: PrerollRun {
-            gen,
+            r#gen,
             stream_stop,
             writer_stop,
             stream_join: Some(stream_join),
@@ -1201,10 +1201,12 @@ mod tests {
         let engine = NativePrerollEngine::new(dir.path().to_path_buf());
         engine.stop_and_release().await;
         // No buffer → no clip.
-        assert!(engine
-            .harvest_in_format(15, "pcm_s16le", "wav")
-            .await
-            .is_none());
+        assert!(
+            engine
+                .harvest_in_format(15, "pcm_s16le", "wav")
+                .await
+                .is_none()
+        );
         assert!(!engine.is_active());
     }
 
@@ -1346,8 +1348,8 @@ mod tests {
         );
     }
 
-    use ringbuf::traits::Producer;
     use ringbuf::HeapRb;
+    use ringbuf::traits::Producer;
 
     const SPEC: WavSpec = WavSpec {
         channels: 2,

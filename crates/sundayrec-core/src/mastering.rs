@@ -135,17 +135,17 @@ pub fn dither_filter_for(fmt: &str, bit_depth: Option<u8>) -> Option<String> {
 /// `out_time=HH:MM:SS.ffffff`. Mirrors `parseProgressTime`.
 pub fn parse_progress_time(line: &str) -> Option<f64> {
     for l in line.lines() {
-        if let Some(rest) = l.strip_prefix("out_time_ms=") {
-            if let Ok(us) = rest.trim().parse::<u64>() {
-                return Some(us as f64 / 1_000_000.0);
-            }
+        if let Some(rest) = l.strip_prefix("out_time_ms=")
+            && let Ok(us) = rest.trim().parse::<u64>()
+        {
+            return Some(us as f64 / 1_000_000.0);
         }
     }
     for l in line.lines() {
-        if let Some(rest) = l.strip_prefix("out_time=") {
-            if let Some(sec) = parse_hms(rest) {
-                return Some(sec);
-            }
+        if let Some(rest) = l.strip_prefix("out_time=")
+            && let Some(sec) = parse_hms(rest)
+        {
+            return Some(sec);
         }
     }
     None

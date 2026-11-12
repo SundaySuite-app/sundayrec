@@ -23,7 +23,7 @@
 //!   the tail (0.3-0.95 s) and in the direct sound (0-0.05 s). filmcraft output
 //!   is aligned by the effect's `latency()`; ffmpeg output by cross-correlation.
 
-use filmcraft_audio_dsp::{create_effect, LoudnessMeter};
+use filmcraft_audio_dsp::{LoudnessMeter, create_effect};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -485,18 +485,36 @@ fn quality(ff: &Path, dir: &Path) {
     };
     let variants: [(&str, &str); 13] = [
         ("ffmpeg none (pass-through)", "anull"),
-        ("ffmpeg afftdn nr=10:nf=-25:tn=1 (voice-podcast)", "afftdn=nr=10:nf=-25:tn=1"),
-        ("ffmpeg afftdn nr=20:nf=-20:tn=1 (voice-noisy-room)", "afftdn=nr=20:nf=-20:tn=1"),
-        ("ffmpeg afftdn nr=20:nf=-45:tn=1", "afftdn=nr=20:nf=-45:tn=1"),
+        (
+            "ffmpeg afftdn nr=10:nf=-25:tn=1 (voice-podcast)",
+            "afftdn=nr=10:nf=-25:tn=1",
+        ),
+        (
+            "ffmpeg afftdn nr=20:nf=-20:tn=1 (voice-noisy-room)",
+            "afftdn=nr=20:nf=-20:tn=1",
+        ),
+        (
+            "ffmpeg afftdn nr=20:nf=-45:tn=1",
+            "afftdn=nr=20:nf=-45:tn=1",
+        ),
         ("ffmpeg afftdn nr=12:nf=-45 (no tn)", "afftdn=nr=12:nf=-45"),
         ("ffmpeg afftdn nr=20:nf=-45 (no tn)", "afftdn=nr=20:nf=-45"),
         ("ffmpeg afftdn nr=30:nf=-45 (no tn)", "afftdn=nr=30:nf=-45"),
         ("ffmpeg afftdn nr=20:nf=-50 (no tn)", "afftdn=nr=20:nf=-50"),
         ("ffmpeg afftdn nr=20:nf=-40 (no tn)", "afftdn=nr=20:nf=-40"),
         ("ffmpeg afftdn nr=20:nf=-20 (no tn)", "afftdn=nr=20:nf=-20"),
-        ("ffmpeg agate dereverb strength 0.5", "agate=threshold=-37.5dB:ratio=2.25:attack=10:release=200:detection=rms"),
-        ("ffmpeg agate dereverb strength 1.0", "agate=threshold=-30dB:ratio=3:attack=10:release=200:detection=rms"),
-        ("ffmpeg afftdn nr=20:nf=-45 (no tn) + agate 0.5", "afftdn=nr=20:nf=-45,agate=threshold=-37.5dB:ratio=2.25:attack=10:release=200:detection=rms"),
+        (
+            "ffmpeg agate dereverb strength 0.5",
+            "agate=threshold=-37.5dB:ratio=2.25:attack=10:release=200:detection=rms",
+        ),
+        (
+            "ffmpeg agate dereverb strength 1.0",
+            "agate=threshold=-30dB:ratio=3:attack=10:release=200:detection=rms",
+        ),
+        (
+            "ffmpeg afftdn nr=20:nf=-45 (no tn) + agate 0.5",
+            "afftdn=nr=20:nf=-45,agate=threshold=-37.5dB:ratio=2.25:attack=10:release=200:detection=rms",
+        ),
     ];
     for (name, f) in variants {
         row(name, &ffm(f.to_string()));

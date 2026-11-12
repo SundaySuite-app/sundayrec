@@ -21,7 +21,7 @@
 use std::io::{self, Read, Write};
 
 use crate::loudness::{
-    plan_gain_to, GainPlan, GainStage, Loudness, Meter, MAX_REFINEMENTS, SETTLED_LU,
+    GainPlan, GainStage, Loudness, MAX_REFINEMENTS, Meter, SETTLED_LU, plan_gain_to,
 };
 
 /// Frames per processing block (about one second at 48 kHz).

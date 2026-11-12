@@ -41,8 +41,8 @@ use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
 use sundayrec_core::lang::Lang;
 use sundayrec_core::tray::{
-    badge_rgb, build_menu as build_model, format_next_label, icon_for, tooltip, with_status_badge,
-    TrayAction, TrayItem, TrayState,
+    TrayAction, TrayItem, TrayState, badge_rgb, build_menu as build_model, format_next_label,
+    icon_for, tooltip, with_status_badge,
 };
 
 /// The event the tray emits for an action the renderer/commands handle. The
@@ -205,10 +205,10 @@ impl<R: Runtime> TrayController<R> {
         {
             tracing::debug!("tray: set_tooltip unavailable: {e}");
         }
-        if let Some(image) = status_icon(app, &view.state) {
-            if let Err(e) = self.icon.set_icon(Some(image)) {
-                tracing::warn!("tray: set_icon failed: {e}");
-            }
+        if let Some(image) = status_icon(app, &view.state)
+            && let Err(e) = self.icon.set_icon(Some(image))
+        {
+            tracing::warn!("tray: set_icon failed: {e}");
         }
     }
 }

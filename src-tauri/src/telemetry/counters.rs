@@ -105,7 +105,7 @@ pub fn count_by(name: CounterName, n: u64) {
 pub fn snapshot() -> Vec<CounterReport> {
     lock_recover(counts())
         .iter()
-        .filter(|(_, &v)| v > 0)
+        .filter(|&(_, &v)| v > 0)
         .map(|(&name, &value)| CounterReport { name, value })
         .collect()
 }
@@ -135,7 +135,7 @@ pub fn clear() {
 pub async fn persist(pool: &SqlitePool) -> AppResult<()> {
     let map: BTreeMap<&'static str, u64> = lock_recover(counts())
         .iter()
-        .filter(|(_, &v)| v > 0)
+        .filter(|&(_, &v)| v > 0)
         .map(|(&name, &value)| (name.as_wire(), value))
         .collect();
     store::set_setting(pool, KEY_COUNTERS, &serde_json::to_string(&map)?).await
@@ -153,10 +153,10 @@ pub async fn load(pool: &SqlitePool) -> AppResult<()> {
     let mut map = lock_recover(counts());
     map.clear();
     for (name, value) in stored {
-        if let Some(counter) = CounterName::from_wire(&name) {
-            if value > 0 {
-                map.insert(counter, value);
-            }
+        if let Some(counter) = CounterName::from_wire(&name)
+            && value > 0
+        {
+            map.insert(counter, value);
         }
     }
     Ok(())

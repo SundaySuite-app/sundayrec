@@ -3,12 +3,12 @@
 //! the same id, no restart of anything else — not how fast: every wait is a
 //! generous deadline, so a loaded CI runner cannot fail them for being slow.
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::testkit::FakeWorld;
-use crate::camera::{start_with, Capture};
+use crate::camera::{Capture, start_with};
 
 fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
     let t = Instant::now();
@@ -264,7 +264,9 @@ fn real_camera_comes_back_on_the_same_id() {
         (stop, join)
     };
 
-    println!(">>> Frames flow now. In the next {window} s: switch the camera OFF (pull the USB cable / unlock-and-move the iPhone away),");
+    println!(
+        ">>> Frames flow now. In the next {window} s: switch the camera OFF (pull the USB cable / unlock-and-move the iPhone away),"
+    );
     println!(">>> wait for LOST, then switch it back ON. The test ends by itself.");
     let t0 = Instant::now();
     let (mut last_frames, mut last_t) = (queue.stats().pushed, Instant::now());

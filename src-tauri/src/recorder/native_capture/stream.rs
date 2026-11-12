@@ -14,20 +14,20 @@
 //! that means. Advisories are logged and recording carries on; anything else is
 //! handed to the caller's supervisor as a [`StreamFaultReport`].
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 // `Sample` provides the ergonomic `f32::from_sample(s)`; `FromSample` is the bound.
 use cpal::{FromSample, Sample, SampleFormat};
-use ringbuf::traits::Producer;
 use ringbuf::HeapProd;
-use sundayrec_core::audio::{observe_levels, MeterBanks};
-use sundayrec_core::device_match::{find_best_device_match, find_exact_device_match, FfmpegDevice};
+use ringbuf::traits::Producer;
+use sundayrec_core::audio::{MeterBanks, observe_levels};
+use sundayrec_core::device_match::{FfmpegDevice, find_best_device_match, find_exact_device_match};
 use sundayrec_core::errors::RecordingErrorCode;
-use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
+use sundayrec_core::stream_fault::{StreamFault, StreamFaultAction, stream_fault_action};
 
-use crate::audio::asio::{route_frame, ChannelRoute};
+use crate::audio::asio::{ChannelRoute, route_frame};
 
 /// Which cpal host to open. `Default` is the platform's default host —
 /// CoreAudio on macOS, WASAPI on Windows — and is the arm the macOS native
@@ -848,7 +848,7 @@ pub fn build_input_stream_typed(
         other => {
             return Err(NativeStartError::other(format!(
                 "unsupported input sample format: {other:?}"
-            )))
+            )));
         }
     };
     built.map_err(|e| NativeStartError::from_cpal("building input stream", &e))
@@ -1084,8 +1084,8 @@ mod tests {
 
     #[test]
     fn start_failures_map_to_the_codes_the_ui_has_sentences_for() {
-        use cpal::ErrorKind as K;
         use RecordingErrorCode as C;
+        use cpal::ErrorKind as K;
         for (kind, want) in [
             (K::PermissionDenied, C::DevicePermissionDenied),
             (K::DeviceBusy, C::DeviceBusy),

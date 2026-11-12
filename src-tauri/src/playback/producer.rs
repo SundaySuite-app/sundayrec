@@ -57,11 +57,11 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ringbuf::traits::{Observer, Producer as _};
 use ringbuf::HeapProd;
+use ringbuf::traits::{Observer, Producer as _};
 use sundayrec_core::chain::{BuiltChain, Chain};
 use sundayrec_core::open_read::Resampler;
-use sundayrec_core::playback::{CutPlan, PcmOpener, ProgramReader, MAX_BLOCK};
+use sundayrec_core::playback::{CutPlan, MAX_BLOCK, PcmOpener, ProgramReader};
 
 use super::rt::{MarkKind, Marker, Shared};
 
@@ -84,13 +84,13 @@ const WARM_GIVE_UP_SEC: f64 = 30.0;
 pub enum Command {
     /// Play from programme frame `program_frame` as generation `gen`.
     Seek {
-        gen: u64,
+        r#gen: u64,
         program_frame: u64,
     },
     /// The same, under a new cut plan (the cuts were edited, B5c): the producer takes `plan` for
     /// this and every later job. `program_frame` is a frame of the NEW programme.
     SetPlan {
-        gen: u64,
+        r#gen: u64,
         plan: CutPlan,
         program_frame: u64,
     },
@@ -222,7 +222,7 @@ impl Block {
 
 /// One start or seek, from its programme position to the end.
 struct Job<O: PcmOpener> {
-    gen: u64,
+    r#gen: u64,
     reader: ProgramReader<O>,
     in_ch: usize,
     rate: u32,
@@ -276,7 +276,7 @@ where
     O::Stream: Send,
 {
     fn new(
-        gen: u64,
+        r#gen: u64,
         plan: &CutPlan,
         opener: O,
         chain: &Chain,
@@ -297,7 +297,7 @@ where
         };
         let from = start.saturating_sub(preroll);
         Ok(Self {
-            gen,
+            r#gen,
             reader: ProgramReader::new(plan.clone(), opener.clone(), channels, from),
             in_ch: channels,
             rate: plan.rate(),
@@ -427,10 +427,9 @@ where
             .incoming
             .as_ref()
             .is_some_and(|inc| self.next_emit >= inc.x + inc.len)
+            && let Some(inc) = self.incoming.take()
         {
-            if let Some(inc) = self.incoming.take() {
-                self.lane = inc.lane;
-            }
+            self.lane = inc.lane;
         }
         Some(Block { dry, wet })
     }
@@ -594,13 +593,16 @@ where
             }
             // A plan change is a seek too: the same restart, with the plan swapped first.
             if let Some(Command::SetPlan {
-                gen,
+                r#gen,
                 plan,
                 program_frame,
             }) = cmd
             {
                 self.plan = plan;
-                cmd = Some(Command::Seek { gen, program_frame });
+                cmd = Some(Command::Seek {
+                    r#gen,
+                    program_frame,
+                });
             }
             match cmd {
                 Some(Command::Shutdown) => return,
@@ -610,21 +612,24 @@ where
                     self.chain = c.clone();
                     want_chain = Some(c);
                 }
-                Some(Command::Seek { gen, program_frame }) => {
+                Some(Command::Seek {
+                    r#gen,
+                    program_frame,
+                }) => {
                     chunk.clear();
                     chunk_pos = 0;
                     chunk_last = false;
                     want_chain = None;
                     out = Out::new(self.plan.rate(), self.device_rate);
                     pending.push_back(Marker {
-                        gen,
+                        r#gen,
                         at: pushed_samples / width as u64,
                         kind: MarkKind::Start {
                             program_frame: program_frame.min(self.plan.program_frames()),
                         },
                     });
                     match Job::new(
-                        gen,
+                        r#gen,
                         &self.plan,
                         self.opener.clone(),
                         &self.chain,
@@ -633,7 +638,7 @@ where
                     ) {
                         Ok(j) => job = Some(j),
                         Err(e) => {
-                            self.fail(e, gen, pushed_samples / width as u64, &mut pending);
+                            self.fail(e, r#gen, pushed_samples / width as u64, &mut pending);
                             job = None;
                         }
                     }
@@ -652,10 +657,12 @@ where
                     }
                     None => {}
                 }
-                if j.warm.is_none() && j.incoming.is_none() && !j.exhausted {
-                    if let Some(c) = want_chain.take() {
-                        j.start_warm(&c);
-                    }
+                if j.warm.is_none()
+                    && j.incoming.is_none()
+                    && !j.exhausted
+                    && let Some(c) = want_chain.take()
+                {
+                    j.start_warm(&c);
                 }
             }
             // Markers go out before any data behind them.
@@ -675,7 +682,7 @@ where
             };
             if chunk_pos == chunk.len() {
                 if chunk_last {
-                    self.shared.produced_gen.store(j.gen, Ordering::Release);
+                    self.shared.produced_gen.store(j.r#gen, Ordering::Release);
                     job = None;
                     stalled = false;
                     continue;
@@ -701,7 +708,7 @@ where
                         if last {
                             let at = (pushed_samples + chunk.len() as u64) / width as u64;
                             pending.push_back(Marker {
-                                gen: j.gen,
+                                r#gen: j.r#gen,
                                 at,
                                 kind: MarkKind::End,
                             });
@@ -709,12 +716,12 @@ where
                         }
                     }
                     Err(e) => {
-                        let gen = j.gen;
+                        let r#gen = j.r#gen;
                         chunk.clear();
                         chunk_pos = 0;
                         self.fail(
                             format!("reading the recording failed: {e}"),
-                            gen,
+                            r#gen,
                             pushed_samples / width as u64,
                             &mut pending,
                         );
@@ -735,13 +742,13 @@ where
 
     /// Record `message` and end generation `gen` where the data stands, so the callback stops
     /// instead of waiting for audio that will not come.
-    fn fail(&self, message: String, gen: u64, at: u64, pending: &mut VecDeque<Marker>) {
-        tracing::warn!(gen, "playback: {message}");
+    fn fail(&self, message: String, r#gen: u64, at: u64, pending: &mut VecDeque<Marker>) {
+        tracing::warn!(r#gen, "playback: {message}");
         if let Ok(mut e) = self.error.lock() {
             *e = Some(message);
         }
         pending.push_back(Marker {
-            gen,
+            r#gen,
             at,
             kind: MarkKind::End,
         });

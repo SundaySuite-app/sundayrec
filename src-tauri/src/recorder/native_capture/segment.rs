@@ -35,8 +35,8 @@
 //! (#337's lesson from the deleted `two_process.rs`: the sound must never stop silently
 //! while the picture keeps going).
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use cpal::traits::StreamTrait;
@@ -49,7 +49,7 @@ use sundayrec_core::preflight::{
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::RecordingSession;
 use sundayrec_core::silence::{
-    silence_threshold_db, SilenceAction, SilenceDetector, SilenceWatcher,
+    SilenceAction, SilenceDetector, SilenceWatcher, silence_threshold_db,
 };
 use sundayrec_core::timeouts::RecorderTimeouts;
 use sundayrec_core::wav::WavSpec;
@@ -59,28 +59,28 @@ use crate::audio::asio::build_route_plan;
 use crate::error::AppResult;
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::engine::{
-    emit_error, emit_warning, error_code_str, now_ms, RecordingLevels, RecordingOpts,
-    RecordingProgress, SegmentOutcome, StateWriter, VideoProblem, LEVELS_EVENT, PROGRESS_EVENT,
-    SILENCE_EVENT, STARTED_EVENT,
+    LEVELS_EVENT, PROGRESS_EVENT, RecordingLevels, RecordingOpts, RecordingProgress, SILENCE_EVENT,
+    STARTED_EVENT, SegmentOutcome, StateWriter, VideoProblem, emit_error, emit_warning,
+    error_code_str, now_ms,
 };
 use crate::recorder::native_capture::lufs::LoudnessSlot;
-use crate::recorder::native_capture::stream::{
-    build_input_stream_typed, classify_stream_error_counting, find_device_exact_typed,
-    find_device_typed, negotiate_typed, open_host, ring_capacity, CpalHostKind, NativeStartError,
-    StreamFaultReport, StreamSink,
-};
 use crate::recorder::native_capture::stream::{CaptureTimeSource, ClockPair, ClockTap};
+use crate::recorder::native_capture::stream::{
+    CpalHostKind, NativeStartError, StreamFaultReport, StreamSink, build_input_stream_typed,
+    classify_stream_error_counting, find_device_exact_typed, find_device_typed, negotiate_typed,
+    open_host, ring_capacity,
+};
 use crate::recorder::native_capture::video::{
-    open_camera, FfmpegSink, NativeVideoPlan, SinkFactory, VideoSource, VideoTrack,
-    VideoTrackConfig, VideoTrackStats, ENCODER_EXIT_TIMEOUT, PAIR_RING,
+    ENCODER_EXIT_TIMEOUT, FfmpegSink, NativeVideoPlan, PAIR_RING, SinkFactory, VideoSource,
+    VideoTrack, VideoTrackConfig, VideoTrackStats, open_camera,
 };
 use crate::recorder::native_capture::writer::{
-    spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
+    FLUSH_EVERY, SYNC_EVERY, WriterConfig, WriterErrorKind, WriterEvent, spawn_wav_writer,
 };
 use crate::util::lock_recover;
 use sundayrec_core::audio::MeterBanks;
 use sundayrec_core::errors::RecordingErrorCode;
-use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
+use sundayrec_core::stream_fault::{StreamFault, StreamFaultAction, stream_fault_action};
 
 /// How often the levels sampler reads the meters and emits (parity with the
 /// VU engine; ~30/s).
@@ -248,16 +248,15 @@ async fn spawn_native_segment_typed(
     // (the ladder's substring/word-overlap strategies) is worth a trail: the
     // recording may be from a different microphone than the user picked. A UI
     // warning is deferred; reconnects never get here with a loose match.
-    if let Some(opened) = opened_name.as_deref() {
-        if !device_name.is_empty()
-            && !sundayrec_core::device_match::names_match_exactly(opened, &device_name)
-        {
-            tracing::warn!(
-                requested = %device_name,
-                opened = %opened,
-                "recorder: stored input device matched loosely, not by exact name"
-            );
-        }
+    if let Some(opened) = opened_name.as_deref()
+        && !device_name.is_empty()
+        && !sundayrec_core::device_match::names_match_exactly(opened, &device_name)
+    {
+        tracing::warn!(
+            requested = %device_name,
+            opened = %opened,
+            "recorder: stored input device matched loosely, not by exact name"
+        );
     }
 
     // A reconnect (exact match) refuses a pick the returned device no longer
@@ -1536,13 +1535,13 @@ where
     // dropped are counted (`video.frames_dropped`, opt-in telemetry — a no-op
     // without consent) and added to the session's total.
     let video_dropped = seg.video_stats().map_or(0, |v| v.queue_dropped);
-    if let Some(v) = seg.video_stats() {
-        if v.queue_dropped > 0 || v.encoder_failed {
-            tracing::warn!(
-                ?v,
-                "video track: frames dropped or the encoder failed this fragment"
-            );
-        }
+    if let Some(v) = seg.video_stats()
+        && (v.queue_dropped > 0 || v.encoder_failed)
+    {
+        tracing::warn!(
+            ?v,
+            "video track: frames dropped or the encoder failed this fragment"
+        );
     }
     crate::telemetry::counters::count_by(
         sundayrec_core::telemetry::CounterName::VideoFramesDropped,
@@ -3167,11 +3166,12 @@ mod tests {
         )
         .await;
         ender.await.unwrap();
-        assert!(!r
-            .sink
-            .seen()
-            .iter()
-            .any(|e| matches!(e, Ev::VideoDropped(_))));
+        assert!(
+            !r.sink
+                .seen()
+                .iter()
+                .any(|e| matches!(e, Ev::VideoDropped(_)))
+        );
         assert_eq!(tel.lock().expect("telemetry").video_frames_dropped, 0);
         assert!(crate::telemetry::counters::snapshot().is_empty());
         crate::telemetry::counters::set_active(false);

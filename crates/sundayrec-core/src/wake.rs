@@ -100,12 +100,8 @@ impl WakeIssue {
             Self::WinS5NeedsBios => {
                 "Waking from fully powered off (S5) requires \"Wake on RTC from S5\" in the BIOS — software cannot enable it."
             }
-            Self::LinuxUnsupported => {
-                "Linux is not supported for automatic wake from SundayRec."
-            }
-            Self::PlatformUnsupported => {
-                "This platform is not supported for automatic wake."
-            }
+            Self::LinuxUnsupported => "Linux is not supported for automatic wake from SundayRec.",
+            Self::PlatformUnsupported => "This platform is not supported for automatic wake.",
         }
     }
 }
@@ -166,9 +162,7 @@ impl WakeRecommendation {
             Self::WinCheckBios => {
                 "If the test wake fails, check the BIOS for \"Wake on RTC\" and enable \"Allow wake timers\" in the power options."
             }
-            Self::UseMacOrWindows => {
-                "Use a Mac or a Windows PC to enable automatic wake."
-            }
+            Self::UseMacOrWindows => "Use a Mac or a Windows PC to enable automatic wake.",
         }
     }
 }
@@ -729,10 +723,10 @@ pub fn parse_pmset_sched(stdout: &str, ref_year: Option<i32>) -> Vec<VerifiedWak
             let hour: u32 = c[4].parse().unwrap_or(99);
             let min: u32 = c[5].parse().unwrap_or(99);
             let sec: u32 = c.get(6).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-            if let Some(r) = ref_year {
-                if (year - r).abs() > 5 {
-                    continue;
-                }
+            if let Some(r) = ref_year
+                && (year - r).abs() > 5
+            {
+                continue;
             }
             if let Some(dt) = NaiveDate::from_ymd_opt(year, month, day)
                 .and_then(|d| d.and_hms_opt(hour, min, sec))

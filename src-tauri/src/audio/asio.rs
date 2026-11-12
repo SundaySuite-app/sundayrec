@@ -179,14 +179,14 @@ pub fn check_channel_picks(
         ChannelMode::MonoMix => (false, false),
     };
     for (used, pick) in [(uses_l, input_channel_l), (uses_r, input_channel_r)] {
-        if let Some(i) = pick.filter(|_| used) {
-            if i < 0 || i >= i32::from(total_input_channels) {
-                return Err(format!(
-                    "input channel {} is not available: the device exposes {} input channel(s)",
-                    i + 1,
-                    total_input_channels
-                ));
-            }
+        if let Some(i) = pick.filter(|_| used)
+            && (i < 0 || i >= i32::from(total_input_channels))
+        {
+            return Err(format!(
+                "input channel {} is not available: the device exposes {} input channel(s)",
+                i + 1,
+                total_input_channels
+            ));
         }
     }
     Ok(())
@@ -1112,8 +1112,8 @@ mod tests {
     /// second caller must wait for the first and read its result.
     #[test]
     fn two_threads_racing_a_cold_memo_sweep_the_drivers_once() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         let sweeps = AtomicUsize::new(0);
         let cache = AsioCache::new(Duration::from_secs(30));

@@ -18,7 +18,7 @@
 use chrono::Local;
 use tauri::AppHandle;
 
-use sundayrec_core::filename::{build_filename, FilenameParams};
+use sundayrec_core::filename::{FilenameParams, build_filename};
 use sundayrec_core::settings::{FileFormat, Settings};
 
 use crate::error::AppResult;

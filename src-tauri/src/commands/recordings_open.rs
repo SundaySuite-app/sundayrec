@@ -103,7 +103,7 @@ use tauri::State;
 
 use super::chosen_paths::{ChosenError, ChosenKind, ChosenPaths};
 use super::path_guard::{self, compare_key, strip_verbatim};
-use crate::db::{store, Db};
+use crate::db::{Db, store};
 use crate::error::{AppError, AppResult};
 use crate::util::off_runtime;
 
@@ -337,7 +337,7 @@ fn vet_handover_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult
         Err(_) => {
             return Err(AppError::Validation(
                 "handover_folder_missing: the recordings folder does not exist".into(),
-            ))
+            ));
         }
     }
     let probe = path.join(format!(
@@ -385,12 +385,12 @@ fn vet_save_folder_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppRes
     // Both by comparison key and by identity — see «Comparing two spellings of
     // one file» in `path_guard`: `/System/Volumes/Data/Users/kari/.ssh` is
     // `~/.ssh` on macOS, and `canonicalize` does not say so.
-    if let Some(home) = home.as_deref() {
-        if path_guard::deny_sensitive_under(&would_be, home).is_err() {
-            return Err(AppError::Validation(
-                "save_folder_protected: the recordings folder is inside a protected folder".into(),
-            ));
-        }
+    if let Some(home) = home.as_deref()
+        && path_guard::deny_sensitive_under(&would_be, home).is_err()
+    {
+        return Err(AppError::Validation(
+            "save_folder_protected: the recordings folder is inside a protected folder".into(),
+        ));
     }
     let is_unix_root = cfg!(unix) && compare_key(&would_be).parent().is_none();
     let holds_home = home.is_some_and(|h| path_guard::holds_home(&would_be, &h));
@@ -590,7 +590,7 @@ pub async fn recordings_reveal_export(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::store::{insert_recording, open_pool, RecordingRow};
+    use crate::db::store::{RecordingRow, insert_recording, open_pool};
 
     /// A migrated database in a temp dir, plus a scratch directory for files.
     async fn world() -> (SqlitePool, tempfile::TempDir) {
@@ -1210,7 +1210,7 @@ mod tests {
         refused(&app.join("recovery").join("2026")); // …and anything under it
         refused(&app.join("not-made-yet").join("Opptak")); // a folder that does not exist yet
         refused(app.parent().unwrap()); // a folder above it
-                                        // A sibling is a normal choice.
+        // A sibling is a normal choice.
         vet_save_folder_in(
             dir.path().join("AppData").join("Opptak").to_str().unwrap(),
             Some(&home),
@@ -1389,17 +1389,18 @@ mod tests {
     ) -> Result<Vec<String>, String> {
         let capabilities: Vec<&serde_json::Value> = match file {
             serde_json::Value::Array(list) => list.iter().collect(),
-            serde_json::Value::Object(map) if map.contains_key("capabilities") => map
-                ["capabilities"]
-                .as_array()
-                .ok_or_else(|| format!("{origin}: `capabilities` is not a list"))?
-                .iter()
-                .collect(),
+            serde_json::Value::Object(map) if map.contains_key("capabilities") => {
+                map["capabilities"]
+                    .as_array()
+                    .ok_or_else(|| format!("{origin}: `capabilities` is not a list"))?
+                    .iter()
+                    .collect()
+            }
             serde_json::Value::Object(_) => vec![file],
             _ => {
                 return Err(format!(
                     "{origin}: not a capability, a list or a named list"
-                ))
+                ));
             }
         };
         let mut grants = Vec::new();
@@ -1998,9 +1999,11 @@ permissions = ["opener:allow-reveal-item-in-dir"]
             "build.rs writes a file — if it is a capability, the webview holds a permission \
              no capability file shows"
         );
-        assert!(!manifest
-            .join("capabilities/updater.generated.json")
-            .exists());
+        assert!(
+            !manifest
+                .join("capabilities/updater.generated.json")
+                .exists()
+        );
     }
 
     // ── audit 2026-10 (82, 84): no blanket core grant, no process plugin ──────

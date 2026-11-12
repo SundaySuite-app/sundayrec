@@ -17,7 +17,7 @@
 use sqlx::{Row, SqlitePool};
 
 use sundayrec_core::telemetry::queue::{
-    overflow_victims, TelemetryEntry, TelemetryStatus, QUEUE_MAX,
+    QUEUE_MAX, TelemetryEntry, TelemetryStatus, overflow_victims,
 };
 
 use crate::error::{AppError, AppResult};

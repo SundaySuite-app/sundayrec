@@ -40,7 +40,7 @@
 //! duplicated here rather than reaching into another test's internals.
 
 use sundayrec_core::audio_analysis::{
-    classify_frame, extract_features, SegmentType, FRAME_MS, SAMPLE_RATE,
+    FRAME_MS, SAMPLE_RATE, SegmentType, classify_frame, extract_features,
 };
 
 // ── Deterministic signal synthesis (mirrors tuning_golden.rs) ───────────────

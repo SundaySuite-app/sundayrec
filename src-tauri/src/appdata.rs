@@ -428,7 +428,7 @@ pub(crate) async fn resolve_with(
             return fell_back(
                 format!("could not tell whether the Roaming database exists: {why}"),
                 true,
-            )
+            );
         }
         Probe::File => {}
     }
@@ -1093,14 +1093,16 @@ mod tests {
         // Roaming svarer ikke: ringen blir i Local.
         assert!(!choice(failed(), true).crash_ring_follows_active());
         assert!(!choice(Outcome::AlreadyLocal, false).crash_ring_follows_active());
-        assert!(!choice(
-            Outcome::Moved {
-                recordings: 1,
-                settings: 1
-            },
-            false
-        )
-        .crash_ring_follows_active());
+        assert!(
+            !choice(
+                Outcome::Moved {
+                    recordings: 1,
+                    settings: 1
+                },
+                false
+            )
+            .crash_ring_follows_active()
+        );
     }
 
     #[tokio::test]

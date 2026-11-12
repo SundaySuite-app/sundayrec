@@ -3,7 +3,7 @@
 //! Spike A: the ffmpeg sidecar health-check the diagnostics view calls on
 //! startup. The recorder commands land in Spike B.
 
-use crate::media::ffmpeg::{ffmpeg_health as probe_health, FfmpegHealth};
+use crate::media::ffmpeg::{FfmpegHealth, ffmpeg_health as probe_health};
 
 /// Probe the bundled ffmpeg sidecar and report whether it resolved + its
 /// version banner. Infallible — a missing binary is rendered by the UI, not an

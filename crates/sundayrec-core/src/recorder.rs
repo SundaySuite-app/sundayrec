@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::errors::RecordingErrorCode;
-use crate::reconnect::{reconnect_delay, reconnect_verdict, ReconnectVerdict};
+use crate::reconnect::{ReconnectVerdict, reconnect_delay, reconnect_verdict};
 
 /// The recorder lifecycle, surfaced to the UI as a `recording://state` event.
 ///
@@ -118,11 +118,7 @@ impl RecorderState {
             (Stopped, Preparing) | (Failed, Preparing) => true,
             _ => false,
         };
-        if legal {
-            Some(to)
-        } else {
-            None
-        }
+        if legal { Some(to) } else { None }
     }
 }
 
@@ -364,10 +360,10 @@ impl RecordingSession {
         now_ms: u64,
         last_error: Option<RecordingErrorCode>,
     ) -> RecoveryDecision {
-        if let Some(code) = last_error {
-            if is_fatal_reconnect_error(code) {
-                return RecoveryDecision::GiveUp;
-            }
+        if let Some(code) = last_error
+            && is_fatal_reconnect_error(code)
+        {
+            return RecoveryDecision::GiveUp;
         }
         // The streak clock starts at the FIRST failure, not at this one — so a
         // device that has been gone for an hour is judged on the hour, however

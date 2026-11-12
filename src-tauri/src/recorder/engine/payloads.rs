@@ -11,7 +11,7 @@ use ts_rs::TS;
 // Doc-link targets only. Not `///` link definitions: ts-rs copies doc comments
 // into the generated TS bindings verbatim.
 #[cfg(doc)]
-use super::{RecorderEngine, FINISHED_EVENT};
+use super::{FINISHED_EVENT, RecorderEngine};
 
 /// Payload for [`FINISHED_EVENT`] — where the finished recording landed, so the
 /// UI's "open in editor" action can load it straight into the editor.

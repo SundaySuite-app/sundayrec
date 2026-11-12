@@ -46,11 +46,7 @@ const HONOUR_DEV_ENV: bool = cfg!(any(debug_assertions, test));
 /// The policy of [`dev_env_override`], with the switch passed in so a test can
 /// close it without a release build.
 fn honour_dev_env(enabled: bool, value: Option<String>) -> Option<String> {
-    if enabled {
-        value
-    } else {
-        None
-    }
+    if enabled { value } else { None }
 }
 
 /// The env override for `name`, or `None` where this build ignores them.
@@ -602,7 +598,7 @@ pub(crate) mod tests {
         use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
         use sundayrec_core::video_encoder::VideoEncoder;
         use sundayrec_core::video_track::{
-            black_frame, video_track_args, RawPixelFormat, VideoTrackSpec,
+            RawPixelFormat, VideoTrackSpec, black_frame, video_track_args,
         };
 
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -675,7 +671,7 @@ pub(crate) mod tests {
     /// held across `.await`).
     #[test]
     fn decoupled_wav_capture_transcodes_to_delivery_or_skips() {
-        use crate::recorder::concat::{finalize_deliverable, DeliverySpec};
+        use crate::recorder::concat::{DeliverySpec, finalize_deliverable};
         use sundayrec_core::capture::audio_encode_args;
         use sundayrec_core::recorder::Deliverable;
 
@@ -804,7 +800,7 @@ pub(crate) mod tests {
     /// sidecar.
     #[test]
     fn decoupled_mkv_capture_remuxes_to_mp4_delivery_or_skips() {
-        use crate::recorder::concat::{finalize_deliverable, DeliverySpec};
+        use crate::recorder::concat::{DeliverySpec, finalize_deliverable};
         use sundayrec_core::recorder::Deliverable;
         use sundayrec_core::recovery::DeliveryMode;
 

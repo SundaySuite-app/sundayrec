@@ -327,11 +327,10 @@ async fn merged_for_handover(stored: &Settings, json: &str, vet: FolderVet) -> S
     keep_stored_clips(stored, &mut merged);
     if let Some(folder) =
         new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
+        && let Err(e) = vet_off_runtime(vet, folder).await
     {
-        if let Err(e) = vet_off_runtime(vet, folder).await {
-            tracing::warn!(code = %e, "an imported save folder was refused; the stored one is kept");
-            merged.save_folder = stored.save_folder.clone();
-        }
+        tracing::warn!(code = %e, "an imported save folder was refused; the stored one is kept");
+        merged.save_folder = stored.save_folder.clone();
     }
     merged
 }
@@ -717,14 +716,16 @@ mod tests {
                 .await
                 .unwrap()
         );
-        assert!(!store::claim_and_set_setting(
-            &pool,
-            LEGACY_IMPORT_KEY,
-            SETTINGS_KEY,
-            r#"{"language":"fr"}"#
-        )
-        .await
-        .unwrap());
+        assert!(
+            !store::claim_and_set_setting(
+                &pool,
+                LEGACY_IMPORT_KEY,
+                SETTINGS_KEY,
+                r#"{"language":"fr"}"#
+            )
+            .await
+            .unwrap()
+        );
         assert_eq!(
             store::get_setting(&pool, SETTINGS_KEY)
                 .await
@@ -825,9 +826,11 @@ mod tests {
         // The database going away mid-flight: load fails → the save must fail,
         // not fall back to defaults and write them.
         pool.close().await;
-        assert!(save_from_renderer(&pool, Settings::default())
-            .await
-            .is_err());
+        assert!(
+            save_from_renderer(&pool, Settings::default())
+                .await
+                .is_err()
+        );
         let reopened = store::open_pool(&dir.path().join("test.sqlite"))
             .await
             .unwrap();

@@ -22,7 +22,7 @@ use tauri::{AppHandle, Listener, Runtime};
 use sundayrec_core::alerts::AlertText;
 use sundayrec_core::level_watch::WeakLevelWatch;
 use sundayrec_core::notify::{
-    code, should_native_during_take, BackendWarning, CameraOutageWatch, TakeAlert,
+    BackendWarning, CameraOutageWatch, TakeAlert, code, should_native_during_take,
 };
 
 use crate::util::lock_recover;
@@ -131,7 +131,7 @@ fn camera_step(watch: &mut CameraOutageWatch, lost_ms: Option<u64>, window_in_vi
 /// `wire_failure_sources`).
 pub fn wire(app: &AppHandle) {
     use crate::recorder::engine::{
-        RecordingEvent, RecordingProgress, PROGRESS_EVENT, QUALITY_EVENT, RECONNECTING_EVENT,
+        PROGRESS_EVENT, QUALITY_EVENT, RECONNECTING_EVENT, RecordingEvent, RecordingProgress,
         SILENCE_EVENT, STARTED_EVENT,
     };
 

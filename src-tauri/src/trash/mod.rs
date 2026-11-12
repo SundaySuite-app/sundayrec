@@ -80,7 +80,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
-use sundayrec_core::notify::{code, BackendWarning};
+use sundayrec_core::notify::{BackendWarning, code};
 use ts_rs::TS;
 
 use crate::db::store;
@@ -758,11 +758,11 @@ fn remove_files_of(entry: &TrashEntry) -> bool {
         if !all_gone && path == &entry.trashed_path {
             break; // keep the recording so the entry stays listed for a retry
         }
-        if let Err(e) = std::fs::remove_file(path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!("trash: could not purge {path}: {e}");
-                all_gone = false;
-            }
+        if let Err(e) = std::fs::remove_file(path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("trash: could not purge {path}: {e}");
+            all_gone = false;
         }
     }
     all_gone
@@ -842,10 +842,11 @@ mod tests {
         assert_eq!(back.original_path, media.to_string_lossy());
         assert!(media.is_file(), "the recording came home");
         for suffix in SIDECAR_SUFFIXES {
-            assert!(dir
-                .path()
-                .join(format!("2026-08-02 Gudstjeneste{suffix}"))
-                .is_file());
+            assert!(
+                dir.path()
+                    .join(format!("2026-08-02 Gudstjeneste{suffix}"))
+                    .is_file()
+            );
         }
         assert!(list(dir.path()).is_empty(), "restoring empties the entry");
     }
@@ -963,9 +964,11 @@ mod tests {
         let mut old = read_manifest(dir.path());
         old[0].deleted_at -= 40.0 * 24.0 * 60.0 * 60.0 * 1000.0;
         write_manifest(dir.path(), &old).unwrap();
-        assert!(purge_older_than(dir.path(), 30, store::now_ms())
-            .unwrap()
-            .is_empty());
+        assert!(
+            purge_older_than(dir.path(), 30, store::now_ms())
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(read_manifest(dir.path()).len(), 1);
 
         // Once the obstacle is gone the next purge finishes the job.
@@ -1046,9 +1049,11 @@ mod tests {
     fn purge_of_zero_days_is_off_not_everything() {
         let (dir, media) = fixture();
         move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
-        assert!(purge_older_than(dir.path(), 0, store::now_ms())
-            .unwrap()
-            .is_empty());
+        assert!(
+            purge_older_than(dir.path(), 0, store::now_ms())
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(list(dir.path()).len(), 1);
     }
 

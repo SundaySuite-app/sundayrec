@@ -33,10 +33,10 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+use sundayrec_core::audio_analysis::{FRAME_MS, HeuristicScorer, SAMPLE_RATE};
 use sundayrec_core::detect::Detection;
 use sundayrec_core::levels::ChannelLevels;
 use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16, SourceLevels};
@@ -45,9 +45,9 @@ use sundayrec_core::tale::SpeechAnalysis;
 use tokio::sync::watch;
 
 use super::{
-    count_analysis_decode, export_stall_ms, media_stat, pcm, tale_cache_key, write_sidecar_raw,
-    EditorSegment, EditorSidecar, ExportEngine, SegmentsCache, EDITOR_CACHE_VERSION,
-    EXPORT_PHASE_MEASURING,
+    EDITOR_CACHE_VERSION, EXPORT_PHASE_MEASURING, EditorSegment, EditorSidecar, ExportEngine,
+    SegmentsCache, count_analysis_decode, export_stall_ms, media_stat, pcm, tale_cache_key,
+    write_sidecar_raw,
 };
 use crate::error::{AppError, AppResult};
 
@@ -215,10 +215,10 @@ pub(super) async fn opened(
         Search::IfMissing => super::read_segments_cache(path, size_bytes, mtime_ms).is_none(),
         Search::Force => true,
     };
-    if search == Search::Force {
-        if let Some(k) = &key {
-            OPEN_BOOK.forget(k);
-        }
+    if search == Search::Force
+        && let Some(k) = &key
+    {
+        OPEN_BOOK.forget(k);
     }
     let tx = flight_sender(key.as_deref());
     let mut rx = tx.subscribe();

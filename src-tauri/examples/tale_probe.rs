@@ -19,7 +19,7 @@ use std::process::{Command, ExitCode};
 
 use sundayrec_core::audio_analysis::fft;
 use sundayrec_core::pcm_stream::PcmFormat;
-use sundayrec_core::tale::{analyze_stream, ANALYSIS_RATE};
+use sundayrec_core::tale::{ANALYSIS_RATE, analyze_stream};
 
 fn ffmpeg() -> String {
     if let Ok(p) = std::env::var("SUNDAYREC_FFMPEG") {
@@ -201,8 +201,12 @@ fn run() -> Result<(), String> {
         let (fx, fy) = (frames(&x48), frames(&y48));
         println!(
             "apply: gulv (p10) {:.1} -> {:.1} dB ({:+.1}), tale (p90) {:.1} -> {:.1} dB ({:+.1}), median {:+.1}",
-            pct(&fx, 0.1), pct(&fy, 0.1), pct(&fy, 0.1) - pct(&fx, 0.1),
-            pct(&fx, 0.9), pct(&fy, 0.9), pct(&fy, 0.9) - pct(&fx, 0.9),
+            pct(&fx, 0.1),
+            pct(&fy, 0.1),
+            pct(&fy, 0.1) - pct(&fx, 0.1),
+            pct(&fx, 0.9),
+            pct(&fy, 0.9),
+            pct(&fy, 0.9) - pct(&fx, 0.9),
             pct(&fy, 0.5) - pct(&fx, 0.5),
         );
     }

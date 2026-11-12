@@ -44,11 +44,11 @@
 //! is consumed while paused. After an underrun the gain restarts from zero, so the audio that
 //! comes back fades in instead of stepping in.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use ringbuf::traits::{Consumer, Observer};
 use ringbuf::HeapCons;
+use ringbuf::traits::{Consumer, Observer};
 
 /// Length of the start/stop/seek fade, seconds.
 pub const FADE_SEC: f64 = 0.008;
@@ -72,7 +72,7 @@ pub enum MarkKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Marker {
-    pub gen: u64,
+    pub r#gen: u64,
     pub at: u64,
     pub kind: MarkKind,
 }
@@ -138,7 +138,7 @@ pub struct RtRenderer {
     /// Device frames popped from `data` (played or discarded), since the ring was made.
     consumed: u64,
     state: State,
-    gen: u64,
+    r#gen: u64,
     start: Marker,
     /// The start marker of the generation being flushed to, once seen.
     pending: Option<Marker>,
@@ -200,9 +200,9 @@ impl RtRenderer {
             source_rate: f64::from(source_rate.max(1)),
             consumed: 0,
             state: State::Flushing,
-            gen: 0,
+            r#gen: 0,
             start: Marker {
-                gen: 0,
+                r#gen: 0,
                 at: 0,
                 kind: MarkKind::Start { program_frame: 0 },
             },
@@ -264,7 +264,7 @@ impl RtRenderer {
                     }
                 }
                 State::Ended => {
-                    if want != self.gen {
+                    if want != self.r#gen {
                         self.state = State::Flushing;
                         continue;
                     }
@@ -272,9 +272,9 @@ impl RtRenderer {
                     break;
                 }
                 State::Playing => {
-                    let up = want == self.gen && !paused;
+                    let up = want == self.r#gen && !paused;
                     if !up && self.ramp == 0 {
-                        if want != self.gen {
+                        if want != self.r#gen {
                             self.state = State::Flushing;
                             continue;
                         }
@@ -289,7 +289,7 @@ impl RtRenderer {
                         if left == 0 {
                             self.state = State::Ended;
                             self.ramp = 0;
-                            self.shared.ended_gen.store(self.gen, Ordering::Release);
+                            self.shared.ended_gen.store(self.r#gen, Ordering::Release);
                             continue;
                         }
                         n = n.min(left);
@@ -369,15 +369,15 @@ impl RtRenderer {
         // seen yet, so it is safe to discard up to the matching start. (`ch` is the frame's
         // width in samples here, both layers.)
         let avail = self.data.occupied_len() / ch;
-        if self.pending.is_some_and(|m| m.gen != want) {
+        if self.pending.is_some_and(|m| m.r#gen != want) {
             self.pending = None;
         }
         while self.pending.is_none() {
             match self.marks.try_peek().copied() {
-                Some(m) if m.gen < want => {
+                Some(m) if m.r#gen < want => {
                     self.marks.try_pop();
                 }
-                Some(m) if m.gen == want && matches!(m.kind, MarkKind::Start { .. }) => {
+                Some(m) if m.r#gen == want && matches!(m.kind, MarkKind::Start { .. }) => {
                     self.marks.try_pop();
                     self.pending = Some(m);
                 }
@@ -404,7 +404,7 @@ impl RtRenderer {
         }
         self.pending = None;
         self.state = State::Playing;
-        self.gen = want;
+        self.r#gen = want;
         self.start = start;
         self.ramp = 0;
         self.shared.playing_gen.store(want, Ordering::Release);
@@ -414,16 +414,17 @@ impl RtRenderer {
 
     fn see_end(&mut self) {
         if self.end_at.is_none() {
-            self.see_end_of(self.gen);
+            self.see_end_of(self.r#gen);
         }
     }
 
-    fn see_end_of(&mut self, gen: u64) {
-        if let Some(m) = self.marks.try_peek().copied() {
-            if m.gen == gen && m.kind == MarkKind::End {
-                self.marks.try_pop();
-                self.end_at = Some(m.at);
-            }
+    fn see_end_of(&mut self, r#gen: u64) {
+        if let Some(m) = self.marks.try_peek().copied()
+            && m.r#gen == r#gen
+            && m.kind == MarkKind::End
+        {
+            self.marks.try_pop();
+            self.end_at = Some(m.at);
         }
     }
 
@@ -478,15 +479,15 @@ pub(crate) mod tests {
         }
 
         /// Start generation `gen` at programme frame `program_frame` (as a seek would).
-        pub fn start(&mut self, gen: u64, program_frame: u64) {
+        pub fn start(&mut self, r#gen: u64, program_frame: u64) {
             self.marks
                 .try_push(Marker {
-                    gen,
+                    r#gen,
                     at: self.pushed,
                     kind: MarkKind::Start { program_frame },
                 })
                 .unwrap();
-            self.shared.requested_gen.store(gen, Ordering::Release);
+            self.shared.requested_gen.store(r#gen, Ordering::Release);
         }
 
         pub fn push(&mut self, f: impl Fn(u64) -> f32, frames: usize) {
@@ -520,10 +521,10 @@ pub(crate) mod tests {
             self.shared.wet_target.store(v.to_bits(), Ordering::Release);
         }
 
-        pub fn end(&mut self, gen: u64) {
+        pub fn end(&mut self, r#gen: u64) {
             self.marks
                 .try_push(Marker {
-                    gen,
+                    r#gen,
                     at: self.pushed,
                     kind: MarkKind::End,
                 })
@@ -879,7 +880,7 @@ pub(crate) mod tests {
         rig.start(1, 0);
         rig.push(sine(0.0), 5000);
         rig.end(1); // known end, so it starts below the prime
-                    // Replace: a new generation whose data never comes.
+        // Replace: a new generation whose data never comes.
         rig.start(2, 0);
         let t = std::time::Instant::now();
         let out = rig.run(48_000);

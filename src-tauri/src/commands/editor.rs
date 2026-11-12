@@ -55,8 +55,8 @@ use sundayrec_core::lang::Lang;
 use ts_rs::TS;
 
 use super::chosen_paths::{self, ChosenError, ChosenKind, ChosenPaths, ChosenPlace};
-use super::media_filters::{media_filter_names, AUDIO_EXT, VIDEO_EXT};
-use crate::db::{store, Db};
+use super::media_filters::{AUDIO_EXT, VIDEO_EXT, media_filter_names};
+use crate::db::{Db, store};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
     EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest, EditorMediaInfo,

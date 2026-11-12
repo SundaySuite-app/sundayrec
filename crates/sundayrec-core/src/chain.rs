@@ -138,15 +138,15 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, Read};
 
-use filmcraft_audio_dsp::{create_effect, AudioEffect};
+use filmcraft_audio_dsp::{AudioEffect, create_effect};
 
 use crate::loudness::GainPlan;
 use crate::mastering::MasterPreset;
 use crate::processing::{
-    finite_or, ChannelRepair, VocalChain, COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB,
-    GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB,
+    COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB, ChannelRepair, GATE_MAX_THRESHOLD_DB,
+    LIMITER_MIN_CEILING_DB, VocalChain, finite_or,
 };
-use crate::tale::{Mains, SpeechClean, SpeechGate, DENOISE_TALE_DB};
+use crate::tale::{DENOISE_TALE_DB, Mains, SpeechClean, SpeechGate};
 
 /// The DSP crate, re-exported so a shell that builds a chain can reach the
 /// meter and the limiter without a dependency of its own.
@@ -978,10 +978,10 @@ impl<R: Read> Read for ChainReader<R> {
 mod tests {
     use super::*;
     use crate::mastering::master_presets;
-    use crate::processing::{
-        vocal_chain_presets, DenoiseStage, EqBand, HighpassStage, LimiterStage,
-    };
     use crate::processing::{COMP_MAX_MAKEUP_DB, GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB};
+    use crate::processing::{
+        DenoiseStage, EqBand, HighpassStage, LimiterStage, vocal_chain_presets,
+    };
     use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
@@ -991,7 +991,7 @@ mod tests {
     /// export gives.
     #[test]
     fn the_gain_plan_as_stages_is_the_export_gain_stage() {
-        use crate::loudness::{apply_planar, GainPlan, LimiterPlan};
+        use crate::loudness::{GainPlan, LimiterPlan, apply_planar};
         let sig: Vec<f32> = (0..48_000)
             .map(|i| {
                 let t = i as f32 / SR;
@@ -1396,11 +1396,12 @@ mod tests {
             .expect("build")
             .process_offline(std::slice::from_ref(&x));
         let mut built = chain.build(SR, 1).expect("build");
-        let mut one = vec![x
-            .iter()
-            .copied()
-            .chain(vec![0.0; built.latency()])
-            .collect()];
+        let mut one = vec![
+            x.iter()
+                .copied()
+                .chain(vec![0.0; built.latency()])
+                .collect(),
+        ];
         built.process_block(&mut one);
         let lat = built.latency();
         let b: Vec<f32> = one[0][lat..lat + x.len()].to_vec();

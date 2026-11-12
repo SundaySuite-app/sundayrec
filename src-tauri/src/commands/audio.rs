@@ -44,12 +44,12 @@
 use tauri::{AppHandle, State};
 
 use serde::{Deserialize, Serialize};
-use sundayrec_core::audio::{mic_owner, vu_start_action, VuStartAction};
+use sundayrec_core::audio::{VuStartAction, mic_owner, vu_start_action};
 use sundayrec_core::capture::CameraMode;
 use sundayrec_core::diagnostics::AudioDiagnostics;
 use ts_rs::TS;
 
-use crate::audio::asio::{list_asio_devices, merge_audio_inputs, TaggedAudioInput};
+use crate::audio::asio::{TaggedAudioInput, list_asio_devices, merge_audio_inputs};
 use crate::audio::devices::list_input_devices as enumerate_inputs;
 use crate::audio::vu::VuEngine;
 use crate::error::AppResult;

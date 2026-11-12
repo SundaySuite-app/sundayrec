@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Pure, GUI-free domain core for SundayRec — recorder logic, ffmpeg argument building, error classification, silence state machine. No Tauri dependency."
 authors = ["Richard Fossland"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 # This crate intentionally depends on NOTHING from Tauri. It holds the
 # behaviour ported from the Electron `recorder-utils.ts` etc. as plain,

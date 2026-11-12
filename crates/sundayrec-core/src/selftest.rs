@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::telemetry::QualityReason;
-use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
+use crate::test_recording::{TestRecordingSignal, classify_signal, size_is_plausible};
 
 // ── Verdict ─────────────────────────────────────────────────────────────────
 
@@ -213,19 +213,19 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     }
 
     // WARN conditions (only matter if not already Fail).
-    if let (Some(forced), Some(native)) = (f.forced_sample_rate, f.native_sample_rate) {
-        if forced != native {
-            escalate(
-                SelfTestVerdict::Warn,
-                format!(
-                    "forced sample rate {forced} Hz != the device's {native} Hz (resampling can cause drops)"
-                ),
-                QualityReason::ForcedRateMismatch,
-                &mut reasons,
-                &mut codes,
-                &mut verdict,
-            );
-        }
+    if let (Some(forced), Some(native)) = (f.forced_sample_rate, f.native_sample_rate)
+        && forced != native
+    {
+        escalate(
+            SelfTestVerdict::Warn,
+            format!(
+                "forced sample rate {forced} Hz != the device's {native} Hz (resampling can cause drops)"
+            ),
+            QualityReason::ForcedRateMismatch,
+            &mut reasons,
+            &mut codes,
+            &mut verdict,
+        );
     }
     if (WARN_GAP_SEC..FAIL_GAP_SEC).contains(&gap_sec) {
         escalate(

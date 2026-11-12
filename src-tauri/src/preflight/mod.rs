@@ -25,14 +25,14 @@
 //! The pure decision over the facts is what the tests cover.
 
 use sqlx::SqlitePool;
-use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
+use sundayrec_core::device_match::{FfmpegDevice, find_best_device_match};
 use sundayrec_core::preflight::{
-    assemble_findings_for, looks_like_onedrive, planned_capture_bytes, video_active,
-    PreflightFacts, PreflightFinding,
+    PreflightFacts, PreflightFinding, assemble_findings_for, looks_like_onedrive,
+    planned_capture_bytes, video_active,
 };
 
 use crate::media::ffmpeg::ffmpeg_health;
-use crate::media::permissions::{status, MediaKind};
+use crate::media::permissions::{MediaKind, status};
 use crate::settings;
 
 /// Probe a folder for writability the way Electron did (`preflight.ts:40-47`):

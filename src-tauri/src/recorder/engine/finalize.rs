@@ -13,13 +13,13 @@ use sundayrec_core::recorder::{RecorderState, RecordingSession};
 use sundayrec_core::recovery::{
     AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
 };
-use sundayrec_core::selftest::{push_capped, RecordingTelemetry};
+use sundayrec_core::selftest::{RecordingTelemetry, push_capped};
 use sundayrec_core::settings::ChannelMode;
 use tauri::{AppHandle, Emitter};
 
-use crate::db::store::{insert_recording, RecordingRow};
+use crate::db::store::{RecordingRow, insert_recording};
 use crate::recorder::concat::{
-    finalize_deliverable_noted, output_is_valid, remove_capture, warn_video_dropped, DeliverySpec,
+    DeliverySpec, finalize_deliverable_noted, output_is_valid, remove_capture, warn_video_dropped,
 };
 use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::preroll::PrerollClip;
@@ -27,7 +27,7 @@ use crate::util::lock_recover;
 
 use super::emit::emit_error;
 use super::payloads::RecordingOpts;
-use super::{now_ms, QUALITY_EVENT};
+use super::{QUALITY_EVENT, now_ms};
 
 /// The per-session capture folder for the decoupled-audio path: a hidden
 /// `.sundayrec-capture-<session_id>` directory BESIDE the user's delivery file. On
@@ -172,8 +172,8 @@ pub(super) fn finalize_session_telemetry(
     delivered_bytes: &AtomicU64,
 ) {
     use sundayrec_core::selftest::{
-        duration_loss_pct, facts_from_recording, selftest_verdict, SelfTestVerdict,
-        DURATION_LOSS_FAIL_PCT,
+        DURATION_LOSS_FAIL_PCT, SelfTestVerdict, duration_loss_pct, facts_from_recording,
+        selftest_verdict,
     };
 
     let final_state = *lock_recover(final_state);

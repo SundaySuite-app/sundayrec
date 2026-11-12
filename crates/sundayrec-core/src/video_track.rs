@@ -17,7 +17,7 @@
 //! fragment with a short or missing MKV can never pull the rest of the video
 //! ahead of the sound ([`video_concat_plan`]), and the final mux.
 
-use crate::capture::{push_video_encoder_args_with, VideoCaptureMode};
+use crate::capture::{VideoCaptureMode, push_video_encoder_args_with};
 use crate::editor::VideoCodec;
 use crate::recorder::escape_concat_path;
 use crate::video_encoder::VideoEncoder;

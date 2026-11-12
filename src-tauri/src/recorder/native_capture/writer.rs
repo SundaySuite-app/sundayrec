@@ -28,14 +28,14 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use super::lufs::LoudnessSlot;
-use ringbuf::traits::Consumer;
 use ringbuf::HeapCons;
+use ringbuf::traits::Consumer;
 use sundayrec_core::silence::{SilenceDetector, SilenceEvent};
 use sundayrec_core::wav::{self, WavSpec};
 
@@ -206,7 +206,7 @@ fn run_writer(
                 classify_io_error(&e),
                 format!("creating capture wav: {e}"),
                 &events,
-            )
+            );
         }
     };
     let patch = match OpenOptions::new().write(true).open(&cfg.path) {
@@ -216,7 +216,7 @@ fn run_writer(
                 classify_io_error(&e),
                 format!("opening patch handle: {e}"),
                 &events,
-            )
+            );
         }
     };
     let mut out = BufWriter::with_capacity(64 * 1024, file);
@@ -351,8 +351,8 @@ fn run_writer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ringbuf::traits::{Producer, Split};
     use ringbuf::HeapRb;
+    use ringbuf::traits::{Producer, Split};
 
     const SPEC: WavSpec = WavSpec {
         channels: 2,

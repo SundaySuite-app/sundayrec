@@ -264,7 +264,7 @@ mod imp {
     use std::sync::mpsc;
 
     use windows_sys::Win32::System::Power::{
-        SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
     };
 
     /// Set the calling thread's execution state; `false` means the OS refused.
@@ -324,7 +324,7 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::ffi::{c_char, c_void, CString};
+    use std::ffi::{CString, c_char, c_void};
 
     type CFTypeRef = *const c_void;
     type IOPMAssertionID = u32;
@@ -352,7 +352,7 @@ mod imp {
     const ASSERTION_TYPES: [&str; 2] = ["PreventUserIdleSystemSleep", "PreventSystemSleep"];
 
     #[link(name = "IOKit", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         /// Unprivileged. Writes the new id through the out-parameter and
         /// returns `kIOReturnSuccess` on success.
         fn IOPMAssertionCreateWithName(
@@ -365,7 +365,7 @@ mod imp {
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         fn CFRelease(cf: CFTypeRef);
         fn CFStringCreateWithCString(alloc: CFTypeRef, s: *const c_char, enc: u32) -> CFTypeRef;
     }

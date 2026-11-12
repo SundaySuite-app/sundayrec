@@ -34,8 +34,8 @@
 //! A fragment at another rate or channel count starts a fresh meter — which is
 //! also what a new deliverable is.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use sundayrec_core::chain::dsp::loudness::LoudnessMeter;
 use sundayrec_core::level_watch::clamp_lufs;
@@ -139,11 +139,7 @@ impl LoudnessSlot {
     /// until three seconds of audio have been measured.
     pub fn short_term(&self) -> Option<f64> {
         let v = f64::from_bits(self.short_term_bits.load(Ordering::Relaxed));
-        if v.is_nan() {
-            None
-        } else {
-            Some(v)
-        }
+        if v.is_nan() { None } else { Some(v) }
     }
 
     /// Seconds of audio the meter has seen.

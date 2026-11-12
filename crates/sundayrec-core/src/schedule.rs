@@ -445,10 +445,11 @@ pub fn upcoming_dates(
         }
         let (sh, sm) = parse_hm(&slot.start, (11, 0));
         for &d in &slot.days {
-            if let Some(inv) = next_occurrence(d, sh, sm, now) {
-                if inv > now && inv < cutoff {
-                    out.push(inv);
-                }
+            if let Some(inv) = next_occurrence(d, sh, sm, now)
+                && inv > now
+                && inv < cutoff
+            {
+                out.push(inv);
             }
         }
     }
@@ -456,10 +457,11 @@ pub fn upcoming_dates(
         if is_degenerate(&sp.start, &sp.stop) {
             continue;
         }
-        if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) {
-            if start > now && start < cutoff {
-                out.push(start);
-            }
+        if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0))
+            && start > now
+            && start < cutoff
+        {
+            out.push(start);
         }
     }
     out.sort();
@@ -574,10 +576,11 @@ pub fn upcoming_events(
     let mut out: Vec<ScheduledEvent> = Vec::new();
 
     let mut push = |at: Option<NaiveDateTime>, kind, source| {
-        if let Some(at) = at {
-            if at > now && at < cutoff {
-                out.push(ScheduledEvent { at, kind, source });
-            }
+        if let Some(at) = at
+            && at > now
+            && at < cutoff
+        {
+            out.push(ScheduledEvent { at, kind, source });
         }
     };
 
@@ -1222,7 +1225,7 @@ mod tests {
     fn slot_active_now_inside_and_outside_window() {
         // Sunday slot 11:00–12:00; window 5 min.
         let days = [6]; // Sun
-                        // Exactly at start.
+        // Exactly at start.
         assert!(slot_active_now(
             "11:00",
             "12:00",
@@ -1752,15 +1755,17 @@ mod tests {
         assert!(missed_recordings(&slots, &[], now, &[], &[], &triggered).is_empty());
 
         // Still inside the 60-min late-start window (11:30) → not yet "missed".
-        assert!(missed_recordings(
-            &slots,
-            &[],
-            dt("2026-06-07 11:30"),
-            &[],
-            &[],
-            &HashSet::new()
-        )
-        .is_empty());
+        assert!(
+            missed_recordings(
+                &slots,
+                &[],
+                dt("2026-06-07 11:30"),
+                &[],
+                &[],
+                &HashSet::new()
+            )
+            .is_empty()
+        );
     }
 
     #[test]

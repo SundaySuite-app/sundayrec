@@ -58,7 +58,7 @@ use sundayrec_core::recorder::{Deliverable, RecordingSession, RecoveryDecision};
 use sundayrec_core::recovery::delivery_path_for;
 use sundayrec_core::selftest::RecordingTelemetry;
 
-use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
+use crate::recorder::concat::{DeliverySpec, finalize_deliverable, output_is_valid};
 use crate::util::lock_recover;
 use sundayrec_core::recovery::DeliveryMode;
 
@@ -522,7 +522,7 @@ impl HeadlessSession {
 mod tests {
     use super::*;
     use crate::db::store::{list_recordings, open_pool};
-    use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
+    use crate::media::ffmpeg::tests::{ENV_LOCK, fetched_sidecar};
 
     /// 96 kHz stereo s16 = 384 000 B/s, so a threshold measured in hundreds of
     /// kB is crossed in well under a second of realtime-paced capture. (It is
@@ -1209,8 +1209,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_capture_that_died_raises_the_rec_loss_alarm() {
         use sundayrec_core::selftest::{
-            duration_loss_pct, facts_from_recording, selftest_verdict, SelfTestVerdict,
-            DURATION_LOSS_FAIL_PCT,
+            DURATION_LOSS_FAIL_PCT, SelfTestVerdict, duration_loss_pct, facts_from_recording,
+            selftest_verdict,
         };
         let Some(_pin) = EnvPin::acquire(None) else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -1276,7 +1276,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_crashed_service_is_recovered_and_never_reported_missed() {
         use chrono::{Datelike, Duration as ChronoDuration, Local, TimeZone};
-        use sundayrec_core::schedule::{missed_recordings, ScheduleSlot};
+        use sundayrec_core::schedule::{ScheduleSlot, missed_recordings};
 
         let Some(_pin) = EnvPin::acquire(None) else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -1457,10 +1457,10 @@ mod tests {
     mod native_writer_kill {
         use super::*;
         use crate::recorder::native_capture::writer::{
-            spawn_wav_writer, WriterConfig, FLUSH_EVERY, SYNC_EVERY,
+            FLUSH_EVERY, SYNC_EVERY, WriterConfig, spawn_wav_writer,
         };
-        use ringbuf::traits::{Producer, Split};
         use ringbuf::HeapRb;
+        use ringbuf::traits::{Producer, Split};
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -1584,10 +1584,10 @@ mod tests {
                 let latest = Arc::clone(&latest);
                 std::thread::spawn(move || {
                     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                        if let Some(n) = line.strip_prefix(PROGRESS_TAG) {
-                            if let Ok(n) = n.trim().parse::<u64>() {
-                                latest.store(n, Ordering::Relaxed);
-                            }
+                        if let Some(n) = line.strip_prefix(PROGRESS_TAG)
+                            && let Ok(n) = n.trim().parse::<u64>()
+                        {
+                            latest.store(n, Ordering::Relaxed);
                         }
                     }
                 })
@@ -1680,23 +1680,23 @@ mod tests {
         use super::*;
         use crate::recorder::native_capture::stream::ClockPair;
         use crate::recorder::native_capture::video::{
-            open_camera, FfmpegSink, SinkFactory, SyntheticSource, VideoSource, VideoTrack,
-            VideoTrackConfig, VideoTrackStats, PAIR_RING, QUEUE_FRAMES,
+            FfmpegSink, PAIR_RING, QUEUE_FRAMES, SinkFactory, SyntheticSource, VideoSource,
+            VideoTrack, VideoTrackConfig, VideoTrackStats, open_camera,
         };
         use crate::recorder::native_capture::writer::{
-            spawn_wav_writer, WriterConfig, FLUSH_EVERY, SYNC_EVERY,
+            FLUSH_EVERY, SYNC_EVERY, WriterConfig, spawn_wav_writer,
         };
-        use ringbuf::traits::{Producer, Split};
         use ringbuf::HeapRb;
+        use ringbuf::traits::{Producer, Split};
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
         use sundayrec_core::recorder::Deliverable;
         use sundayrec_core::recovery::{AudioEncodeManifest, DeliverableManifest, SessionManifest};
         use sundayrec_core::silence::SilenceDetector;
-        use sundayrec_core::video_conform::{slot_count, Fps};
+        use sundayrec_core::video_conform::{Fps, slot_count};
         use sundayrec_core::video_encoder::VideoEncoder;
-        use sundayrec_core::video_track::{video_fragment_path, RawPixelFormat, VideoTrackSpec};
+        use sundayrec_core::video_track::{RawPixelFormat, VideoTrackSpec, video_fragment_path};
         use sundayrec_core::wav::WavSpec;
 
         const VRATE: u32 = 48_000;
@@ -2064,10 +2064,10 @@ mod tests {
                 let latest = Arc::clone(&latest);
                 std::thread::spawn(move || {
                     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                        if let Some(n) = line.strip_prefix(PROGRESS_TAG) {
-                            if let Ok(n) = n.trim().parse::<u64>() {
-                                latest.store(n, Ordering::Relaxed);
-                            }
+                        if let Some(n) = line.strip_prefix(PROGRESS_TAG)
+                            && let Ok(n) = n.trim().parse::<u64>()
+                        {
+                            latest.store(n, Ordering::Relaxed);
                         }
                     }
                 })

@@ -311,7 +311,7 @@ mod coreaudio {
     ) -> i32;
 
     #[link(name = "CoreAudio", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         /// Returns an `OSStatus`; 0 is success.
         pub fn AudioObjectAddPropertyListener(
             object: u32,
@@ -372,15 +372,15 @@ mod wasapi {
     use std::sync::Arc;
 
     use tokio::sync::Notify;
-    use windows::core::{implement, Result, PCWSTR};
     use windows::Win32::Foundation::PROPERTYKEY;
     use windows::Win32::Media::Audio::{
-        eCapture, eConsole, EDataFlow, ERole, IMMDeviceEnumerator, IMMNotificationClient,
-        IMMNotificationClient_Impl, MMDeviceEnumerator, DEVICE_STATE, DEVICE_STATE_ACTIVE,
+        DEVICE_STATE, DEVICE_STATE_ACTIVE, EDataFlow, ERole, IMMDeviceEnumerator,
+        IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator, eCapture, eConsole,
     };
     use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
     };
+    use windows::core::{PCWSTR, Result, implement};
 
     /// Body of the `device-watch` thread: join the MTA, register, park forever.
     ///
@@ -537,10 +537,10 @@ mod wasapi {
     mod tests {
         use super::*;
         use std::time::Duration;
-        use windows::core::w;
         use windows::Win32::Media::Audio::{
-            eRender, DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED,
+            DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED, eRender,
         };
+        use windows::core::w;
 
         /// A fresh `Notify` and the COM object wrapping it, called through the
         /// real vtable `#[implement]` generated — the wiring Windows will use.
@@ -717,7 +717,7 @@ fn install_camera_listener(changes: &Arc<CameraChanges>) {
     use std::ptr::NonNull;
 
     use block2::RcBlock;
-    use objc2_foundation::{ns_string, NSNotification, NSNotificationCenter};
+    use objc2_foundation::{NSNotification, NSNotificationCenter, ns_string};
 
     let center = NSNotificationCenter::defaultCenter();
     for name in [
@@ -747,8 +747,9 @@ fn install_camera_listener(changes: &Arc<CameraChanges>) {
 #[cfg(windows)]
 fn install_camera_listener(changes: &Arc<CameraChanges>) {
     use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-        CM_Register_Notification, CM_NOTIFY_FILTER, CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0,
-        CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CR_SUCCESS, HCMNOTIFICATION,
+        CM_NOTIFY_FILTER, CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0,
+        CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CM_Register_Notification, CR_SUCCESS,
+        HCMNOTIFICATION,
     };
     use windows_sys::Win32::Media::KernelStreaming::KSCATEGORY_VIDEO_CAMERA;
 

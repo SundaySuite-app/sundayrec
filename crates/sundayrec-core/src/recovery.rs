@@ -641,9 +641,11 @@ mod tests {
     fn an_audio_manifest_has_no_video_key_and_old_ones_still_parse() {
         let json = manifest().to_json().unwrap();
         assert!(!json.contains("video_fragments"));
-        assert!(SessionManifest::from_json(&json).unwrap().deliverables[0]
-            .video_fragments
-            .is_empty());
+        assert!(
+            SessionManifest::from_json(&json).unwrap().deliverables[0]
+                .video_fragments
+                .is_empty()
+        );
     }
 
     #[test]

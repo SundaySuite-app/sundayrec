@@ -94,7 +94,7 @@ pub fn read_scheduled_wakes(utc_offset_secs: i32) -> Option<Vec<VerifiedWake>> {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::{cf_absolute_to_local, is_wake_event};
-    use std::ffi::{c_char, c_void, CString};
+    use std::ffi::{CString, c_char, c_void};
     use sundayrec_core::wake::VerifiedWake;
 
     type CFTypeRef = *const c_void;
@@ -105,14 +105,14 @@ mod imp {
     const UTF8: u32 = 0x0800_0100;
 
     #[link(name = "IOKit", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         /// Returns a `CFArrayRef` of `CFDictionaryRef`, or NULL. Caller releases.
         /// Unprivileged — unlike `IOPMSchedulePowerEvent`, which needs root.
         fn IOPMCopyScheduledPowerEvents() -> CFTypeRef;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         fn CFRelease(cf: CFTypeRef);
         fn CFGetTypeID(cf: CFTypeRef) -> CFTypeID;
         fn CFArrayGetTypeID() -> CFTypeID;
@@ -136,11 +136,7 @@ mod imp {
             // SAFETY: `c` is a valid NUL-terminated UTF-8 buffer that outlives
             // the call; a NULL return is checked.
             let s = unsafe { CFStringCreateWithCString(std::ptr::null(), c.as_ptr(), UTF8) };
-            if s.is_null() {
-                None
-            } else {
-                Some(Self(s))
-            }
+            if s.is_null() { None } else { Some(Self(s)) }
         }
     }
 

@@ -32,7 +32,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use sundayrec_core::chain::Chain;
-use sundayrec_core::editor::{build_keeps, ffprobe_load_args, parse_probe_output, CutRegion};
+use sundayrec_core::editor::{CutRegion, build_keeps, ffprobe_load_args, parse_probe_output};
 use sundayrec_core::mastering::master_presets;
 use sundayrec_core::playback::CutPlan;
 use sundayrec_core::processing::vocal_chain_presets;
@@ -40,10 +40,10 @@ use sundayrec_lib::playback::source::FfmpegOpener;
 use sundayrec_lib::playback::{PlaybackEvent, Player, Programme};
 
 fn tool(name: &str, env: &str) -> PathBuf {
-    if let Ok(p) = std::env::var(env) {
-        if !p.is_empty() {
-            return p.into();
-        }
+    if let Ok(p) = std::env::var(env)
+        && !p.is_empty()
+    {
+        return p.into();
     }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries");
     for t in [
@@ -258,19 +258,19 @@ fn run() -> Result<(), String> {
         for e in rx.try_iter() {
             match e {
                 PlaybackEvent::Position {
-                    gen,
+                    r#gen,
                     program_secs,
                     source_secs,
                 } => {
                     last_source = source_secs;
-                    if let Some((g, t)) = seeking {
-                        if gen == g {
-                            seeking = None;
-                            eprintln!(
-                                "[{now:6.2}] seek heard after {:.0} ms (at programme {program_secs:.2} s)",
-                                t.elapsed().as_secs_f64() * 1000.0
-                            );
-                        }
+                    if let Some((g, t)) = seeking
+                        && r#gen == g
+                    {
+                        seeking = None;
+                        eprintln!(
+                            "[{now:6.2}] seek heard after {:.0} ms (at programme {program_secs:.2} s)",
+                            t.elapsed().as_secs_f64() * 1000.0
+                        );
                     }
                     if now >= next_print {
                         next_print = now.floor() + 1.0;

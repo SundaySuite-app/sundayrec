@@ -112,11 +112,11 @@ pub fn build_filename(p: &FilenameParams) -> String {
         .map(|t| format!("_{t}"))
         .unwrap_or_default();
 
-    if let Some(name) = p.custom_name {
-        if !name.trim().is_empty() {
-            let safe = sanitize_filename(name.trim());
-            return format!("{safe}{ts}_{date}.{ext}");
-        }
+    if let Some(name) = p.custom_name
+        && !name.trim().is_empty()
+    {
+        let safe = sanitize_filename(name.trim());
+        return format!("{safe}{ts}_{date}.{ext}");
     }
 
     match p.pattern {

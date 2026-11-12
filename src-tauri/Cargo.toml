@@ -4,7 +4,7 @@ version = "0.30.0"
 description = "Recording for church services — part of the Sunday suite (Tauri 2 rebuild of the Electron app)"
 authors = ["Richard Fossland"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary to make the lib name

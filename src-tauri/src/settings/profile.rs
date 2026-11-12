@@ -234,11 +234,11 @@ pub(crate) fn overlay_profile(stored: &Settings, text: &str) -> AppResult<Settin
         if MACHINE_LOCAL.contains(&key.as_str()) || merged.get(&key).is_none() {
             continue;
         }
-        if let Some((_, strict)) = STRICT.iter().find(|(k, _)| *k == key) {
-            if !strict(&value) {
-                skipped.push(key);
-                continue;
-            }
+        if let Some((_, strict)) = STRICT.iter().find(|(k, _)| *k == key)
+            && !strict(&value)
+        {
+            skipped.push(key);
+            continue;
         }
         let mut trial = merged.clone();
         trial[&key] = value;
@@ -594,25 +594,23 @@ mod tests {
             if line.contains("deserialize_with") {
                 pending = true;
             }
-            if pending {
-                if let Some(rest) = line.strip_prefix("pub ") {
-                    let field = rest.split(':').next().unwrap().trim();
-                    // snake_case → the serialised camelCase name
-                    let mut camel = String::new();
-                    let mut upper = false;
-                    for c in field.chars() {
-                        if c == '_' {
-                            upper = true;
-                        } else if upper {
-                            camel.extend(c.to_uppercase());
-                            upper = false;
-                        } else {
-                            camel.push(c);
-                        }
+            if pending && let Some(rest) = line.strip_prefix("pub ") {
+                let field = rest.split(':').next().unwrap().trim();
+                // snake_case → the serialised camelCase name
+                let mut camel = String::new();
+                let mut upper = false;
+                for c in field.chars() {
+                    if c == '_' {
+                        upper = true;
+                    } else if upper {
+                        camel.extend(c.to_uppercase());
+                        upper = false;
+                    } else {
+                        camel.push(c);
                     }
-                    lenient.push(camel);
-                    pending = false;
                 }
+                lenient.push(camel);
+                pending = false;
             }
         }
         assert!(

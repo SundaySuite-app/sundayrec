@@ -43,13 +43,13 @@ use std::cell::RefCell;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::audio_analysis::{classify_frame, ScoringInput, SegmentType};
+use crate::audio_analysis::{ScoringInput, SegmentType, classify_frame};
 use crate::detect::{
-    analyse_pcm, AttentionReason, Detection, PrepAnalysisSegment, SegmentType as WireSegmentType,
-    SermonSegment,
+    AttentionReason, Detection, PrepAnalysisSegment, SegmentType as WireSegmentType, SermonSegment,
+    analyse_pcm,
 };
 use crate::trim_feedback::TrimDeltas;
-use crate::vad::{score_pcm_with, VadBackend, VadError, VadFrame, VAD_HOP_SAMPLES};
+use crate::vad::{VAD_HOP_SAMPLES, VadBackend, VadError, VadFrame, score_pcm_with};
 
 // ── Pooling ────────────────────────────────────────────────────────────────
 
@@ -602,7 +602,7 @@ fn speech_overlap(a: &[PrepAnalysisSegment], b: &[PrepAnalysisSegment]) -> (f64,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio_analysis::{extract_features, FrameScorer, FRAME_MS, SAMPLE_RATE};
+    use crate::audio_analysis::{FRAME_MS, FrameScorer, SAMPLE_RATE, extract_features};
     use crate::detect::detect;
     use crate::vad::VAD_WINDOW_SAMPLES;
 
@@ -751,9 +751,11 @@ mod tests {
         let n = codes.len();
         codes.dedup();
         assert_eq!(codes.len(), n);
-        assert!(codes
-            .iter()
-            .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')));
+        assert!(
+            codes
+                .iter()
+                .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_'))
+        );
     }
 
     // ── Hop → frame assignment ─────────────────────────────────────────────

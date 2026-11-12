@@ -104,7 +104,9 @@ impl PreflightCode {
     /// carries them.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::FfmpegMissing => "The ffmpeg binary is missing. SundayRec must be installed again.",
+            Self::FfmpegMissing => {
+                "The ffmpeg binary is missing. SundayRec must be installed again."
+            }
             Self::DeviceMissing => "The audio device selected in settings is not connected.",
             Self::FolderNotWritable => "The save folder cannot be written to.",
             Self::DiskLow => {
@@ -491,12 +493,11 @@ pub fn assemble_findings_for(
         ));
     }
 
-    if let Some(free) = facts.free_bytes {
-        if let Some(finding) =
+    if let Some(free) = facts.free_bytes
+        && let Some(finding) =
             disk_space_finding_for(free, facts.video_active, facts.planned_capture_bytes)
-        {
-            findings.push(finding);
-        }
+    {
+        findings.push(finding);
     }
 
     if let Some(finding) = save_folder_synced_finding(facts.save_folder_onedrive) {

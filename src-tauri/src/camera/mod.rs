@@ -451,7 +451,7 @@ fn combine(queue: QueueStats, backend: BackendCounters) -> CaptureStats {
 pub fn host_now_ns() -> u64 {
     #[cfg(target_os = "macos")]
     {
-        extern "C" {
+        unsafe extern "C" {
             fn mach_absolute_time() -> u64;
         }
         let (n, d) = avfoundation::timebase();

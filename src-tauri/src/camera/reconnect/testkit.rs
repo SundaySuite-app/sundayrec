@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::super::queue::FrameQueue;
 use super::super::{CameraError, Frame, PixelFormat, VideoFormat};
-use super::{lock, BackendCounters, BackendHandle, CameraPlatform};
+use super::{BackendCounters, BackendHandle, CameraPlatform, lock};
 use crate::audio::device_watch::CameraChanges;
 
 pub(crate) struct FakeWorld {
