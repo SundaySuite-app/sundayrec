@@ -5,6 +5,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.30.0 — redigering med tastaturet
+
+- **Mellomrom spiller og pauser** i redigeringen, som i andre redigeringsprogrammer — også
+  rett etter at du har klikket en knapp. Piltastene flytter spillehodet ett sekund (med Shift
+  fem), Home og End går til start og slutt, og ⌘Z / Ctrl+Z angrer et kutt.
+- **Prekenvinduet kan gjøres større igjen.** Etter «Behold bare prekenen» kunne håndtakene
+  bare dra vinduet mindre.
+- **Kutt går ikke lenger tapt.** Et kutt du la til mens en eksport gikk, ble regnet som lagret
+  uten å være med i fila, og «Forkast endringer» lot de forkastede kuttene komme tilbake neste
+  gang du åpnet opptaket.
+- Et holdt piltrykk på et preken-håndtak er ett angre-steg, og fokuset blir ikke borte når
+  knappen du sto på forsvinner.
+
 ## v0.29.1 — vedlikehold
 
 - **Den gamle lydkoden er fjernet.** Lyden i redigeringen og eksporten har gått gjennom den
