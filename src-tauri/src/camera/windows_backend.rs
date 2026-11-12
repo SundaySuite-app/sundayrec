@@ -247,10 +247,10 @@ impl BackendHandle for WinSession {
 
 fn stop_session(id: u64) {
     let _ = call(move |w| {
-        if let Some(handle) = w.sessions.remove(&id) {
-            if let Err(e) = handle.stop_capturing() {
-                tracing::warn!("camera: stop_capturing failed: {e}");
-            }
+        if let Some(handle) = w.sessions.remove(&id)
+            && let Err(e) = handle.stop_capturing()
+        {
+            tracing::warn!("camera: stop_capturing failed: {e}");
         }
     });
 }
