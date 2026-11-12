@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
@@ -269,7 +269,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
@@ -322,7 +322,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
@@ -366,7 +366,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -424,7 +424,7 @@ jobs:
       # check/clippy/test so the existence check and the tests both see them.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Fetch real ffmpeg/ffprobe sidecars
         run: node scripts/fetch-ffmpeg.mjs
@@ -497,7 +497,7 @@ jobs:
       # loudness oracle runs here; tauri-build's existence check is satisfied too.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Fetch ffmpeg/ffprobe sidecars
         run: node scripts/fetch-ffmpeg.mjs
@@ -588,7 +588,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
