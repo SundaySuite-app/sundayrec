@@ -1998,6 +1998,88 @@ mod tests {
             );
         }
 
+        /// A video session COMPOSED BY THE SCHEDULER, start to delivery: the
+        /// opts `fire` hands the engine (video on, a configured camera, no
+        /// override) decide where the capture goes and what file the church
+        /// ends up with. The synthetic camera and the paced sound card stand in
+        /// for the hardware, the real writer, video track and finalisation do
+        /// the rest — and the delivered file must be EXACTLY `opts.output_path`:
+        /// an mp4 with a picture and a sound, as long as each other.
+        ///
+        /// Not covered (no seam, see the PR): the supervisor/`engine.start`
+        /// themselves take a `tauri::AppHandle<Wry>`, and the engine would open
+        /// the camera by NAME (`resolve_session_camera`), not the synthetic one.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_scheduled_video_session_delivers_the_mp4_its_opts_name() {
+            let Some(_pin) = EnvPin::acquire(None) else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let save = tempfile::tempdir().expect("tempdir");
+            let settings = sundayrec_core::settings::Settings {
+                device_name: Some("Synthetic mixer".into()),
+                video_enabled: true,
+                video_device_name: Some("Synthetic camera".into()),
+                ..sundayrec_core::settings::Settings::default()
+            };
+            let now = chrono::NaiveDate::from_ymd_opt(2026, 6, 7)
+                .unwrap()
+                .and_hms_opt(11, 0, 0)
+                .unwrap();
+            // `video_override: None` — the scheduler's own call.
+            let opts =
+                crate::recorder::opts::build_opts_in(save.path(), &settings, None, 60, None, now)
+                    .expect("opts compose");
+            assert_eq!(opts.video_device_name.as_deref(), Some("Synthetic camera"));
+            let delivery = PathBuf::from(&opts.output_path);
+            assert_eq!(delivery.extension().and_then(|e| e.to_str()), Some("mp4"));
+
+            // The engine's layout: a hidden capture folder BESIDE the delivery
+            // file, the fragment carrying the delivery's own stem.
+            let cap = delivery.parent().unwrap().join(".sundayrec-capture-1");
+            std::fs::create_dir_all(&cap).unwrap();
+            let wav = cap.join(format!(
+                "{}.wav",
+                delivery.file_stem().unwrap().to_string_lossy()
+            ));
+
+            let live = start_fragment(&wav, None);
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let (frames, stats) = tokio::task::spawn_blocking(move || stop_fragment(live))
+                .await
+                .unwrap();
+            assert!(frames > 0 && stats.new > 0, "{frames} frames, {stats:?}");
+
+            let d = Deliverable {
+                primary_path: wav.to_string_lossy().into_owned(),
+                fragments: vec![wav.to_string_lossy().into_owned()],
+                started_at_ms: 1,
+            };
+            let manifest = AudioEncodeManifest {
+                delivery_dir: save.path().to_string_lossy().into_owned(),
+                ext: "mp4".into(),
+                channels: 2,
+                sample_rate: opts.sample_rate,
+                bitrate_kbps: opts.bitrate_kbps,
+                mode: DeliveryMode::MuxAudioVideo,
+                hvc1_tag: false,
+            };
+            let spec = DeliverySpec::from_manifest(&manifest, &d.primary_path);
+            let out = finalize_deliverable(&d, None, Some(&spec))
+                .await
+                .expect("delivered");
+            assert_eq!(
+                PathBuf::from(&out),
+                delivery,
+                "the file lands where the scheduler's opts said"
+            );
+            assert!(output_is_valid(&delivery).await);
+            let (v, a) = stream_secs(&delivery);
+            assert!(v > 1.0 && a > 1.0, "video {v:.2} s, audio {a:.2} s");
+            assert!((v - a).abs() < 0.1, "video {v:.3} s vs audio {a:.3} s");
+        }
+
         /// The stand-in app process: a native video fragment that runs until
         /// it is killed, reporting the WAV writer's frame count on stdout.
         #[test]
