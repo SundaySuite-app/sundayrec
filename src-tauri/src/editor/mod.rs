@@ -9131,6 +9131,161 @@ mod tests {
             assert_claps_in_sync("late-starting source", &flashes, &beeps, &expected, 0.4);
         }
 
+        /// RIG-DAY (v10) 3, the clap test: a video made the way the recorder makes one
+        /// (raw NV12 frames into the video-only ffmpeg with `video_track_args`, the sound a
+        /// WAV, the two joined by `mux_args`, exactly the delivery of a native recording),
+        /// 2 minutes long with a clap every 10 s, and a cut that is NOT on a keyframe: 33.0 to
+        /// 47.3 s removed, keyframes every 2 s. The export copies the picture (the packets are
+        /// the source's), and every clap on both sides of the cut has its flash within one
+        /// frame of its beep, at the place the snapped cut puts it.
+        #[test]
+        fn a_cut_only_export_of_a_recorded_video_keeps_every_clap_in_sync_or_skips() {
+            use sundayrec_core::video_track::{
+                RawPixelFormat, VideoTrackSpec, mux_args, video_track_args,
+            };
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            const SECS: u32 = 120;
+            let dir = tempfile::tempdir().unwrap();
+            let (mkv, wav, src) = (
+                dir.path().join("rec.mkv"),
+                dir.path().join("rec.wav"),
+                dir.path().join("rec.mp4"),
+            );
+            let run = |args: Vec<String>| {
+                let out = std::process::Command::new(&ffmpeg).args(&args).output().unwrap();
+                assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            };
+            // The picture: lavfi frames, flashing white for one frame every 10 s, as raw NV12
+            // into the recorder's own encoder command.
+            let mut feed = std::process::Command::new(&ffmpeg)
+                .args(["-v", "error", "-nostdin", "-f", "lavfi", "-i"])
+                .arg(format!(
+                    "color=c=black:s=320x240:r=30:d={SECS},\
+                     geq=lum='if(lt(mod(T+0.005,10),0.02),235,16)':cb=128:cr=128,\
+                     noise=alls=40:allf=t"
+                ))
+                .args(["-f", "rawvideo", "-pix_fmt", "nv12", "-"])
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let spec = VideoTrackSpec {
+                width: 320,
+                height: 240,
+                fps_num: 30,
+                fps_den: 1,
+                input: RawPixelFormat::Nv12,
+                flip: false,
+            };
+            let encoder = std::process::Command::new(&ffmpeg)
+                .args(video_track_args(
+                    &spec,
+                    sundayrec_core::video_encoder::VideoEncoder::Software,
+                    &mkv.to_string_lossy(),
+                ))
+                .stdin(feed.stdout.take().unwrap())
+                .output()
+                .unwrap();
+            assert!(encoder.status.success(), "{}", String::from_utf8_lossy(&encoder.stderr));
+            assert!(feed.wait().unwrap().success());
+            // The sound: a 50 ms beep at every clap.
+            let beeps = format!(
+                "aevalsrc='if(lt(mod(t,10),0.05),0.8*sin(2*PI*1000*t),0)':s=48000:d={SECS}"
+            );
+            run(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"]
+                .iter()
+                .map(|a| (*a).to_string())
+                .chain([
+                    beeps,
+                    "-c:a".into(),
+                    "pcm_s16le".into(),
+                    "-y".into(),
+                    wav.to_string_lossy().into_owned(),
+                ])
+                .collect());
+            // The delivery of a native recording: the MKV copied, the sound to AAC.
+            run(mux_args(
+                Some(&mkv.to_string_lossy()),
+                0.0,
+                &wav.to_string_lossy(),
+                None,
+                192,
+                "mp4",
+                false,
+                &src.to_string_lossy(),
+            ));
+            let (flashes0, beeps0) = claps(&ffmpeg, &ffprobe, &src);
+            assert_eq!(flashes0.len(), 12, "the source has 12 claps: {flashes0:?}");
+            assert_eq!(beeps0.len(), 12, "{beeps0:?}");
+
+            let started = std::time::Instant::now();
+            let req = export_request(
+                &src.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(33.0, 47.3)],
+                f64::from(SECS),
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let took = started.elapsed();
+            let out = result.expect("a cut-only video export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            // The picture was copied, not re-encoded: 40 packets well after the cut (the
+            // picture is noisy, so no two runs look alike) are a run of the source's. A
+            // re-encode cannot reproduce a bitstream.
+            let source_sizes = video_packet_sizes(&ffprobe, &src);
+            let out_sizes = video_packet_sizes(&ffprobe, path);
+            assert!(out_sizes.len() > 2500, "{} packets", out_sizes.len());
+            assert!(
+                // (The muxer repeats the parameter sets in every keyframe: +36 bytes there.)
+                source_sizes.windows(40).any(|w| w
+                    .iter()
+                    .zip(&out_sizes[1100..1140])
+                    .all(|(s, o)| o == s || *o == s + 36)),
+                "the exported picture should be the recording's own packets, not a re-encode"
+            );
+
+            // Claps 0…30 are before the cut; 50…110 after it. The part after the cut starts at
+            // the keyframe at or before 47.3 s (46.0), and the part before ends at 33.0 or the
+            // next clean split a little later.
+            let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
+            // (The keyframe is looked up, not assumed: the noisy picture gets scene-cut
+            // keyframes between the two-second ones.)
+            let packets = sundayrec_core::video_copy::parse_packets(
+                &String::from_utf8_lossy(
+                    &std::process::Command::new(&ffprobe)
+                        .args(sundayrec_core::video_copy::packet_args(&src.to_string_lossy()))
+                        .output()
+                        .unwrap()
+                        .stdout,
+                ),
+            );
+            let key = packets
+                .iter()
+                .filter(|p| p.key && p.pts <= 47.3 + 0.001)
+                .map(|p| p.pts)
+                .fold(0.0_f64, f64::max);
+            assert!((46.0..=47.3).contains(&key), "keyframe {key}");
+            let before = 33.0;
+            let mut expected: Vec<f64> = (0..=30).step_by(10).map(f64::from).collect();
+            expected.extend((50..=110).step_by(10).map(|c| before + f64::from(c) - key));
+            assert_claps_in_sync("recorded video, cut at 33 s", &flashes, &beeps, &expected, 1.1);
+            let skew_ms = flashes
+                .iter()
+                .zip(&beeps)
+                .map(|(f, b)| (f - b).abs() * 1000.0)
+                .fold(0.0_f64, f64::max);
+            eprintln!(
+                "v10 clap test: {} claps, worst flash-to-beep distance {skew_ms:.1} ms (a frame is \
+                 33.3 ms); the cut-only export of 120 s took {took:?}",
+                flashes.len()
+            );
+        }
+
         /// B6: a cut-only export of a recording whose keyframes are too far apart (an old
         /// recording, 10 s groups) cannot be copied exactly, so it is re-encoded as before:
         /// the cut lands on the requested second, and the sync holds.
