@@ -764,7 +764,7 @@ fn claps_for(total: u64, fragment_samples: u64) -> Vec<u64> {
     at
 }
 
-/// RIG-DAY (v1), short. 90 s with the sound card 300 ppm off the host clock,
+/// RIG-DAY (v1), short. 90 s with the sound card 1200 ppm off the host clock,
 /// cut into three fragments by the real split rule (each ending half a frame
 /// past a whole frame); claps at the start, around the middle, in each later
 /// fragment, and at the end. Picture and sound are within one frame at every
@@ -784,7 +784,7 @@ async fn picture_and_sound_stay_within_a_frame_through_forced_splits() {
         Plan {
             total,
             split_bytes: split,
-            drift_ppm: 300.0,
+            drift_ppm: 1200.0,
             claps_at: claps_for(total, frag),
             realtime: false,
         },
