@@ -3827,4 +3827,483 @@ mod tests {
             "…and the plan survived the prune"
         );
     }
+
+    // ── RIG-DAY «(c, fortsettelse)»: samme minutt, ÉTT opptak ────────────────
+    //
+    // `fire` and `supervisor` take a `tauri::AppHandle<Wry>` (no seam, as
+    // `recorder::longrun` explains), so the supervisor's pass is replayed here
+    // over a virtual clock: the REAL `upcoming_events` / `enumeration_base` /
+    // `events_due` / `fire_after_missed_net` / `start_plan` / `should_adopt` /
+    // `stop_verdict` decide, and a fake engine only records what it was asked.
+    // What stays outside the proof is `fire`'s own `is_active()` branch and the
+    // real engine's start; the branch is mirrored line for line below.
+
+    /// A recorder that counts. `deadline` is the engine's auto-stop, armed by
+    /// the start exactly as the real one is (`minutes_until_stop`, whole
+    /// minutes), on the virtual clock.
+    #[derive(Default)]
+    struct SimEngine {
+        active: bool,
+        generation: u64,
+        deadline: Option<NaiveDateTime>,
+        owner: Option<ScheduledSession>,
+        /// (when, who) of every recording that really began.
+        started: Vec<(NaiveDateTime, TriggerKind)>,
+        /// (when, who) of every Stop event that ended a recording.
+        stopped: Vec<(NaiveDateTime, TriggerKind)>,
+        /// Starts that found the recorder busy and stood down.
+        skipped: Vec<(NaiveDateTime, TriggerKind)>,
+    }
+
+    impl SimEngine {
+        /// `fire(Start)`, branch for branch.
+        fn fire_start(
+            &mut self,
+            settings: &Settings,
+            specials: &[SpecialRecording],
+            ev: &ScheduledEvent,
+        ) {
+            let deadline_ms = self.deadline.map(ms);
+            if self.active {
+                if should_adopt(
+                    self.owner,
+                    RecorderState::Recording,
+                    self.generation,
+                    deadline_ms,
+                ) {
+                    panic!("a plan start must not adopt a session an earlier start owns");
+                }
+                self.skipped.push((ev.at, ev.source));
+                return;
+            }
+            let (_, minutes) = start_plan(settings, specials, ev.source, ev.at);
+            self.generation += 1;
+            self.active = true;
+            self.deadline = Some(ev.at + chrono::Duration::minutes(i64::from(minutes)));
+            self.owner = Some(ScheduledSession {
+                generation: self.generation,
+                source: ev.source,
+            });
+            self.started.push((ev.at, ev.source));
+        }
+
+        /// `fire(Stop)`, branch for branch.
+        fn fire_stop(&mut self, ev: &ScheduledEvent) {
+            let state = if self.active {
+                RecorderState::Recording
+            } else {
+                RecorderState::Stopped
+            };
+            let verdict = stop_verdict(
+                self.owner,
+                ev.source,
+                state,
+                self.generation,
+                self.deadline.map(ms),
+                ms(ev.at),
+            );
+            if verdict == StopVerdict::Stop {
+                self.active = false;
+                self.stopped.push((ev.at, ev.source));
+            }
+        }
+    }
+
+    fn ms(t: NaiveDateTime) -> u64 {
+        t.and_utc().timestamp_millis() as u64
+    }
+
+    /// The supervisor's passes from `from` until nothing is left before
+    /// `until`, on a virtual clock: sleep to the first event, fire everything
+    /// due at that instant (a Start behind a Stop first lets the recorder
+    /// settle), remember `fired_through`, enumerate again.
+    ///
+    /// `autostop_wins`: the engine's own deadline ends the recording BEFORE the
+    /// slot's Stop event arrives (both land in the same minute in real life).
+    fn run_supervisor(
+        settings: &Settings,
+        specials: &[SpecialRecording],
+        from: NaiveDateTime,
+        until: NaiveDateTime,
+        autostop_wins: bool,
+    ) -> SimEngine {
+        let mut sim = SimEngine::default();
+        let mut now = from;
+        let mut fired_through = None;
+        loop {
+            let events = upcoming_events(
+                settings.active_slots(),
+                specials,
+                enumeration_base(now, fired_through),
+                settings.reminder_minutes,
+                HORIZON_DAYS,
+            );
+            let Some(first) = events.first().cloned() else {
+                break;
+            };
+            if first.at > until {
+                break;
+            }
+            now = first.at;
+            if autostop_wins && sim.deadline.is_some_and(|d| d <= now) {
+                sim.active = false;
+            }
+            let mut stopped = false;
+            for due in events_due(&events, first.at) {
+                if !fire_after_missed_net(due.kind, false) {
+                    continue;
+                }
+                if due.kind == ScheduledEventKind::Start && stopped {
+                    // `settle_after_stop`: the stop has finished by the time
+                    // the next Start looks for a free recorder.
+                    assert!(
+                        !sim.active,
+                        "a Start fired behind a Stop while the recorder was still busy"
+                    );
+                }
+                stopped |= due.kind == ScheduledEventKind::Stop;
+                match due.kind {
+                    ScheduledEventKind::Start => sim.fire_start(settings, specials, &due),
+                    ScheduledEventKind::Stop => sim.fire_stop(&due),
+                    ScheduledEventKind::Reminder | ScheduledEventKind::Preflight => {}
+                }
+            }
+            fired_through = Some(first.at);
+        }
+        sim
+    }
+
+    /// RIG-DAY (c, fortsettelse): the weekly Sunday 11:00 slot AND a special
+    /// starting in the same minute → ONE recording, not two fighting over the
+    /// device. The slot (listed first) owns it, the special stands down, and
+    /// the slot's Stop still ends the take at its own time.
+    #[test]
+    fn a_slot_and_a_special_in_the_same_minute_start_exactly_one_recording() {
+        let settings = Settings {
+            slots: vec![sunday_slot()], // Sunday 11:00–12:00
+            ..Settings::default()
+        };
+        let specials = vec![special("2026-06-07", "11:00", "12:30", "Konfirmasjon")];
+        // Saturday evening → Monday: the whole Sunday passes under the clock.
+        let sim = run_supervisor(
+            &settings,
+            &specials,
+            dt("2026-06-06 20:00"),
+            dt("2026-06-08 08:00"),
+            false,
+        );
+
+        assert_eq!(
+            sim.started,
+            vec![(dt("2026-06-07 11:00"), TriggerKind::Slot(0))],
+            "exactly ONE recording, begun at 11:00 by the slot"
+        );
+        assert_eq!(
+            sim.skipped,
+            vec![(dt("2026-06-07 11:00"), TriggerKind::Special(0))],
+            "the special found the recorder busy and stood down"
+        );
+        assert_eq!(
+            sim.stopped,
+            vec![(dt("2026-06-07 12:00"), TriggerKind::Slot(0))],
+            "the slot's own Stop ends its take; the special's 12:30 Stop is not ours"
+        );
+        assert!(!sim.active, "nothing is left running");
+    }
+
+    /// The same minute, listed the other way round: the special first in the
+    /// data does not matter — the order is the fixed `(at, rank)` sort, slots
+    /// before specials — and still exactly one recording.
+    #[test]
+    fn two_starts_at_one_instant_never_start_two_recordings_whatever_they_are() {
+        let settings = Settings {
+            slots: vec![
+                sunday_slot(),
+                ScheduleSlot {
+                    days: vec![6],
+                    start: "11:00".into(),
+                    stop: "11:45".into(),
+                    max: None,
+                },
+            ],
+            ..Settings::default()
+        };
+        let sim = run_supervisor(
+            &settings,
+            &[],
+            dt("2026-06-06 20:00"),
+            dt("2026-06-08 08:00"),
+            false,
+        );
+        assert_eq!(sim.started.len(), 1, "{:?}", sim.started);
+        assert_eq!(sim.skipped.len(), 1, "{:?}", sim.skipped);
+        // The recording belongs to ONE trigger; the other's Stop never touches it.
+        let owner = sim.started[0].1;
+        assert_eq!(sim.stopped.len(), 1);
+        assert_eq!(sim.stopped[0].1, owner);
+    }
+
+    /// RIG-DAY (c, fortsettelse), back to back: slot A ends 11:00 and slot B
+    /// begins 11:00. Stop and Start in the SAME minute — both must happen, the
+    /// Stop first, otherwise B finds A's recording running and never starts.
+    #[test]
+    fn back_to_back_slots_stop_one_and_start_the_next_in_the_same_minute() {
+        let settings = Settings {
+            slots: vec![
+                ScheduleSlot {
+                    days: vec![6],
+                    start: "10:00".into(),
+                    stop: "11:00".into(),
+                    max: None,
+                },
+                ScheduleSlot {
+                    days: vec![6],
+                    start: "11:00".into(),
+                    stop: "12:00".into(),
+                    max: None,
+                },
+            ],
+            ..Settings::default()
+        };
+        // Both ways the minute can go: the slot's Stop event ends A, or A's own
+        // auto-stop deadline got there first.
+        for autostop_wins in [false, true] {
+            let sim = run_supervisor(
+                &settings,
+                &[],
+                dt("2026-06-06 20:00"),
+                dt("2026-06-08 08:00"),
+                autostop_wins,
+            );
+            assert_eq!(
+                sim.started,
+                vec![
+                    (dt("2026-06-07 10:00"), TriggerKind::Slot(0)),
+                    (dt("2026-06-07 11:00"), TriggerKind::Slot(1)),
+                ],
+                "both slots record (autostop_wins={autostop_wins})"
+            );
+            assert!(
+                sim.skipped.is_empty(),
+                "B must not find A still running: {:?}",
+                sim.skipped
+            );
+            // Who the Stop EVENTS ended: both slots when they did the job, none
+            // when the engine's own deadlines had already ended each take.
+            let want = if autostop_wins {
+                vec![]
+            } else {
+                vec![
+                    (dt("2026-06-07 11:00"), TriggerKind::Slot(0)),
+                    (dt("2026-06-07 12:00"), TriggerKind::Slot(1)),
+                ]
+            };
+            assert_eq!(sim.stopped, want, "autostop_wins={autostop_wins}");
+            assert!(!sim.active);
+        }
+    }
+
+    /// A's Stop event must end A only: B, begun in the same minute, is a
+    /// different generation and is left running to its own 12:00.
+    #[test]
+    fn the_stop_of_the_first_slot_does_not_end_the_second_slots_recording() {
+        let a = TriggerKind::Slot(0);
+        let b = TriggerKind::Slot(1);
+        // B started at 11:00; the late-arriving A Stop finds B's session.
+        let verdict = stop_verdict(
+            owned(2, b),
+            a,
+            RecorderState::Recording,
+            2,
+            Some(T0 + 3_600_000),
+            T0,
+        );
+        assert_eq!(verdict, StopVerdict::NotOurs);
+    }
+
+    // ── Planlegger → opptaker med VIDEO på ───────────────────────────────────
+    //
+    // Every test above ran with video off. This is the composition `fire`
+    // performs — `choose_device`, `plan_start`, then `build_opts` (here its
+    // clock/folder-injected `build_opts_in`, `video_override: None` exactly as
+    // the scheduler passes it) — with a camera in the settings. What the engine
+    // is handed is what is asserted; the engine itself needs a window runtime.
+
+    const CAMERA: &str = "Logitech BRIO";
+
+    fn video_settings(save: &std::path::Path) -> Settings {
+        Settings {
+            video_enabled: true,
+            video_device_name: Some(CAMERA.into()),
+            video_device_index: Some(1),
+            video_flip: true,
+            ..golden_settings(save)
+        }
+    }
+
+    /// The opts a scheduled start of `kind` hands the engine.
+    async fn scheduled_opts(
+        folder: &std::path::Path,
+        settings: &Settings,
+        specials: &[SpecialRecording],
+        kind: TriggerKind,
+    ) -> crate::recorder::engine::RecordingOpts {
+        let choice = choose_device(
+            settings,
+            specials,
+            kind,
+            counting(&Arc::new(AtomicUsize::new(0)), present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        let rec = recorded(plan_start(settings, choice, || false));
+        let (name, max) = start_plan(settings, specials, kind, sunday_eleven());
+        crate::recorder::opts::build_opts_in(
+            folder,
+            &rec,
+            name.as_deref(),
+            max,
+            None,
+            sunday_eleven(),
+        )
+        .expect("opts compose")
+    }
+
+    /// Everything about the SOUND the engine is told — the part a camera must
+    /// not move.
+    fn audio_side(o: &crate::recorder::engine::RecordingOpts) -> String {
+        format!(
+            "{:?}",
+            (
+                &o.audio_device_name,
+                o.channel_mode,
+                o.input_channel_l,
+                o.input_channel_r,
+                o.sample_rate,
+                o.bitrate_kbps,
+                o.split_minutes,
+                o.manual_max_minutes,
+                o.stop_on_silence,
+                o.silence_timeout_minutes,
+                o.keep_separate_audio,
+                &o.separate_audio_format,
+            )
+        )
+    }
+
+    /// Video on + a configured camera: the scheduler's recording is a VIDEO
+    /// recording — the camera by name, in an mp4 (an audio container would make
+    /// ffmpeg drop the picture), mirrored as set — and the audio is exactly the
+    /// audio of the same start with the camera off.
+    #[tokio::test]
+    async fn a_scheduled_start_with_video_on_hands_the_engine_the_camera_and_an_mp4() {
+        let save = tempfile::tempdir().unwrap();
+        let with = scheduled_opts(
+            save.path(),
+            &video_settings(save.path()),
+            &[],
+            TriggerKind::Slot(0),
+        )
+        .await;
+        assert_eq!(with.video_device_name.as_deref(), Some(CAMERA));
+        assert!(with.video_flip, "the mirror setting travels with the camera");
+        assert!(
+            with.output_path.ends_with(".mp4"),
+            "a video recording needs the video container: {}",
+            with.output_path
+        );
+        // The mic is the Lyd-side device, untouched by the camera.
+        assert_eq!(with.audio_device_name, "Behringer X32");
+
+        let without = scheduled_opts(
+            save.path(),
+            &Settings {
+                video_enabled: false,
+                ..video_settings(save.path())
+            },
+            &[],
+            TriggerKind::Slot(0),
+        )
+        .await;
+        assert_eq!(
+            audio_side(&with),
+            audio_side(&without),
+            "turning the camera on moved the audio"
+        );
+    }
+
+    /// `video_enabled = false` beats a configured camera: no camera is named,
+    /// the file is the chosen AUDIO format.
+    #[tokio::test]
+    async fn a_scheduled_start_with_video_off_ignores_the_configured_camera() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            video_enabled: false,
+            ..video_settings(save.path())
+        };
+        let ext = crate::recorder::opts::format_ext(settings.format);
+        let o = scheduled_opts(save.path(), &settings, &[], TriggerKind::Slot(0)).await;
+        assert_eq!(o.video_device_name, None);
+        assert!(
+            o.output_path.ends_with(&format!(".{ext}")),
+            "audio recording keeps the audio format: {}",
+            o.output_path
+        );
+        assert!(!o.output_path.ends_with(".mp4") || ext == "mp4");
+    }
+
+    /// Video wanted but NO camera configured: the recording is audio-only in
+    /// the audio format — never an `.mp4` with nothing to put in it.
+    #[tokio::test]
+    async fn video_on_without_a_configured_camera_records_audio_only() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            video_device_name: None,
+            video_device_index: None,
+            ..video_settings(save.path())
+        };
+        let ext = crate::recorder::opts::format_ext(settings.format);
+        let o = scheduled_opts(save.path(), &settings, &[], TriggerKind::Slot(0)).await;
+        assert_eq!(o.video_device_name, None);
+        assert!(o.output_path.ends_with(&format!(".{ext}")), "{}", o.output_path);
+    }
+
+    /// A configured camera that is not plugged in tonight is NOT the
+    /// scheduler's to judge — `build_opts` has no device knowledge — so the
+    /// engine still gets the name (it resolves it at start and reports
+    /// «kamera ikke åpnet», `video.rs`' `CameraNotOpened`). What this pins is
+    /// that the name is passed through as stored, not dropped or rewritten.
+    #[tokio::test]
+    async fn a_configured_camera_is_passed_on_by_name_whether_or_not_it_is_plugged_in() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            video_device_name: Some("Kamera som er koblet fra".into()),
+            video_device_index: None,
+            ..video_settings(save.path())
+        };
+        let o = scheduled_opts(save.path(), &settings, &[], TriggerKind::Slot(0)).await;
+        assert_eq!(
+            o.video_device_name.as_deref(),
+            Some("Kamera som er koblet fra")
+        );
+        assert!(o.output_path.ends_with(".mp4"));
+    }
+
+    /// A special with its own sound card records from it — with the camera
+    /// still on, and the camera is not swapped for anything.
+    #[tokio::test]
+    async fn a_special_with_its_own_microphone_keeps_the_camera() {
+        let save = tempfile::tempdir().unwrap();
+        let specials = vec![special_on(Some("Rode NT-USB"))];
+        let o = scheduled_opts(
+            save.path(),
+            &video_settings(save.path()),
+            &specials,
+            TriggerKind::Special(0),
+        )
+        .await;
+        assert_eq!(o.audio_device_name, "Rode NT-USB", "the special's own mic");
+        assert_eq!(o.video_device_name.as_deref(), Some(CAMERA));
+        assert!(o.output_path.ends_with(".mp4"));
+    }
 }
