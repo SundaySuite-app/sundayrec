@@ -2028,8 +2028,9 @@ mod tests {
                 .and_hms_opt(11, 0, 0)
                 .unwrap();
             // `video_override: None` — the scheduler's own call.
-            let opts = crate::recorder::opts::build_opts_in(save.path(), &settings, None, 60, None, now)
-                .expect("opts compose");
+            let opts =
+                crate::recorder::opts::build_opts_in(save.path(), &settings, None, 60, None, now)
+                    .expect("opts compose");
             assert_eq!(opts.video_device_name.as_deref(), Some("Synthetic camera"));
             let delivery = PathBuf::from(&opts.output_path);
             assert_eq!(delivery.extension().and_then(|e| e.to_str()), Some("mp4"));

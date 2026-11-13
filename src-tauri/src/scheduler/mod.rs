@@ -4206,7 +4206,10 @@ mod tests {
         )
         .await;
         assert_eq!(with.video_device_name.as_deref(), Some(CAMERA));
-        assert!(with.video_flip, "the mirror setting travels with the camera");
+        assert!(
+            with.video_flip,
+            "the mirror setting travels with the camera"
+        );
         assert!(
             with.output_path.ends_with(".mp4"),
             "a video recording needs the video container: {}",
@@ -4265,7 +4268,11 @@ mod tests {
         let ext = crate::recorder::opts::format_ext(settings.format);
         let o = scheduled_opts(save.path(), &settings, &[], TriggerKind::Slot(0)).await;
         assert_eq!(o.video_device_name, None);
-        assert!(o.output_path.ends_with(&format!(".{ext}")), "{}", o.output_path);
+        assert!(
+            o.output_path.ends_with(&format!(".{ext}")),
+            "{}",
+            o.output_path
+        );
     }
 
     /// A configured camera that is not plugged in tonight is NOT the

@@ -2003,7 +2003,10 @@ mod tests {
         // the original, same sign, starting inaudibly (479/480).
         for k in head..got.len() {
             let (g, w) = (i32::from(got[k]), i32::from(want[k]));
-            assert!(g.abs() <= w.abs() && g * w >= 0, "ramp sample {k}: {g} vs {w}");
+            assert!(
+                g.abs() <= w.abs() && g * w >= 0,
+                "ramp sample {k}: {g} vs {w}"
+            );
         }
         let first_ramp = i32::from(got[head]);
         assert!(
@@ -2022,8 +2025,9 @@ mod tests {
             .copied()
             .collect();
         let max_step = |v: &[i16]| {
-            v.chunks_exact(2)
-                .zip(v.chunks_exact(2).skip(1))
+            let fr = v.as_chunks::<2>().0;
+            fr.iter()
+                .zip(fr.iter().skip(1))
                 .map(|(a, b)| (i32::from(a[0]) - i32::from(b[0])).abs())
                 .max()
                 .unwrap()
