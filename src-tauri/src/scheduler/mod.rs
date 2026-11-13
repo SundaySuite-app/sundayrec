@@ -757,8 +757,26 @@ async fn fire(
                                     .fill(lang_of(settings), &[("detail", &e.to_string())]),
                             );
                         }
+                        Err(_)
+                            if crate::recorder::engine::late_start_verdict(
+                                engine.current_state(),
+                            ) == crate::recorder::engine::LateStart::Keep =>
+                        {
+                            // The start was slow, not broken: the sound IS being
+                            // captured. Keep it (and let the slot's stop end it).
+                            tracing::warn!(
+                                "scheduler: the start outlived 30s but the recording runs — kept"
+                            );
+                            crate::telemetry::counters::count(
+                                sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
+                            );
+                            claim_session(&engine, ev.source);
+                        }
                         Err(_) => {
                             tracing::error!("scheduler: scheduled start TIMED OUT after 30s");
+                            // Not recording: do not leave a start behind that
+                            // begins on its own, minutes after we reported it lost.
+                            engine.stop();
                             dispatch_scheduler_failure(
                                 app,
                                 "scheduled_start_timeout",

@@ -296,6 +296,7 @@ den native kameralista (`find_camera`, samme regel som videosporet åpner
 med) og sender ALLE økter til `run_session`, som nå bare kjenner den native
 segmentløperen. Det C3c, C4 og C5 må vite:
 
+- **Kameraet venter ikke på lyden (S1-C, sommer 2026-11).** Kameralista har 3 s tidsgrense (var 8 s) og er den eneste kameraventingen før lydkortet åpnes. Selve kameraåpningen (forhåndsvisning, åpning) kjører ved siden av lydåpningen (`PendingStart` i `segment.rs`); sporet går på samme parring som ved gjenkobling (svart til første bilde) og plukkes opp ved neste 1 Hz-tikk. Stopp venter høyst 15 s på et kamera som ennå åpner. `RecorderEngine::start` registrerer økta før ventingen, så en start planleggeren gir opp (30 s) ikke stopper seg selv; går opptaket, beholdes det.
 - **Kameraet ved start:** finnes navnet i lista → videoøkt med det navnet;
   lista leses, men navnet finnes ikke → rent lydopptak (som før, når det
   lagrede kameraet ikke var der); lista kan ikke leses → videoøkt med det

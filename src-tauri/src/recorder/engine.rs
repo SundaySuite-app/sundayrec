@@ -118,6 +118,8 @@ pub const QUALITY_EVENT: &str = "recording://quality";
 
 /// A running recording: the supervisor task plus the stop channel.
 struct RecorderSession {
+    /// The `start()` that made it: a failed start removes only its own.
+    generation: u64,
     supervisor: tauri::async_runtime::JoinHandle<()>,
     /// Send `()` to request a graceful stop.
     stop_tx: tokio::sync::mpsc::Sender<()>,
@@ -605,25 +607,16 @@ impl RecorderEngine {
         // `supervisor::spawn_supervisor`, the one place a supervisor is spawned.
         let supervisor = spawn_supervisor(ctx, stop_rx, ready_tx);
 
-        match ready_rx.await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                supervisor.abort();
-                return Err(e);
-            }
-            Err(_) => {
-                supervisor.abort();
-                return Err(AppError::Recording(
-                    "recorder supervisor exited before signalling".into(),
-                ));
-            }
-        }
-
+        // Registered BEFORE the wait (S1-C): a start whose future is dropped —
+        // the scheduler's 30 s bound — leaves a recording that is running and
+        // stoppable, not an orphan whose only stop handle went with the future.
         *lock_recover(&self.session) = Some(RecorderSession {
+            generation,
             supervisor,
             stop_tx,
             state: session_state,
         });
+        self.await_ready(generation, ready_rx).await?;
         if camera_blocked {
             emit_warning(
                 &app,
@@ -632,6 +625,30 @@ impl RecorderEngine {
             );
         }
         Ok(())
+    }
+
+    /// Wait for the supervisor's ready signal. A start that FAILED takes its
+    /// own session out again and aborts the supervisor.
+    async fn await_ready(
+        &self,
+        generation: u64,
+        ready_rx: tokio::sync::oneshot::Receiver<AppResult<()>>,
+    ) -> AppResult<()> {
+        let outcome = match ready_rx.await {
+            Ok(r) => r,
+            Err(_) => Err(AppError::Recording(
+                "recorder supervisor exited before signalling".into(),
+            )),
+        };
+        if outcome.is_err() {
+            let mut guard = lock_recover(&self.session);
+            if guard.as_ref().is_some_and(|s| s.generation == generation)
+                && let Some(session) = guard.take()
+            {
+                session.supervisor.abort();
+            }
+        }
+        outcome
     }
 
     /// Request a graceful stop. The supervisor stops the capture so the container
@@ -714,6 +731,25 @@ pub fn current_platform() -> Platform {
     crate::util::detect_platform()
 }
 
+/// What the scheduler does with a start that outlived its 30 s bound (S1-C),
+/// by the engine's state at that moment.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LateStart {
+    /// Sound is being captured: keep it, the start just was slow.
+    Keep,
+    /// Not recording yet (still opening, or failed): stop it, report failure.
+    Abort,
+}
+
+/// Pure → tested.
+pub fn late_start_verdict(state: RecorderState) -> LateStart {
+    if state == RecorderState::Recording {
+        LateStart::Keep
+    } else {
+        LateStart::Abort
+    }
+}
+
 /// The wire code of the start-time warning for a blocked camera (macOS TCC).
 /// The same code the renderer and `AlertText` already have texts for in all
 /// seven languages.
@@ -732,9 +768,11 @@ fn camera_blocked_text(lang: sundayrec_core::lang::Lang) -> String {
 }
 
 /// How long `start()` waits for the native camera list. Media Foundation and
-/// DirectShow are asked on Windows, and a wedged driver must not hold a
-/// scheduled start past the scheduler's own bound.
-const CAMERA_LIST_TIMEOUT: Duration = Duration::from_secs(8);
+/// DirectShow are asked on Windows, and a wedged driver must not hold the
+/// SOUND: this is the only camera wait left before the audio opens (S1-C; the
+/// camera itself opens beside the audio). A list that is late falls back to
+/// opening the stored name.
+const CAMERA_LIST_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Which camera a video session records, given the native camera list
 /// (`None` = the list could not be read) and the name the user picked.
@@ -791,6 +829,56 @@ async fn resolve_session_camera(name: &str) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// S1-C: a start whose future is dropped (the scheduler's timeout) leaves
+    /// its session registered and its stop channel open; a start that fails
+    /// removes only its own session.
+    #[tokio::test]
+    async fn a_dropped_start_keeps_its_session_and_a_failed_one_removes_it() {
+        let engine = RecorderEngine::new();
+        let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let state = two_generations(RecorderState::Idle, None).fresh;
+        *lock_recover(&engine.session) = Some(RecorderSession {
+            generation: 5,
+            supervisor: tauri::async_runtime::spawn(std::future::pending::<()>()),
+            stop_tx,
+            state,
+        });
+        // Dropped while waiting: like the scheduler's timeout.
+        let (_ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let dropped =
+            tokio::time::timeout(Duration::from_millis(50), engine.await_ready(5, ready_rx)).await;
+        assert!(dropped.is_err());
+        assert!(lock_recover(&engine.session).is_some(), "session kept");
+        assert!(
+            stop_rx.try_recv() == Err(tokio::sync::mpsc::error::TryRecvError::Empty),
+            "stop channel still open, nobody stopped"
+        );
+        // A failure of ANOTHER generation leaves it alone, its own removes it.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tx.send(Err(AppError::Recording("x".into()))).unwrap();
+        assert!(engine.await_ready(4, rx).await.is_err());
+        assert!(lock_recover(&engine.session).is_some());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tx.send(Err(AppError::Recording("x".into()))).unwrap();
+        assert!(engine.await_ready(5, rx).await.is_err());
+        assert!(lock_recover(&engine.session).is_none());
+    }
+
+    #[test]
+    fn only_a_recording_start_survives_the_scheduler_timeout() {
+        assert_eq!(
+            late_start_verdict(RecorderState::Recording),
+            LateStart::Keep
+        );
+        for s in [
+            RecorderState::Preparing,
+            RecorderState::Idle,
+            RecorderState::Failed,
+        ] {
+            assert_eq!(late_start_verdict(s), LateStart::Abort, "{s:?}");
+        }
+    }
 
     /// S1-B: a denied/restricted camera drops the PICTURE, never the start;
     /// every other status leaves the camera path alone.

@@ -148,8 +148,71 @@ pub struct NativeSegment {
     loudness: Option<Arc<LoudnessSlot>>,
     /// The video track of a native VIDEO session (C3a); `None` for audio-only.
     video: Option<VideoTrack>,
+    /// The track while the camera is still opening (S1-C): the sound is
+    /// already being captured, the picture joins when this resolves
+    /// ([`SegmentSignals::poll_video`]); until then the slots are black.
+    pending_video: PendingStart<VideoTrack>,
     /// The video track's counters, read once it has stopped.
     pub video_stats: Option<VideoTrackStats>,
+}
+
+/// How long a stop waits for a camera that is still opening: the longest the
+/// start itself can take (`take_for_recording` 8 s + `CAMERA_TIMEOUT` 5 s) plus
+/// margin.
+const PENDING_VIDEO_STOP_WAIT: Duration = Duration::from_secs(15);
+
+/// A start that runs beside the audio and is picked up when it is done (S1-C).
+/// Generic so its timing is testable without a camera.
+pub(crate) struct PendingStart<T> {
+    handle: Option<tokio::task::JoinHandle<Option<T>>>,
+}
+
+impl<T: Send + 'static> PendingStart<T> {
+    pub(crate) fn none() -> Self {
+        Self { handle: None }
+    }
+
+    pub(crate) fn spawn(
+        fut: impl std::future::Future<Output = Option<T>> + Send + 'static,
+    ) -> Self {
+        Self {
+            handle: Some(tokio::spawn(fut)),
+        }
+    }
+
+    /// The result if the start has finished; never waits.
+    pub(crate) fn poll_ready(&mut self) -> Option<T> {
+        if !self.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            return None;
+        }
+        let h = self.handle.take()?;
+        // Finished: the future is ready at once.
+        futures_lite_now(h)
+    }
+
+    /// Wait up to `bound` for the start; past it the start is abandoned.
+    pub(crate) async fn settle(&mut self, bound: Duration) -> Option<T> {
+        let mut h = self.handle.take()?;
+        match tokio::time::timeout(bound, &mut h).await {
+            Ok(joined) => joined.ok().flatten(),
+            Err(_) => {
+                tracing::warn!("video track: the camera was still opening at stop — abandoned");
+                h.abort();
+                None
+            }
+        }
+    }
+}
+
+/// Resolve an already-finished join handle without an executor.
+fn futures_lite_now<T>(h: tokio::task::JoinHandle<Option<T>>) -> Option<T> {
+    use std::future::Future;
+    let mut h = std::pin::pin!(h);
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    match h.as_mut().poll(&mut cx) {
+        std::task::Poll::Ready(Ok(v)) => v,
+        _ => None,
+    }
 }
 
 /// Open the device, negotiate its format, and start the full native stack
@@ -337,19 +400,29 @@ async fn spawn_native_segment_typed(
     // The video track (C3a), before the stream: the stream's callback feeds
     // its clock, and the camera should be delivering by the first slot. A
     // camera that cannot open costs the PICTURE (black slots), never the start.
-    let (clock_tap, video) = match video_plan {
-        None => (None, None),
+    // S1-C: the camera does NOT delay the sound. Its start (list, preview
+    // hand-over, open: up to ~21 s on a wedged driver) runs beside the audio
+    // open; the track joins as soon as it is ready. The track reads the same
+    // pair ring from the start, so a late camera is placed on the WAV's
+    // timeline by the audio clock exactly like a reconnect: black until its
+    // first frame (VIDEOMOTOR §C3, «starter video etter lyden»).
+    let (clock_tap, pending_video) = match video_plan {
+        None => (None, PendingStart::none()),
         Some(plan) => {
             let (pair_prod, pair_cons) = ringbuf::HeapRb::<ClockPair>::new(PAIR_RING).split();
             let mkv = sundayrec_core::video_track::video_fragment_path(output_path);
-            let track = start_video_track(plan, &mkv, spec.sample_rate, pair_cons).await;
+            let plan = plan.clone();
+            let rate = spec.sample_rate;
+            let pending = PendingStart::spawn(async move {
+                start_video_track(&plan, &mkv, rate, pair_cons).await
+            });
             (
                 Some(ClockTap::new(
                     pair_prod,
                     CaptureTimeSource::for_host(host),
                     spec.sample_rate,
                 )),
-                track,
+                pending,
             )
         }
     };
@@ -438,7 +511,8 @@ async fn spawn_native_segment_typed(
         spec,
         device_name: opened_name,
         loudness,
-        video,
+        video: None,
+        pending_video,
         video_stats: None,
     };
 
@@ -675,6 +749,14 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
             tracing::warn!("native capture: stream thread did not stop in time — continuing");
         }
     }
+    // A camera that was still opening when the stop came: let the start finish
+    // (bounded) so its capture is stopped and given back like any other,
+    // instead of being dropped mid-open.
+    if seg.video.is_none()
+        && let Some(track) = seg.pending_video.settle(PENDING_VIDEO_STOP_WAIT).await
+    {
+        seg.video = Some(track);
+    }
     // The camera next: a capture, so before any writer. Unless a page is
     // watching it (C4b): then the camera keeps running for the live picture,
     // and only the track's queue closes — exactly what stopping would have done
@@ -901,6 +983,9 @@ pub(crate) trait SegmentSignals {
     fn video_problem(&self) -> Option<VideoProblem> {
         None
     }
+    /// Pick up a video track whose camera has finished opening (S1-C). Called at
+    /// the 1 Hz progress tick; a no-op for audio-only and for fakes.
+    fn poll_video(&mut self) {}
     /// Short-term loudness (D3), LUFS, read at the same tick; `None` until the
     /// meter has a full window (and for a fake that does not measure).
     fn short_term_lufs(&self) -> Option<f64> {
@@ -909,6 +994,15 @@ pub(crate) trait SegmentSignals {
 }
 
 impl SegmentSignals for NativeSegment {
+    fn poll_video(&mut self) {
+        if self.video.is_none()
+            && let Some(track) = self.pending_video.poll_ready()
+        {
+            tracing::info!("video track: the camera joined the recording");
+            self.video = Some(track);
+        }
+    }
+
     fn short_term_lufs(&self) -> Option<f64> {
         self.loudness.as_ref().and_then(|l| l.short_term())
     }
@@ -1371,7 +1465,11 @@ where
                 }
             }
             // Graceful stop request.
-            _ = stop_rx.recv() => {
+            // `Some(())` only: a CLOSED channel (the sender gone) is not a Stop
+            // request, it disables this arm (select! drops a non-matching
+            // pattern). A start the scheduler gave up on dropped the sender and
+            // used to end the recording it had started.
+            Some(()) = stop_rx.recv() => {
                 seg.stop().await;
                 break SegmentOutcome::GracefulStop;
             }
@@ -1495,6 +1593,7 @@ where
             }
             // 1 Hz UI byte counter (also mirrors into the supervisor's atomic).
             _ = progress_tick.tick() => {
+                seg.poll_video();
                 let b = seg.bytes();
                 segment_bytes.store(b, Ordering::Relaxed);
                 if started_seen {
@@ -2103,6 +2202,95 @@ mod tests {
             !r.sink.has(&Ev::Error("start_timeout".into())),
             "the startup watchdog fired on a recording that had already started"
         );
+    }
+
+    /// SOMMER-2026-11 PoC (sømgjennomgang, S1). The scheduler wraps
+    /// `RecorderEngine::start` in a 30 s `tokio::time::timeout`
+    /// (scheduler/mod.rs `fire`). When that fires while `start` awaits the
+    /// supervisor's "ready" (engine.rs `ready_rx.await`), the future is dropped:
+    /// the supervisor's `JoinHandle` is dropped (the task runs on, detached) and
+    /// so is `stop_tx`, the only sender. This test shows what the segment then
+    /// does with the closed channel: `stop_rx.recv()` returns `None` at once and
+    /// the `_ = stop_rx.recv()` arm treats it as a Stop. A slow-but-successful
+    /// start (camera list 8 s + camera open 5 s + a slow audio open) becomes a
+    /// recording that stops itself the moment it starts, after the volunteer
+    /// was told it timed out. Fixed (S1-C): a closed channel is not a Stop.
+    #[tokio::test(start_paused = true)]
+    async fn sommer_poc_s1_a_start_dropped_by_the_scheduler_timeout_stops_its_own_recording() {
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        // `start()`'s future is dropped by the scheduler's timeout: its
+        // `stop_tx` goes with it. Nobody pressed Stop.
+        drop(stop_tx);
+        let opts = test_opts("/tmp/x.wav");
+        let out = tokio::time::timeout(
+            Duration::from_secs(600),
+            drive(
+                &mut r,
+                &opts,
+                counters(),
+                Some(u64::MAX / 2),
+                FakeClock::default().handle(),
+                &mut stop_rx,
+                &mut w_rx,
+            ),
+        )
+        .await;
+        assert!(
+            out.is_err(),
+            "the segment ended with {out:?} although nobody asked it to stop: a start the \
+             scheduler timed out stops the recording it did start"
+        );
+    }
+
+    /// S1-C: a camera that takes 20 s to open does not hold the sound: the
+    /// start is picked up later, never waited for.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_camera_start_runs_beside_the_audio_and_joins_late() {
+        let mut p = PendingStart::spawn(async {
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            Some(7u32)
+        });
+        // The audio is capturing now: nothing to wait for.
+        tokio::task::yield_now().await;
+        assert_eq!(p.poll_ready(), None);
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(p.poll_ready(), None, "still opening at 10 s");
+        tokio::time::sleep(Duration::from_secs(11)).await;
+        assert_eq!(p.poll_ready(), Some(7), "joins when it is ready");
+        assert_eq!(p.poll_ready(), None, "only once");
+    }
+
+    /// S1-C: a stop never waits longer than its bound for a camera that is
+    /// still opening, and abandons it.
+    #[tokio::test(start_paused = true)]
+    async fn a_stop_abandons_a_camera_that_never_opens() {
+        let mut p = PendingStart::spawn(async {
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+            Some(1u32)
+        });
+        let t0 = tokio::time::Instant::now();
+        assert_eq!(p.settle(Duration::from_secs(15)).await, None);
+        assert_eq!(t0.elapsed(), Duration::from_secs(15));
+        let mut done = PendingStart::spawn(async { Some(5u32) });
+        assert_eq!(done.settle(Duration::from_secs(15)).await, Some(5));
+    }
+
+    /// S1-C ratchet: the video start is never awaited on the audio path.
+    #[test]
+    fn the_audio_open_does_not_await_the_video_start() {
+        let src = include_str!("segment.rs");
+        let prod = &src[..src.find("\nmod tests {").expect("tests module")];
+        assert_eq!(
+            prod.matches("start_video_track(").count(),
+            2,
+            "def + one call"
+        );
+        let call = prod.rfind("start_video_track(&plan").expect("the call");
+        let before = &prod[call.saturating_sub(120)..call];
+        assert!(before.contains("PendingStart::spawn"), "{before}");
     }
 
     /// No first block within the window → an honest `start_timeout` and a
