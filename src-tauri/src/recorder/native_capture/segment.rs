@@ -3890,6 +3890,7 @@ mod tests {
                 device_name: None,
                 loudness: None,
                 video: None,
+                pending_video: PendingStart::none(),
                 video_stats: None,
                 rotate_tx,
                 overrun_base: 0,
