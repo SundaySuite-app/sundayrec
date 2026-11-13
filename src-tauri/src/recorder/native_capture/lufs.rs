@@ -117,6 +117,21 @@ impl LoudnessSlot {
     /// A parked meter of another shape is dropped (new deliverable, or a
     /// device that came back different) and a fresh one starts.
     pub fn begin(&self, rate: u32, channels: usize) -> LufsTap<'_> {
+        self.begin_with(SlotRef::Borrowed(self), rate, channels)
+    }
+
+    /// [`Self::begin`] holding the slot by `Arc`: for a writer that moves on to
+    /// another deliverable's slot mid-life (a split's rotation, X1), which a
+    /// borrowed tap cannot do.
+    pub fn begin_shared(
+        slot: &std::sync::Arc<Self>,
+        rate: u32,
+        channels: usize,
+    ) -> LufsTap<'static> {
+        slot.begin_with(SlotRef::Shared(std::sync::Arc::clone(slot)), rate, channels)
+    }
+
+    fn begin_with<'a>(&self, slot: SlotRef<'a>, rate: u32, channels: usize) -> LufsTap<'a> {
         let parked = lock_recover(&self.parked).take();
         let meter = match parked {
             Some(m) if m.sample_rate() == f64::from(rate) && m.channels() == channels.max(1) => m,
@@ -128,7 +143,7 @@ impl LoudnessSlot {
         };
         self.rate.store(u64::from(rate), Ordering::Relaxed);
         LufsTap {
-            slot: self,
+            slot,
             meter: Some(meter),
             channels: channels.max(1),
         }
@@ -166,8 +181,24 @@ impl LoudnessSlot {
 /// A fragment writer's handle on the deliverable's meter. Dropping it parks the
 /// meter back in the slot, so every exit of the writer — clean, disk full, an
 /// error mid-way — keeps what was measured.
+/// How a [`LufsTap`] holds its slot.
+enum SlotRef<'a> {
+    Borrowed(&'a LoudnessSlot),
+    Shared(std::sync::Arc<LoudnessSlot>),
+}
+
+impl std::ops::Deref for SlotRef<'_> {
+    type Target = LoudnessSlot;
+    fn deref(&self) -> &LoudnessSlot {
+        match self {
+            SlotRef::Borrowed(s) => s,
+            SlotRef::Shared(s) => s,
+        }
+    }
+}
+
 pub struct LufsTap<'a> {
-    slot: &'a LoudnessSlot,
+    slot: SlotRef<'a>,
     meter: Option<LoudnessMeter>,
     channels: usize,
 }
