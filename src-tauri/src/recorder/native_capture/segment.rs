@@ -4426,6 +4426,45 @@ mod tests {
             assert_eq!(saved(&d.save), ["sermon.wav", "sermon_part2.wav"]);
         }
 
+        /// SOMMER-2026-11 etterprøving (S1-C × X1). `can_rotate` treats a stack
+        /// as audio-only when `video` is `None` — but since S1-C a video stack
+        /// has `video == None` while its camera is still opening
+        /// (`pending_video`). A split in that window (the forced split's disk
+        /// tick fires at once on a fresh `_rN` fragment) ROTATES the video
+        /// stack: the audio goes on in the next part's WAV, while the camera,
+        /// when it joins, writes into the MKV path fixed at spawn — the CLOSED
+        /// part's (`segment.rs` `video_fragment_path(output_path)` in
+        /// `spawn_native_segment_typed`), which is being delivered in the
+        /// background. EXPECTED TO FAIL: the rotation must be refused.
+        #[tokio::test(flavor = "multi_thread")]
+        #[ignore = "SOMMER-2026-11 etterprøving PoC: expected to fail — run with --ignored"]
+        async fn sommer_poc_x1_a_split_while_the_camera_opens_rotates_a_video_stack() {
+            let dir = tempfile::tempdir().unwrap();
+            let primary = dir.path().join("sermon.wav").to_string_lossy().into_owned();
+            let epoch = Instant::now();
+            let mut seg = counter_segment(&primary, epoch, true);
+            // A video stack whose camera has not opened yet.
+            let (opened_tx, opened_rx) = tokio::sync::oneshot::channel::<()>();
+            seg.pending_video = PendingStart::spawn(async move {
+                let _ = opened_rx.await;
+                None
+            });
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let next = dir
+                .path()
+                .join("sermon_part2.wav")
+                .to_string_lossy()
+                .into_owned();
+            let rotated = seg.rotate(&next, None).await;
+            let _ = opened_tx.send(());
+            stop_native_bounded(&mut seg).await;
+            assert!(
+                matches!(rotated, Err(RotateRefused::NotRotatable)),
+                "a video stack with its camera still opening was rotated ({rotated:?}): \
+                 the late camera will write into the closed part's MKV"
+            );
+        }
+
         /// X1: a background delivery that FAILS reaches the session's verdict
         /// exactly as an inline one did — `false`, so the clean stop keeps the
         /// crash manifest — and its capture stays on disk for the retry.
