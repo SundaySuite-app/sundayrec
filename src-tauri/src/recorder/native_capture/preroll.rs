@@ -1915,6 +1915,135 @@ mod tests {
         assert_eq!(*s.last().unwrap(), 0);
     }
 
+    // ── RIG-DAY (iv): «Knappetrykket midt i en akkord» ───────────────────────
+
+    /// A continuous 400 Hz tone (period 120 frames at 48 kHz) as interleaved
+    /// stereo f32, frames `from..to`. It is a COSINE, so the tone is at its
+    /// peak whenever `n % 120 == 0` — and frame 119 of any period is right
+    /// beside a peak, the worst place for a clip to be cut.
+    fn tone(from: usize, to: usize) -> Vec<f32> {
+        (from..to)
+            .flat_map(|n| {
+                let v = (2.0 * std::f64::consts::PI * 400.0 * n as f64 / 48_000.0).cos() * 0.5;
+                [v as f32, -(v as f32)]
+            })
+            .collect()
+    }
+
+    /// The s16 bytes the writer produces for `samples`, as numbers.
+    fn s16_of(samples: &[f32]) -> Vec<i16> {
+        let mut bytes = Vec::new();
+        wav::encode_s16le(samples, &mut bytes);
+        bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
+            .collect()
+    }
+
+    /// RIG-DAY (iv), mechanised. A continuous tone runs through the REAL
+    /// rotating writer (several rotations, the oldest segments retired), the
+    /// button is pressed (stop + harvest) and the clip is checked against the
+    /// documented promise, sample for sample:
+    ///
+    /// 1. no gap in front of the press: the clip's last real frame is the last
+    ///    frame the buffer received (the 300 ms the ffmpeg engine threw away are
+    ///    back) and the body is the tone, contiguous across every file seam;
+    /// 2. the join to the recording does not click: the last 10 ms ramp to
+    ///    digital zero, and no step anywhere is bigger than the tone's own.
+    #[tokio::test]
+    async fn button_press_mid_chord_gives_a_gapless_clip_that_ends_at_silence() {
+        const TOTAL: usize = 120_000; // 2.5 s
+        let mut rig = spawn_writer(12_000, 6);
+        let all = tone(0, TOTAL);
+        let mut pushed = 0;
+        while pushed < all.len() {
+            let n = rig.prod.push_slice(&all[pushed..]);
+            pushed += n;
+            if n == 0 {
+                std::thread::yield_now();
+            }
+        }
+        // The writer drains the ring completely before it honours `stop`, so
+        // there is no sleep to race.
+        rig.stop.store(true, Ordering::Relaxed);
+        rig.join.join().expect("writer joins");
+        let segments = lock_recover(&rig.segments).clone();
+        assert!(rig.err.try_recv().is_err(), "no writer errors");
+        let held: u64 = segments.iter().map(|s| s.frames).sum();
+        assert!(
+            held < TOTAL as u64 && held >= 60_000,
+            "the buffer must really have rotated and retired old audio: {held} frames"
+        );
+        let keep = held as usize;
+
+        // 60 s asked, far more than the buffer holds: ALL of it comes back,
+        // margin-free (F2-C-D — the ffmpeg engine's 300 ms hole is gone). Which
+        // end a margin would eat does not matter: either way `trim_ms` and the
+        // body below stop matching the buffer.
+        let clip = build_clip(&segments, SPEC, 60, &rig.dir)
+            .await
+            .expect("a clip");
+        assert_eq!(clip.trim_ms, held * 1_000 / 48_000, "the whole buffer");
+        assert_eq!(clip.start_offset_ms, 0);
+
+        let got = clip_samples(Path::new(&clip.raw_path));
+        assert_eq!(got.len(), keep * 2);
+        let fade = fade_frames(SPEC, keep);
+        assert_eq!(fade, 480, "10 ms at 48 kHz");
+        let head = (keep - fade) * 2;
+
+        // (1) BODY: sample-exact the tone from global frame 72 000 up to the
+        // ramp — across the file seams, none dropped, none repeated.
+        let want = s16_of(&all[(TOTAL - keep) * 2..]);
+        assert_eq!(&got[..head], &want[..head], "the body is not the tone");
+        // …and the ramp is the tone's LAST frames, scaled down: the frame right
+        // before the press is in the clip (no 300 ms hole), never louder than
+        // the original, same sign, starting inaudibly (479/480).
+        for k in head..got.len() {
+            let (g, w) = (i32::from(got[k]), i32::from(want[k]));
+            assert!(g.abs() <= w.abs() && g * w >= 0, "ramp sample {k}: {g} vs {w}");
+        }
+        let first_ramp = i32::from(got[head]);
+        assert!(
+            (first_ramp - i32::from(want[head])).abs() <= 40,
+            "the ramp must start at (almost) full level, got {first_ramp}"
+        );
+
+        // (2) SEAM: the clip ends at exact zero on BOTH channels…
+        assert_eq!(&got[got.len() - 2..], &[0, 0]);
+        // …so a recording whose first frame is quiet (frame 30 of the cosine is
+        // its zero crossing) continues without a step bigger than the tone's natural slope.
+        let rec = s16_of(&tone(30, 230));
+        let joined: Vec<i16> = got[got.len() - 2 * fade..]
+            .iter()
+            .chain(&rec)
+            .copied()
+            .collect();
+        let max_step = |v: &[i16]| {
+            v.chunks_exact(2)
+                .zip(v.chunks_exact(2).skip(1))
+                .map(|(a, b)| (i32::from(a[0]) - i32::from(b[0])).abs())
+                .max()
+                .unwrap()
+        };
+        let natural = max_step(&s16_of(&all)); // ≈ 858
+        let seam = max_step(&joined);
+        assert!(
+            seam <= natural + 100,
+            "the join clicks: biggest step {seam}, the tone's own is {natural}"
+        );
+        // Control: WITHOUT the ramp the same join is a vertical step of the
+        // tone's last level → this assertion can tell the difference.
+        let mut unfaded: Vec<i16> = want[want.len() - 2 * fade..].to_vec();
+        unfaded.extend_from_slice(&rec);
+        assert!(
+            max_step(&unfaded) > 10 * natural,
+            "the control is not a click, the seam check proves nothing"
+        );
+    }
+
     // ── The seam, measured by a real decoder ─────────────────────────────────
 
     /// The sidecar, or `None` → the caller SKIPs. In a lane that fetched the
