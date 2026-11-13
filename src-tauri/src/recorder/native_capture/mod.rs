@@ -47,6 +47,7 @@
 pub mod lufs;
 pub mod preroll;
 pub mod segment;
+pub mod split;
 pub mod stream;
 pub mod video;
 pub mod writer;

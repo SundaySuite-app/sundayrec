@@ -249,8 +249,11 @@ pub(super) fn finalize_session_telemetry(
 /// earlier deliverable's end is the next one's `started_at_ms` (the split
 /// boundary), so each row's `duration_ms` is the deliverable's own span.
 ///
-/// Called at every split (closing one deliverable) and once at session end (the
-/// last). Idempotent: a second call with nothing pending is a no-op.
+/// Called once at session end (the last deliverable, plus any a split held
+/// back for lack of room) and on every failing exit — always behind the
+/// background deliveries (`split::finish_deliveries`). A split itself delivers
+/// through [`finalize_closed`] in the background (X1). Idempotent: a second
+/// call with nothing pending is a no-op.
 ///
 /// Returns `true` only when EVERY deliverable in the batch actually reached the
 /// user's chosen format (see [`finalize_one`]). The caller ANDs these across the
@@ -261,20 +264,8 @@ pub(super) fn finalize_session_telemetry(
 /// down one call at a time. They arrive as `ctx` now (F2-T2); `session_generation`
 /// is not among them because finalisation writes state only through the
 /// supervisor, never itself.
-pub(super) async fn finalize_pending(
-    ctx: &SessionContext,
-    session: &RecordingSession,
-    finalized: &mut usize,
-    end_ms: u64,
-    telemetry: &Arc<Mutex<RecordingTelemetry>>,
-    delivered_bytes: &AtomicU64,
-) -> bool {
-    finalize_pending_with_first(ctx, session, finalized, end_ms, telemetry, delivered_bytes)
-        .await
-        .0
-}
-
-/// [`finalize_pending`] that also reports where deliverable 0 ACTUALLY landed:
+///
+/// Also reports where deliverable 0 ACTUALLY landed:
 /// `Some(path)` when deliverable 0 was finalised in this call and delivered. That
 /// path can differ from the planned `opts.output_path` — delivery never overwrites,
 /// so it moves to a free `_N` sibling when the planned one is taken — and the
@@ -310,6 +301,36 @@ pub(super) async fn finalize_pending_with_first(
     (all_delivered, first_path)
 }
 
+/// Deliver parts a split closed, in the background (X1): the same
+/// [`finalize_one`] per part that [`finalize_pending_with_first`] runs, over
+/// OWNED inputs, because the session goes on recording while this runs. Each
+/// part's end is the next part's start, already fixed in `closed`.
+pub(super) async fn finalize_closed(
+    ctx: SessionContext,
+    closed: Vec<crate::recorder::native_capture::split::ClosedDeliverable>,
+    telemetry: Arc<Mutex<RecordingTelemetry>>,
+    delivered_bytes: Arc<AtomicU64>,
+) -> (bool, Option<String>) {
+    let mut all_delivered = true;
+    let mut first_path = None;
+    for c in &closed {
+        let (delivered, path) = finalize_one(
+            &ctx,
+            &c.deliverable,
+            c.index,
+            c.end_ms,
+            &telemetry,
+            &delivered_bytes,
+        )
+        .await;
+        all_delivered &= delivered;
+        if c.index == 0 {
+            first_path = path;
+        }
+    }
+    (all_delivered, first_path)
+}
+
 /// The path the `recording://finished` receipt points at: where deliverable 0
 /// actually landed, else the planned one (nothing was delivered — the old
 /// behaviour). Delivery never overwrites, so landed != planned happens.
@@ -337,7 +358,7 @@ pub(super) fn finished_receipt_path(landed: Option<&str>, planned: &str) -> Stri
 /// keeps the crash-recovery manifest on `false` so the next launch retries the
 /// delivery from the surviving capture instead of forfeiting it.
 ///
-/// Like [`finalize_pending`], the session-owned half of its inputs arrives as
+/// Like [`finalize_pending_with_first`], the session-owned half of its inputs arrives as
 /// `ctx` (F2-T2): the app handle it surfaces `empty_output` through, the pool it
 /// writes the row into, the pre-roll clip it prepends to deliverable 0, the audio
 /// device the row is stamped with, and the options that decide the delivery

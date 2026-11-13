@@ -75,7 +75,8 @@ use crate::recorder::native_capture::video::{
     VideoTrack, VideoTrackConfig, VideoTrackStats, open_camera,
 };
 use crate::recorder::native_capture::writer::{
-    FLUSH_EVERY, SYNC_EVERY, WriterConfig, WriterErrorKind, WriterEvent, spawn_wav_writer,
+    FLUSH_EVERY, Rotation, RotationOutcome, SYNC_EVERY, WriterConfig, WriterErrorKind, WriterEvent,
+    spawn_rotating_wav_writer, spawn_wav_writer,
 };
 use crate::util::lock_recover;
 use sundayrec_core::audio::MeterBanks;
@@ -154,6 +155,106 @@ pub struct NativeSegment {
     pending_video: PendingStart<VideoTrack>,
     /// The video track's counters, read once it has stopped.
     pub video_stats: Option<VideoTrackStats>,
+    /// The writer's rotation door (X1): `Some` for an audio-only stack, whose
+    /// split continues in the next part's file without closing the stream.
+    /// `None` for a video stack (its video track has no rotation; a split
+    /// stops and reopens it) and for a stack built without one.
+    rotate_tx: Option<std::sync::mpsc::Sender<Rotation>>,
+    /// `overrun`/`xruns` as they stood at the last rotation: a rotated stack
+    /// keeps its counters, and each part reports only its own share.
+    overrun_base: u64,
+    xruns_base: u64,
+}
+
+/// A live stack that is dropped without a stop (an early return, a cancelled
+/// spawn, a supervisor aborted by the stop backstop) must not keep the
+/// microphone open for ever: the flags end the stream and the writer, which
+/// finalizes its WAV on its own thread. No joins here — `Drop` cannot wait.
+impl Drop for NativeSegment {
+    fn drop(&mut self) {
+        self.stream_stop.store(true, Ordering::Relaxed);
+        self.writer_stop.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Why a live stack could not continue in a new file (X1); the caller then
+/// stops it and opens a new stack — the split as it was before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RotateRefused {
+    /// The stack has a video track, or no rotation door, or is already stopped.
+    NotRotatable,
+    /// The writer is gone (it died, or stopped).
+    WriterGone,
+    /// The next part's file could not be opened; the old file is untouched.
+    OpenFailed(String),
+}
+
+impl NativeSegment {
+    /// Can a split continue this stack in a new file instead of reopening it?
+    pub(crate) fn can_rotate(&self) -> bool {
+        self.rotate_tx.is_some()
+            && self.video.is_none()
+            && self.writer_join.is_some()
+            && self.stream_join.is_some()
+            && !self.stream_stop.load(Ordering::Relaxed)
+    }
+
+    /// Continue this live capture in `path` (X1): the writer closes the current
+    /// WAV at a frame boundary and writes the very next frame into `path`, while
+    /// the stream, the device and the ring run on untouched — a split without a
+    /// single lost sample. Returns once the OLD file is final (flushed, header
+    /// patched, synced), so the caller may deliver it right away.
+    ///
+    /// `loudness` is the new deliverable's meter (D3).
+    pub(crate) async fn rotate(
+        &mut self,
+        path: &str,
+        loudness: Option<Arc<LoudnessSlot>>,
+    ) -> Result<(), RotateRefused> {
+        if !self.can_rotate() {
+            return Err(RotateRefused::NotRotatable);
+        }
+        let Some(tx) = self.rotate_tx.as_ref() else {
+            return Err(RotateRefused::NotRotatable);
+        };
+        let (done, reply) = tokio::sync::oneshot::channel();
+        tx.send(Rotation {
+            path: std::path::PathBuf::from(path),
+            loudness: loudness.clone(),
+            done,
+        })
+        .map_err(|_| RotateRefused::WriterGone)?;
+        // Bounded like the writer's finalize at a stop: a wedged disk can never
+        // freeze the supervisor here either.
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS),
+            reply,
+        )
+        .await;
+        match outcome {
+            Ok(Ok(RotationOutcome::Rotated(old))) => {
+                match old {
+                    Ok(summary) => tracing::info!(
+                        data_bytes = summary.data_bytes,
+                        frames = summary.frames,
+                        next = %path,
+                        "native capture: split — part closed, the capture goes on in the next file"
+                    ),
+                    Err(e) => tracing::warn!(
+                        next = %path,
+                        "native capture: split — the closed part did not finalize cleanly: {e}"
+                    ),
+                }
+                // Each part reports its own overruns and xruns.
+                self.overrun_base = self.overrun.load(Ordering::Relaxed);
+                self.xruns_base = self.xruns.load(Ordering::Relaxed);
+                self.loudness = loudness;
+                Ok(())
+            }
+            Ok(Ok(RotationOutcome::NotRotated(e))) => Err(RotateRefused::OpenFailed(e)),
+            Ok(Err(_)) | Err(_) => Err(RotateRefused::WriterGone),
+        }
+    }
 }
 
 /// How long a stop waits for a camera that is still opening: the longest the
@@ -376,25 +477,46 @@ async fn spawn_native_segment_typed(
     let (err_tx, stream_err_rx) = tokio::sync::mpsc::channel::<StreamFaultReport>(1);
 
     // Writer first, so the stream never produces into a ring nobody drains.
-    let writer_join = spawn_wav_writer(
-        cons,
-        WriterConfig {
-            path: std::path::PathBuf::from(output_path),
-            spec,
-            flush_every: FLUSH_EVERY,
-            sync_every: SYNC_EVERY,
-            silence: SilenceDetector::new(
-                silence_threshold_db(opts.stop_on_silence, opts.silence_threshold_db),
-                spec.sample_rate,
-            ),
-            loudness: loudness.clone(),
-            sync_count: None,
-        },
-        Arc::clone(&writer_stop),
-        Arc::clone(&bytes),
-        Arc::clone(&frames),
-        event_tx,
-    )
+    // An audio-only stack gets the rotation door (X1): a split continues the
+    // same stream in the next part's file. A video stack does not — its video
+    // track cannot rotate, so its split stops and reopens the stack.
+    let (rotate_tx, rotate_rx) = if video_plan.is_none() {
+        let (tx, rx) = std::sync::mpsc::channel::<Rotation>();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+    let writer_cfg = WriterConfig {
+        path: std::path::PathBuf::from(output_path),
+        spec,
+        flush_every: FLUSH_EVERY,
+        sync_every: SYNC_EVERY,
+        silence: SilenceDetector::new(
+            silence_threshold_db(opts.stop_on_silence, opts.silence_threshold_db),
+            spec.sample_rate,
+        ),
+        loudness: loudness.clone(),
+        sync_count: None,
+    };
+    let writer_join = match rotate_rx {
+        Some(rx) => spawn_rotating_wav_writer(
+            cons,
+            writer_cfg,
+            Arc::clone(&writer_stop),
+            Arc::clone(&bytes),
+            Arc::clone(&frames),
+            event_tx,
+            rx,
+        ),
+        None => spawn_wav_writer(
+            cons,
+            writer_cfg,
+            Arc::clone(&writer_stop),
+            Arc::clone(&bytes),
+            Arc::clone(&frames),
+            event_tx,
+        ),
+    }
     .map_err(|e| NativeStartError::other(format!("could not spawn wav writer: {e}")))?;
 
     // The video track (C3a), before the stream: the stream's callback feeds
@@ -514,6 +636,9 @@ async fn spawn_native_segment_typed(
         video: None,
         pending_video,
         video_stats: None,
+        rotate_tx,
+        overrun_base: 0,
+        xruns_base: 0,
     };
 
     match ready_rx.await {
@@ -964,6 +1089,13 @@ pub(crate) trait SegmentSignals {
     fn take_peak_dbfs(&self, channel: usize) -> f32;
     /// Stop the stack with bounded joins (stream first, then writer).
     fn stop(&mut self) -> impl std::future::Future<Output = ()> + Send;
+    /// The segment ends in a SPLIT (timer or 4 GiB guard). By default that is a
+    /// stop, as for every other ending. A stack that can continue in the next
+    /// part's file without closing its stream (X1, [`NativeSegment::rotate`])
+    /// stays live instead: the supervisor's split rotates it a moment later.
+    fn end_for_split(&mut self) -> impl std::future::Future<Output = ()> + Send {
+        self.stop()
+    }
     /// The video track's counters once stopped (C3a); `None` for audio-only.
     fn video_stats(&self) -> Option<VideoTrackStats> {
         None
@@ -1036,11 +1168,15 @@ impl SegmentSignals for NativeSegment {
     }
 
     fn overrun(&self) -> u64 {
-        self.overrun.load(Ordering::Relaxed)
+        self.overrun
+            .load(Ordering::Relaxed)
+            .saturating_sub(self.overrun_base)
     }
 
     fn xruns(&self) -> u64 {
-        self.xruns.load(Ordering::Relaxed)
+        self.xruns
+            .load(Ordering::Relaxed)
+            .saturating_sub(self.xruns_base)
     }
 
     fn spec(&self) -> WavSpec {
@@ -1053,6 +1189,12 @@ impl SegmentSignals for NativeSegment {
 
     async fn stop(&mut self) {
         stop_native_bounded(self).await;
+    }
+
+    async fn end_for_split(&mut self) {
+        if !self.can_rotate() {
+            stop_native_bounded(self).await;
+        }
     }
 
     fn video_stats(&self) -> Option<VideoTrackStats> {
@@ -1206,6 +1348,10 @@ impl EventSink for AppEventSink<'_> {
 /// Run one native segment to completion; see the module header for the arms
 /// and the signal mapping.
 ///
+/// Every outcome leaves `seg` stopped EXCEPT a [`SegmentOutcome::Split`] of a
+/// stack that can rotate (audio-only, X1): that one is still capturing, and the
+/// supervisor's `split::split_without_gap` continues it in the next part's file.
+///
 /// `deliverable_bytes` is the sum of the current deliverable's PREVIOUS
 /// fragments (`_rN` reconnect pieces) — the RIFF-cap guard forces a split
 /// before the `-c copy`-concatenated deliverable could cross the 4 GiB WAV
@@ -1221,7 +1367,7 @@ impl EventSink for AppEventSink<'_> {
 /// session's own state door rather than a set of loose arguments.
 pub(crate) async fn run_native_segment(
     ctx: &SessionContext,
-    mut seg: NativeSegment,
+    seg: &mut NativeSegment,
     session: &RecordingSession,
     counters: SegmentCounters,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
@@ -1247,10 +1393,8 @@ pub(crate) async fn run_native_segment(
         free_bytes: &free_bytes,
         reconnecting: session.reconnect_count() > 0,
     };
-    let outcome = drive_native_segment(
-        &mut seg, &sink, &env, &ctx.opts, counters, stop_rx, stop_watch,
-    )
-    .await;
+    let outcome =
+        drive_native_segment(seg, &sink, &env, &ctx.opts, counters, stop_rx, stop_watch).await;
     // C0a, through the video track (C3b): a hardware encoder that failed at
     // the first frame made the track fall back to libx264 — forget the stored
     // choice so the next recording does not try it again.
@@ -1542,7 +1686,7 @@ where
                             seg_bytes,
                             "native capture: deliverable approaching the 4 GiB WAV ceiling — forcing a split"
                         );
-                        seg.stop().await;
+                        seg.end_for_split().await;
                         break SegmentOutcome::Split;
                     }
                     DiskVerdict::DiskStop => {
@@ -1557,7 +1701,7 @@ where
             }
             // Split timer.
             _ = &mut split_sleep, if split_deadline.is_some() => {
-                seg.stop().await;
+                seg.end_for_split().await;
                 break SegmentOutcome::Split;
             }
             // Auto-stop deadline reached.
@@ -3491,5 +3635,701 @@ mod tests {
             0,
             "no ring overruns in a 2 s idle capture"
         );
+    }
+
+    // ── X1: does a split leave a hole in the sound? ──────────────────────────
+
+    /// Measures the audio lost at a split, in SAMPLES, through the real pieces
+    /// of the split path: the real `drive_native_segment` (the select! loop
+    /// with its disk-tick forced split), the real WAV writer on a real ring
+    /// (and its rotation), the real `stop_native_bounded`, the real
+    /// `finalize_deliverable_noted` (ffmpeg), and — between the two segments —
+    /// the SAME `split::split_without_gap` the supervisor's split arms call, so
+    /// the order measured here is the order the app runs. Only the cpal stream
+    /// is replaced, by a thread that plays a free-running device: it numbers
+    /// every frame by the wall clock, so frames that pass while no stream is
+    /// open are simply never captured — exactly what a sound card does.
+    ///
+    /// Each frame carries its own number: channel 0 the low 15 bits, channel 1
+    /// the next 15 bits, so the delivered files can be read back and the missing
+    /// frames counted exactly.
+    mod split_gap {
+        use super::*;
+        use crate::recorder::native_capture::lufs::LoudnessLedger;
+        use crate::recorder::native_capture::split::{
+            ClosedDeliverable, DeliveryChain, SplitHow, finish_deliveries, split_without_gap,
+        };
+        use ringbuf::traits::Producer;
+        use std::time::Instant;
+        use sundayrec_core::recorder::Deliverable;
+        use sundayrec_core::recovery::{DeliveryMode, delivery_path_for};
+
+        const RATE: u32 = 8_000;
+        const SPLIT_BYTES: u64 = 256 * 1024;
+
+        fn word_to_sample(w: u64) -> f32 {
+            (w & 0x7FFF) as f32 / 32767.0
+        }
+
+        /// A segment whose "stream" is a free-running counter device.
+        /// `rotatable` = an audio-only stack (the writer takes rotations);
+        /// `false` stands in for one that cannot rotate (a video stack).
+        fn counter_segment(path: &str, epoch: Instant, rotatable: bool) -> NativeSegment {
+            let spec = WavSpec {
+                channels: 2,
+                sample_rate: RATE,
+            };
+            let (mut prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity(RATE, 2)).split();
+            let stream_stop = Arc::new(AtomicBool::new(false));
+            let writer_stop = Arc::new(AtomicBool::new(false));
+            let overrun = Arc::new(AtomicU64::new(0));
+            let bytes = Arc::new(AtomicU64::new(0));
+            let frames = Arc::new(AtomicU64::new(0));
+            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<WriterEvent>();
+            let (err_tx, stream_err_rx) = tokio::sync::mpsc::channel::<StreamFaultReport>(1);
+            let cfg = WriterConfig {
+                path: std::path::PathBuf::from(path),
+                spec,
+                flush_every: FLUSH_EVERY,
+                sync_every: SYNC_EVERY,
+                silence: SilenceDetector::new(silence_threshold_db(false, None), RATE),
+                loudness: None,
+                sync_count: None,
+            };
+            let (rotate_tx, writer_join) = if rotatable {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let j = spawn_rotating_wav_writer(
+                    cons,
+                    cfg,
+                    Arc::clone(&writer_stop),
+                    Arc::clone(&bytes),
+                    Arc::clone(&frames),
+                    event_tx,
+                    rx,
+                );
+                (Some(tx), j)
+            } else {
+                let j = spawn_wav_writer(
+                    cons,
+                    cfg,
+                    Arc::clone(&writer_stop),
+                    Arc::clone(&bytes),
+                    Arc::clone(&frames),
+                    event_tx,
+                );
+                (None, j)
+            };
+            let writer_join = writer_join.expect("writer");
+            let st_stop = Arc::clone(&stream_stop);
+            let stream_join = std::thread::spawn(move || {
+                // Held so the fault channel stays open for the stream's life.
+                let _err_tx = err_tx;
+                let frame_now = |e: &Instant| (e.elapsed().as_secs_f64() * f64::from(RATE)) as u64;
+                let mut next = frame_now(&epoch);
+                while !st_stop.load(Ordering::Relaxed) {
+                    let due = frame_now(&epoch);
+                    if due > next {
+                        let mut block = Vec::with_capacity(((due - next) * 2) as usize);
+                        for n in next..due {
+                            block.push(word_to_sample(n));
+                            block.push(word_to_sample(n >> 15));
+                        }
+                        let _ = prod.push_slice(&block);
+                        next = due;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            });
+            NativeSegment {
+                stream_stop,
+                writer_stop,
+                stream_join: Some(stream_join),
+                writer_join: Some(writer_join),
+                events: event_rx,
+                stream_err_rx,
+                meters: Arc::new(MeterBanks::new(2)),
+                overrun,
+                xruns: Arc::new(AtomicU64::new(0)),
+                bytes,
+                frames,
+                spec,
+                device_name: None,
+                loudness: None,
+                video: None,
+                video_stats: None,
+                rotate_tx,
+                overrun_base: 0,
+                xruns_base: 0,
+            }
+        }
+
+        /// The frame numbers of a delivered WAV, in file order.
+        fn frame_numbers(path: &str) -> Vec<u64> {
+            let b = std::fs::read(path).expect("delivered wav");
+            let mut pos = 12usize;
+            while pos + 8 <= b.len() {
+                let size = u32::from_le_bytes(b[pos + 4..pos + 8].try_into().unwrap()) as usize;
+                if &b[pos..pos + 4] == b"data" {
+                    let end = (pos + 8 + size).min(b.len());
+                    return b[pos + 8..end]
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|f| {
+                            let lo = i16::from_le_bytes([f[0], f[1]]) as u64;
+                            let hi = i16::from_le_bytes([f[2], f[3]]) as u64;
+                            (hi << 15) | lo
+                        })
+                        .collect();
+                }
+                pos += 8 + size + (size & 1);
+            }
+            panic!("no data chunk in {path}");
+        }
+
+        /// The delivery a test session uses: `ext` into `save`.
+        fn spec_for(
+            primary: &str,
+            save: &std::path::Path,
+            ext: &str,
+        ) -> crate::recorder::concat::DeliverySpec {
+            crate::recorder::concat::DeliverySpec {
+                delivery_path: delivery_path_for(primary, &save.to_string_lossy(), ext),
+                ext: ext.to_string(),
+                channels: 2,
+                sample_rate: Some(RATE),
+                bitrate_kbps: 128,
+                mode: DeliveryMode::AudioEncode,
+                hvc1_tag: false,
+                keep_audio_capture: false,
+            }
+        }
+
+        /// Deliver closed parts the way a test session does (`finalize_one`'s
+        /// core), after `delay`; a failed delivery keeps the capture and counts
+        /// as not delivered, as in `finalize_one`.
+        async fn deliver_closed(
+            closed: Vec<ClosedDeliverable>,
+            save: std::path::PathBuf,
+            ext: &'static str,
+            delay: Duration,
+            took_ms: Arc<std::sync::Mutex<f64>>,
+        ) -> crate::recorder::native_capture::split::Delivered {
+            tokio::time::sleep(delay).await;
+            let t = Instant::now();
+            let mut ok = true;
+            for c in &closed {
+                ok &= crate::recorder::concat::finalize_deliverable_noted(
+                    &c.deliverable,
+                    None,
+                    Some(&spec_for(&c.deliverable.primary_path, &save, ext)),
+                )
+                .await
+                .is_ok();
+            }
+            *took_ms.lock().unwrap() = (t.elapsed() + delay).as_secs_f64() * 1000.0;
+            (ok, None)
+        }
+
+        /// One test session's split, through the shared `split_without_gap`.
+        /// Returns how the capture continued and the manifest snapshot `persist`
+        /// was handed (what the crash manifest would hold).
+        #[allow(clippy::too_many_arguments)]
+        async fn split(
+            seg: &mut NativeSegment,
+            session: &mut RecordingSession,
+            finalized: &mut usize,
+            chain: &mut DeliveryChain,
+            epoch: Instant,
+            save: &std::path::Path,
+            ext: &'static str,
+            delay: Duration,
+            took_ms: Arc<std::sync::Mutex<f64>>,
+        ) -> (SplitHow, Vec<Deliverable>) {
+            let ledger = LoudnessLedger::default();
+            ledger.open_deliverable();
+            let persisted = std::sync::Mutex::new(Vec::new());
+            let save = save.to_path_buf();
+            let how = split_without_gap(
+                seg,
+                session,
+                finalized,
+                crate::db::store::now_ms() as u64,
+                &ledger,
+                chain,
+                async |s: &RecordingSession| {
+                    *persisted.lock().unwrap() = s.deliverables().to_vec();
+                },
+                |next: String| async move { Ok(counter_segment(&next, epoch, true)) },
+                async |_: &[ClosedDeliverable]| true,
+                |closed| deliver_closed(closed, save, ext, delay, took_ms),
+            )
+            .await
+            .expect("the split continues the capture");
+            (how, persisted.into_inner().unwrap())
+        }
+
+        // Read through its `Debug` output in the failure message.
+        #[allow(dead_code)]
+        #[derive(Debug)]
+        struct Report {
+            how: SplitHow,
+            /// Wall time from the segment's end to the next part capturing.
+            continued_ms: f64,
+            /// Of which nothing is the delivery any more: it runs after, here.
+            delivery_ms: f64,
+            /// Frames missing between the last frame of part 1 and the first of part 2
+            /// (`None` for a lossy delivery, which cannot be counted).
+            missing_frames: Option<u64>,
+            /// Frames lost INSIDE a part (must be zero).
+            internal_jumps: u64,
+            part1_sec: f64,
+            part2_sec: f64,
+        }
+
+        /// One session: part 1 runs until the real disk-tick forced split, the
+        /// split runs (`rotatable` decides whether the stack can continue in the
+        /// next file), part 1 is delivered (`ext`, plus `extra_delivery` standing
+        /// in for a long part's encode time), part 2 runs ~3 s and is delivered.
+        async fn run(ext: &'static str, extra_delivery: Duration, rotatable: bool) -> Report {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cap = dir.path().join("cap");
+            let save = dir.path().join("save");
+            std::fs::create_dir_all(&cap).unwrap();
+            std::fs::create_dir_all(&save).unwrap();
+            let primary = cap.join("sermon.wav").to_string_lossy().into_owned();
+            let mut session = RecordingSession::new(primary.clone(), 0);
+            let epoch = Instant::now();
+
+            let opts = test_opts(&primary);
+            let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+            let sink = Recorder::default();
+            let now = || crate::db::store::now_ms() as u64;
+            let free = || Some(u64::MAX / 2);
+            let env = SegmentEnv {
+                now_ms: &now,
+                free_bytes: &free,
+                reconnecting: false,
+            };
+
+            // Part 1 — the real runner, until the real forced split.
+            let mut seg = counter_segment(&primary, epoch, rotatable);
+            let out = drive_native_segment(
+                &mut seg,
+                &sink,
+                &env,
+                &opts,
+                SegmentCounters {
+                    segment_bytes: Arc::new(AtomicU64::new(0)),
+                    deliverable_bytes: 0,
+                    telemetry: telemetry(),
+                },
+                &mut stop_rx,
+                &mut w_rx,
+            )
+            .await;
+            assert_eq!(
+                out,
+                SegmentOutcome::Split,
+                "the disk guard must force a split"
+            );
+            let ended = Instant::now();
+
+            // The supervisor's split: the same function its split arms call.
+            let took = Arc::new(std::sync::Mutex::new(0.0));
+            let mut finalized = 0usize;
+            let mut chain = DeliveryChain::default();
+            let (how, _) = split(
+                &mut seg,
+                &mut session,
+                &mut finalized,
+                &mut chain,
+                epoch,
+                &save,
+                ext,
+                extra_delivery,
+                Arc::clone(&took),
+            )
+            .await;
+            let continued_ms = ended.elapsed().as_secs_f64() * 1000.0;
+
+            // Part 2 — a few seconds, then a clean stop.
+            let ender = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                let _ = stop_tx.send(()).await;
+            });
+            let next = session.deliverables()[1].primary_path.clone();
+            let opts2 = test_opts(&next);
+            let out = drive_native_segment(
+                &mut seg,
+                &sink,
+                &env,
+                &opts2,
+                SegmentCounters {
+                    segment_bytes: Arc::new(AtomicU64::new(0)),
+                    deliverable_bytes: 0,
+                    telemetry: telemetry(),
+                },
+                &mut stop_rx,
+                &mut w_rx,
+            )
+            .await;
+            ender.await.unwrap();
+            assert_eq!(out, SegmentOutcome::GracefulStop);
+            // The session end: the background delivery first, then the last part.
+            let d1 = session.deliverables()[0].clone();
+            let d2 = session.deliverables()[1].clone();
+            let (ok, _) = finish_deliveries(&mut chain, async {
+                let ok = crate::recorder::concat::finalize_deliverable_noted(
+                    &d2,
+                    None,
+                    Some(&spec_for(&d2.primary_path, &save, ext)),
+                )
+                .await
+                .is_ok();
+                (ok, None)
+            })
+            .await;
+            assert!(ok, "both parts delivered");
+            let delivery_ms = *took.lock().unwrap();
+
+            let p1 = delivery_path_for(&d1.primary_path, &save.to_string_lossy(), ext);
+            let p2 = delivery_path_for(&d2.primary_path, &save.to_string_lossy(), ext);
+            if ext != "wav" {
+                for p in [&p1, &p2] {
+                    assert!(
+                        std::fs::metadata(p).map(|m| m.len()).unwrap_or(0) > 0,
+                        "{p}"
+                    );
+                }
+                return Report {
+                    how,
+                    continued_ms,
+                    delivery_ms,
+                    missing_frames: None,
+                    internal_jumps: 0,
+                    part1_sec: 0.0,
+                    part2_sec: 0.0,
+                };
+            }
+            let (a, b) = (frame_numbers(&p1), frame_numbers(&p2));
+            let jumps = |v: &[u64]| v.windows(2).filter(|w| w[1] != w[0] + 1).count() as u64;
+            Report {
+                how,
+                continued_ms,
+                delivery_ms,
+                missing_frames: Some(b[0] - (a[a.len() - 1] + 1)),
+                internal_jumps: jumps(&a) + jumps(&b),
+                part1_sec: a.len() as f64 / f64::from(RATE),
+                part2_sec: b.len() as f64 / f64::from(RATE),
+            }
+        }
+
+        /// X1: an audio-only split loses NO frame, however long the delivery
+        /// takes; a stack that must reopen (video) loses only its reopen time,
+        /// not the delivery's.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_split_leaves_no_hole_in_the_sound() {
+            let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            // SAFETY: serialised by the ENV_LOCK `sidecar_or_skip` holds.
+            unsafe {
+                std::env::set_var(
+                    sundayrec_core::wav::TEST_SPLIT_BYTES_ENV,
+                    SPLIT_BYTES.to_string(),
+                )
+            };
+            let (fast, slow, mp3, reopen_slow) = tokio::join!(
+                run("wav", Duration::ZERO, true),
+                run("wav", Duration::from_secs(4), true),
+                run("mp3", Duration::ZERO, true),
+                run("wav", Duration::from_secs(4), false),
+            );
+            // SAFETY: as above.
+            unsafe { std::env::remove_var(sundayrec_core::wav::TEST_SPLIT_BYTES_ENV) };
+            eprintln!("X1 fast wav delivery       : {fast:?}");
+            eprintln!("X1 +4 s delivery           : {slow:?}");
+            eprintln!("X1 mp3 delivery            : {mp3:?}");
+            eprintln!("X1 +4 s, stack reopened    : {reopen_slow:?}");
+            for r in [&fast, &slow, &mp3] {
+                assert_eq!(r.how, SplitHow::Rotated, "{r:?}");
+            }
+            for r in [&fast, &slow] {
+                assert_eq!(r.internal_jumps, 0, "frames lost INSIDE a part: {r:?}");
+                let miss = r.missing_frames.unwrap();
+                assert_eq!(
+                    miss,
+                    0,
+                    "frames missing at the split: {miss} ({:.0} ms) — {r:?}",
+                    miss as f64 * 1000.0 / f64::from(RATE)
+                );
+            }
+            // A stack that cannot rotate (video): the gap is its reopen, never
+            // the 4 s delivery.
+            assert_eq!(reopen_slow.how, SplitHow::Reopened);
+            assert_eq!(reopen_slow.internal_jumps, 0, "{reopen_slow:?}");
+            let miss_ms = reopen_slow.missing_frames.unwrap() as f64 * 1000.0 / f64::from(RATE);
+            assert!(
+                miss_ms < 1_000.0,
+                "a reopened split lost {miss_ms:.0} ms — the delivery is inside the gap: {reopen_slow:?}"
+            );
+        }
+
+        /// A test-session folder: capture + save dirs and the delivery spec.
+        struct Dirs {
+            _dir: tempfile::TempDir,
+            cap: std::path::PathBuf,
+            save: std::path::PathBuf,
+        }
+
+        fn dirs() -> Dirs {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cap = dir.path().join(".sundayrec-capture-1");
+            let save = dir.path().join("save");
+            std::fs::create_dir_all(&cap).unwrap();
+            std::fs::create_dir_all(&save).unwrap();
+            Dirs {
+                _dir: dir,
+                cap,
+                save,
+            }
+        }
+
+        fn saved(save: &std::path::Path) -> Vec<String> {
+            let mut v: Vec<String> = std::fs::read_dir(save)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            v.sort();
+            v
+        }
+
+        fn manifest_of(
+            deliverables: &[Deliverable],
+            save: &std::path::Path,
+        ) -> sundayrec_core::recovery::SessionManifest {
+            sundayrec_core::recovery::SessionManifest {
+                recovery_attempts: 0,
+                session_id: "1700000000000".into(),
+                device_name: "Counter".into(),
+                session_start_ms: 0,
+                preroll_clip_path: None,
+                delivery_encode: Some(sundayrec_core::recovery::AudioEncodeManifest {
+                    delivery_dir: save.to_string_lossy().into_owned(),
+                    ext: "wav".into(),
+                    channels: 2,
+                    sample_rate: Some(RATE),
+                    bitrate_kbps: 128,
+                    mode: DeliveryMode::AudioEncode,
+                    hvc1_tag: false,
+                }),
+                deliverables: deliverables
+                    .iter()
+                    .map(sundayrec_core::recovery::DeliverableManifest::from_deliverable)
+                    .collect(),
+            }
+        }
+
+        /// X1 crash safety: the app dies (kill -9) while part 1 is being
+        /// delivered in the background and part 2 is recording. The manifest the
+        /// split wrote BEFORE part 2's first byte lists both; the next launch
+        /// delivers both, once each, with no sample missing between them. And
+        /// when part 1 HAD been delivered before the kill, recovery delivers only
+        /// part 2 — nothing twice.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_kill_during_a_background_delivery_recovers_both_parts_once() {
+            let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            for delivered_before_kill in [false, true] {
+                let d = dirs();
+                let primary = d.cap.join("sermon.wav").to_string_lossy().into_owned();
+                let mut session = RecordingSession::new(primary.clone(), 0);
+                let epoch = Instant::now();
+                let mut seg = counter_segment(&primary, epoch, true);
+                tokio::time::sleep(Duration::from_millis(1200)).await;
+                let mut finalized = 0;
+                let mut chain = DeliveryChain::default();
+                // Killed mid-delivery: the delivery is held long past the kill.
+                let delay = if delivered_before_kill {
+                    Duration::ZERO
+                } else {
+                    Duration::from_secs(60)
+                };
+                let (_, manifest_deliverables) = split(
+                    &mut seg,
+                    &mut session,
+                    &mut finalized,
+                    &mut chain,
+                    epoch,
+                    &d.save,
+                    "wav",
+                    delay,
+                    Arc::new(std::sync::Mutex::new(0.0)),
+                )
+                .await;
+                if delivered_before_kill {
+                    assert!(chain.join().await.0);
+                } else {
+                    // A half-written delivery temp, as an encode killed mid-way leaves.
+                    std::fs::write(d.save.join("sermon_deliver_tmp.wav"), b"RIFF junk").unwrap();
+                }
+                tokio::time::sleep(Duration::from_millis(1200)).await;
+                // The kill: the background delivery dies with the process, and
+                // the capture stops where it is (the writer's header is patched
+                // every 250 ms, so the WAV is whole up to there).
+                drop(chain);
+                stop_native_bounded(&mut seg).await;
+
+                let manifest = manifest_of(&manifest_deliverables, &d.save);
+                assert_eq!(
+                    manifest.deliverables.len(),
+                    2,
+                    "both parts are in the manifest"
+                );
+                let db = tempfile::tempdir().unwrap();
+                let pool = crate::db::store::open_pool(&db.path().join("t.sqlite"))
+                    .await
+                    .unwrap();
+                let recovered =
+                    crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+                let want_rows = if delivered_before_kill { 1 } else { 2 };
+                assert_eq!(
+                    recovered, want_rows,
+                    "delivered_before_kill={delivered_before_kill}"
+                );
+                assert_eq!(
+                    saved(&d.save),
+                    ["sermon.wav", "sermon_part2.wav"],
+                    "each part once, no `_2` copy, no temp left"
+                );
+                let a = frame_numbers(&d.save.join("sermon.wav").to_string_lossy());
+                let b = frame_numbers(&d.save.join("sermon_part2.wav").to_string_lossy());
+                assert_eq!(
+                    b[0],
+                    a[a.len() - 1] + 1,
+                    "no frame missing between the parts"
+                );
+                assert!(
+                    !std::path::Path::new(&primary).exists(),
+                    "part 1's capture removed"
+                );
+            }
+        }
+
+        /// X1: Stopp while part 1 is still being delivered. The session end
+        /// waits for that delivery BEFORE it delivers the last part, so they
+        /// land in order, and the verdict covers both.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_stop_during_a_background_delivery_joins_it_first() {
+            let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let d = dirs();
+            let primary = d.cap.join("sermon.wav").to_string_lossy().into_owned();
+            let mut session = RecordingSession::new(primary.clone(), 0);
+            let epoch = Instant::now();
+            let mut seg = counter_segment(&primary, epoch, true);
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            let mut finalized = 0;
+            let mut chain = DeliveryChain::default();
+            let took = Arc::new(std::sync::Mutex::new(0.0));
+            split(
+                &mut seg,
+                &mut session,
+                &mut finalized,
+                &mut chain,
+                epoch,
+                &d.save,
+                "wav",
+                Duration::from_millis(1500),
+                Arc::clone(&took),
+            )
+            .await;
+            assert_eq!(
+                finalized, 1,
+                "part 1 is the chain's now — never delivered twice"
+            );
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            // Stopp: the capture ends while part 1 is still in the chain.
+            stop_native_bounded(&mut seg).await;
+            assert!(
+                chain.is_busy(),
+                "the stop came during the background delivery"
+            );
+            let d2 = session.deliverables()[1].clone();
+            let save = d.save.clone();
+            let part1 = d.save.join("sermon.wav");
+            let (ok, _) = finish_deliveries(&mut chain, async move {
+                assert!(
+                    part1.exists(),
+                    "the last part is delivered only after part 1 has landed"
+                );
+                let ok = crate::recorder::concat::finalize_deliverable_noted(
+                    &d2,
+                    None,
+                    Some(&spec_for(&d2.primary_path, &save, "wav")),
+                )
+                .await
+                .is_ok();
+                (ok, None)
+            })
+            .await;
+            assert!(ok);
+            assert!(!chain.is_busy());
+            assert_eq!(saved(&d.save), ["sermon.wav", "sermon_part2.wav"]);
+        }
+
+        /// X1: a background delivery that FAILS reaches the session's verdict
+        /// exactly as an inline one did — `false`, so the clean stop keeps the
+        /// crash manifest — and its capture stays on disk for the retry.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_background_delivery_keeps_the_manifest_and_the_capture() {
+            let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let d = dirs();
+            let primary = d.cap.join("sermon.wav").to_string_lossy().into_owned();
+            let mut session = RecordingSession::new(primary.clone(), 0);
+            let epoch = Instant::now();
+            let mut seg = counter_segment(&primary, epoch, true);
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            let mut finalized = 0;
+            let mut chain = DeliveryChain::default();
+            // The save folder is gone: the delivery cannot be written.
+            let missing = d.save.join("unplugged-drive");
+            split(
+                &mut seg,
+                &mut session,
+                &mut finalized,
+                &mut chain,
+                epoch,
+                &missing,
+                "wav",
+                Duration::ZERO,
+                Arc::new(std::sync::Mutex::new(0.0)),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            stop_native_bounded(&mut seg).await;
+            let (ok, _) = finish_deliveries(&mut chain, async { (true, None) }).await;
+            assert!(
+                !ok,
+                "a failed background delivery must fail the session verdict"
+            );
+            assert!(
+                std::path::Path::new(&primary).exists(),
+                "the failed part's capture is kept for the retry"
+            );
+        }
     }
 }

@@ -187,6 +187,12 @@ videospor.
   MJPEG-kameraer), C0s maskinvarekoder, `-g`, `video_flip` som `hflip`, og MKV
   ut. Fragmentene får samme navn og grenser som lydfragmentene, så oppdeling og
   gjenkobling styres av lydmotoren som i dag.
+- **Oppdeling (X1):** et rent lydopptak deler uten hull — skriveren bytter fil
+  på en rammegrense mens strømmen går videre (`native_capture/split.rs`). Et
+  videoopptak kan ikke det ennå (videosporet har ingen filbytte): ved deling
+  stoppes lyd og kamera og åpnes igjen, så hullet er gjenåpningstiden (lydkort
+  og kamera, kamera høyst 5 s). Leveringen av forrige del (mux) skjer i
+  bakgrunnen etterpå, aldri inne i hullet.
 - Køen til ffmpeg er begrenset til rundt 1 s med bilder. Er den full, droppes
   det eldste bildet og telles (`video.frames_dropped` i telemetri og i
   opptaksoverlegget). Kamera-callbacken blokkerer aldri.
