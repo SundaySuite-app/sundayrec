@@ -1787,6 +1787,9 @@ mod tests {
     #[derive(Default)]
     struct Recorder {
         events: Mutex<Vec<Ev>>,
+        /// Every 1 Hz heartbeat's short-term loudness, on tokio's (paused)
+        /// clock — what `notify::take` feeds the weak-level watch (D3).
+        loudness: Mutex<Vec<(tokio::time::Instant, Option<f64>)>>,
     }
 
     impl Recorder {
@@ -1815,6 +1818,10 @@ mod tests {
             self.push(Ev::Silence);
         }
         fn progress(&self, p: &ProgressTick) {
+            self.loudness
+                .lock()
+                .expect("recorder lock")
+                .push((tokio::time::Instant::now(), p.short_term_lufs));
             self.push(Ev::Progress(p.bytes_written));
             if p.video_frames_dropped > 0 {
                 self.push(Ev::VideoDropped(p.video_frames_dropped));
@@ -1852,9 +1859,15 @@ mod tests {
         /// Why the (pretend) picture is not recorded: 0 = it is, 1 = the encoder
         /// stopped, 2 = the camera never opened.
         video_problem: Arc<AtomicU64>,
+        /// The deliverable's loudness meter (D3), when a test measures one.
+        loudness: Option<Arc<LoudnessSlot>>,
     }
 
     impl SegmentSignals for Scripted {
+        fn short_term_lufs(&self) -> Option<f64> {
+            self.loudness.as_ref().and_then(|l| l.short_term())
+        }
+
         async fn next_signal(&mut self) -> SegmentSignal {
             match self.rx.recv().await {
                 Some(s) => s,
@@ -1950,6 +1963,7 @@ mod tests {
                 video_dropped: Arc::clone(&video_dropped),
                 video_lost_ms: Arc::clone(&video_lost_ms),
                 video_problem: Arc::clone(&video_problem),
+                loudness: None,
             },
             tx,
             bytes,
@@ -3175,6 +3189,112 @@ mod tests {
         assert_eq!(tel.lock().expect("telemetry").video_frames_dropped, 0);
         assert!(crate::telemetry::counters::snapshot().is_empty());
         crate::telemetry::counters::set_active(false);
+    }
+
+    // ── D3: «er mikseren dempet?» (RIG-DAY d3-mac, points 3 and 4) ───────────
+
+    /// One take of `secs` virtual seconds whose sound is a 1 kHz tone at
+    /// `amp_at(second)`, measured by the REAL loudness meter (the writer
+    /// thread's `LufsTap`), read by the REAL segment loop on its 1 Hz tick, and
+    /// handed to the REAL weak-level step (`notify::take::level_step`) exactly
+    /// as the heartbeat listener does. Returns the second each alert was raised
+    /// at (relative to the first heartbeat that carried a weak reading), and
+    /// the telemetry.
+    ///
+    /// Nothing sleeps: tokio's clock is paused and the `FakeClock` moves with
+    /// it, so the stuck watchdog sees the bytes grow.
+    async fn weak_level_take(
+        secs: u64,
+        amp_at: impl Fn(u64) -> f32 + Send + 'static,
+    ) -> (Vec<f64>, Option<f64>, Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>) {
+        const RATE: u32 = 8_000; // the meter is rate-independent; 8 kHz keeps a debug build quick
+        let mut r = rig();
+        let slot = Arc::new(LoudnessSlot::new());
+        r.seg.loudness = Some(Arc::clone(&slot));
+        // What the OS reported during the take: the level watch must leave it.
+        r.xruns.store(3, Ordering::Relaxed);
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        let clock = FakeClock::default();
+        let (bytes, frames, clock_h) = (Arc::clone(&r.bytes), Arc::clone(&r.frames), clock.handle());
+        let sound = tokio::spawn(async move {
+            let mut tap = slot.begin(RATE, 1);
+            for sec in 0..secs {
+                let amp = amp_at(sec);
+                let block: Vec<f32> = (0..RATE)
+                    .map(|i| amp * (std::f32::consts::TAU * 1000.0 * i as f32 / RATE as f32).sin())
+                    .collect();
+                tap.feed(&block);
+                bytes.fetch_add(u64::from(RATE) * 2, Ordering::Relaxed);
+                frames.fetch_add(u64::from(RATE), Ordering::Relaxed);
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                clock_h.fetch_add(1_000, Ordering::Relaxed);
+            }
+            let _ = stop_tx.send(()).await;
+        });
+        let tel = telemetry();
+        let opts = test_opts("/tmp/x.wav");
+        let out = drive(
+            &mut r,
+            &opts,
+            counters_with(tel.clone()),
+            Some(u64::MAX / 2),
+            clock.handle(),
+            &mut stop_rx,
+            &mut w_rx,
+        )
+        .await;
+        sound.await.unwrap();
+        assert_eq!(out, SegmentOutcome::GracefulStop);
+
+        // The heartbeat listener, minus the Tauri event: first reading starts
+        // the take's clock, every reading goes through `level_step`.
+        let ticks = r.sink.loudness.lock().unwrap().clone();
+        let origin = ticks.first().expect("heartbeats").0;
+        let first_weak = ticks
+            .iter()
+            .find(|(_, l)| l.is_some_and(sundayrec_core::level_watch::is_weak))
+            .map(|(t, _)| (*t - origin).as_secs_f64());
+        let mut watch = sundayrec_core::level_watch::WeakLevelWatch::new();
+        let alerts = ticks
+            .iter()
+            .filter(|(t, l)| crate::notify::take::level_step(&mut watch, *t - origin, *l))
+            .map(|(t, _)| (*t - origin).as_secs_f64())
+            .collect();
+        (alerts, first_weak, tel)
+    }
+
+    /// RIG-DAY (d3-mac) 3: a muted mixer for the whole take. Nothing for the
+    /// first five minutes (and not at 5:00 exactly), then ONE alert, and none
+    /// in the ten minutes after it. The OS-reported xruns are the same as
+    /// without the meter.
+    #[tokio::test(start_paused = true)]
+    async fn a_muted_mixer_is_told_once_after_five_minutes_and_xruns_are_untouched() {
+        let (alerts, first_weak, tel) = weak_level_take(15 * 60, |_| 0.0003).await;
+        let from = first_weak.expect("the meter reads a weak level");
+        assert_eq!(alerts.len(), 1, "exactly one alert in 15 minutes: {alerts:?}");
+        let after = alerts[0] - from;
+        assert!(
+            after > 300.0 && after <= 302.0,
+            "the alert came {after} s after the level went weak: MORE than 5 minutes, but only just"
+        );
+        let t = tel.lock().expect("telemetry");
+        assert_eq!(t.native_xruns, 3, "the meter must not touch the xrun count");
+        assert_eq!(t.ring_overrun_samples, 0);
+    }
+
+    /// RIG-DAY (d3-mac) 4 and 5: a quiet stretch of four minutes, then the
+    /// input is turned up: never an alert. A take at a normal level never has
+    /// one either.
+    #[tokio::test(start_paused = true)]
+    async fn a_short_quiet_stretch_or_a_normal_level_is_never_told() {
+        let (alerts, first_weak, _) =
+            weak_level_take(12 * 60, |s| if s < 4 * 60 { 0.0003 } else { 0.1 }).await;
+        assert!(first_weak.is_some(), "the quiet stretch was measured");
+        assert_eq!(alerts, Vec::<f64>::new(), "4 quiet minutes is not a muted mixer");
+        let (alerts, first_weak, _) = weak_level_take(8 * 60, |_| 0.1).await;
+        assert_eq!(first_weak, None, "a −20 dBFS tone is not weak");
+        assert_eq!(alerts, Vec::<f64>::new());
     }
 
     /// A graceful stop is the one path that must NOT emit an error and must

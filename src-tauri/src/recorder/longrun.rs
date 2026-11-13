@@ -524,6 +524,9 @@ mod tests {
     use crate::db::store::{list_recordings, open_pool};
     use crate::media::ffmpeg::tests::{ENV_LOCK, fetched_sidecar};
 
+    // RIG-DAY (v1)/(v4): sync over a long recording, and video under load.
+    mod rig_sync;
+
     /// 96 kHz stereo s16 = 384 000 B/s, so a threshold measured in hundreds of
     /// kB is crossed in well under a second of realtime-paced capture. (It is
     /// also the rate at which the REAL 3.5 GiB boundary lands ~2.7 h into a

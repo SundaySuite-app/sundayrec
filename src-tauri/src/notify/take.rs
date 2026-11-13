@@ -59,7 +59,7 @@ fn reset() {
 /// One heartbeat's short-term loudness: is the «mixer turned down?» warning
 /// due now? Marks it raised when it is, so it is said once. Pure over `at`
 /// (time since the take began) — see `sundayrec_core::level_watch`.
-fn level_step(watch: &mut WeakLevelWatch, at: std::time::Duration, lufs: Option<f64>) -> bool {
+pub(crate) fn level_step(watch: &mut WeakLevelWatch, at: std::time::Duration, lufs: Option<f64>) -> bool {
     let due = watch.observe(at, lufs);
     if due {
         watch.mark_alerted();
