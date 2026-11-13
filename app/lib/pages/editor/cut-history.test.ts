@@ -100,3 +100,26 @@ describe("redoSnapshot", () => {
     expect(r).toEqual({ idx: 1, cuts: [cut(5, 6)] });
   });
 });
+
+describe("angre forbi 50-grensen", () => {
+  it("hopper ikke til tom kuttliste når de eldste bildene er kastet", () => {
+    let s = empty();
+    for (let i = 0; i < MAX_CUT_HISTORY + 5; i++)
+      s = pushSnapshot(s, [cut(i, i + 1)]);
+    // angre helt ned til eldste kjente bilde
+    let live = 1;
+    for (;;) {
+      const r = undoSnapshot(s, live);
+      if (!r) break;
+      s = { ...s, idx: r.idx };
+      live = r.cuts.length;
+    }
+    expect(s.idx).toBe(0);
+    expect(undoSnapshot(s, 1)).toBeNull();
+  });
+
+  it("uten kasting er idx 0 → tom fortsatt riktig", () => {
+    const s = pushSnapshot(empty(), [cut(0, 1)]);
+    expect(undoSnapshot(s, 1)).toEqual({ idx: -1, cuts: [] });
+  });
+});

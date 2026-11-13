@@ -119,6 +119,8 @@ export const E = {
   /** Angrestabelen. Rene øyeblikksbilder; `@lib/…/cut-history` eier reglene. */
   cutHistory: [] as Cut[][],
   cutHistoryIdx: -1,
+  /** Eldste øyeblikksbilder er kastet av 50-grensen: angre forbi det er tomt. */
+  cutHistoryTruncated: false,
 
   /** Analysens segmenter, slik brukeren ser dem. */
   segments: [] as Segment[],
@@ -329,6 +331,7 @@ export function resetFileState(): void {
   E.cuts = [];
   E.cutHistory = [];
   E.cutHistoryIdx = -1;
+  E.cutHistoryTruncated = false;
   E.segments = [];
   E.autoSermonIndex = null;
   E.suggestion = null;

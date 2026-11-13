@@ -15,6 +15,12 @@ export const MAX_CUT_HISTORY = 50;
 export interface CutHistoryState {
   history: Cut[][];
   idx: number;
+  /**
+   * `true` når de eldste øyeblikksbildene er kastet av grensen. Da er
+   * `history[0]` ikke lenger utgangspunktet, og angre forbi det skal ikke
+   * hoppe til tom kuttliste.
+   */
+  truncated?: boolean;
 }
 
 /** Deep-copy a cut list so snapshots can't alias the live array. */
@@ -32,17 +38,21 @@ export function pushSnapshot(
   cuts: Cut[],
 ): CutHistoryState {
   let history = state.history.slice(0, state.idx + 1);
+  let truncated = state.truncated === true;
   history.push(clone(cuts));
   if (history.length > MAX_CUT_HISTORY) {
     history = history.slice(history.length - MAX_CUT_HISTORY);
+    truncated = true;
   }
-  return { history, idx: history.length - 1 };
+  return { history, idx: history.length - 1, truncated };
 }
 
 /**
  * Undo: returns the new `idx` and the cut list to restore, or `null` when there
  * is nothing to undo. At `idx === 0` with live cuts, undoes to the empty
- * pre-history state (`idx -1`, `cuts []`). `liveCutCount` is the current live
+ * pre-history state (`idx -1`, `cuts []`) — unless the oldest snapshots have
+ * been dropped (`truncated`), where idx 0 is the oldest KNOWN state and there
+ * is nothing further back to restore. `liveCutCount` is the current live
  * cut count (so an already-empty state at idx 0 is a no-op).
  */
 export function undoSnapshot(
@@ -50,7 +60,8 @@ export function undoSnapshot(
   liveCutCount: number,
 ): { idx: number; cuts: Cut[] } | null {
   if (state.idx <= 0) {
-    if (state.idx === 0 && liveCutCount > 0) return { idx: -1, cuts: [] };
+    if (state.idx === 0 && liveCutCount > 0 && !state.truncated)
+      return { idx: -1, cuts: [] };
     return null;
   }
   const idx = state.idx - 1;
