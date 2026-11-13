@@ -618,6 +618,19 @@ i beskrivelsene over:
   stoppstien), `…while_the_page_opens_the_camera_waits_for_it`,
   `an_opening_for_another_camera_is_cancelled_…`.
 
+**M3R #13 rettet (gjenopprettet videoopptak får sidefila med lyd).** Krasjgjenopprettingen
+(`recovery::recover_session_with`) leverte bare mp4-en: `keep_audio_capture` var ikke
+lagret i manifestet, så WAV-en ble slettet og sidefila som det levende stoppet lager
+(`keep_separate_audio`) ble aldri laget. Nå leser gjenopprettingen innstillingen
+(`keep_separate_audio`, formatet følger leveringsformatet som ved et levende opptak;
+kanaler, rate og bitrate fra manifestet), lar leveringen beholde den sammenslåtte
+WAV-en, lager `<navn>.<format>` fra den (`engine::extract_separate_audio_for`, samme
+kode som det levende stoppet) med en egen historikkrad, og fjerner WAV-en. Bare når
+mp4-raden er ny: et gjentatt forsøk lager ikke en andre fil. Manifestet er uendret
+(ingen migrering); bruker man en annen innstilling ved omstart enn ved opptaket, er
+det innstillingen ved omstart som gjelder. Test:
+`a_recovered_video_recording_gets_its_separate_audio_file`.
+
 ## Notert, ikke planlagt
 
 - **Helt native koding.** filmcrafts VideoToolbox- og NVENC-kodere (MIT/Apache)

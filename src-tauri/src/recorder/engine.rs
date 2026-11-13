@@ -61,6 +61,7 @@ use crate::util::lock_recover;
 // re-exported below, so every `crate::recorder::engine::X` path is unchanged.
 mod emit; // error/warning/failure events + last-error.json + the error-code table
 mod finalize; // capture folder, crash manifest, deliverable finalisation, telemetry
+pub(crate) use finalize::{SeparateAudio, extract_separate_audio_for}; // crash recovery makes the same separate audio file
 mod payloads; // the ts-rs IPC payload types
 mod supervisor; // run_session, its one spawn site and its panic guard
 

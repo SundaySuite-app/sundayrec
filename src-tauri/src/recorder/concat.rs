@@ -536,8 +536,16 @@ pub(crate) async fn finalize_deliverable_noted(
     }
 }
 
-/// Scratch path for an in-progress delivery: `<stem>_deliver_tmp.<ext>` beside
+/// Scratch path for an in-progress delivery: `.<stem>_deliver_tmp.<ext>` beside
 /// `delivery` (same extension, so ffmpeg still picks the right muxer).
+///
+/// The leading dot hides it in Finder (and from a Linux file manager) while it
+/// is being written, and a leftover from a crash does not sit in the save folder
+/// looking like a recording; it is still on the SAME volume as `delivery`, so the
+/// final `rename` stays atomic. Windows has no dot rule, so there it is visible
+/// for the minutes the encode takes — ffmpeg creates the file, not us.
+/// Before this the name was `<stem>_deliver_tmp.<ext>`, visible; the startup
+/// sweep ([`is_delivery_tmp_name`]) still recognises that spelling.
 pub(crate) fn delivery_tmp_path(delivery: &str) -> String {
     let p = Path::new(delivery);
     let dir = p.parent().unwrap_or_else(|| Path::new(""));
@@ -546,10 +554,20 @@ pub(crate) fn delivery_tmp_path(delivery: &str) -> String {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "recording".to_string());
     let name = match p.extension() {
-        Some(e) => format!("{stem}_deliver_tmp.{}", e.to_string_lossy()),
-        None => format!("{stem}_deliver_tmp"),
+        Some(e) => format!(".{stem}{DELIVERY_TMP_MARK}.{}", e.to_string_lossy()),
+        None => format!(".{stem}{DELIVERY_TMP_MARK}"),
     };
     dir.join(name).to_string_lossy().into_owned()
+}
+
+/// What [`delivery_tmp_path`] puts between the stem and the extension.
+const DELIVERY_TMP_MARK: &str = "_deliver_tmp";
+
+/// Is this file name a delivery scratch file — the hidden one, or the visible
+/// one earlier versions made? What the startup sweep looks for. The caller must
+/// also check that the file is old: a delivery that is running right now owns one.
+pub(crate) fn is_delivery_tmp_name(name: &str) -> bool {
+    name.ends_with(DELIVERY_TMP_MARK) || name.contains(&format!("{DELIVERY_TMP_MARK}."))
 }
 
 /// Run `transcode` against a temp path beside `delivery_path`, validate the
@@ -1604,6 +1622,32 @@ mod tests {
         assert_eq!(out, primary_s, "below-gate pre-roll dropped, primary kept");
         // The below-gate pre-roll guard means no concat ran → primary untouched.
         assert_eq!(tokio::fs::read(&primary).await.unwrap(), vec![0u8; 8192]);
+    }
+
+    #[test]
+    fn the_delivery_scratch_file_is_hidden_beside_the_delivery_and_keeps_its_extension() {
+        let tmp = delivery_tmp_path("/rec/sermon.mp3");
+        // Same folder (so the rename stays on one volume and atomic), same extension
+        // (so ffmpeg picks the muxer), and a leading dot (so Finder does not list it).
+        assert_eq!(Path::new(&tmp), Path::new("/rec/.sermon_deliver_tmp.mp3"));
+        assert_eq!(
+            Path::new(&delivery_tmp_path("/rec/sermon")),
+            Path::new("/rec/.sermon_deliver_tmp")
+        );
+        let name = Path::new(&tmp)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            is_delivery_tmp_name(&name),
+            "the startup sweep must know its own name"
+        );
+        assert!(
+            is_delivery_tmp_name("sermon_deliver_tmp.mp3"),
+            "and the old visible one"
+        );
+        assert!(!is_delivery_tmp_name("sermon.mp3"));
     }
 
     #[tokio::test]
