@@ -31,6 +31,8 @@ export interface FakeListen {
   holdChain(): (ok: boolean) => void;
   /** La åpningen mislykkes. */
   failOpen(): void;
+  /** Hold neste åpnings-svar tilbake til testen slipper det (åpningen er logget når den sendes). */
+  holdOpen(): () => void;
 }
 
 export function fakeListen(): FakeListen {
@@ -38,10 +40,12 @@ export function fakeListen(): FakeListen {
   let handlers: Array<(p: unknown) => void> = [];
   const held: Array<Promise<boolean>> = [];
   let openFails = false;
+  const heldOpens: Array<Promise<void>> = [];
   const api = {
     editorListenOpen: (token: string, listen: Record<string, unknown>) => {
       log.push({ cmd: "open", token, listen });
-      return Promise.resolve(
+      const gate = heldOpens.shift() ?? Promise.resolve();
+      return gate.then(() =>
         openFails
           ? { ok: false as const, error: "no output device" }
           : { ok: true as const, programSecs: 3500 },
@@ -82,6 +86,11 @@ export function fakeListen(): FakeListen {
     },
     failOpen: () => {
       openFails = true;
+    },
+    holdOpen: () => {
+      let release!: () => void;
+      heldOpens.push(new Promise<void>((r) => (release = r)));
+      return release;
     },
   };
 }

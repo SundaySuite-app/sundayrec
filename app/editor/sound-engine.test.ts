@@ -319,3 +319,53 @@ describe("økta", () => {
     );
   });
 });
+
+describe("foreldede trykk og åpninger (PLAN, audit 2026-11-11)", () => {
+  it("forlates steget midt i åpningen, står ikke «kunne ikke spille» igjen", async () => {
+    stop = watchListenPrepare();
+    await settle();
+    const playing = toggleListen();
+    stopListen();
+    await playing;
+    await settle();
+    expect(listenError.value).toBe(false);
+  });
+
+  it("dobbeltklikk mens «Etter» måles spiller én gang", async () => {
+    stop = watchListenPrepare();
+    await settle();
+    const release = engine.holdChain();
+    const a = toggleListen();
+    await settle();
+    const b = toggleListen();
+    await settle();
+    release(true);
+    await Promise.all([a, b]);
+    await settle();
+    expect(engine.actions().filter((x) => x.kind === "play")).toHaveLength(1);
+    expect(listenPlaying.value).toBe(true);
+  });
+
+  it("en foreldet åpning lukker ikke økta til den nye", async () => {
+    stop = watchListenPrepare();
+    await settle();
+    const releaseA = engine.holdOpen();
+    const releaseB = engine.holdOpen();
+    const a = toggleListen();
+    await settle();
+    stopListen(); // steget forlatt mens A åpnes ...
+    const b = toggleListen(); // ... og straks tilbake
+    await settle();
+    releaseA();
+    await settle();
+    releaseB();
+    await Promise.all([a, b]);
+    await settle();
+    const log = engine.log.map((c) => c.cmd);
+    const lastOpen = log.lastIndexOf("open");
+    expect(lastOpen).toBeGreaterThan(-1);
+    // Ingen lukking etter den siste åpningen: den ville tatt lydkortet fra den nye økta.
+    expect(log.slice(lastOpen)).not.toContain("close");
+    expect(listenPlaying.value).toBe(true);
+  });
+});
