@@ -1090,6 +1090,36 @@ mod tests {
         (dir, file)
     }
 
+    /// SOMMER-2026-11 etterprøving (#444). The guarded purge only purges on a
+    /// `Trusted` clock, and the baseline is `sweep-state.json`. When that file
+    /// can never be written (here: a directory in its place stands in for a
+    /// read-only trash folder or a volume that refuses the atomic rename), every
+    /// tick is `NoBaseline` and the trash is never emptied again — a recording
+    /// trashed 60 days ago stays forever. Before #444 the purge did not depend
+    /// on any state file. EXPECTED TO FAIL.
+    #[test]
+    #[ignore = "SOMMER-2026-11 etterprøving PoC: expected to fail — run with --ignored"]
+    fn sommer_poc_444_a_sweep_state_that_cannot_be_written_stops_the_purge_for_good() {
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0 - 60.0 * DAY);
+        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
+        let mut purged_any = false;
+        for tick in 0..20 {
+            let now = t0 + f64::from(tick) * HALF_DAY;
+            if !purge_older_than_guarded(dir.path(), 30, now)
+                .unwrap()
+                .is_empty()
+            {
+                purged_any = true;
+            }
+        }
+        assert!(
+            purged_any && !Path::new(&file).exists(),
+            "a recording trashed 60 days ago was never purged over 10 days of ticks: \
+             the purge waits for a baseline it can never write"
+        );
+    }
+
     #[test]
     fn a_clock_jump_forward_does_not_empty_the_trash() {
         let t0 = 1_800_000_000_000.0;
