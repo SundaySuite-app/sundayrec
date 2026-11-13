@@ -3206,7 +3206,11 @@ mod tests {
     async fn weak_level_take(
         secs: u64,
         amp_at: impl Fn(u64) -> f32 + Send + 'static,
-    ) -> (Vec<f64>, Option<f64>, Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>) {
+    ) -> (
+        Vec<f64>,
+        Option<f64>,
+        Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
+    ) {
         const RATE: u32 = 8_000; // the meter is rate-independent; 8 kHz keeps a debug build quick
         let mut r = rig();
         let slot = Arc::new(LoudnessSlot::new());
@@ -3214,9 +3218,11 @@ mod tests {
         // What the OS reported during the take: the level watch must leave it.
         r.xruns.store(3, Ordering::Relaxed);
         let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let clock = FakeClock::default();
-        let (bytes, frames, clock_h) = (Arc::clone(&r.bytes), Arc::clone(&r.frames), clock.handle());
+        let (bytes, frames, clock_h) =
+            (Arc::clone(&r.bytes), Arc::clone(&r.frames), clock.handle());
         let sound = tokio::spawn(async move {
             let mut tap = slot.begin(RATE, 1);
             for sec in 0..secs {
@@ -3272,7 +3278,11 @@ mod tests {
     async fn a_muted_mixer_is_told_once_after_five_minutes_and_xruns_are_untouched() {
         let (alerts, first_weak, tel) = weak_level_take(15 * 60, |_| 0.0003).await;
         let from = first_weak.expect("the meter reads a weak level");
-        assert_eq!(alerts.len(), 1, "exactly one alert in 15 minutes: {alerts:?}");
+        assert_eq!(
+            alerts.len(),
+            1,
+            "exactly one alert in 15 minutes: {alerts:?}"
+        );
         let after = alerts[0] - from;
         assert!(
             after > 300.0 && after <= 302.0,
@@ -3291,7 +3301,11 @@ mod tests {
         let (alerts, first_weak, _) =
             weak_level_take(12 * 60, |s| if s < 4 * 60 { 0.0003 } else { 0.1 }).await;
         assert!(first_weak.is_some(), "the quiet stretch was measured");
-        assert_eq!(alerts, Vec::<f64>::new(), "4 quiet minutes is not a muted mixer");
+        assert_eq!(
+            alerts,
+            Vec::<f64>::new(),
+            "4 quiet minutes is not a muted mixer"
+        );
         let (alerts, first_weak, _) = weak_level_take(8 * 60, |_| 0.1).await;
         assert_eq!(first_weak, None, "a −20 dBFS tone is not weak");
         assert_eq!(alerts, Vec::<f64>::new());

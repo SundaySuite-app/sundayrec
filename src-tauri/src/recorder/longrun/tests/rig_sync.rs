@@ -46,8 +46,8 @@ use crate::camera::queue::FrameQueue;
 use crate::camera::{CaptureStats, Frame, PixelFormat};
 use crate::recorder::native_capture::stream::ClockPair;
 use crate::recorder::native_capture::video::{
-    FfmpegSink, PAIR_RING, QUEUE_FRAMES, SinkFactory, SyntheticSource, VideoSource, VideoTrack, VideoTrackConfig,
-    VideoTrackStats,
+    FfmpegSink, PAIR_RING, QUEUE_FRAMES, SinkFactory, SyntheticSource, VideoSource, VideoTrack,
+    VideoTrackConfig, VideoTrackStats,
 };
 use crate::recorder::native_capture::writer::{
     FLUSH_EVERY, SYNC_EVERY, WriterConfig, WriterSummary, spawn_wav_writer,
@@ -395,7 +395,9 @@ fn record(dir: &Path, plan: &Plan) -> Recorded {
         let base_ns = if plan.realtime {
             host_now_ns()
         } else {
-            host0 + (recorded as f64 * 1e9 / f64::from(SR)) as u64 + fragment_no as u64 * 1_234_567_891
+            host0
+                + (recorded as f64 * 1e9 / f64::from(SR)) as u64
+                + fragment_no as u64 * 1_234_567_891
         };
         let tl = Timeline {
             base_ns,
@@ -466,7 +468,10 @@ fn record(dir: &Path, plan: &Plan) -> Recorded {
                 break;
             }
         }
-        assert_eq!(s, frag_len, "fragment {fragment_no}: the split fired off plan");
+        assert_eq!(
+            s, frag_len,
+            "fragment {fragment_no}: the split fired off plan"
+        );
         let (frames, stats) = frag.finish();
         assert_eq!(frames, s, "the writer lost samples");
         recorded += frames;
@@ -511,7 +516,8 @@ async fn deliver(save: &Path, wavs: &[PathBuf]) -> PathBuf {
         started_at_ms: 1,
     };
     let manifest = manifest_for(save, &d);
-    let spec = DeliverySpec::from_manifest(manifest.delivery_encode.as_ref().unwrap(), &d.primary_path);
+    let spec =
+        DeliverySpec::from_manifest(manifest.delivery_encode.as_ref().unwrap(), &d.primary_path);
     let out = finalize_deliverable(&d, None, Some(&spec))
         .await
         .expect("delivered");
@@ -530,7 +536,13 @@ fn probe(args: &[&str], path: &Path) -> String {
 }
 
 fn probe_f64(args: &[&str], path: &Path) -> f64 {
-    probe(args, path).lines().next().unwrap_or("").trim().parse().unwrap_or(f64::NAN)
+    probe(args, path)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .parse()
+        .unwrap_or(f64::NAN)
 }
 
 /// What the delivered file shows.
@@ -551,14 +563,23 @@ fn measure(mp4: &Path) -> Measured {
     // Sound: decode to 24 kHz mono and find each burst's first loud sample.
     // `-copyts` keeps the container's clock, so sample 0 is `start_time`.
     let a0 = probe_f64(
-        &["-select_streams", "a:0", "-show_entries", "stream=start_time", "-of", "csv=p=0"],
+        &[
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=start_time",
+            "-of",
+            "csv=p=0",
+        ],
         mp4,
     );
     let a0 = if a0.is_nan() { 0.0 } else { a0 };
     let mut child = Command::new(crate::media::ffmpeg::ffmpeg_path())
         .args(["-v", "error", "-nostdin", "-copyts", "-i"])
         .arg(mp4)
-        .args(["-map", "0:a:0", "-ac", "1", "-ar", "24000", "-f", "s16le", "pipe:1"])
+        .args([
+            "-map", "0:a:0", "-ac", "1", "-ar", "24000", "-f", "s16le", "pipe:1",
+        ])
         .stdout(Stdio::piped())
         .spawn()
         .expect("ffmpeg audio");
@@ -595,7 +616,14 @@ fn measure(mp4: &Path) -> Measured {
     // Picture: the container's timestamp of every frame, and each frame's mean
     // luma (2×2 grey, one byte per pixel).
     let mut pts: Vec<f64> = probe(
-        &["-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0"],
+        &[
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "packet=pts_time",
+            "-of",
+            "csv=p=0",
+        ],
         mp4,
     )
     .lines()
@@ -606,8 +634,15 @@ fn measure(mp4: &Path) -> Measured {
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(mp4)
         .args([
-            "-map", "0:v:0", "-vf", "scale=2:2:flags=area,format=gray", "-fps_mode",
-            "passthrough", "-f", "rawvideo", "pipe:1",
+            "-map",
+            "0:v:0",
+            "-vf",
+            "scale=2:2:flags=area,format=gray",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "pipe:1",
         ])
         .output()
         .expect("ffmpeg video");
@@ -634,16 +669,37 @@ fn measure(mp4: &Path) -> Measured {
         white_starts,
         white_runs,
         v_secs: probe_f64(
-            &["-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "csv=p=0"],
+            &[
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "csv=p=0",
+            ],
             mp4,
         ),
         a_secs: probe_f64(
-            &["-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0"],
+            &[
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "csv=p=0",
+            ],
             mp4,
         ),
         avg_fps: {
             let r = probe(
-                &["-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0"],
+                &[
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=avg_frame_rate",
+                    "-of",
+                    "csv=p=0",
+                ],
                 mp4,
             );
             let (n, d) = r.split_once('/').unwrap_or((&r, "1"));
@@ -676,7 +732,10 @@ async fn run_sync(plan: Plan, label: &str) -> String {
     }
     let out = deliver(save.path(), &rec.wavs).await;
     if let Some(keep) = std::env::var_os("SUNDAYREC_RIG_KEEP") {
-        let _ = std::fs::copy(&out, Path::new(&keep).join(format!("{label}.mp4").replace(' ', "_")));
+        let _ = std::fs::copy(
+            &out,
+            Path::new(&keep).join(format!("{label}.mp4").replace(' ', "_")),
+        );
     }
     let m = tokio::task::spawn_blocking({
         let out = out.clone();
@@ -697,7 +756,10 @@ async fn run_sync(plan: Plan, label: &str) -> String {
     );
     assert_eq!(m.audio_onsets.len(), rec.claps.len(), "claps heard: {m:?}");
     assert_eq!(m.white_starts.len(), rec.claps.len(), "claps seen: {m:?}");
-    assert!(m.white_runs.iter().all(|&r| r == 1), "a clap is one frame: {m:?}");
+    assert!(
+        m.white_runs.iter().all(|&r| r == 1),
+        "a clap is one frame: {m:?}"
+    );
     // The delivered timeline: a fragment starts where the sound before it ends.
     let mut starts = vec![0.0f64];
     for f in &rec.frames {
@@ -736,7 +798,11 @@ async fn run_sync(plan: Plan, label: &str) -> String {
         m.v_secs,
         m.a_secs
     );
-    assert!((m.avg_fps - 30.0).abs() < 0.05, "avg_frame_rate {}\n{report}", m.avg_fps);
+    assert!(
+        (m.avg_fps - 30.0).abs() < 0.05,
+        "avg_frame_rate {}\n{report}",
+        m.avg_fps
+    );
     eprintln!("{report}");
     report
 }
@@ -992,7 +1058,10 @@ async fn video_under_cpu_load_keeps_30_fps_and_counts_what_it_drops() {
         max_push < Duration::from_millis(100),
         "the camera callback waited {max_push:?}"
     );
-    assert_eq!(stats.slots_written, slots, "one picture per slot: {stats:?}");
+    assert_eq!(
+        stats.slots_written, slots,
+        "one picture per slot: {stats:?}"
+    );
     assert_eq!(
         stats.new + stats.repeated + stats.black,
         slots,

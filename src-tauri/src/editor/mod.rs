@@ -9156,8 +9156,15 @@ mod tests {
                 dir.path().join("rec.mp4"),
             );
             let run = |args: Vec<String>| {
-                let out = std::process::Command::new(&ffmpeg).args(&args).output().unwrap();
-                assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+                let out = std::process::Command::new(&ffmpeg)
+                    .args(&args)
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
             };
             // The picture: lavfi frames, flashing white for one frame every 10 s, as raw NV12
             // into the recorder's own encoder command.
@@ -9189,7 +9196,11 @@ mod tests {
                 .stdin(feed.stdout.take().unwrap())
                 .output()
                 .unwrap();
-            assert!(encoder.status.success(), "{}", String::from_utf8_lossy(&encoder.stderr));
+            assert!(
+                encoder.status.success(),
+                "{}",
+                String::from_utf8_lossy(&encoder.stderr)
+            );
             assert!(feed.wait().unwrap().success());
             // The sound: a 50 ms beep at every clap.
             let beeps = format!(
@@ -9255,15 +9266,15 @@ mod tests {
             let (flashes, beeps) = claps(&ffmpeg, &ffprobe, path);
             // (The keyframe is looked up, not assumed: the noisy picture gets scene-cut
             // keyframes between the two-second ones.)
-            let packets = sundayrec_core::video_copy::parse_packets(
-                &String::from_utf8_lossy(
-                    &std::process::Command::new(&ffprobe)
-                        .args(sundayrec_core::video_copy::packet_args(&src.to_string_lossy()))
-                        .output()
-                        .unwrap()
-                        .stdout,
-                ),
-            );
+            let packets = sundayrec_core::video_copy::parse_packets(&String::from_utf8_lossy(
+                &std::process::Command::new(&ffprobe)
+                    .args(sundayrec_core::video_copy::packet_args(
+                        &src.to_string_lossy(),
+                    ))
+                    .output()
+                    .unwrap()
+                    .stdout,
+            ));
             let key = packets
                 .iter()
                 .filter(|p| p.key && p.pts <= 47.3 + 0.001)
@@ -9273,7 +9284,13 @@ mod tests {
             let before = 33.0;
             let mut expected: Vec<f64> = (0..=30).step_by(10).map(f64::from).collect();
             expected.extend((50..=110).step_by(10).map(|c| before + f64::from(c) - key));
-            assert_claps_in_sync("recorded video, cut at 33 s", &flashes, &beeps, &expected, 1.1);
+            assert_claps_in_sync(
+                "recorded video, cut at 33 s",
+                &flashes,
+                &beeps,
+                &expected,
+                1.1,
+            );
             let skew_ms = flashes
                 .iter()
                 .zip(&beeps)
