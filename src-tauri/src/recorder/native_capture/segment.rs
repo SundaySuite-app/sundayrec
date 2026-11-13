@@ -4312,7 +4312,11 @@ mod tests {
                     assert!(chain.join().await.0);
                 } else {
                     // A half-written delivery temp, as an encode killed mid-way leaves.
-                    std::fs::write(d.save.join("sermon_deliver_tmp.wav"), b"RIFF junk").unwrap();
+                    // (#444: the scratch name is hidden — the one the code uses.)
+                    let tmp = crate::recorder::concat::delivery_tmp_path(
+                        &d.save.join("sermon.wav").to_string_lossy(),
+                    );
+                    std::fs::write(tmp, b"RIFF junk").unwrap();
                 }
                 tokio::time::sleep(Duration::from_millis(1200)).await;
                 // The kill: the background delivery dies with the process, and
