@@ -516,19 +516,17 @@ impl RecorderEngine {
         // open failure. NotDetermined/Unknown fall through — opening the device
         // is what triggers the OS prompt, and Unknown means we couldn't tell, so
         // we behave exactly as before.
-        {
+        // The CAMERA never fails a start (S1-B): the sound is the recording, the
+        // picture is a bonus. A blocked camera makes the session audio-only and
+        // the volunteer is told (below, once the session runs).
+        let camera_blocked = {
             use crate::media::permissions::{MediaKind, blocked_message, status};
             let mic = status(MediaKind::Microphone);
             if let Some(msg) = blocked_message(MediaKind::Microphone, mic) {
                 return Err(AppError::Recording(msg));
             }
-            if wants_video {
-                let cam = status(MediaKind::Camera);
-                if let Some(msg) = blocked_message(MediaKind::Camera, cam) {
-                    return Err(AppError::Recording(msg));
-                }
-            }
-        }
+            wants_video && camera_blocks_video(status(MediaKind::Camera))
+        };
 
         // Pre-roll prepend (F3.2 + F3.3a). When the caller harvested a pre-roll
         // clip we have a real, playable clip of the audio captured BEFORE the
@@ -547,7 +545,7 @@ impl RecorderEngine {
         // in the native camera list (C1c) with the same rule the video track
         // opens it by (`find_camera`). An audio-only session lists nothing — it
         // must not wait for, or fail on, a camera it does not use (M1R #5).
-        let camera = if wants_video {
+        let camera = if wants_video && !camera_blocked {
             resolve_session_camera(opts.video_device_name.as_deref().unwrap_or_default()).await
         } else {
             None
@@ -626,6 +624,13 @@ impl RecorderEngine {
             stop_tx,
             state: session_state,
         });
+        if camera_blocked {
+            emit_warning(
+                &app,
+                CAMERA_BLOCKED_CODE,
+                &camera_blocked_text(crate::ui_lang::current()),
+            );
+        }
         Ok(())
     }
 
@@ -709,6 +714,23 @@ pub fn current_platform() -> Platform {
     crate::util::detect_platform()
 }
 
+/// The wire code of the start-time warning for a blocked camera (macOS TCC).
+/// The same code the renderer and `AlertText` already have texts for in all
+/// seven languages.
+pub(crate) const CAMERA_BLOCKED_CODE: &str = "camera_permission_denied";
+
+/// Does this camera permission status make the session audio-only?
+/// (`NotDetermined`/`Unknown` do not: opening the camera is what asks.)
+fn camera_blocks_video(status: crate::media::permissions::AuthStatus) -> bool {
+    crate::media::permissions::blocked_message(crate::media::permissions::MediaKind::Camera, status)
+        .is_some()
+}
+
+/// The warning's sentence, in the UI language.
+fn camera_blocked_text(lang: sundayrec_core::lang::Lang) -> String {
+    sundayrec_core::alerts::AlertText::for_recording_code(CAMERA_BLOCKED_CODE).text(lang)
+}
+
 /// How long `start()` waits for the native camera list. Media Foundation and
 /// DirectShow are asked on Windows, and a wedged driver must not hold a
 /// scheduled start past the scheduler's own bound.
@@ -769,6 +791,39 @@ async fn resolve_session_camera(name: &str) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// S1-B: a denied/restricted camera drops the PICTURE, never the start;
+    /// every other status leaves the camera path alone.
+    #[test]
+    fn a_blocked_camera_makes_the_session_audio_only() {
+        use crate::media::permissions::AuthStatus::*;
+        assert!(camera_blocks_video(Denied));
+        assert!(camera_blocks_video(Restricted));
+        for ok in [Authorized, NotDetermined, Unknown] {
+            assert!(!camera_blocks_video(ok), "{ok:?}");
+        }
+    }
+
+    /// S1-B: the warning has a real, distinct sentence in all seven languages.
+    #[test]
+    fn the_camera_warning_has_text_in_every_language() {
+        use sundayrec_core::lang::Lang;
+        let mut seen = std::collections::HashSet::new();
+        for lang in [
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
+        ] {
+            let t = camera_blocked_text(lang);
+            assert!(!t.is_empty());
+            assert!(seen.insert(t), "{lang:?} reuses another language's text");
+        }
+        assert_eq!(seen.len(), 7);
+    }
 
     #[test]
     fn an_aborted_stop_leaves_the_engine_failed_not_stopping_forever() {

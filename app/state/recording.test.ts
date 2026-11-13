@@ -100,6 +100,18 @@ describe("gjenkoblingsstripa", () => {
 
   // MUTASJONSPRØVEN: fjern `if (st) reconnecting.value = st === "reconnecting"`
   // fra `recording-overlay-stop`-handleren, og denne blir rød.
+  it("kamera sperret i systemet gir beskjed, ikke «Kobler til igjen»", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    h.emit("recording-warning", {
+      code: "camera_permission_denied",
+      message: "Kameratilgang nektet",
+    });
+    expect(reconnecting.value).toBe(false);
+    expect(isRecording.value).toBe(true);
+    h.off();
+  });
+
   it("ryddes av neste tilstandsemit som sier «recording»", () => {
     const h = withFakeApi();
     markSessionStarted();
