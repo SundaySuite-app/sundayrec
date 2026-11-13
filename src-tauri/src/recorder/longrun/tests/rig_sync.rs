@@ -600,7 +600,7 @@ fn measure(mp4: &Path) -> Measured {
         if bytes.len() % 2 == 1 {
             carry = bytes.pop();
         }
-        for c in bytes.chunks_exact(2) {
+        for c in bytes.as_chunks::<2>().0 {
             let v = i32::from(i16::from_le_bytes([c[0], c[1]])).abs();
             if v > thr {
                 if last_loud.is_none_or(|l| idx - l > 24_000 / 2) {
@@ -649,7 +649,9 @@ fn measure(mp4: &Path) -> Measured {
     assert!(luma.status.success(), "ffmpeg video decode");
     let frames: Vec<bool> = luma
         .stdout
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| c.iter().map(|&b| u32::from(b)).sum::<u32>() / 4 > 200)
         .collect();
     assert_eq!(frames.len(), pts.len(), "decoded frames vs packets");
