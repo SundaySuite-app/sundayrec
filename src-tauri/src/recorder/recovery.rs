@@ -25,8 +25,9 @@ use crate::commands::path_guard;
 use crate::db::store::{RecordingRow, insert_recording};
 use crate::recorder::concat::{
     DeliverySpec, Finished, finalize_deliverable_noted, output_is_valid, park_video_into,
-    video_is_readable, warn_video_dropped,
+    remove_capture, video_is_readable, warn_video_dropped,
 };
+use crate::recorder::engine::{SeparateAudio, extract_separate_audio_for};
 
 /// `<app-data>/recovery` — where NEW session manifests are written. Created on
 /// demand. «App-data» is wherever the database lives ([`crate::appdata`]).
@@ -843,6 +844,32 @@ async fn sweep_capture_markers(manifest: &SessionManifest) {
     }
 }
 
+/// The separate audio file a recovered VIDEO recording should get, if the person
+/// has asked for one (`keep_separate_audio`, default on — the same switch the live
+/// stop reads). The format follows the delivery format, as for a live recording
+/// ([`crate::recorder::opts`]); channels, rate and bitrate are the manifest's own.
+/// `None` for an audio-only session, which already IS the audio.
+async fn separate_audio_for(
+    pool: &SqlitePool,
+    manifest: &SessionManifest,
+) -> Option<SeparateAudio> {
+    let enc = manifest.delivery_encode.as_ref()?;
+    if enc.mode != DeliveryMode::MuxAudioVideo {
+        return None;
+    }
+    let settings = crate::settings::load(pool).await.unwrap_or_default();
+    if !settings.keep_separate_audio {
+        return None;
+    }
+    Some(SeparateAudio {
+        ext: crate::recorder::opts::format_ext(settings.format).to_string(),
+        channels: enc.channels,
+        sample_rate: enc.sample_rate,
+        bitrate_kbps: enc.bitrate_kbps,
+        device_name: manifest.device_name.clone(),
+    })
+}
+
 /// What one recovery pass over a session achieved.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecoverOutcome {
@@ -952,6 +979,9 @@ async fn recover_session_with(
         return RecoverOutcome::default();
     }
     let recoverable = recoverable_deliverables(manifest, |p| Path::new(p).exists());
+    // M3R #13: a video recording gets its separate audio file when the person has
+    // asked for one — the live stop makes it, and a crash must not cost it.
+    let separate = separate_audio_for(pool, manifest).await;
     let mut count = 0usize;
     let mut unresolved = 0usize;
     for (index, dm) in recoverable.iter().enumerate() {
@@ -987,8 +1017,15 @@ async fn recover_session_with(
         let delivery_spec = manifest
             .delivery_encode
             .as_ref()
-            .map(|enc| DeliverySpec::from_manifest(enc, &dm.primary_path));
+            .map(|enc| DeliverySpec::from_manifest(enc, &dm.primary_path))
+            // The merged WAV is the lossless source of the separate audio file: the
+            // finish leaves it for us (and we remove it below, whatever happens).
+            .map(|spec| DeliverySpec {
+                keep_audio_capture: separate.is_some(),
+                ..spec
+            });
 
+        let mut delivered = true;
         let final_path = finisher
             .finish(&deliverable, preroll, delivery_spec.as_ref())
             .await
@@ -1010,8 +1047,12 @@ async fn recover_session_with(
                     "An interrupted recording was salvaged, but could not be finished in the \
                      chosen format — the raw file has been kept.",
                 );
+                delivered = false;
                 dm.primary_path.clone()
             });
+        // The WAV the finish kept for the separate audio file. Never when the
+        // delivery failed: then the WAV IS the `final_path` and the only copy.
+        let kept_wav = (delivered && separate.is_some()).then(|| dm.primary_path.clone());
 
         if !output_is_valid(Path::new(&final_path)).await {
             tracing::warn!(file = %final_path, "recovery: finished file invalid — skipping history row");
@@ -1024,6 +1065,8 @@ async fn recover_session_with(
                     "Et avbrutt opptak kunne ikke gjenopprettes — filen var ikke spillbar.",
                 );
             }
+            // The kept WAV stays: the manifest is kept too (`unresolved`), and the next
+            // launch tries again from the only good copy of the sound.
             unresolved += 1;
             continue;
         }
@@ -1037,6 +1080,9 @@ async fn recover_session_with(
             .unwrap_or(false)
         {
             tracing::info!(file = %final_path, "recovery: history row already exists — skipping duplicate");
+            if let Some(w) = &kept_wav {
+                remove_capture(w).await;
+            }
             continue;
         }
 
@@ -1054,7 +1100,7 @@ async fn recover_session_with(
         let row = RecordingRow {
             integrated_lufs: None,
             id: String::new(),
-            file_path: final_path,
+            file_path: final_path.clone(),
             device_name: Some(manifest.device_name.clone()),
             started_at: dm.started_at_ms as f64,
             duration_ms,
@@ -1064,6 +1110,23 @@ async fn recover_session_with(
         };
         if insert_recording(pool, row).await.is_ok() {
             count += 1;
+        }
+        if let (Some(wav), Some(sep)) = (&kept_wav, &separate) {
+            // Only after the main row: a replay that skipped it above never gets here,
+            // so a second pass cannot make a second separate file.
+            let made = extract_separate_audio_for(
+                pool,
+                &final_path,
+                wav,
+                dm.started_at_ms,
+                duration_ms.unwrap_or(0.0),
+                sep,
+            )
+            .await;
+            if !made {
+                tracing::warn!(file = %final_path, "recovery: the separate audio file could not be made");
+            }
+            remove_capture(wav).await;
         }
     }
     RecoverOutcome {
@@ -2522,6 +2585,81 @@ mod tests {
             junk
         );
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    /// Settings with the separate audio file on/off and WAV as the audio format
+    /// (a sidecar name that differs from the mp4's, and fast to make).
+    async fn save_separate_audio_setting(pool: &SqlitePool, on: bool) {
+        let s = sundayrec_core::settings::Settings {
+            keep_separate_audio: on,
+            format: sundayrec_core::settings::FileFormat::Wav,
+            ..Default::default()
+        };
+        crate::settings::save(pool, s).await.unwrap();
+    }
+
+    /// M3R #13: a video recording that was recovered after a crash got its mp4 but
+    /// never the separate audio file the live stop makes (`keep_separate_audio`).
+    /// It must: the WAV is still in the capture folder, lossless, and the file and
+    /// its second history row follow. Mutation check: `keep_audio_capture:
+    /// separate.is_some()` → `false` in `recover_session_with` and this fails.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn a_recovered_video_recording_gets_its_separate_audio_file() {
+        let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+            return;
+        };
+        let (pool, _db) = temp_pool().await;
+        save_separate_audio_setting(&pool, true).await;
+        let recovery = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let cap = out.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&cap).unwrap();
+        let m = video_manifest(&cap, out.path());
+        make_sine_wav(&cap.join("seg.wav"));
+        make_picture_mkv(&cap.join("seg.mkv"));
+        write_recorders_manifest(recovery.path(), &m).await;
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+
+        assert_eq!(recovered, 1, "one recovered recording …");
+        assert_eq!(names_in(out.path()), vec!["seg.mp4", "seg.wav"]);
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 2, "… and the separate audio file's own row");
+        let sidecar = rows
+            .iter()
+            .find(|r| r.note.as_deref() == Some("Separat lydfil"))
+            .expect("a row for the separate audio file");
+        assert!(sidecar.file_path.ends_with("seg.wav"));
+        assert!(
+            !cap.exists(),
+            "the capture folder, and its WAV, are cleared"
+        );
+    }
+
+    /// … and not when the person has turned it off.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn a_recovered_video_recording_gets_no_separate_audio_file_when_it_is_off() {
+        let Some(_pin) = crate::media::ffmpeg::tests::sidecar_or_skip() else {
+            return;
+        };
+        let (pool, _db) = temp_pool().await;
+        save_separate_audio_setting(&pool, false).await;
+        let recovery = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let cap = out.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&cap).unwrap();
+        let m = video_manifest(&cap, out.path());
+        make_sine_wav(&cap.join("seg.wav"));
+        make_picture_mkv(&cap.join("seg.mkv"));
+        write_recorders_manifest(recovery.path(), &m).await;
+
+        scan_dir(&pool, recovery.path()).await;
+
+        assert_eq!(names_in(out.path()), vec!["seg.mp4"]);
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1);
+        assert!(!cap.exists());
     }
 
     /// M3R #10: the app died after the mp4 was delivered (and its row written)

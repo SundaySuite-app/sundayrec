@@ -61,7 +61,7 @@ grønt.
 
 Det er ikke en regresjon i appen. Testen beviser ikke det den sier:
 
-1. Leveringen kodes til `<stem>_deliver_tmp.<ext>` og flyttes på plass med
+1. Leveringen kodes til `.<stem>_deliver_tmp.<ext>` (skjult navn siden PLAN-småpunktene; før `<stem>_deliver_tmp.<ext>`) og flyttes på plass med
    `rename` først når kodingen er validert (`concat::deliver_via_temp`,
    `delivery_tmp_path`). Leveringsfila kan altså ikke finnes mens kodingen går.
 2. Testens killer venter på at `sermon.mp3` dukker opp og kjører

@@ -1269,6 +1269,9 @@ pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
 /// Except the temp an export is rendering into right now (`in_flight`), asked
 /// by NAME under the lock the export claims it with: these folders are
 /// canonicalised, so their paths need not be spelled like the export's.
+/// How long a delivery scratch file must have been left alone before the startup sweep removes it.
+const DELIVERY_TMP_MIN_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFlight) -> usize {
     use sundayrec_core::editor::{dedupe_cleanup_dirs, is_editor_temp_name};
     let dirs = dedupe_cleanup_dirs(folders, |s| {
@@ -1283,7 +1286,17 @@ fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFl
         };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !is_editor_temp_name(&name) {
+            // A delivery scratch file is swept only when it has not been written to for
+            // a while: recovery may be delivering a crashed recording right now.
+            let stale_delivery_tmp = crate::recorder::concat::is_delivery_tmp_name(&name)
+                && entry
+                    .metadata()
+                    .ok()
+                    .filter(|m| m.is_file())
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|age| age >= DELIVERY_TMP_MIN_AGE);
+            if !is_editor_temp_name(&name) && !stale_delivery_tmp {
                 continue;
             }
             let unlinked = in_flight
@@ -5071,6 +5084,39 @@ mod tests {
         assert!(d.join("service.mp3").exists());
         assert!(!d.join("service.mp3.__editor_tmp").exists());
         assert!(!d.join("clip.__editor_tmp.mp4").exists());
+    }
+
+    #[test]
+    fn the_startup_sweep_removes_stale_delivery_scratch_files_and_spares_a_running_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let d = dir.path();
+        let hidden = d.join(".service_deliver_tmp.mp4");
+        let visible = d.join("old_deliver_tmp.mp3"); // the spelling before the dot
+        let running = d.join(".live_deliver_tmp.mp3");
+        for f in [&hidden, &visible, &running] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        std::fs::write(d.join("service.mp4"), b"keep").unwrap();
+        let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+        for f in [&hidden, &visible] {
+            std::fs::File::options()
+                .write(true)
+                .open(f)
+                .unwrap()
+                .set_modified(two_hours_ago)
+                .unwrap();
+        }
+        let removed = cleanup_temp_files(
+            &[d.to_string_lossy().into_owned()],
+            &export_journal::RenderInFlight::default(),
+        );
+        assert_eq!(removed, 2);
+        assert!(!hidden.exists() && !visible.exists());
+        assert!(
+            running.exists(),
+            "a file written to just now belongs to a live delivery"
+        );
+        assert!(d.join("service.mp4").exists());
     }
 
     /// The sweep removes ONLY `sundayrec-master-preview-*.mp3`, `sundayrec-playback-proxy-*.m4a`
