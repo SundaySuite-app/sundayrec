@@ -639,6 +639,26 @@ async fn settle_after_stop(app: &AppHandle) {
     }
 }
 
+/// The ONE way the scheduler starts a recording (planned, late start, special):
+/// the same device hand-off the manual Start does (stop pre-roll and meters,
+/// settle) in Rust, so it does not depend on a webview that is hidden in the
+/// tray at 11:00, and THEN the engine opens the device. A ratchet test holds
+/// that `engine.start(` is called nowhere else in this file.
+async fn start_with_handoff(
+    app: &AppHandle,
+    engine: &RecorderEngine,
+    pool: &SqlitePool,
+    opts: crate::recorder::engine::RecordingOpts,
+) -> AppResult<()> {
+    crate::commands::recorder::release_devices_for_start(&crate::commands::recorder::AppHandoff(
+        app,
+    ))
+    .await;
+    engine
+        .start(app.clone(), Some(pool.clone()), opts, None)
+        .await
+}
+
 /// Perform a single scheduled event.
 async fn fire(
     app: &AppHandle,
@@ -696,7 +716,7 @@ async fn fire(
                     // the supervisor (which would then miss EVERY later recording).
                     match tokio::time::timeout(
                         StdDuration::from_secs(30),
-                        engine.start(app.clone(), Some(pool.clone()), opts, None),
+                        start_with_handoff(app, &engine, pool, opts),
                     )
                     .await
                     {
@@ -737,8 +757,26 @@ async fn fire(
                                     .fill(lang_of(settings), &[("detail", &e.to_string())]),
                             );
                         }
+                        Err(_)
+                            if crate::recorder::engine::late_start_verdict(
+                                engine.current_state(),
+                            ) == crate::recorder::engine::LateStart::Keep =>
+                        {
+                            // The start was slow, not broken: the sound IS being
+                            // captured. Keep it (and let the slot's stop end it).
+                            tracing::warn!(
+                                "scheduler: the start outlived 30s but the recording runs — kept"
+                            );
+                            crate::telemetry::counters::count(
+                                sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
+                            );
+                            claim_session(&engine, ev.source);
+                        }
                         Err(_) => {
                             tracing::error!("scheduler: scheduled start TIMED OUT after 30s");
+                            // Not recording: do not leave a start behind that
+                            // begins on its own, minutes after we reported it lost.
+                            engine.stop();
                             dispatch_scheduler_failure(
                                 app,
                                 "scheduled_start_timeout",
@@ -1424,9 +1462,7 @@ pub async fn check_missed(
             ) {
                 Ok(opts) => {
                     let engine = app.state::<RecorderEngine>();
-                    let late = engine
-                        .start(app.clone(), Some(pool.clone()), opts, None)
-                        .await;
+                    let late = start_with_handoff(app, &engine, pool, opts).await;
                     if late.is_ok() {
                         claim_session(&engine, t.kind);
                         crate::telemetry::counters::count(

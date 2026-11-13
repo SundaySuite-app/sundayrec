@@ -464,7 +464,15 @@ export function initRecording(): () => void {
         message: d?.message ?? null,
       });
     }),
-    window.api.on("recording-warning", () => {
+    window.api.on("recording-warning", (data: unknown) => {
+      // Kameraet er sperret i systemet (macOS): opptaket går som rent
+      // lydopptak. Ikke en gjenkobling, så ingen «Kobler til igjen»: bare
+      // beskjeden, på språket bakenden har slått opp.
+      const w = data as { code?: string; message?: string } | undefined;
+      if (w?.code === "camera_permission_denied") {
+        if (w.message) toast("warn", w.message, { durationMs: 20_000 });
+        return;
+      }
       // Ikke-terminal: gjenkoblingspolicyen prøver på nytt. Økta lever.
       //
       // ⚠️ Dette flagget hadde ingen vei ned. `recording://warning` er
