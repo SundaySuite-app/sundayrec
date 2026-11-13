@@ -2122,9 +2122,30 @@ mod tests {
                 crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
             assert_eq!(recovered, 1, "the killed video session is recovered");
             let rows = list_recordings(&pool).await.expect("rows");
-            assert_eq!(rows.len(), 1);
-            let out = PathBuf::from(&rows[0].file_path);
-            assert_eq!(out.extension().and_then(|e| e.to_str()), Some("mp4"));
+            // Two rows (M3R #13): the mp4, and the separate audio file that
+            // `keep_separate_audio` (on by default) now gives a recovered video too.
+            assert_eq!(rows.len(), 2, "the mp4 and its separate audio file");
+            let main = rows
+                .iter()
+                .find(|r| r.note.as_deref() != Some("Separat lydfil"))
+                .expect("the recovered recording's own row");
+            let side = rows
+                .iter()
+                .find(|r| r.note.as_deref() == Some("Separat lydfil"))
+                .expect("the separate audio file's row");
+            let out = PathBuf::from(&main.file_path);
+            assert_eq!(out, save.path().join("service.mp4"));
+            let side_ext = crate::recorder::opts::format_ext(
+                sundayrec_core::settings::Settings::default().format,
+            );
+            assert_eq!(
+                PathBuf::from(&side.file_path),
+                save.path().join(format!("service.{side_ext}"))
+            );
+            assert!(
+                Path::new(&side.file_path).exists(),
+                "the side file is on disk"
+            );
             let (v, a) = stream_secs(&out);
             assert!(
                 (a - wav_secs).abs() < 0.1,
