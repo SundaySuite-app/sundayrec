@@ -2105,6 +2105,49 @@ mod tests {
         );
     }
 
+    /// SOMMER-2026-11 PoC (sømgjennomgang, S1). The scheduler wraps
+    /// `RecorderEngine::start` in a 30 s `tokio::time::timeout`
+    /// (scheduler/mod.rs `fire`). When that fires while `start` awaits the
+    /// supervisor's "ready" (engine.rs `ready_rx.await`), the future is dropped:
+    /// the supervisor's `JoinHandle` is dropped (the task runs on, detached) and
+    /// so is `stop_tx`, the only sender. This test shows what the segment then
+    /// does with the closed channel: `stop_rx.recv()` returns `None` at once and
+    /// the `_ = stop_rx.recv()` arm treats it as a Stop. A slow-but-successful
+    /// start (camera list 8 s + camera open 5 s + a slow audio open) becomes a
+    /// recording that stops itself the moment it starts, after the volunteer
+    /// was told it timed out. EXPECTED TO FAIL until a closed channel is not a
+    /// Stop (or the timeout keeps the recording).
+    #[tokio::test(start_paused = true)]
+    #[ignore = "SOMMER-2026-11 PoC S1: expected to fail — run with --ignored"]
+    async fn sommer_poc_s1_a_start_dropped_by_the_scheduler_timeout_stops_its_own_recording() {
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        // `start()`'s future is dropped by the scheduler's timeout: its
+        // `stop_tx` goes with it. Nobody pressed Stop.
+        drop(stop_tx);
+        let opts = test_opts("/tmp/x.wav");
+        let out = tokio::time::timeout(
+            Duration::from_secs(600),
+            drive(
+                &mut r,
+                &opts,
+                counters(),
+                Some(u64::MAX / 2),
+                FakeClock::default().handle(),
+                &mut stop_rx,
+                &mut w_rx,
+            ),
+        )
+        .await;
+        assert!(
+            out.is_err(),
+            "the segment ended with {out:?} although nobody asked it to stop: a start the \
+             scheduler timed out stops the recording it did start"
+        );
+    }
+
     /// No first block within the window → an honest `start_timeout` and a
     /// `DeviceNotFound` (fatal — no point burning the reconnect budget on a
     /// device that never opened).

@@ -565,6 +565,95 @@ mod tests {
         assert!(!stop_for_recording(handle).await);
     }
 
+    // ── SOMMER-2026-11 PoC (sømgjennomgang, S6) ─────────────────────────────────────────
+    //
+    // `RecorderEngine::start` awaits `cancel_export_for_recording` → `stop_for_recording`
+    // before anything else, with no time limit. `Player::shutdown` joins the producer (and
+    // the device thread) without one. A producer that is stuck in a read (ffmpeg reading a
+    // recording on a stalled network share, a wedged output driver for the device thread)
+    // therefore holds the recording's start: the scheduler's 30 s bound fires and the
+    // scheduled recording is lost. EXPECTED TO FAIL until the close is bounded.
+    #[cfg(unix)]
+    #[derive(Clone)]
+    struct Stalled;
+    #[cfg(unix)]
+    struct StalledStream;
+    #[cfg(unix)]
+    impl sundayrec_core::playback::PcmStream for StalledStream {
+        fn read_planar(
+            &mut self,
+            _dst: &mut [Vec<f32>],
+            _at: usize,
+            _frames: usize,
+        ) -> std::io::Result<usize> {
+            // A read that does not come back (bounded here so the test binary ends).
+            std::thread::sleep(std::time::Duration::from_secs(12));
+            Ok(0)
+        }
+    }
+    #[cfg(unix)]
+    impl sundayrec_core::playback::PcmOpener for Stalled {
+        type Stream = StalledStream;
+        fn open(&mut self, _source_frame: u64) -> std::io::Result<StalledStream> {
+            Ok(StalledStream)
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "SOMMER-2026-11 PoC S6: expected to fail — run with --ignored"]
+    async fn sommer_poc_s6_a_stuck_listening_session_holds_the_recording_start() {
+        use sundayrec_core::editor::KeepSegment;
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        handle.manage(ListenEngine::new());
+        let engine = handle.state::<ListenEngine>();
+        let rate = 48_000;
+        let plan = CutPlan::new(
+            &[KeepSegment {
+                start: 0.0,
+                end: 60.0,
+            }],
+            60.0,
+            rate,
+        );
+        let (player, _renderer) = Player::headless(
+            Programme {
+                plan,
+                chain: sundayrec_core::chain::Chain::default(),
+                opener: Stalled,
+                source_channels: 1,
+            },
+            rate,
+            2,
+            Box::new(|_| {}),
+        )
+        .unwrap();
+        player.play();
+        *engine.lock() = Some(Session {
+            player,
+            rate,
+            asked: AtomicU64::new(0),
+            installed: 0,
+        });
+        // Let the producer enter its read.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        let started = std::time::Instant::now();
+        let done = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            stop_for_recording(handle),
+        )
+        .await;
+        assert!(
+            done.is_ok(),
+            "stop_for_recording (the first await in RecorderEngine::start) did not return in 3 s \
+             ({:?} so far): a stuck listening session holds the recording's start",
+            started.elapsed()
+        );
+    }
+
     #[test]
     fn stopped_reaches_the_window_as_a_kind() {
         assert_eq!(
