@@ -1254,6 +1254,10 @@ impl EventSink for AppEventSink<'_> {
 /// Run one native segment to completion; see the module header for the arms
 /// and the signal mapping.
 ///
+/// Every outcome leaves `seg` stopped EXCEPT a [`SegmentOutcome::Split`] of a
+/// stack that can rotate (audio-only, X1): that one is still capturing, and the
+/// supervisor's `split::split_without_gap` continues it in the next part's file.
+///
 /// `deliverable_bytes` is the sum of the current deliverable's PREVIOUS
 /// fragments (`_rN` reconnect pieces) — the RIFF-cap guard forces a split
 /// before the `-c copy`-concatenated deliverable could cross the 4 GiB WAV
@@ -3580,7 +3584,9 @@ mod tests {
                 if &b[pos..pos + 4] == b"data" {
                     let end = (pos + 8 + size).min(b.len());
                     return b[pos + 8..end]
-                        .chunks_exact(4)
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
                         .map(|f| {
                             let lo = i16::from_le_bytes([f[0], f[1]]) as u64;
                             let hi = i16::from_le_bytes([f[2], f[3]]) as u64;
@@ -3980,7 +3986,7 @@ mod tests {
                 )
                 .await;
                 if delivered_before_kill {
-                    assert_eq!(chain.join().await.0, true);
+                    assert!(chain.join().await.0);
                 } else {
                     // A half-written delivery temp, as an encode killed mid-way leaves.
                     std::fs::write(d.save.join("sermon_deliver_tmp.wav"), b"RIFF junk").unwrap();
