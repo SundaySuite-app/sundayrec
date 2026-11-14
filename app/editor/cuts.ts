@@ -93,16 +93,22 @@ function scheduleDraftSave(): void {
 }
 
 function syncHistory(): void {
-  canUndo.value = E.cutHistoryIdx > 0 || E.cuts.length > 0;
+  canUndo.value =
+    E.cutHistoryIdx > 0 || (E.cuts.length > 0 && !E.cutHistoryTruncated);
   canRedo.value = E.cutHistoryIdx < E.cutHistory.length - 1;
 }
 
 /** Registrer et øyeblikksbilde ETTER en mutasjon. */
 export function pushCutHistory(): void {
   const next = pushSnapshot(
-    { history: E.cutHistory, idx: E.cutHistoryIdx },
+    {
+      history: E.cutHistory,
+      idx: E.cutHistoryIdx,
+      truncated: E.cutHistoryTruncated,
+    },
     E.cuts,
   );
+  E.cutHistoryTruncated = next.truncated === true;
   E.cutHistory = next.history;
   E.cutHistoryIdx = next.idx;
   syncHistory();
@@ -214,7 +220,11 @@ export function undoCut(): void {
   // blitt skrevet over av den registreringen (review av #433: ⌘Z under drag).
   if (E.handleDrag || E.isDragging || dragWindow.peek() !== null) return;
   const r = undoSnapshot(
-    { history: E.cutHistory, idx: E.cutHistoryIdx },
+    {
+      history: E.cutHistory,
+      idx: E.cutHistoryIdx,
+      truncated: E.cutHistoryTruncated,
+    },
     E.cuts.length,
   );
   if (!r) return;
@@ -326,6 +336,7 @@ export function restoreDraftCuts(list: Cut[]): void {
   E.cuts = restored;
   E.cutHistory = [E.cuts.map((c) => ({ ...c }))];
   E.cutHistoryIdx = 0;
+  E.cutHistoryTruncated = false;
   E.applied = E.cuts.length > 0;
   // Og de VISES: hele poenget med gjenopprettingen er at man ser hva forrige
   // økt rakk før den ble avbrutt. Legacy gjorde det stille (den gamle «Fant

@@ -269,6 +269,18 @@ describe("piltastene (seekBy)", () => {
     expect(playing.value).toBe(true);
   });
 
+  it("mens det spiller hoppes det uten å stoppe: ingen pause/spill per tastetrykk", async () => {
+    startPlay();
+    await settle();
+    position(300);
+    const before = kinds().length;
+    for (let i = 0; i < 30; i++) seekBy(1); // holdt →
+    await settle();
+    expect(kinds().slice(before)).toEqual(Array(30).fill("seekSource"));
+    expect(E.playStartSec).toBe(330);
+    expect(playing.value).toBe(true);
+  });
+
   it("bakover inn i et kutt lander FØR kuttet, ikke etter", () => {
     setCuts([{ start: 100, end: 200 }]);
     seekTo(205);

@@ -41,13 +41,17 @@ use crate::audio::device_watch::BackoffOutcome;
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::native_capture::segment::NativeSegment;
+use crate::recorder::native_capture::split::{
+    ClosedDeliverable, DeliveryChain, closed_capture_bytes, delivery_fits_beside_capture,
+    finish_deliveries, free_bytes_bounded, split_without_gap,
+};
 use crate::recorder::native_capture::stream::{CpalHostKind, NativeStartError};
 use crate::recorder::native_capture::video::NativeVideoPlan;
 use crate::util::lock_recover;
 
 use super::emit::{emit_error, emit_failure, error_code_str, reconnecting_message};
 use super::finalize::{
-    capture_base_path, capture_dir, delivery_encode_for, finalize_pending,
+    capture_base_path, capture_dir, delivery_encode_for, finalize_closed,
     finalize_pending_with_first, finalize_session_telemetry, finished_receipt_path,
     session_manifest,
 };
@@ -212,6 +216,50 @@ fn fail_panicked_supervisor(state: &StateWriter) -> bool {
     true
 }
 
+/// Persist the crash-recovery manifest for the session as it stands. Called at
+/// the top of every segment and by a split before the next part captures a
+/// byte (X1). Best-effort; never blocks the recording.
+async fn persist_manifest(
+    ctx: &SessionContext,
+    session_id: &str,
+    session: &RecordingSession,
+    start_ms: u64,
+    delivery_encode: &Option<sundayrec_core::recovery::AudioEncodeManifest>,
+) {
+    crate::recorder::recovery::write_manifest(
+        &ctx.app,
+        &session_manifest(
+            session_id,
+            session,
+            &ctx.opts.audio_device_name,
+            &ctx.preroll_clip,
+            start_ms,
+            delivery_encode,
+            ctx.camera.is_some(),
+        ),
+    )
+    .await;
+}
+
+/// May the parts a split closed be delivered now, beside the running capture?
+/// (X1, [`delivery_fits_beside_capture`].)
+async fn room_for_background_delivery(
+    ctx: &SessionContext,
+    cap_dir: &std::path::Path,
+    closed: &[ClosedDeliverable],
+) -> bool {
+    let (wav, mkv) = closed_capture_bytes(closed).await;
+    let free = free_bytes_bounded(cap_dir.to_path_buf()).await;
+    let with_video = ctx.camera.is_some();
+    delivery_fits_beside_capture(
+        free,
+        wav,
+        mkv,
+        &delivery_encode_for(&ctx.opts, with_video).ext,
+        with_video,
+    )
+}
+
 /// The supervisor: owns the [`RecordingSession`] + [`RecorderState`] and runs
 /// the whole recording, segment by segment, across reconnects and splits, then
 /// writes one history row.
@@ -231,7 +279,7 @@ async fn run_session(
     // until someone has decided what the supervisor does with it.
     //
     // This path ignores NOTHING: every field is used below (`pool` and
-    // `preroll_clip` inside `finalize_pending`, which takes the context too). So
+    // `preroll_clip` inside `finalize_pending_with_first`, which takes the context too). So
     // the bindings are `_` and the body reads through `ctx` itself.
     let SessionContext {
         app: _,
@@ -285,12 +333,18 @@ async fn run_session(
     // this one was still finalising.
     //
     // Telemetry persist/verdict happens at run_session's SINGLE exit point
-    // (after the last finalize_pending), so the measured media durations are
+    // (after the last finalize_pending_with_first), so the measured media durations are
     // included — a terminal emit only clears the deadline.
     let emit_state = |to: RecorderState, reconnect_count: u32| {
         *lock_recover(&own_state) = to;
         state.set(to, reconnect_count);
     };
+    // X1: the parts a split closed are delivered here, in the background and in
+    // order, while the next part records. Outside 'run so the single exit
+    // point can join it; every exit inside 'run that delivers joins it first
+    // (`finish_deliveries`). Dropping it (the stop backstop aborting this
+    // task) aborts its deliveries, as an inline delivery was aborted before.
+    let mut deliveries = DeliveryChain::default();
     // Everything below runs inside ONE labeled block with a single exit point,
     // so the session-end telemetry verdict/persist can never be skipped by an
     // early exit (every `break 'run` funnels through it).
@@ -398,19 +452,7 @@ async fn run_session(
             // fragment layout (it grows across splits + reconnects). If the app dies
             // before the clean delete at session end, the startup scan finalises these
             // fragments instead of losing the recording. Best-effort; never blocks.
-            crate::recorder::recovery::write_manifest(
-                &ctx.app,
-                &session_manifest(
-                    &session_id,
-                    &session,
-                    &ctx.opts.audio_device_name,
-                    &ctx.preroll_clip,
-                    start_ms,
-                    &delivery_encode,
-                    ctx.camera.is_some(),
-                ),
-            )
-            .await;
+            persist_manifest(&ctx, &session_id, &session, start_ms, &delivery_encode).await;
 
             // ── Run ONE segment to completion ───────────────────────────────────
             // Per-deliverable `byte_size` is read from the finalised file on disk
@@ -427,7 +469,7 @@ async fn run_session(
             };
             let outcome = crate::recorder::native_capture::segment::run_native_segment(
                 &ctx,
-                child,
+                &mut child,
                 &session,
                 counters,
                 &mut stop_rx,
@@ -443,37 +485,45 @@ async fn run_session(
                     break;
                 }
                 SegmentOutcome::Split => {
-                    // The split CLOSES the current deliverable. Finalise it (concat
-                    // its fragments + write its history row) BEFORE opening the next.
+                    // X1: the split closes the current deliverable. The next
+                    // part starts capturing FIRST (an audio-only stack rotates
+                    // its writer without closing the stream: no sample lost);
+                    // the closed part is delivered in the background after.
+                    // `split_without_gap` is the one order, shared with the
+                    // test that measures the gap.
                     let close_ms = now_ms();
-                    let (ok, first) = finalize_pending_with_first(
-                        &ctx,
-                        &session,
+                    let split = split_without_gap(
+                        &mut child,
+                        &mut session,
                         &mut finalized,
                         close_ms,
-                        &telemetry,
-                        &delivered_bytes,
+                        &ctx.loudness,
+                        &mut deliveries,
+                        async |s: &RecordingSession| {
+                            persist_manifest(&ctx, &session_id, s, start_ms, &delivery_encode).await
+                        },
+                        |next: String| {
+                            let (ctx, plan) = (&ctx, video_plan.as_ref());
+                            // new deliverable — free to renegotiate the rate
+                            async move { spawn_capture(ctx, &next, None, None, plan).await }
+                        },
+                        async |closed: &[ClosedDeliverable]| {
+                            room_for_background_delivery(&ctx, &cap_dir, closed).await
+                        },
+                        |closed| {
+                            finalize_closed(
+                                ctx.clone(),
+                                closed,
+                                Arc::clone(&telemetry),
+                                Arc::clone(&delivered_bytes),
+                            )
+                        },
                     )
                     .await;
-                    all_delivered &= ok;
-                    first_delivery = first_delivery.or(first);
-
-                    let next = session.begin_split_segment(close_ms);
-                    ctx.loudness.open_deliverable();
-                    tracing::info!(segment = %next, "recorder: split — starting new segment");
-                    match spawn_capture(
-                        &ctx,
-                        &next,
-                        None, // new deliverable — free to renegotiate the rate
-                        None,
-                        video_plan.as_ref(),
-                    )
-                    .await
-                    {
-                        Ok(c) => {
+                    match split {
+                        Ok(_) => {
                             deliverable_bytes = 0;
-                            pinned_rate = Some(c.spec.sample_rate);
-                            child = c;
+                            pinned_rate = Some(child.spec.sample_rate);
                         }
                         Err(e) => {
                             tracing::error!("recorder: split respawn failed: {e}");
@@ -481,13 +531,16 @@ async fn run_session(
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
-                            let _ = finalize_pending(
-                                &ctx,
-                                &session,
-                                &mut finalized,
-                                now_ms(),
-                                &telemetry,
-                                &delivered_bytes,
+                            let _ = finish_deliveries(
+                                &mut deliveries,
+                                finalize_pending_with_first(
+                                    &ctx,
+                                    &session,
+                                    &mut finalized,
+                                    now_ms(),
+                                    &telemetry,
+                                    &delivered_bytes,
+                                ),
                             )
                             .await;
                             break 'run;
@@ -532,13 +585,16 @@ async fn run_session(
                             );
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // Fail-stop keeps the manifest (no delete on this path).
-                            let _ = finalize_pending(
-                                &ctx,
-                                &session,
-                                &mut finalized,
-                                now_ms(),
-                                &telemetry,
-                                &delivered_bytes,
+                            let _ = finish_deliveries(
+                                &mut deliveries,
+                                finalize_pending_with_first(
+                                    &ctx,
+                                    &session,
+                                    &mut finalized,
+                                    now_ms(),
+                                    &telemetry,
+                                    &delivered_bytes,
+                                ),
                             )
                             .await;
                             // Best-effort: only removes it if empty (a failed final
@@ -656,31 +712,62 @@ async fn run_session(
                                             )
                                             .await;
                                             // The session CONTINUES in a new
-                                            // deliverable — this one's verdict
-                                            // must reach the clean stop.
-                                            all_delivered &= finalize_pending(
-                                                &ctx,
-                                                &session,
+                                            // deliverable — the same split as the
+                                            // timer's (X1): the device reopens
+                                            // first (it must: its rate changed),
+                                            // and this deliverable is delivered in
+                                            // the background after, never inside
+                                            // the gap. Its verdict reaches the
+                                            // clean stop through the chain.
+                                            let split = split_without_gap(
+                                                &mut c,
+                                                &mut session,
                                                 &mut finalized,
                                                 now_ms(),
-                                                &telemetry,
-                                                &delivered_bytes,
+                                                &ctx.loudness,
+                                                &mut deliveries,
+                                                async |s: &RecordingSession| {
+                                                    persist_manifest(
+                                                        &ctx,
+                                                        &session_id,
+                                                        s,
+                                                        start_ms,
+                                                        &delivery_encode,
+                                                    )
+                                                    .await
+                                                },
+                                                |next: String| {
+                                                    let (ctx, plan) = (&ctx, video_plan.as_ref());
+                                                    async move {
+                                                        spawn_capture(
+                                                            ctx,
+                                                            &next,
+                                                            None,
+                                                            reopen_name,
+                                                            plan,
+                                                        )
+                                                        .await
+                                                    }
+                                                },
+                                                async |closed: &[ClosedDeliverable]| {
+                                                    room_for_background_delivery(
+                                                        &ctx, &cap_dir, closed,
+                                                    )
+                                                    .await
+                                                },
+                                                |closed| {
+                                                    finalize_closed(
+                                                        ctx.clone(),
+                                                        closed,
+                                                        Arc::clone(&telemetry),
+                                                        Arc::clone(&delivered_bytes),
+                                                    )
+                                                },
                                             )
                                             .await;
-                                            let split_path = session.begin_split_segment(now_ms());
-                                            ctx.loudness.open_deliverable();
-                                            match spawn_capture(
-                                                &ctx,
-                                                &split_path,
-                                                None,
-                                                reopen_name,
-                                                video_plan.as_ref(),
-                                            )
-                                            .await
-                                            {
-                                                Ok(c2) => {
+                                            match split {
+                                                Ok(_) => {
                                                     deliverable_bytes = 0;
-                                                    c = c2;
                                                 }
                                                 Err(e) => {
                                                     emit_failure(
@@ -753,13 +840,16 @@ async fn run_session(
                                                     session.reconnect_count(),
                                                 );
                                                 // Fail-stop keeps the manifest.
-                                                let _ = finalize_pending(
-                                                    &ctx,
-                                                    &session,
-                                                    &mut finalized,
-                                                    now_ms(),
-                                                    &telemetry,
-                                                    &delivered_bytes,
+                                                let _ = finish_deliveries(
+                                                    &mut deliveries,
+                                                    finalize_pending_with_first(
+                                                        &ctx,
+                                                        &session,
+                                                        &mut finalized,
+                                                        now_ms(),
+                                                        &telemetry,
+                                                        &delivered_bytes,
+                                                    ),
                                                 )
                                                 .await;
                                                 // Best-effort: only removes it if empty
@@ -784,13 +874,18 @@ async fn run_session(
         // Graceful end of session: finalise the last (and any not-yet-finalised)
         // deliverable — concat its fragments + write its history row.
         emit_state(RecorderState::Stopping, session.reconnect_count());
-        let (ok, first) = finalize_pending_with_first(
-            &ctx,
-            &session,
-            &mut finalized,
-            now_ms(),
-            &telemetry,
-            &delivered_bytes,
+        // X1: first the parts still being delivered in the background, then the
+        // last part — in order, and with every verdict in `all_delivered`.
+        let (ok, first) = finish_deliveries(
+            &mut deliveries,
+            finalize_pending_with_first(
+                &ctx,
+                &session,
+                &mut finalized,
+                now_ms(),
+                &telemetry,
+                &delivered_bytes,
+            ),
         )
         .await;
         all_delivered &= ok;
@@ -841,6 +936,11 @@ async fn run_session(
         emit_state(RecorderState::Stopped, session.reconnect_count());
         tracing::info!("recorder: session stopped cleanly");
     } // 'run — the ONE exit point:
+    // Every delivering exit above joined the chain already; an exit that did
+    // not deliver (the device failed at a split's reopen) still lets the parts
+    // under way finish before the session reports itself — their verdict is
+    // moot there (a failing exit keeps the manifest).
+    let _ = deliveries.join().await;
     finalize_session_telemetry(
         &ctx.app,
         &telemetry,

@@ -1758,7 +1758,7 @@ vi ikke har er ikke null), «Papirkurven er tom», og «Papirkurv (N)». Alle tr
 er en knapp som går samme sted. `e2e/library.spec.ts` har mutasjonsprøven.
 
 De 30 dagene er ekte: `AUTO_PURGE_DAYS = 30` i `src-tauri/src/trash/mod.rs`, og
-`trash::sweep::spawn` armes fra `setup` — første tikk etter 90 sekunder, så hver 12. time — og sletter det som er eldre sammen med historikkradene.
+`trash::sweep::spawn` armes fra `setup` — første tikk etter 90 sekunder, så hver 12. time — og sletter det som er eldre sammen med historikkradene. Tikket stoler ikke blindt på klokka: det husker når det sist kjørte (`.sundayrec-trash/sweep-state.json`), og et klokkehopp bakover, eller framover med mer enn åtte dager, sletter ingenting den gangen og regner hoppet ut av alderen til oppføringene (`trash::purge_older_than_guarded`).
 `TRASH_KEEP_DAYS` i `trash-core` speiler tallet, og skjermen sier det.
 
 ## To tellende setninger uten en ny `tn()`

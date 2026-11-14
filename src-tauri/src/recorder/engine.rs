@@ -61,6 +61,7 @@ use crate::util::lock_recover;
 // re-exported below, so every `crate::recorder::engine::X` path is unchanged.
 mod emit; // error/warning/failure events + last-error.json + the error-code table
 mod finalize; // capture folder, crash manifest, deliverable finalisation, telemetry
+pub(crate) use finalize::{SeparateAudio, extract_separate_audio_for}; // crash recovery makes the same separate audio file
 mod payloads; // the ts-rs IPC payload types
 mod supervisor; // run_session, its one spawn site and its panic guard
 
@@ -118,6 +119,8 @@ pub const QUALITY_EVENT: &str = "recording://quality";
 
 /// A running recording: the supervisor task plus the stop channel.
 struct RecorderSession {
+    /// The `start()` that made it: a failed start removes only its own.
+    generation: u64,
     supervisor: tauri::async_runtime::JoinHandle<()>,
     /// Send `()` to request a graceful stop.
     stop_tx: tokio::sync::mpsc::Sender<()>,
@@ -516,19 +519,17 @@ impl RecorderEngine {
         // open failure. NotDetermined/Unknown fall through — opening the device
         // is what triggers the OS prompt, and Unknown means we couldn't tell, so
         // we behave exactly as before.
-        {
+        // The CAMERA never fails a start (S1-B): the sound is the recording, the
+        // picture is a bonus. A blocked camera makes the session audio-only and
+        // the volunteer is told (below, once the session runs).
+        let camera_blocked = {
             use crate::media::permissions::{MediaKind, blocked_message, status};
             let mic = status(MediaKind::Microphone);
             if let Some(msg) = blocked_message(MediaKind::Microphone, mic) {
                 return Err(AppError::Recording(msg));
             }
-            if wants_video {
-                let cam = status(MediaKind::Camera);
-                if let Some(msg) = blocked_message(MediaKind::Camera, cam) {
-                    return Err(AppError::Recording(msg));
-                }
-            }
-        }
+            wants_video && camera_blocks_video(status(MediaKind::Camera))
+        };
 
         // Pre-roll prepend (F3.2 + F3.3a). When the caller harvested a pre-roll
         // clip we have a real, playable clip of the audio captured BEFORE the
@@ -547,7 +548,7 @@ impl RecorderEngine {
         // in the native camera list (C1c) with the same rule the video track
         // opens it by (`find_camera`). An audio-only session lists nothing — it
         // must not wait for, or fail on, a camera it does not use (M1R #5).
-        let camera = if wants_video {
+        let camera = if wants_video && !camera_blocked {
             resolve_session_camera(opts.video_device_name.as_deref().unwrap_or_default()).await
         } else {
             None
@@ -607,26 +608,48 @@ impl RecorderEngine {
         // `supervisor::spawn_supervisor`, the one place a supervisor is spawned.
         let supervisor = spawn_supervisor(ctx, stop_rx, ready_tx);
 
-        match ready_rx.await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                supervisor.abort();
-                return Err(e);
-            }
-            Err(_) => {
-                supervisor.abort();
-                return Err(AppError::Recording(
-                    "recorder supervisor exited before signalling".into(),
-                ));
-            }
-        }
-
+        // Registered BEFORE the wait (S1-C): a start whose future is dropped —
+        // the scheduler's 30 s bound — leaves a recording that is running and
+        // stoppable, not an orphan whose only stop handle went with the future.
         *lock_recover(&self.session) = Some(RecorderSession {
+            generation,
             supervisor,
             stop_tx,
             state: session_state,
         });
+        self.await_ready(generation, ready_rx).await?;
+        if camera_blocked {
+            emit_warning(
+                &app,
+                CAMERA_BLOCKED_CODE,
+                &camera_blocked_text(crate::ui_lang::current()),
+            );
+        }
         Ok(())
+    }
+
+    /// Wait for the supervisor's ready signal. A start that FAILED takes its
+    /// own session out again and aborts the supervisor.
+    async fn await_ready(
+        &self,
+        generation: u64,
+        ready_rx: tokio::sync::oneshot::Receiver<AppResult<()>>,
+    ) -> AppResult<()> {
+        let outcome = match ready_rx.await {
+            Ok(r) => r,
+            Err(_) => Err(AppError::Recording(
+                "recorder supervisor exited before signalling".into(),
+            )),
+        };
+        if outcome.is_err() {
+            let mut guard = lock_recover(&self.session);
+            if guard.as_ref().is_some_and(|s| s.generation == generation)
+                && let Some(session) = guard.take()
+            {
+                session.supervisor.abort();
+            }
+        }
+        outcome
     }
 
     /// Request a graceful stop. The supervisor stops the capture so the container
@@ -709,10 +732,48 @@ pub fn current_platform() -> Platform {
     crate::util::detect_platform()
 }
 
+/// What the scheduler does with a start that outlived its 30 s bound (S1-C),
+/// by the engine's state at that moment.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LateStart {
+    /// Sound is being captured: keep it, the start just was slow.
+    Keep,
+    /// Not recording yet (still opening, or failed): stop it, report failure.
+    Abort,
+}
+
+/// Pure → tested.
+pub fn late_start_verdict(state: RecorderState) -> LateStart {
+    if state == RecorderState::Recording {
+        LateStart::Keep
+    } else {
+        LateStart::Abort
+    }
+}
+
+/// The wire code of the start-time warning for a blocked camera (macOS TCC).
+/// The same code the renderer and `AlertText` already have texts for in all
+/// seven languages.
+pub(crate) const CAMERA_BLOCKED_CODE: &str = "camera_permission_denied";
+
+/// Does this camera permission status make the session audio-only?
+/// (`NotDetermined`/`Unknown` do not: opening the camera is what asks.)
+fn camera_blocks_video(status: crate::media::permissions::AuthStatus) -> bool {
+    crate::media::permissions::blocked_message(crate::media::permissions::MediaKind::Camera, status)
+        .is_some()
+}
+
+/// The warning's sentence, in the UI language.
+fn camera_blocked_text(lang: sundayrec_core::lang::Lang) -> String {
+    sundayrec_core::alerts::AlertText::for_recording_code(CAMERA_BLOCKED_CODE).text(lang)
+}
+
 /// How long `start()` waits for the native camera list. Media Foundation and
-/// DirectShow are asked on Windows, and a wedged driver must not hold a
-/// scheduled start past the scheduler's own bound.
-const CAMERA_LIST_TIMEOUT: Duration = Duration::from_secs(8);
+/// DirectShow are asked on Windows, and a wedged driver must not hold the
+/// SOUND: this is the only camera wait left before the audio opens (S1-C; the
+/// camera itself opens beside the audio). A list that is late falls back to
+/// opening the stored name.
+const CAMERA_LIST_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Which camera a video session records, given the native camera list
 /// (`None` = the list could not be read) and the name the user picked.
@@ -769,6 +830,89 @@ async fn resolve_session_camera(name: &str) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// S1-C: a start whose future is dropped (the scheduler's timeout) leaves
+    /// its session registered and its stop channel open; a start that fails
+    /// removes only its own session.
+    #[tokio::test]
+    async fn a_dropped_start_keeps_its_session_and_a_failed_one_removes_it() {
+        let engine = RecorderEngine::new();
+        let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let state = two_generations(RecorderState::Idle, None).fresh;
+        *lock_recover(&engine.session) = Some(RecorderSession {
+            generation: 5,
+            supervisor: tauri::async_runtime::spawn(std::future::pending::<()>()),
+            stop_tx,
+            state,
+        });
+        // Dropped while waiting: like the scheduler's timeout.
+        let (_ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let dropped =
+            tokio::time::timeout(Duration::from_millis(50), engine.await_ready(5, ready_rx)).await;
+        assert!(dropped.is_err());
+        assert!(lock_recover(&engine.session).is_some(), "session kept");
+        assert!(
+            stop_rx.try_recv() == Err(tokio::sync::mpsc::error::TryRecvError::Empty),
+            "stop channel still open, nobody stopped"
+        );
+        // A failure of ANOTHER generation leaves it alone, its own removes it.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tx.send(Err(AppError::Recording("x".into()))).unwrap();
+        assert!(engine.await_ready(4, rx).await.is_err());
+        assert!(lock_recover(&engine.session).is_some());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tx.send(Err(AppError::Recording("x".into()))).unwrap();
+        assert!(engine.await_ready(5, rx).await.is_err());
+        assert!(lock_recover(&engine.session).is_none());
+    }
+
+    #[test]
+    fn only_a_recording_start_survives_the_scheduler_timeout() {
+        assert_eq!(
+            late_start_verdict(RecorderState::Recording),
+            LateStart::Keep
+        );
+        for s in [
+            RecorderState::Preparing,
+            RecorderState::Idle,
+            RecorderState::Failed,
+        ] {
+            assert_eq!(late_start_verdict(s), LateStart::Abort, "{s:?}");
+        }
+    }
+
+    /// S1-B: a denied/restricted camera drops the PICTURE, never the start;
+    /// every other status leaves the camera path alone.
+    #[test]
+    fn a_blocked_camera_makes_the_session_audio_only() {
+        use crate::media::permissions::AuthStatus::*;
+        assert!(camera_blocks_video(Denied));
+        assert!(camera_blocks_video(Restricted));
+        for ok in [Authorized, NotDetermined, Unknown] {
+            assert!(!camera_blocks_video(ok), "{ok:?}");
+        }
+    }
+
+    /// S1-B: the warning has a real, distinct sentence in all seven languages.
+    #[test]
+    fn the_camera_warning_has_text_in_every_language() {
+        use sundayrec_core::lang::Lang;
+        let mut seen = std::collections::HashSet::new();
+        for lang in [
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
+        ] {
+            let t = camera_blocked_text(lang);
+            assert!(!t.is_empty());
+            assert!(seen.insert(t), "{lang:?} reuses another language's text");
+        }
+        assert_eq!(seen.len(), 7);
+    }
 
     #[test]
     fn an_aborted_stop_leaves_the_engine_failed_not_stopping_forever() {

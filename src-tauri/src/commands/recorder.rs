@@ -78,7 +78,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use ts_rs::TS;
 
 use sundayrec_core::settings::ChannelMode;
@@ -262,6 +262,63 @@ pub fn plan_preroll_harvest(
     })
 }
 
+/// The three effects of the device hand-off, as a seam of their own so the
+/// manual start ([`start_recording_impl`]) and every scheduler start
+/// ([`crate::scheduler`]: planned, late, special) run the SAME function,
+/// [`release_devices_for_start`], and a test can hold the order.
+pub trait DeviceHandoff {
+    /// Stop the rolling pre-roll loop (without harvesting).
+    fn stop_preroll(&self);
+
+    /// Stop the VU/channel-grid metering stream.
+    fn stop_vu(&self);
+
+    /// Leave the device alone for `dur` before opening it.
+    fn settle(&self, dur: Duration) -> impl std::future::Future<Output = ()> + Send;
+}
+
+/// THE device hand-off: every path that starts a recording (manual, scheduled,
+/// late start, special) goes through here before the capture engine opens the
+/// input. Backend-only — it never depends on the webview being alive, which for
+/// an unattended Sunday start it is not.
+///
+/// The pre-roll buffer and the meter engine are second owners of the same
+/// input ("the second-owner pattern behind every sample-loss incident this app
+/// has had"); the settle then lets CoreAudio finish tearing them down.
+pub async fn release_devices_for_start<D: DeviceHandoff + Sync>(deps: &D) {
+    // LEAK GUARD (2026-07-31 audit): for a VIDEO session (or pre-roll = 0 with
+    // an active loop) the rolling ffmpeg would keep holding the microphone for
+    // the whole recording. Stop it unconditionally; the idle loop is restarted
+    // by the preroll scheduler after the session ends.
+    deps.stop_preroll();
+    // The channel-grid/VU engine also holds the device open (cpal, shared mode).
+    deps.stop_vu();
+    deps.settle(DEVICE_SETTLE).await;
+}
+
+/// The real [`DeviceHandoff`] for a start that has no command `State` at hand
+/// (the scheduler): the managed engines, looked up by handle. `try_state`, so a
+/// handle without those engines (a test app) simply has nothing to release.
+pub struct AppHandoff<'a>(pub &'a AppHandle);
+
+impl DeviceHandoff for AppHandoff<'_> {
+    fn stop_preroll(&self) {
+        if let Some(p) = self.0.try_state::<NativePrerollEngine>() {
+            p.stop();
+        }
+    }
+
+    fn stop_vu(&self) {
+        if let Some(v) = self.0.try_state::<crate::audio::vu::VuEngine>() {
+            v.stop();
+        }
+    }
+
+    async fn settle(&self, dur: Duration) {
+        tokio::time::sleep(dur).await
+    }
+}
+
 /// The effects [`start_recording_impl`] needs, as a seam.
 ///
 /// Deliberately narrow: one method per device owner it has to talk to, and
@@ -272,7 +329,7 @@ pub fn plan_preroll_harvest(
 /// `-> impl Future<…> + Send` rather than `async fn` in the trait so the
 /// resulting future is nameable as `Send`, which the Tauri command wrapping it
 /// requires.
-pub trait StartRecordingDeps {
+pub trait StartRecordingDeps: DeviceHandoff {
     /// Is a session alive or still finalising? (`is_active() || Stopping` — see
     /// [`engine_is_busy`].) Read FIRST by [`start_recording_impl`].
     fn engine_busy(&self) -> bool;
@@ -300,15 +357,6 @@ pub trait StartRecordingDeps {
         &self,
         plan: HarvestPlan,
     ) -> impl std::future::Future<Output = Option<PrerollClip>> + Send;
-
-    /// Stop the rolling pre-roll loop (without harvesting).
-    fn stop_preroll(&self);
-
-    /// Stop the VU/channel-grid metering stream.
-    fn stop_vu(&self);
-
-    /// Leave the device alone for `dur` before opening it.
-    fn settle(&self, dur: Duration) -> impl std::future::Future<Output = ()> + Send;
 
     /// Open the devices and launch the session.
     fn start_engine(
@@ -389,19 +437,9 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
         None => None,
     };
 
-    // LEAK GUARD (2026-07-31 audit): the harvest above only STOPS the rolling
-    // pre-roll capture on the audio-only path. For a VIDEO session (or pre-roll
-    // = 0 with an active loop) the rolling ffmpeg would keep holding the
-    // microphone for the whole recording — a second device owner competing with
-    // the capture. Stop it unconditionally; the idle loop is restarted by the
-    // preroll scheduler after the session ends.
-    deps.stop_preroll();
-    // The channel-grid/VU engine also holds the device open (cpal, shared
-    // mode). Stop it before the capture engine opens the device — the settle
-    // below then also absorbs its teardown. Covers manual AND scheduler
-    // starts, so the renderer-side stop is a fast path, not the guarantee.
-    deps.stop_vu();
-    deps.settle(DEVICE_SETTLE).await;
+    // The rest of the hand-off (stop pre-roll + meters, settle) is the one
+    // shared function every start path uses; see `release_devices_for_start`.
+    release_devices_for_start(deps).await;
 
     let started = deps.start_engine(opts, clip).await;
     if started.is_ok() {
@@ -422,6 +460,20 @@ struct TauriStartDeps<'a> {
     preroll: &'a NativePrerollEngine,
     vu: &'a crate::audio::vu::VuEngine,
     pool: sqlx::SqlitePool,
+}
+
+impl DeviceHandoff for TauriStartDeps<'_> {
+    fn stop_preroll(&self) {
+        self.preroll.stop()
+    }
+
+    fn stop_vu(&self) {
+        self.vu.stop()
+    }
+
+    async fn settle(&self, dur: Duration) {
+        tokio::time::sleep(dur).await
+    }
 }
 
 impl StartRecordingDeps for TauriStartDeps<'_> {
@@ -445,18 +497,6 @@ impl StartRecordingDeps for TauriStartDeps<'_> {
         self.preroll
             .harvest_in_format(plan.seconds, plan.audio_codec, plan.container_ext)
             .await
-    }
-
-    fn stop_preroll(&self) {
-        self.preroll.stop()
-    }
-
-    fn stop_vu(&self) {
-        self.vu.stop()
-    }
-
-    async fn settle(&self, dur: Duration) {
-        tokio::time::sleep(dur).await
     }
 
     async fn start_engine(&self, opts: RecordingOpts, clip: Option<PrerollClip>) -> AppResult<()> {
@@ -938,6 +978,20 @@ mod tests {
         }
     }
 
+    impl DeviceHandoff for MockDeps {
+        fn stop_preroll(&self) {
+            self.push(Step::StopPreroll);
+        }
+
+        fn stop_vu(&self) {
+            self.push(Step::StopVu);
+        }
+
+        async fn settle(&self, dur: Duration) {
+            self.push(Step::Settle(dur));
+        }
+    }
+
     impl StartRecordingDeps for MockDeps {
         fn engine_busy(&self) -> bool {
             engine_is_busy(self.engine_state)
@@ -975,18 +1029,6 @@ mod tests {
             tokio::task::yield_now().await;
             self.push(Step::HarvestEnd);
             self.clip.clone()
-        }
-
-        fn stop_preroll(&self) {
-            self.push(Step::StopPreroll);
-        }
-
-        fn stop_vu(&self) {
-            self.push(Step::StopVu);
-        }
-
-        async fn settle(&self, dur: Duration) {
-            self.push(Step::Settle(dur));
         }
 
         async fn start_engine(
@@ -1152,6 +1194,49 @@ mod tests {
 
         // 7. The manual-start counter fires last, on success.
         assert!(deps.at(&Step::CountStartedManual) > start);
+    }
+
+    /// S1-A: the hand-off is ONE function. Stop pre-roll, stop the meters, then
+    /// settle 400 ms — in that order, nothing else (no harvest, no engine).
+    #[tokio::test(start_paused = true)]
+    async fn the_shared_device_handoff_stops_both_owners_then_settles() {
+        let deps = MockDeps::new();
+        release_devices_for_start(&deps).await;
+        assert_eq!(
+            deps.steps(),
+            vec![
+                Step::StopPreroll,
+                Step::StopVu,
+                Step::Settle(Duration::from_millis(400))
+            ]
+        );
+    }
+
+    /// S1-A ratchet: the scheduler (planned start, late start, special) must
+    /// not call `engine.start(` itself; it goes through `start_with_handoff`,
+    /// which runs [`release_devices_for_start`] first. The comment in
+    /// `start_recording_impl` once claimed this and it was not true.
+    #[test]
+    fn every_scheduler_start_goes_through_the_shared_handoff() {
+        let src = include_str!("../scheduler/mod.rs");
+        let prod = &src[..src.find("\nmod tests {").expect("tests module")];
+        let direct = prod.matches(".start(app.clone()").count();
+        assert_eq!(
+            direct, 1,
+            "the scheduler may call the engine's start in exactly one place \
+             (start_with_handoff)"
+        );
+        let wrapper = prod.find("async fn start_with_handoff").expect("wrapper");
+        let handoff = prod
+            .find("release_devices_for_start")
+            .expect("hand-off call");
+        let engine_call = prod.find(".start(app.clone()").unwrap();
+        assert!(wrapper < handoff && handoff < engine_call);
+        assert_eq!(
+            prod.matches("start_with_handoff(").count(),
+            3, // definition + fire + check_missed
+            "both fire() and check_missed() must use it"
+        );
     }
 
     #[tokio::test(start_paused = true)]

@@ -187,6 +187,12 @@ videospor.
   MJPEG-kameraer), C0s maskinvarekoder, `-g`, `video_flip` som `hflip`, og MKV
   ut. Fragmentene får samme navn og grenser som lydfragmentene, så oppdeling og
   gjenkobling styres av lydmotoren som i dag.
+- **Oppdeling (X1):** et rent lydopptak deler uten hull — skriveren bytter fil
+  på en rammegrense mens strømmen går videre (`native_capture/split.rs`). Et
+  videoopptak kan ikke det ennå (videosporet har ingen filbytte): ved deling
+  stoppes lyd og kamera og åpnes igjen, så hullet er gjenåpningstiden (lydkort
+  og kamera, kamera høyst 5 s). Leveringen av forrige del (mux) skjer i
+  bakgrunnen etterpå, aldri inne i hullet.
 - Køen til ffmpeg er begrenset til rundt 1 s med bilder. Er den full, droppes
   det eldste bildet og telles (`video.frames_dropped` i telemetri og i
   opptaksoverlegget). Kamera-callbacken blokkerer aldri.
@@ -296,6 +302,7 @@ den native kameralista (`find_camera`, samme regel som videosporet åpner
 med) og sender ALLE økter til `run_session`, som nå bare kjenner den native
 segmentløperen. Det C3c, C4 og C5 må vite:
 
+- **Kameraet venter ikke på lyden (S1-C, sommer 2026-11).** Kameralista har 3 s tidsgrense (var 8 s) og er den eneste kameraventingen før lydkortet åpnes. Selve kameraåpningen (forhåndsvisning, åpning) kjører ved siden av lydåpningen (`PendingStart` i `segment.rs`); sporet går på samme parring som ved gjenkobling (svart til første bilde) og plukkes opp ved neste 1 Hz-tikk. Stopp venter høyst 15 s på et kamera som ennå åpner. `RecorderEngine::start` registrerer økta før ventingen, så en start planleggeren gir opp (30 s) ikke stopper seg selv; går opptaket, beholdes det.
 - **Kameraet ved start:** finnes navnet i lista → videoøkt med det navnet;
   lista leses, men navnet finnes ikke → rent lydopptak (som før, når det
   lagrede kameraet ikke var der); lista kan ikke leses → videoøkt med det
@@ -610,6 +617,19 @@ i beskrivelsene over:
   `camera::preview::tests::stopping_a_recording_nobody_watches_…` (den ekte
   stoppstien), `…while_the_page_opens_the_camera_waits_for_it`,
   `an_opening_for_another_camera_is_cancelled_…`.
+
+**M3R #13 rettet (gjenopprettet videoopptak får sidefila med lyd).** Krasjgjenopprettingen
+(`recovery::recover_session_with`) leverte bare mp4-en: `keep_audio_capture` var ikke
+lagret i manifestet, så WAV-en ble slettet og sidefila som det levende stoppet lager
+(`keep_separate_audio`) ble aldri laget. Nå leser gjenopprettingen innstillingen
+(`keep_separate_audio`, formatet følger leveringsformatet som ved et levende opptak;
+kanaler, rate og bitrate fra manifestet), lar leveringen beholde den sammenslåtte
+WAV-en, lager `<navn>.<format>` fra den (`engine::extract_separate_audio_for`, samme
+kode som det levende stoppet) med en egen historikkrad, og fjerner WAV-en. Bare når
+mp4-raden er ny: et gjentatt forsøk lager ikke en andre fil. Manifestet er uendret
+(ingen migrering); bruker man en annen innstilling ved omstart enn ved opptaket, er
+det innstillingen ved omstart som gjelder. Test:
+`a_recovered_video_recording_gets_its_separate_audio_file`.
 
 ## Notert, ikke planlagt
 

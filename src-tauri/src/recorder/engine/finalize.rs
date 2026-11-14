@@ -249,8 +249,11 @@ pub(super) fn finalize_session_telemetry(
 /// earlier deliverable's end is the next one's `started_at_ms` (the split
 /// boundary), so each row's `duration_ms` is the deliverable's own span.
 ///
-/// Called at every split (closing one deliverable) and once at session end (the
-/// last). Idempotent: a second call with nothing pending is a no-op.
+/// Called once at session end (the last deliverable, plus any a split held
+/// back for lack of room) and on every failing exit — always behind the
+/// background deliveries (`split::finish_deliveries`). A split itself delivers
+/// through [`finalize_closed`] in the background (X1). Idempotent: a second
+/// call with nothing pending is a no-op.
 ///
 /// Returns `true` only when EVERY deliverable in the batch actually reached the
 /// user's chosen format (see [`finalize_one`]). The caller ANDs these across the
@@ -261,20 +264,8 @@ pub(super) fn finalize_session_telemetry(
 /// down one call at a time. They arrive as `ctx` now (F2-T2); `session_generation`
 /// is not among them because finalisation writes state only through the
 /// supervisor, never itself.
-pub(super) async fn finalize_pending(
-    ctx: &SessionContext,
-    session: &RecordingSession,
-    finalized: &mut usize,
-    end_ms: u64,
-    telemetry: &Arc<Mutex<RecordingTelemetry>>,
-    delivered_bytes: &AtomicU64,
-) -> bool {
-    finalize_pending_with_first(ctx, session, finalized, end_ms, telemetry, delivered_bytes)
-        .await
-        .0
-}
-
-/// [`finalize_pending`] that also reports where deliverable 0 ACTUALLY landed:
+///
+/// Also reports where deliverable 0 ACTUALLY landed:
 /// `Some(path)` when deliverable 0 was finalised in this call and delivered. That
 /// path can differ from the planned `opts.output_path` — delivery never overwrites,
 /// so it moves to a free `_N` sibling when the planned one is taken — and the
@@ -310,6 +301,36 @@ pub(super) async fn finalize_pending_with_first(
     (all_delivered, first_path)
 }
 
+/// Deliver parts a split closed, in the background (X1): the same
+/// [`finalize_one`] per part that [`finalize_pending_with_first`] runs, over
+/// OWNED inputs, because the session goes on recording while this runs. Each
+/// part's end is the next part's start, already fixed in `closed`.
+pub(super) async fn finalize_closed(
+    ctx: SessionContext,
+    closed: Vec<crate::recorder::native_capture::split::ClosedDeliverable>,
+    telemetry: Arc<Mutex<RecordingTelemetry>>,
+    delivered_bytes: Arc<AtomicU64>,
+) -> (bool, Option<String>) {
+    let mut all_delivered = true;
+    let mut first_path = None;
+    for c in &closed {
+        let (delivered, path) = finalize_one(
+            &ctx,
+            &c.deliverable,
+            c.index,
+            c.end_ms,
+            &telemetry,
+            &delivered_bytes,
+        )
+        .await;
+        all_delivered &= delivered;
+        if c.index == 0 {
+            first_path = path;
+        }
+    }
+    (all_delivered, first_path)
+}
+
 /// The path the `recording://finished` receipt points at: where deliverable 0
 /// actually landed, else the planned one (nothing was delivered — the old
 /// behaviour). Delivery never overwrites, so landed != planned happens.
@@ -337,7 +358,7 @@ pub(super) fn finished_receipt_path(landed: Option<&str>, planned: &str) -> Stri
 /// keeps the crash-recovery manifest on `false` so the next launch retries the
 /// delivery from the surviving capture instead of forfeiting it.
 ///
-/// Like [`finalize_pending`], the session-owned half of its inputs arrives as
+/// Like [`finalize_pending_with_first`], the session-owned half of its inputs arrives as
 /// `ctx` (F2-T2): the app handle it surfaces `empty_output` through, the pool it
 /// writes the row into, the pre-roll clip it prepends to deliverable 0, the audio
 /// device the row is stamped with, and the options that decide the delivery
@@ -510,13 +531,59 @@ async fn extract_separate_audio(
     duration_ms: f64,
     opts: &RecordingOpts,
 ) {
+    let sep = SeparateAudio::from_opts(opts);
+    extract_separate_audio_for(pool, final_path, source, started_at, duration_ms, &sep).await;
+}
+
+/// What a separate audio file is made with: the live stop reads it from the
+/// recording's opts ([`SeparateAudio::from_opts`]); a crash recovery has no opts,
+/// only the manifest's encode settings and the person's current settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SeparateAudio {
+    /// The container/codec extension (`mp3`, `wav`, …), no leading dot.
+    pub ext: String,
+    pub channels: u8,
+    pub sample_rate: Option<u32>,
+    pub bitrate_kbps: u32,
+    /// The history row's device name.
+    pub device_name: String,
+}
+
+impl SeparateAudio {
+    fn from_opts(opts: &RecordingOpts) -> Self {
+        Self {
+            ext: opts
+                .separate_audio_format
+                .trim_start_matches('.')
+                .to_string(),
+            channels: match opts.channel_mode {
+                ChannelMode::Stereo => 2,
+                _ => 1,
+            },
+            sample_rate: opts.sample_rate,
+            bitrate_kbps: opts.bitrate_kbps,
+            device_name: opts.audio_device_name.clone(),
+        }
+    }
+}
+
+/// [`extract_separate_audio`] with the settings spelled out. Returns whether a
+/// file was made and given a row.
+pub(crate) async fn extract_separate_audio_for(
+    pool: &SqlitePool,
+    final_path: &str,
+    source: &str,
+    started_at: u64,
+    duration_ms: f64,
+    sep: &SeparateAudio,
+) -> bool {
     let src = std::path::Path::new(final_path);
     let dir = src.parent().unwrap_or_else(|| std::path::Path::new("."));
     let stem = src
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "recording".to_string());
-    let sep_ext = opts.separate_audio_format.trim_start_matches('.');
+    let sep_ext = sep.ext.as_str();
     let want = dir
         .join(format!("{stem}.{sep_ext}"))
         .to_string_lossy()
@@ -525,7 +592,7 @@ async fn extract_separate_audio(
     let sep_path =
         sundayrec_core::filename::make_unique_path(&want, |p| std::path::Path::new(p).exists());
 
-    let args = build_separate_audio_args(source, &sep_path, opts);
+    let args = build_separate_audio_args_for(source, &sep_path, sep);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: extracting separate audio sidecar");
     let mut child = match crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
@@ -539,7 +606,7 @@ async fn extract_separate_audio(
         Ok(c) => c,
         Err(e) => {
             tracing::error!("recorder: failed to spawn separate-audio extract: {e}");
-            return;
+            return false;
         }
     };
     // A `-c copy`-class extract of even a long service is fast; reuse a generous
@@ -548,16 +615,16 @@ async fn extract_separate_audio(
         Ok(Ok(status)) if status.success() => {}
         Ok(Ok(status)) => {
             tracing::error!("recorder: separate-audio extract exited with {status}");
-            return;
+            return false;
         }
         Ok(Err(e)) => {
             tracing::error!("recorder: separate-audio extract await failed: {e}");
-            return;
+            return false;
         }
         Err(_) => {
             let _ = child.start_kill();
             tracing::error!("recorder: separate-audio extract exceeded the watchdog — killed");
-            return;
+            return false;
         }
     }
 
@@ -566,7 +633,7 @@ async fn extract_separate_audio(
             file = %sep_path,
             "recorder: separate audio file is missing/empty/undecodable — no history row"
         );
-        return;
+        return false;
     }
 
     let byte_size = tokio::fs::metadata(&sep_path)
@@ -577,7 +644,7 @@ async fn extract_separate_audio(
         integrated_lufs: None,
         id: String::new(),
         file_path: sep_path,
-        device_name: Some(opts.audio_device_name.clone()),
+        device_name: Some(sep.device_name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
         byte_size,
@@ -586,7 +653,9 @@ async fn extract_separate_audio(
     };
     if let Err(e) = insert_recording(pool, row).await {
         tracing::error!("recorder: failed to write separate-audio history row: {e}");
+        return false;
     }
+    true
 }
 
 /// Build the one-shot ffmpeg args that make a standalone audio file from a
@@ -597,12 +666,12 @@ async fn extract_separate_audio(
 /// sidecar matches the recording's chosen audio settings. Pure so the argument
 /// shape is unit-tested without a process. (Moved here from the deleted
 /// `engine/args.rs`, C3b — this file is its only user.)
+#[cfg(test)]
 fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<String> {
-    let sep_ext = opts.separate_audio_format.trim_start_matches('.');
-    let channels = match opts.channel_mode {
-        ChannelMode::Stereo => 2,
-        _ => 1,
-    };
+    build_separate_audio_args_for(src, dst, &SeparateAudio::from_opts(opts))
+}
+
+fn build_separate_audio_args_for(src: &str, dst: &str, sep: &SeparateAudio) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-i".into(),
@@ -613,10 +682,10 @@ fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<
         "0:a:0".into(),
     ];
     args.extend(sundayrec_core::capture::audio_encode_args(
-        sep_ext,
-        channels,
-        opts.sample_rate,
-        opts.bitrate_kbps,
+        &sep.ext,
+        sep.channels,
+        sep.sample_rate,
+        sep.bitrate_kbps,
     ));
     args.push("-y".into());
     args.push(dst.to_string());

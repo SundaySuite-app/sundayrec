@@ -160,6 +160,20 @@ export function seekToEdge(edge: "start" | "end"): void {
 
 function seekAndResume(sec: number): void {
   const wasPlaying = E.isPlaying;
+  const target = snapOutOfCut(clampToFile(sec));
+  // Mens det spiller og motoren er åpen, hoppes det UTEN å stoppe: en holdt ←/→ gir ~30
+  // hopp i sekundet, og stopp→hopp→spill for hvert ga 30 pause/spill-par og en ny avspilling
+  // (ny `playGen`) per tastetrykk. Motoren holder seg i spill gjennom et hopp. Et pre-hopp-
+  // posisjonsrop kan nå skrive spillehodet tilbake én gang; neste melding (~33 ms) retter det.
+  // Er motoren ikke åpen ennå (lydkortet åpnes), eller hoppet lander ved slutten, tas den
+  // vanlige veien: stopp, flytt, og start på nytt.
+  if (wasPlaying && engineIsOpen() && target < playableEnd() - AT_END_SEC) {
+    E.playStartSec = target;
+    publishPlayhead(true);
+    sendSeek(target);
+    scheduleDraw();
+    return;
+  }
   seekTo(sec);
   if (wasPlaying && E.playStartSec < playableEnd() - AT_END_SEC) startPlay();
 }

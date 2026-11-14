@@ -229,6 +229,10 @@ let session: { token: string; unlisten: () => void } | null = null;
 let opening: Promise<boolean> | null = null;
 let openSeq = 0;
 let closing: Promise<void> | null = null;
+/** Halen av åpningene som er sendt til Rust: en ny åpning venter på den forrige (se `ensureSession`). */
+let openTail: Promise<unknown> = Promise.resolve();
+/** Hvilket «spill»-forsøk som gjelder: `stopListen` og et nyere forsøk gjør et eldre foreldet. */
+let toggleGen = 0;
 /** Høyeste generasjon sett: en posisjon fra en eldre er forsinket og ignoreres. */
 let maxGen = 0;
 /** Programmet er spilt ut: neste «spill» begynner på nytt. */
@@ -265,6 +269,7 @@ export function stopListen(): void {
   session = null;
   opening = null;
   openSeq++;
+  toggleGen++;
   atEnd = false;
   installedKey = null;
   maxGen = 0;
@@ -273,6 +278,8 @@ export function stopListen(): void {
   listenPlaying.value = false;
   listenStale.value = false;
   listenAt.value = null;
+  // Feilen hørte til steget man forlot; den skal ikke stå igjen når man kommer tilbake.
+  listenError.value = false;
   if (!had) return;
   had.unlisten();
   // Neste åpning venter på denne: lydkortet har én eier om gangen.
@@ -337,15 +344,27 @@ async function ensureSession(startSec = listenStart.peek()): Promise<boolean> {
   const mine = ++openSeq;
   const run = (async () => {
     if (closing) await closing;
-    const res = await window.api.editorListenOpen(
-      token,
-      listenRequest(startSec) ?? bareRequest(startSec),
-    );
-    // Steget ble forlatt, eller en annen fil åpnet, mens lydkortet åpnet.
-    if (openSeq !== mine || E.sourceToken !== token) {
-      if (res.ok && !session) void window.api.editorListenClose();
-      return false;
-    }
+    // Rust bytter ut en åpen økt med den som åpnes sist. En åpning som ble foreldet av
+    // `stopListen` kan fortsatt være på vei der når en ny sendes; ferdig etter den nye ville
+    // den (og oppryddingen under) tatt lydkortet fra den nye. Derfor sendes åpningene én og
+    // én, og oppryddingen er ferdig før neste åpning går ut.
+    const prev = openTail;
+    const turn = (async () => {
+      await prev;
+      const r = await window.api.editorListenOpen(
+        token,
+        listenRequest(startSec) ?? bareRequest(startSec),
+      );
+      // Steget ble forlatt, eller en annen fil åpnet, mens lydkortet åpnet.
+      if (openSeq !== mine || E.sourceToken !== token) {
+        if (r.ok && !session) await window.api.editorListenClose();
+        return null;
+      }
+      return r;
+    })();
+    openTail = turn.catch(() => {});
+    const res = await turn;
+    if (!res) return false;
     if (!res.ok) return false;
     maxGen = 0;
     atEnd = false;
@@ -450,10 +469,14 @@ export async function toggleListen(): Promise<void> {
   }
   listenError.value = false;
   listenStopped.value = false;
+  // Et nyere trykk (dobbeltklikk mens «Etter» måles) eller `stopListen` gjør dette forsøket
+  // foreldet: det avbrytes uten å spille og uten å melde feil, som `playGen` gjør for forhåndslyttingen.
+  const gen = ++toggleGen;
   if (!(await ensureSession())) {
-    listenError.value = true;
+    if (gen === toggleGen) listenError.value = true;
     return;
   }
+  if (gen !== toggleGen) return;
   // Kjeden settes inn for begge sider: «Før» spiller med en gang og «Etter» er klar når man trykker.
   const chain = installChain();
   if (listenSide.peek() === "after") {
@@ -461,14 +484,14 @@ export async function toggleListen(): Promise<void> {
     while (result === "superseded" && chainInflight) {
       result = await chainInflight.promise;
     }
-    // Steget ble forlatt mens kjeden ventet: det er ikke en feil.
-    if (!session) return;
+    // Steget ble forlatt mens kjeden ventet, eller et nyere trykk tok over: ikke en feil.
+    if (!session || gen !== toggleGen) return;
     if (result !== "ok") {
       listenError.value = true;
       return;
     }
   }
-  if (!session) return;
+  if (!session || gen !== toggleGen) return;
   if (atEnd) {
     atEnd = false;
     maxGen = 0;
@@ -476,8 +499,10 @@ export async function toggleListen(): Promise<void> {
       kind: "seekSource",
       secs: listenStart.peek(),
     });
+    if (gen !== toggleGen) return;
   }
   await window.api.editorListenTransport({ kind: "play" });
+  if (gen !== toggleGen) return;
   listenPlaying.value = true;
 }
 

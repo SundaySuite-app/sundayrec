@@ -1,8 +1,12 @@
 //! The WAV writer thread: drains the SPSC ring and writes the capture WAV
 //! directly — the file half of the native capture engine.
 //!
-//! One writer per capture fragment (split/reconnect tear the whole stack down
-//! and rebuild, mirroring the ffmpeg respawn semantics). A dedicated
+//! One writer per capture fragment for a RECONNECT (the whole stack is torn
+//! down and rebuilt, mirroring the ffmpeg respawn semantics). A timer or size
+//! SPLIT of an audio-only session does not tear anything down (X1): the writer
+//! is asked to [rotate](Rotation) — it closes the current WAV at a frame
+//! boundary and goes on draining the SAME ring into the next part's file, so
+//! not a single sample falls between the two parts. A dedicated
 //! `std::thread` with blocking I/O: deterministic flushing, no tokio runtime
 //! contention, and the ring consumer never crosses an async boundary.
 //!
@@ -115,6 +119,35 @@ pub struct WriterConfig {
     pub sync_count: Option<Arc<AtomicU64>>,
 }
 
+/// A request to the running writer: close the current WAV and continue in
+/// `path` (X1 — a split without a hole in the sound).
+///
+/// The switch happens between two ring drains, which are always whole frames,
+/// so the last frame of the old file and the first frame of the new one are
+/// consecutive samples of the same stream. The new file is opened FIRST: when
+/// that fails nothing changes (the old file keeps growing) and the reply says
+/// so, and the caller falls back to stopping the stack and opening a new one.
+pub struct Rotation {
+    /// The next part's capture WAV.
+    pub path: PathBuf,
+    /// The next deliverable's loudness meter (D3); the old one is parked.
+    pub loudness: Option<Arc<LoudnessSlot>>,
+    /// Answered once the old file is FINAL (flushed, header patched, synced) —
+    /// only then may it be delivered — or at once when the switch failed.
+    pub done: tokio::sync::oneshot::Sender<RotationOutcome>,
+}
+
+/// What became of a [`Rotation`].
+#[derive(Debug)]
+pub enum RotationOutcome {
+    /// The writer is writing the new file. The old one was finalized with this
+    /// result (an error there is the same as a failed finalize at a stop: the
+    /// file holds what reached the disk, and delivery still tries it).
+    Rotated(Result<WriterSummary, String>),
+    /// The new file could not be opened; the writer is still on the old one.
+    NotRotated(String),
+}
+
 /// Classify an I/O error for the event channel (pure; unit-tested).
 pub fn classify_io_error(e: &std::io::Error) -> WriterErrorKind {
     // ENOSPC is 28 on unix; ErrorKind::StorageFull covers it portably where
@@ -142,7 +175,61 @@ pub fn spawn_wav_writer(
 ) -> std::io::Result<JoinHandle<Result<WriterSummary, String>>> {
     std::thread::Builder::new()
         .name("wav-writer".into())
-        .spawn(move || run_writer(cons, cfg, stop, segment_bytes, frames_written, events))
+        .spawn(move || run_writer(cons, cfg, stop, segment_bytes, frames_written, events, None))
+}
+
+/// [`spawn_wav_writer`] that also takes [`Rotation`] requests on `rotate` (X1).
+pub fn spawn_rotating_wav_writer(
+    cons: HeapCons<f32>,
+    cfg: WriterConfig,
+    stop: Arc<AtomicBool>,
+    segment_bytes: Arc<AtomicU64>,
+    frames_written: Arc<AtomicU64>,
+    events: tokio::sync::mpsc::UnboundedSender<WriterEvent>,
+    rotate: std::sync::mpsc::Receiver<Rotation>,
+) -> std::io::Result<JoinHandle<Result<WriterSummary, String>>> {
+    std::thread::Builder::new()
+        .name("wav-writer".into())
+        .spawn(move || {
+            run_writer(
+                cons,
+                cfg,
+                stop,
+                segment_bytes,
+                frames_written,
+                events,
+                Some(rotate),
+            )
+        })
+}
+
+/// Create a capture WAV and write its header: the data handle (buffered) and
+/// the positional patch handle.
+fn open_capture(
+    path: &std::path::Path,
+    spec: WavSpec,
+) -> Result<(BufWriter<File>, File), (WriterErrorKind, String)> {
+    let file = File::create(path)
+        .map_err(|e| (classify_io_error(&e), format!("creating capture wav: {e}")))?;
+    let patch = OpenOptions::new()
+        .write(true)
+        .open(path)
+        .map_err(|e| (classify_io_error(&e), format!("opening patch handle: {e}")))?;
+    let mut out = BufWriter::with_capacity(64 * 1024, file);
+    out.write_all(&wav::header(spec, 0))
+        .map_err(|e| (classify_io_error(&e), format!("writing wav header: {e}")))?;
+    Ok((out, patch))
+}
+
+/// Make a closed capture WAV final: last flush, header patch, `sync_all`.
+fn finalize_capture(
+    mut out: BufWriter<File>,
+    patch: &File,
+    data_bytes: u64,
+) -> std::io::Result<()> {
+    out.flush()
+        .and_then(|_| patch_sizes(patch, data_bytes))
+        .and_then(|_| out.get_ref().sync_all())
 }
 
 /// Patch bytes at an absolute offset through a dedicated handle. On unix
@@ -185,6 +272,7 @@ fn run_writer(
     segment_bytes: Arc<AtomicU64>,
     frames_written: Arc<AtomicU64>,
     events: tokio::sync::mpsc::UnboundedSender<WriterEvent>,
+    rotate: Option<std::sync::mpsc::Receiver<Rotation>>,
 ) -> Result<WriterSummary, String> {
     let channels = cfg.spec.channels.max(1) as usize;
 
@@ -199,41 +287,20 @@ fn run_writer(
     };
 
     // Open the data handle + the positional patch handle.
-    let file = match File::create(&cfg.path) {
-        Ok(f) => f,
-        Err(e) => {
-            return fail(
-                classify_io_error(&e),
-                format!("creating capture wav: {e}"),
-                &events,
-            );
-        }
+    let (mut out, mut patch) = match open_capture(&cfg.path, cfg.spec) {
+        Ok(h) => h,
+        Err((kind, msg)) => return fail(kind, msg, &events),
     };
-    let patch = match OpenOptions::new().write(true).open(&cfg.path) {
-        Ok(f) => f,
-        Err(e) => {
-            return fail(
-                classify_io_error(&e),
-                format!("opening patch handle: {e}"),
-                &events,
-            );
-        }
-    };
-    let mut out = BufWriter::with_capacity(64 * 1024, file);
-    if let Err(e) = out.write_all(&wav::header(cfg.spec, 0)) {
-        return fail(
-            classify_io_error(&e),
-            format!("writing wav header: {e}"),
-            &events,
-        );
-    }
+    // A fresh detector for every part a rotation opens: the segment runner
+    // that watches the new part starts its silence sequence from scratch.
+    let fresh_silence = cfg.silence.clone();
 
     // D3: borrow the deliverable's meter for this fragment. Dropped on every
     // exit of this function (clean or error), which parks it back.
     let mut lufs_tap = cfg
         .loudness
         .as_ref()
-        .map(|slot| slot.begin(cfg.spec.sample_rate, channels));
+        .map(|slot| LoudnessSlot::begin_shared(slot, cfg.spec.sample_rate, channels));
 
     let mut samples = vec![0.0f32; DRAIN_CHUNK];
     let mut bytes: Vec<u8> = Vec::with_capacity(DRAIN_CHUNK * 2);
@@ -245,6 +312,60 @@ fn run_writer(
     let mut periodic_syncs: u64 = 0;
 
     loop {
+        // X1: a split asks for the next part's file. Between two drains, so the
+        // switch falls on a frame boundary and no sample is lost or doubled.
+        if let Some(rot) = rotate.as_ref().and_then(|r| r.try_recv().ok()) {
+            match open_capture(&rot.path, cfg.spec) {
+                Err((_, msg)) => {
+                    tracing::warn!(path = %rot.path.display(), "wav writer: could not open the next part ({msg}) — staying on the current one");
+                    let _ = rot.done.send(RotationOutcome::NotRotated(msg));
+                }
+                Ok((new_out, new_patch)) => {
+                    let old_out = std::mem::replace(&mut out, new_out);
+                    let old_patch = std::mem::replace(&mut patch, new_patch);
+                    let old = WriterSummary {
+                        data_bytes,
+                        frames,
+                        periodic_syncs,
+                    };
+                    // The old file's final sync on its own thread: a slow disk
+                    // must never stall the drain of the ring while the stream
+                    // goes on producing into it.
+                    let done = rot.done;
+                    let spawned = std::thread::Builder::new()
+                        .name("wav-writer-close".into())
+                        .spawn(move || {
+                            let res = finalize_capture(old_out, &old_patch, old.data_bytes)
+                                .map(|_| old)
+                                .map_err(|e| format!("finalizing capture wav: {e}"));
+                            let _ = done.send(RotationOutcome::Rotated(res));
+                        });
+                    if let Err(e) = spawned {
+                        // No thread (out of resources): the old file keeps the
+                        // header of its last flush, and the dropped reply makes
+                        // the caller fall back to a full stop and a new stack.
+                        tracing::warn!("wav writer: could not spawn the closing thread: {e}");
+                    }
+                    // The meter: park the old deliverable's, borrow the new one's.
+                    drop(lufs_tap.take());
+                    cfg.loudness = rot.loudness;
+                    lufs_tap = cfg.loudness.as_ref().map(|slot| {
+                        LoudnessSlot::begin_shared(slot, cfg.spec.sample_rate, channels)
+                    });
+                    cfg.path = rot.path;
+                    cfg.silence = fresh_silence.clone();
+                    data_bytes = 0;
+                    frames = 0;
+                    periodic_syncs = 0;
+                    started_sent = false;
+                    last_flush = Instant::now();
+                    last_sync = Instant::now();
+                    segment_bytes.store(wav::HEADER_LEN as u64, Ordering::Relaxed);
+                    frames_written.store(0, Ordering::Relaxed);
+                }
+            }
+        }
+
         let n = cons.pop_slice(&mut samples);
         if n > 0 {
             // The producer pushes frame-aligned, so n is a whole number of
@@ -330,11 +451,7 @@ fn run_writer(
 
     // Finalize: last flush, final header patch, then a real fsync — bounded by
     // the segment runner's STOP_FINALIZE_MS timeout on the join.
-    if let Err(e) = out
-        .flush()
-        .and_then(|_| patch_sizes(&patch, data_bytes))
-        .and_then(|_| out.get_ref().sync_all())
-    {
+    if let Err(e) = finalize_capture(out, &patch, data_bytes) {
         return fail(
             classify_io_error(&e),
             format!("finalizing capture wav: {e}"),

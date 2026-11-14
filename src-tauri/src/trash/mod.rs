@@ -714,6 +714,11 @@ pub fn purge_older_than(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Ve
         return Ok(Vec::new());
     }
     let _guard = manifest_guard();
+    purge_older_than_locked(save_dir, days, now_ms)
+}
+
+/// [`purge_older_than`] for a caller that already holds `MANIFEST_LOCK`.
+fn purge_older_than_locked(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Vec<TrashEntry>> {
     let cutoff = now_ms - (days as f64) * 24.0 * 60.0 * 60.0 * 1000.0;
     let entries = read_manifest_locked(save_dir);
     let (targeted, mut kept): (Vec<TrashEntry>, Vec<TrashEntry>) =
@@ -723,6 +728,138 @@ pub fn purge_older_than(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Ve
     }
     let doomed = destroy_entries(targeted, &mut kept);
     write_manifest_locked(save_dir, &kept)?;
+    Ok(doomed)
+}
+
+// ── The clock the sweep trusts ──────────────────────────────────────────────
+
+/// Where the sweep remembers when it last ran, beside the manifest. A file in
+/// the trash folder rather than a database row: it belongs to THIS save
+/// folder's trash (a different folder has its own entries and its own history),
+/// and it needs no migration.
+const SWEEP_STATE: &str = "sweep-state.json";
+
+/// The longest gap between two sweeps that is believed to be time that really
+/// passed. A machine used on Sundays only is 7 days between launches; a gap
+/// beyond this is as likely a clock set forward as a long rest, and the part
+/// beyond it is not counted ([`sweep_clock`]).
+const MAX_BELIEVED_GAP_MS: f64 = 8.0 * 24.0 * 60.0 * 60.0 * 1000.0;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SweepState {
+    /// Wall clock (epoch ms) at the end of the last sweep.
+    last_run_ms: f64,
+}
+
+/// What the wall clock says about the time since the last sweep.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SweepClock {
+    /// The gap is plausible: age entries by the wall clock.
+    Trusted,
+    /// No earlier sweep to compare with (the first one after an upgrade, or a
+    /// fresh trash). Nothing is purged this time; the next sweep has a baseline.
+    NoBaseline,
+    /// The clock is earlier than at the last sweep. Entries that carry a
+    /// `deleted_at` from the future are pulled back to now; nothing is purged.
+    Backwards,
+    /// The clock is further ahead than a plausible gap. Every entry is made
+    /// younger by `excess_ms` (the part of the gap that is not believed), and
+    /// nothing is purged this time.
+    Jumped { excess_ms: f64 },
+}
+
+fn sweep_clock(last_run_ms: Option<f64>, now_ms: f64) -> SweepClock {
+    let Some(last) = last_run_ms.filter(|l| l.is_finite()) else {
+        return SweepClock::NoBaseline;
+    };
+    if !now_ms.is_finite() || now_ms < last {
+        return SweepClock::Backwards;
+    }
+    let gap = now_ms - last;
+    if gap > MAX_BELIEVED_GAP_MS {
+        SweepClock::Jumped {
+            excess_ms: gap - MAX_BELIEVED_GAP_MS,
+        }
+    } else {
+        SweepClock::Trusted
+    }
+}
+
+fn read_sweep_state(save_dir: &Path) -> Option<f64> {
+    let bytes = std::fs::read(trash_dir(save_dir).join(SWEEP_STATE)).ok()?;
+    serde_json::from_slice::<SweepState>(&bytes)
+        .ok()
+        .map(|s| s.last_run_ms)
+}
+
+fn write_sweep_state(save_dir: &Path, now_ms: f64) {
+    let body = serde_json::to_string(&SweepState {
+        last_run_ms: now_ms,
+    })
+    .unwrap_or_default();
+    if let Err(e) =
+        crate::util::write_atomic(&trash_dir(save_dir).join(SWEEP_STATE), body.as_bytes())
+    {
+        // Not fatal: the next sweep sees an older baseline, which only makes it
+        // more careful.
+        tracing::warn!("trash: could not remember when the sweep ran: {e}");
+    }
+}
+
+/// The 30-day sweep, with a check that the wall clock can be believed.
+///
+/// `purge_older_than` trusts `now_ms - deleted_at`. A clock set a year ahead (a
+/// dead CMOS battery corrected the other way, a VM resumed, a hand-set date)
+/// makes every recording in the Papirkurv look a year old, and the next tick
+/// destroys files that were deleted yesterday. So the sweep remembers when it
+/// last ran, and when the clock has gone backwards, or forward by more than
+/// [`MAX_BELIEVED_GAP_MS`], it purges NOTHING that time and re-ages the entries
+/// ([`SweepClock`]) so the jump does not count towards their 30 days. A skipped
+/// sweep costs a day of disk; a wrong one costs a recording. Returns what was
+/// purged, like `purge_older_than`.
+pub fn purge_older_than_guarded(
+    save_dir: &Path,
+    days: i64,
+    now_ms: f64,
+) -> AppResult<Vec<TrashEntry>> {
+    if days <= 0 {
+        return Ok(Vec::new());
+    }
+    let _guard = manifest_guard();
+    if !trash_dir(save_dir).is_dir() {
+        return Ok(Vec::new()); // nothing has ever been trashed here
+    }
+    let verdict = sweep_clock(read_sweep_state(save_dir), now_ms);
+    let doomed = match verdict {
+        SweepClock::Trusted => purge_older_than_locked(save_dir, days, now_ms)?,
+        SweepClock::NoBaseline => Vec::new(),
+        SweepClock::Backwards | SweepClock::Jumped { .. } => {
+            let excess = match verdict {
+                SweepClock::Jumped { excess_ms } => excess_ms,
+                _ => 0.0,
+            };
+            tracing::warn!(
+                ?verdict,
+                "trash: the clock jumped — skipping the purge this time"
+            );
+            let mut entries = read_manifest_locked(save_dir);
+            let mut changed = false;
+            for e in &mut entries {
+                // Never later than now, so an entry cannot sit in the future for ever.
+                let rebased = (e.deleted_at + excess).min(now_ms);
+                if rebased != e.deleted_at {
+                    e.deleted_at = rebased;
+                    changed = true;
+                }
+            }
+            if changed {
+                write_manifest_locked(save_dir, &entries)?;
+            }
+            Vec::new()
+        }
+    };
+    write_sweep_state(save_dir, now_ms);
     Ok(doomed)
 }
 
@@ -936,6 +1073,129 @@ mod tests {
         assert_eq!(purged.len(), 1);
         assert!(!Path::new(&old_file).exists(), "the old bytes are gone");
         assert_eq!(list(dir.path()).len(), 1, "the fresh one stayed");
+    }
+
+    /// The sweep's baseline: one sweep, one more at a normal distance.
+    const HALF_DAY: f64 = 12.0 * 60.0 * 60.0 * 1000.0;
+    const DAY: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
+
+    /// A trash with one entry deleted at `deleted_at` (epoch ms).
+    fn trash_with_entry_deleted_at(deleted_at: f64) -> (tempfile::TempDir, String) {
+        let (dir, media) = fixture();
+        move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        let mut entries = read_manifest(dir.path());
+        entries[0].deleted_at = deleted_at;
+        let file = entries[0].trashed_path.clone();
+        write_manifest(dir.path(), &entries).unwrap();
+        (dir, file)
+    }
+
+    #[test]
+    fn a_clock_jump_forward_does_not_empty_the_trash() {
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0);
+        // The sweep has run (and found nothing yet) a day after.
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0 + DAY)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0 + DAY + HALF_DAY)
+                .unwrap()
+                .is_empty()
+        );
+        // The clock is set a year ahead: the file is a day and a half old, not a year.
+        let a_year_on = t0 + 365.0 * DAY;
+        let purged = purge_older_than_guarded(dir.path(), 30, a_year_on).unwrap();
+        assert!(
+            purged.is_empty(),
+            "nothing purged on the tick that saw the jump"
+        );
+        assert!(Path::new(&file).exists());
+        // And not on the ticks after it either: the jump did not count as age.
+        for step in 1..=50 {
+            let now = a_year_on + f64::from(step) * HALF_DAY;
+            let purged = purge_older_than_guarded(dir.path(), 30, now).unwrap();
+            // 1.5 days really old + the 8 days of the gap that are believed.
+            if now - a_year_on < 20.0 * DAY {
+                assert!(
+                    purged.is_empty(),
+                    "purged at step {step}, long before 30 days"
+                );
+            }
+        }
+        // 25 days of ticks later it IS gone: real time still expires the trash.
+        assert!(!Path::new(&file).exists(), "real elapsed time still purges");
+    }
+
+    #[test]
+    fn a_clock_jump_backwards_purges_nothing_and_pulls_the_future_back() {
+        let t0 = 1_800_000_000_000.0;
+        // Trashed while the clock was a year AHEAD of what it later says.
+        let (dir, file) = trash_with_entry_deleted_at(t0 + 365.0 * DAY);
+        write_sweep_state(dir.path(), t0 + 365.0 * DAY);
+        let purged = purge_older_than_guarded(dir.path(), 30, t0).unwrap();
+        assert!(purged.is_empty());
+        let entry = &read_manifest(dir.path())[0];
+        assert!(
+            entry.deleted_at <= t0,
+            "an entry from the future ages from now"
+        );
+        // It is not immortal: 31 days on it goes.
+        let mut now = t0;
+        while now < t0 + 31.0 * DAY {
+            now += HALF_DAY;
+            purge_older_than_guarded(dir.path(), 30, now).unwrap();
+        }
+        assert!(!Path::new(&file).exists());
+    }
+
+    #[test]
+    fn the_first_sweep_has_nothing_to_compare_with_and_purges_nothing() {
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0 - 40.0 * DAY);
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(Path::new(&file).exists());
+        // The next one, a normal distance on, purges what is really old.
+        let purged = purge_older_than_guarded(dir.path(), 30, t0 + HALF_DAY).unwrap();
+        assert_eq!(purged.len(), 1);
+        assert!(!Path::new(&file).exists());
+    }
+
+    #[test]
+    fn a_week_between_launches_is_believed() {
+        // A church machine switched on for Sundays only.
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0 - 20.0 * DAY);
+        write_sweep_state(dir.path(), t0);
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0 + 7.0 * DAY)
+                .unwrap()
+                .is_empty()
+        );
+        let purged = purge_older_than_guarded(dir.path(), 30, t0 + 14.0 * DAY).unwrap();
+        assert_eq!(purged.len(), 1, "27 + 7 days: real time, purged");
+        assert!(!Path::new(&file).exists());
+    }
+
+    #[test]
+    fn sweep_clock_tells_a_believable_gap_from_a_jump() {
+        let t = 1_800_000_000_000.0;
+        assert_eq!(sweep_clock(None, t), SweepClock::NoBaseline);
+        assert_eq!(sweep_clock(Some(f64::NAN), t), SweepClock::NoBaseline);
+        assert_eq!(sweep_clock(Some(t), t + HALF_DAY), SweepClock::Trusted);
+        assert_eq!(sweep_clock(Some(t), t - 1.0), SweepClock::Backwards);
+        assert_eq!(
+            sweep_clock(Some(t), t + 10.0 * DAY),
+            SweepClock::Jumped {
+                excess_ms: 2.0 * DAY
+            }
+        );
     }
 
     #[test]

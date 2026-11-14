@@ -69,7 +69,7 @@ async fn tick(app: &AppHandle) {
     };
     let now = store::now_ms();
     let purged = match tokio::task::spawn_blocking(move || {
-        super::purge_older_than(&sweep_dir, super::AUTO_PURGE_DAYS, now)
+        super::purge_older_than_guarded(&sweep_dir, super::AUTO_PURGE_DAYS, now)
     })
     .await
     {
