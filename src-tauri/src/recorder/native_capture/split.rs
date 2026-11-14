@@ -109,7 +109,7 @@ impl DeliveriesOwed {
     pub(crate) fn add(&self, n: usize) {
         self.0.fetch_add(n, Ordering::Relaxed);
     }
-    fn done(&self, n: usize) {
+    pub(crate) fn done(&self, n: usize) {
         let _ = self
             .0
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {

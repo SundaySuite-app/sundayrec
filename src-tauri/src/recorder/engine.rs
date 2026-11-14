@@ -1033,7 +1033,10 @@ pub(crate) mod tests {
         let waiter = tokio::spawn(async move { wait_stop_backstop(&owed).await });
         tokio::time::sleep(Duration::from_secs(60)).await;
         seen.add(2);
-        // One delivery finishes (peak still counts); the abort must not come at `base`.
+        // One delivery finishes before the first re-read (the peak still
+        // counts); the abort must not come at `base`.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        seen.done(1);
         tokio::time::sleep(base).await;
         assert!(!waiter.is_finished(), "aborted at the one-delivery bound");
         waiter.await.unwrap();
