@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-11-14. Stabil og beta er v0.30.0 (redigering med tastaturet + auditrettinger, rett til stabil etter eiers ordre). Bevisrunden (#451) er ikke sluppet ennå._
+_Sist gått gjennom: 2026-11-14. Stabil og beta er v0.30.1 (Bevisrunden: sømrettinger, deling uten lydhull, og rammeverksløftet #438–#440; rett til stabil etter eiers ordre)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er

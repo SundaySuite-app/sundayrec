@@ -5,6 +5,25 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.30.1 — tryggere lange og planlagte opptak
+
+- **Et langt lydopptak mister ikke lenger lyd når det bytter fil.** Når et opptak ble så
+  langt at det ble delt i flere filer, stoppet lyden mens den forrige fila ble gjort
+  ferdig. For mp3 kunne det være flere minutter. Nå fortsetter lyden rett over i neste
+  fil, og den forrige gjøres ferdig i bakgrunnen. Opptak med video har fortsatt en kort
+  pause ved filbytte.
+- **Planlagte opptak starter tryggere.** Et planlagt opptak frigjør lydkortet på samme
+  måte som når du trykker Start selv. Har ikke SundayRec tilgang til kameraet, blir det
+  et lydopptak med et varsel, ikke et tapt opptak. Lyden venter ikke lenger på at
+  kameraet skal bli klart.
+- **Papirkurven tømmes ikke for tidlig** hvis klokka på maskinen blir stilt fram.
+- **Opptaksmappa er ryddigere.** Arbeidsfila som lages mens et opptak gjøres ferdig, er
+  skjult, og en video som reddes etter et krasj, får med seg den separate lydfila.
+- **Stopp venter lenge nok** når flere deler av et langt opptak fortsatt gjøres ferdig.
+- Småfeil i redigeringen er rettet: lytting, angre forbi 50 steg, piltastene, og raske
+  åpne-og-lukke-trykk.
+- Under panseret: programbibliotekene er oppdatert.
+
 ## v0.30.0 — redigering med tastaturet
 
 - **Mellomrom spiller og pauser** i redigeringen, som i andre redigeringsprogrammer — også
