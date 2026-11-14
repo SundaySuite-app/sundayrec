@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-11-12. Stabil og beta er v0.30.0 (redigering med tastaturet + auditrettinger, rett til stabil etter eiers ordre)._
+_Sist gått gjennom: 2026-11-14. Stabil og beta er v0.30.0 (redigering med tastaturet + auditrettinger, rett til stabil etter eiers ordre). Bevisrunden (#451) er ikke sluppet ennå._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -58,6 +58,17 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 - Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn (151; to-prosess-videostien er slettet i C3b, #384), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
 
 - Audit av redigeringen 2026-11-11 (tastatur-PR-en): 🔴/🟠 rettet i egne PR-er, 🟡 rettet i PR «plan-smaapunkter» (Før/Etter-feilen, `toggleListen`-generasjon, angre forbi 50-grensen, åpne/lukke-kappløpet i `ensureSession`, hopp uten stopp). Gjenstår: ingen Delete-snarvei (redigeringen har ikke noe «valgt kutt»). J/K/L og snarveier for å lage kutt (I/O) er ikke planlagt.
+
+- Sømgjennomgangen nov. 2026 (sammendrag: [SOMMER-2026-11.md](SOMMER-2026-11.md); fullt i rapporten `SundayRec-SOMMER-2026-11.md` på suite-rota). #451 rettet S1-A, S1-B, S1-C, X1 (rene lydopptak) og S6-A; E1–E3 rettes i etterprøvingens PR. Gjenstår, ett punkt hver:
+  - **S6-B:** man kan lytte i redigeringen mens et opptak går, mens eksport er sperret (`editor_listen_open` har ingen opptakssperre) — rapporten §S6-B.
+  - **S4/S5-A:** diskvakta bruker lydgrensene også i videoøkter (`min_disk_headroom_bytes(false)`, `finalize_reserve_bytes(false, …)`); stopper trygt ved ca. 0,5 GB, men leveringen trenger mer — rapporten §S4/S5-A.
+  - **S5-B:** kamera borte ved Start gir et rent lydopptak uten melding, og forhåndssjekken ser ikke på kameraet — rapporten §S5-B.
+  - **S10:** flåten ser ingen av de nye motorenes feilmodi (kamerautfall, avspillingsfeil, kjedefeil, tapte bilder) — rapporten §S10.
+  - **Videoøkter stopper og åpner fortsatt ved deling** (begrenset hull, ikke målt) — rapporten §Etterprøving, X1.
+  - **Spesialopptak som viker for en slot** gir fortsatt varselet «Planlagt opptak hoppet over» — [SOMMER-2026-11.md](SOMMER-2026-11.md).
+  - **Kamera satt bare med indeks** gir en .mp4 uten at noe kamera åpnes — [SOMMER-2026-11.md](SOMMER-2026-11.md).
+  - **`_deliver_tmp` er fortsatt synlig på Windows** under koding (audit 2026-10-05, se over; X1 gjør vinduet lengre).
+  - **«Ikke avgjort» som trenger rigg** (ASIO og pre-roll, lytting mot ASIO på Windows, tall for kameraventing, back-to-back med video på Windows, foreldreløs ffmpeg etter `kill -9`, levering mot levende fangst, SMB-klokke, `empty_output` midt i en del) — [SOMMER-2026-11.md](SOMMER-2026-11.md) §Det som er åpent, riggpunktene i [RIG-DAY.md](RIG-DAY.md) §(x).
 
 ## Spike / maskinvare først
 
