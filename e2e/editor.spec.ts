@@ -386,6 +386,9 @@ test.describe("editor", () => {
     await openEditor(page);
     await waitForSuggestion(page);
     await page.getByTestId("editor-keep-sermon").click();
+    // Klikket flytter fokus til spill-knappen ett bilde senere (focus.ts).
+    // Vent på det, ellers kan det ta fokuset tilbake fra håndtaket.
+    await expect(page.getByTestId("editor-play")).toBeFocused();
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
 
     const handle = page.getByTestId("editor-handle-start");
@@ -410,6 +413,9 @@ test.describe("editor", () => {
     await openEditor(page);
     await waitForSuggestion(page);
     await page.getByTestId("editor-keep-sermon").click();
+    // Klikket flytter fokus til spill-knappen ett bilde senere (focus.ts).
+    // Vent på det, ellers kan det ta fokuset tilbake fra håndtaket.
+    await expect(page.getByTestId("editor-play")).toBeFocused();
     const handle = page.getByTestId("editor-handle-start");
     await handle.focus();
     await page.keyboard.press("Home");
