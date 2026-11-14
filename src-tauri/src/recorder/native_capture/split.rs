@@ -103,6 +103,7 @@ pub(crate) struct DeliveryChain {
 pub(crate) struct DeliveriesOwed(Arc<(AtomicUsize, AtomicUsize)>);
 
 impl DeliveriesOwed {
+    #[cfg(test)]
     pub(crate) fn get(&self) -> usize {
         self.0.0.load(Ordering::Relaxed)
     }
@@ -138,6 +139,7 @@ impl DeliveryChain {
     }
 
     /// Queue `job` behind everything already queued.
+    #[cfg(test)]
     pub(crate) fn push(&mut self, job: impl Future<Output = Delivered> + Send + 'static) {
         self.push_parts(1, job);
     }
