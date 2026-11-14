@@ -22,6 +22,33 @@ F2-fiks (PR-nummer i parentes), står forventet resultat **FØR** fiksen først
 (så du vet hva et regresjonsfunn ville sett ut som) og **ETTER** — det du
 faktisk skal se nå — sist.
 
+## Nattkjøreren (`npm run rig:mac`)
+
+På Macen kan de lange testene som ikke trenger lydkort, kamera eller nettverk
+kjøres uten tilsyn, for eksempel over natta: `npm run rig:mac` (full lengde)
+eller `npm run rig:mac -- --quick` (noen få minutter, for å prøve kjøreren).
+Krever `npm run ffmpeg` først. Den er ikke med i CI og ikke i `npm run check`.
+
+Den kjører tre `#[ignore]`-tester i `rig_sync.rs`, hver som egen `cargo test`,
+slik at én feil ikke stopper resten: 90 minutter virtuell bilde/lyd-synk
+(**(v1)**, `SUNDAYREC_RIG_MINUTES`), samme driver på sanntidsklokka
+(**(v1)**, `SUNDAYREC_RIG_REAL_SECS`) og 30 fps under CPU-last
+(**(e2/v4)**, `SUNDAYREC_RIG_LOAD_SECS`). Full kjøring tar på en M1 Pro anslagsvis
+6-8 minutter pluss bygging (virtuell tid går ca. 30 ganger raskere enn klokka,
+sanntids- og lasttestene tar sine 30 og 120 sekunder); det er ikke målt for fulle 90 minutter.
+Resultatet skrives som tabell til terminalen og til
+`rig-results/rig-mac-<dato>.txt` (git-ignorert, med logg per test ved siden av),
+med commit, maskinmodell og macOS-versjon øverst. Utfall: **Pass** (grønn),
+**Warn** (testen hoppet over seg selv, beviser ingenting) og **Fail**; exit-kode
+1 hvis noe feilet. Skriptet lister også testene som trenger mikrofon, kamera,
+nettverk eller en ekstern fil, med kommandoen for hver, til du kjører dem i egen terminal.
+
+**Et Pass er «maskinbevist», ikke et kryss.** Boksene i denne sjekklista krysses
+aldri av på grunnlag av kjøreren: et kryss betyr at et menneske har sett det på
+ekte maskinvare. Kjøreren har samme forbehold som testene (virtuell klokke,
+syntetisk kamera, programvare-ffmpeg); se «Beviser IKKE» under (v1) og (e2).
+En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i tabellen.
+
 ## Mac-boksen
 
 - [ ] **(a) Trekk mikseren midt i opptaket.** Start et opptak, la det gå et

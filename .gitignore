@@ -51,3 +51,6 @@ blob-report
 
 # Ad-hoc `npm audit --json` snapshots (CI runs the audit — see ci.yml)
 audit.json
+
+# rig:mac (scripts/rig-mac.sh): nattkjørerens resultater og logger
+rig-results
