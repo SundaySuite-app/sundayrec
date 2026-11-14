@@ -466,6 +466,16 @@ mod tests {
         assert_eq!(chain.join().await, (true, None));
     }
 
+    /// E3: the peak is the most ever owed at once, and never falls.
+    #[test]
+    fn the_owed_peak_never_falls() {
+        let owed = DeliveriesOwed::default();
+        owed.add(2);
+        owed.done(2);
+        owed.add(1);
+        assert_eq!((owed.get(), owed.peak()), (1, 2));
+    }
+
     /// E3: the chain reports what it owes, per part, and what the stop adds
     /// (held-back parts + the last one) lands in the same count.
     #[tokio::test]
