@@ -194,6 +194,10 @@ impl NativeSegment {
     pub(crate) fn can_rotate(&self) -> bool {
         self.rotate_tx.is_some()
             && self.video.is_none()
+            // A camera that is still opening (S1-C) is a video stack too: its
+            // track will write into the MKV path fixed at spawn, which a
+            // rotation would have handed to the delivery of the closed part.
+            && !self.pending_video.is_pending()
             && self.writer_join.is_some()
             && self.stream_join.is_some()
             && !self.stream_stop.load(Ordering::Relaxed)
@@ -279,6 +283,12 @@ impl<T: Send + 'static> PendingStart<T> {
         Self {
             handle: Some(tokio::spawn(fut)),
         }
+    }
+
+    /// Whether a start is still outstanding (running, or finished and not yet
+    /// picked up) — the stack it belongs to is not what it looks like yet.
+    pub(crate) fn is_pending(&self) -> bool {
+        self.handle.is_some()
     }
 
     /// The result if the start has finished; never waits.
@@ -4435,9 +4445,8 @@ mod tests {
         /// when it joins, writes into the MKV path fixed at spawn — the CLOSED
         /// part's (`segment.rs` `video_fragment_path(output_path)` in
         /// `spawn_native_segment_typed`), which is being delivered in the
-        /// background. EXPECTED TO FAIL: the rotation must be refused.
+        /// background. The rotation must be refused (fixed, E1).
         #[tokio::test(flavor = "multi_thread")]
-        #[ignore = "SOMMER-2026-11 etterprøving PoC: expected to fail — run with --ignored"]
         async fn sommer_poc_x1_a_split_while_the_camera_opens_rotates_a_video_stack() {
             let dir = tempfile::tempdir().unwrap();
             let primary = dir.path().join("sermon.wav").to_string_lossy().into_owned();

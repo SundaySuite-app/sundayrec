@@ -793,7 +793,8 @@ fn read_sweep_state(save_dir: &Path) -> Option<f64> {
         .map(|s| s.last_run_ms)
 }
 
-fn write_sweep_state(save_dir: &Path, now_ms: f64) {
+/// Returns whether the state is now on disk.
+fn write_sweep_state(save_dir: &Path, now_ms: f64) -> bool {
     let body = serde_json::to_string(&SweepState {
         last_run_ms: now_ms,
     })
@@ -804,7 +805,53 @@ fn write_sweep_state(save_dir: &Path, now_ms: f64) {
         // Not fatal: the next sweep sees an older baseline, which only makes it
         // more careful.
         tracing::warn!("trash: could not remember when the sweep ran: {e}");
+        return false;
     }
+    true
+}
+
+/// The earliest wall clock the app can have been built under. A clock before
+/// it (a dead CMOS battery resets to 2000 or 1970) is wrong.
+const CLOCK_FLOOR_MS: f64 = 1_793_491_200_000.0; // 2026-11-01T00:00:00Z
+/// And one this far out is not a believable "now" either (2100-01-01).
+const CLOCK_CEILING_MS: f64 = 4_102_444_800_000.0;
+
+/// The sweep's last tick in THIS process, per save folder: the baseline that
+/// survives a state file that cannot be written (E2). Lost on exit, which is
+/// why the first tick of a process falls back to [`clock_looks_sane_without_state`].
+static LAST_RUN_IN_PROCESS: Mutex<Vec<(PathBuf, f64)>> = Mutex::new(Vec::new());
+
+fn remembered_run(save_dir: &Path) -> Option<f64> {
+    lock_recover(&LAST_RUN_IN_PROCESS)
+        .iter()
+        .find(|(p, _)| p == save_dir)
+        .map(|(_, t)| *t)
+}
+
+fn remember_run(save_dir: &Path, now_ms: f64) {
+    if !now_ms.is_finite() {
+        return;
+    }
+    let mut all = lock_recover(&LAST_RUN_IN_PROCESS);
+    match all.iter_mut().find(|(p, _)| p == save_dir) {
+        Some(slot) => slot.1 = now_ms,
+        None => all.push((save_dir.to_path_buf(), now_ms)),
+    }
+}
+
+/// With no readable or writable baseline, the purge may go ahead only when the
+/// clock passes every check that needs no file: it is inside the believable
+/// range, and no trashed entry is dated later than now (a clock that is behind
+/// the app's own records is wrong). A forward jump this cannot see is the
+/// accepted cost: it is bounded to the first tick of one launch, because every
+/// later tick has the in-process baseline.
+fn clock_looks_sane_without_state(save_dir: &Path, now_ms: f64) -> bool {
+    if !now_ms.is_finite() || !(CLOCK_FLOOR_MS..CLOCK_CEILING_MS).contains(&now_ms) {
+        return false;
+    }
+    read_manifest_locked(save_dir)
+        .iter()
+        .all(|e| e.deleted_at <= now_ms)
 }
 
 /// The 30-day sweep, with a check that the wall clock can be believed.
@@ -830,7 +877,27 @@ pub fn purge_older_than_guarded(
     if !trash_dir(save_dir).is_dir() {
         return Ok(Vec::new()); // nothing has ever been trashed here
     }
-    let verdict = sweep_clock(read_sweep_state(save_dir), now_ms);
+    // Can this folder remember anything? Probe before deciding (E2): re-write
+    // what is already there (or, with no readable state, the baseline itself,
+    // which is harmless: that tick purges nothing anyway). A volume that refuses
+    // the atomic rename, a read-only folder, a full disk or an unreplaceable
+    // corrupt file fails here, and the purge must not then wait for a baseline
+    // that can never be written.
+    let from_file = read_sweep_state(save_dir);
+    let persisted = write_sweep_state(save_dir, from_file.unwrap_or(now_ms));
+    let from_memory = remembered_run(save_dir);
+    let verdict = if persisted {
+        sweep_clock(from_file, now_ms)
+    } else {
+        // The file is not to be believed (it is stale by construction). Use
+        // this process's own memory of the last tick; with none (the first
+        // tick since launch), only the checks that need no file.
+        match from_memory {
+            Some(last) => sweep_clock(Some(last), now_ms),
+            None if clock_looks_sane_without_state(save_dir, now_ms) => SweepClock::Trusted,
+            None => SweepClock::Backwards,
+        }
+    };
     let doomed = match verdict {
         SweepClock::Trusted => purge_older_than_locked(save_dir, days, now_ms)?,
         SweepClock::NoBaseline => Vec::new(),
@@ -859,6 +926,7 @@ pub fn purge_older_than_guarded(
             Vec::new()
         }
     };
+    remember_run(save_dir, now_ms);
     write_sweep_state(save_dir, now_ms);
     Ok(doomed)
 }
@@ -1096,9 +1164,10 @@ mod tests {
     /// read-only trash folder or a volume that refuses the atomic rename), every
     /// tick is `NoBaseline` and the trash is never emptied again — a recording
     /// trashed 60 days ago stays forever. Before #444 the purge did not depend
-    /// on any state file. EXPECTED TO FAIL.
+    /// on any state file. (Fixed, E2: with no state that can be persisted, the
+    /// purge falls back to the in-process baseline and, on a process's first
+    /// tick, to the clock checks that need no file.)
     #[test]
-    #[ignore = "SOMMER-2026-11 etterprøving PoC: expected to fail — run with --ignored"]
     fn sommer_poc_444_a_sweep_state_that_cannot_be_written_stops_the_purge_for_good() {
         let t0 = 1_800_000_000_000.0;
         let (dir, file) = trash_with_entry_deleted_at(t0 - 60.0 * DAY);
@@ -1118,6 +1187,55 @@ mod tests {
             "a recording trashed 60 days ago was never purged over 10 days of ticks: \
              the purge waits for a baseline it can never write"
         );
+    }
+
+    /// E2 fallback: a clock before the app's own build date is wrong, and with
+    /// no persistable baseline nothing is purged on it.
+    #[test]
+    fn an_unwritable_state_never_purges_on_a_clock_before_the_floor() {
+        let t_bad = 1_000_000_000_000.0; // 2001
+        let (dir, file) = trash_with_entry_deleted_at(t_bad - 60.0 * DAY);
+        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t_bad)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(Path::new(&file).exists());
+    }
+
+    /// E2 fallback: an entry dated later than "now" means the clock is behind
+    /// the app's own records.
+    #[test]
+    fn an_unwritable_state_never_purges_when_an_entry_is_from_the_future() {
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0 + DAY);
+        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
+        // An old entry sits beside it: it must wait too.
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(Path::new(&file).exists());
+    }
+
+    /// E2 fallback: after the first tick the process remembers when it ran, so a
+    /// clock that then leaps a year ahead is caught even though nothing can be
+    /// written to disk — and the entry is made younger, not purged.
+    #[test]
+    fn an_unwritable_state_still_catches_a_clock_jump_in_the_same_process() {
+        let t0 = 1_800_000_000_000.0;
+        let (dir, file) = trash_with_entry_deleted_at(t0 - DAY);
+        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
+        assert!(
+            purge_older_than_guarded(dir.path(), 30, t0)
+                .unwrap()
+                .is_empty()
+        );
+        let purged = purge_older_than_guarded(dir.path(), 30, t0 + 365.0 * DAY).unwrap();
+        assert!(purged.is_empty(), "a year-ahead clock purged the trash");
+        assert!(Path::new(&file).exists());
     }
 
     #[test]
