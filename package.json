@@ -59,7 +59,7 @@
   "dependencies": {
     "@preact/signals": "^2.11.4",
     "@tauri-apps/api": "^2",
-    "preact": "^10.29.8"
+    "preact": "^11.0.1"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
