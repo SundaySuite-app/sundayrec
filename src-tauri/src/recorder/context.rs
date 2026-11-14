@@ -112,6 +112,8 @@ pub(crate) struct SessionContext {
     pub(crate) state: StateWriter,
     /// One loudness meter per deliverable (D3), measured on the writer thread.
     pub(crate) loudness: LoudnessLedger,
+    /// Deliveries the session still owes, read by the engine's stop backstop (E3).
+    pub(crate) deliveries_owed: crate::recorder::native_capture::split::DeliveriesOwed,
 }
 
 /// The three counters ONE segment is driven against.
