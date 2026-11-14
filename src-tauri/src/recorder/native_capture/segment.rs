@@ -3535,6 +3535,7 @@ mod tests {
     ///
     /// Nothing sleeps: tokio's clock is paused and the `FakeClock` moves with
     /// it, so the stuck watchdog sees the bytes grow.
+    #[allow(clippy::await_holding_lock)]
     async fn weak_level_take(
         secs: u64,
         amp_at: impl Fn(u64) -> f32 + Send + 'static,
@@ -3544,6 +3545,14 @@ mod tests {
         Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
     ) {
         const RATE: u32 = 8_000; // the meter is rate-independent; 8 kHz keeps a debug build quick
+        // `SUNDAYREC_TEST_SPLIT_BYTES` is process-global: a test that sets it
+        // (X1's split test) would make this take's byte counter trip the
+        // forced split. Wait for it, and hold the lock for the whole take.
+        let _env = crate::media::ffmpeg::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // SAFETY: serialised by ENV_LOCK, which every setter holds.
+        unsafe { std::env::remove_var(sundayrec_core::wav::TEST_SPLIT_BYTES_ENV) };
         let mut r = rig();
         let slot = Arc::new(LoudnessSlot::new());
         r.seg.loudness = Some(Arc::clone(&slot));
