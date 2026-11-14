@@ -1209,9 +1209,20 @@ mod tests {
     #[test]
     fn an_unwritable_state_never_purges_when_an_entry_is_from_the_future() {
         let t0 = 1_800_000_000_000.0;
-        let (dir, file) = trash_with_entry_deleted_at(t0 + DAY);
-        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
+        let (dir, future_file) = trash_with_entry_deleted_at(t0 + DAY);
         // An old entry sits beside it: it must wait too.
+        let second = dir.path().join("old.mp3");
+        fs::write(&second, b"x").unwrap();
+        move_into_trash(dir.path(), &[second.to_string_lossy().into_owned()]).unwrap();
+        let mut entries = read_manifest(dir.path());
+        let old = entries
+            .iter_mut()
+            .find(|e| e.trashed_path != future_file)
+            .unwrap();
+        old.deleted_at = t0 - 60.0 * DAY;
+        let file = old.trashed_path.clone();
+        write_manifest(dir.path(), &entries).unwrap();
+        std::fs::create_dir_all(trash_dir(dir.path()).join(SWEEP_STATE)).unwrap();
         assert!(
             purge_older_than_guarded(dir.path(), 30, t0)
                 .unwrap()
