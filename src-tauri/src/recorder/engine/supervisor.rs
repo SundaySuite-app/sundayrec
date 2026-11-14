@@ -291,6 +291,7 @@ async fn run_session(
         preroll_clip: _,
         state: _,
         loudness: _,
+        deliveries_owed: _,
     } = &ctx;
     // F2-W5: hold the machine awake for the WHOLE session — this binding is
     // dropped (and the block released) by the normal return, by every early
@@ -344,7 +345,7 @@ async fn run_session(
     // point can join it; every exit inside 'run that delivers joins it first
     // (`finish_deliveries`). Dropping it (the stop backstop aborting this
     // task) aborts its deliveries, as an inline delivery was aborted before.
-    let mut deliveries = DeliveryChain::default();
+    let mut deliveries = DeliveryChain::with_owed(ctx.deliveries_owed.clone());
     // Everything below runs inside ONE labeled block with a single exit point,
     // so the session-end telemetry verdict/persist can never be skipped by an
     // early exit (every `break 'run` funnels through it).
@@ -876,6 +877,9 @@ async fn run_session(
         emit_state(RecorderState::Stopping, session.reconnect_count());
         // X1: first the parts still being delivered in the background, then the
         // last part — in order, and with every verdict in `all_delivered`.
+        // The held-back parts and the last one are owed too: the engine's stop
+        // backstop scales with what is pending (E3).
+        deliveries.owe_more(session.deliverables().len().saturating_sub(finalized));
         let (ok, first) = finish_deliveries(
             &mut deliveries,
             finalize_pending_with_first(

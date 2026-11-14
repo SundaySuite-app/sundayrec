@@ -53,6 +53,7 @@ use tauri::{AppHandle, Emitter};
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::preroll::PrerollClip;
+use crate::recorder::native_capture::split::DeliveriesOwed;
 use crate::recorder::native_capture::video::find_camera;
 use crate::util::lock_recover;
 
@@ -128,6 +129,8 @@ struct RecorderSession {
     /// backstop can move the engine out of `Stopping` when it kills the
     /// supervisor that would have.
     state: StateWriter,
+    /// Deliveries the session still owes; the stop backstop scales with it (E3).
+    owed: DeliveriesOwed,
 }
 
 /// The engine handle stored in Tauri-managed state. At most one recording runs
@@ -591,9 +594,11 @@ impl RecorderEngine {
             preroll_clip,
             state: self.state_writer(&app, generation),
             loudness: Default::default(),
+            deliveries_owed: DeliveriesOwed::default(),
             opts,
         };
         let session_state = ctx.state.clone();
+        let session_owed = ctx.deliveries_owed.clone();
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
@@ -616,6 +621,7 @@ impl RecorderEngine {
             supervisor,
             stop_tx,
             state: session_state,
+            owed: session_owed,
         });
         self.await_ready(generation, ready_rx).await?;
         if camera_blocked {
@@ -663,6 +669,7 @@ impl RecorderEngine {
             let _ = session.stop_tx.try_send(());
             let supervisor = session.supervisor;
             let state = session.state;
+            let owed = session.owed;
             tauri::async_runtime::spawn(async move {
                 // The supervisor is far from done here: stopping the capture is
                 // bounded by STOP_FINALIZE_MS, and the finalize chain that follows
@@ -673,14 +680,26 @@ impl RecorderEngine {
                 // it: no file, no history row, no `recording://finished`. The
                 // backstop is derived from those real bounds; see
                 // `RecorderTimeouts::STOP_ABORT_BACKSTOP_MS`.
-                tokio::time::sleep(Duration::from_millis(
-                    RecorderTimeouts::STOP_ABORT_BACKSTOP_MS,
-                ))
-                .await;
+                wait_stop_backstop(&owed).await;
                 supervisor.abort();
                 fail_stuck_stop(&state);
             });
         }
+    }
+}
+
+/// Wait out the stop backstop. It was sized for ONE delivery; a stop can wait
+/// for a queued background delivery, the parts held back, and the last part
+/// (E3), so it is re-read against the most deliveries ever owed at once ([`DeliveriesOwed::peak`]).
+async fn wait_stop_backstop(owed: &DeliveriesOwed) {
+    let started = tokio::time::Instant::now();
+    loop {
+        let limit = Duration::from_millis(RecorderTimeouts::stop_abort_backstop_ms(owed.peak()));
+        let elapsed = started.elapsed();
+        if elapsed >= limit {
+            return;
+        }
+        tokio::time::sleep(limit - elapsed).await;
     }
 }
 
@@ -844,6 +863,7 @@ pub(crate) mod tests {
             supervisor: tauri::async_runtime::spawn(std::future::pending::<()>()),
             stop_tx,
             state,
+            owed: Default::default(),
         });
         // Dropped while waiting: like the scheduler's timeout.
         let (_ready_tx, ready_rx) = tokio::sync::oneshot::channel();
@@ -990,6 +1010,37 @@ pub(crate) mod tests {
         );
         // …and it must still be a bound, not "never".
         assert!(backstop <= Duration::from_secs(60 * 60));
+    }
+
+    /// E3: a stop with two parts pending (the one queued in the background and
+    /// the last) is not aborted at the single-delivery bound; with nothing
+    /// pending it still is. Virtual clock.
+    #[tokio::test(start_paused = true)]
+    async fn the_stop_backstop_waits_longer_for_two_pending_deliveries() {
+        let base = Duration::from_millis(RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
+        // Nothing pending: the old bound.
+        let owed = DeliveriesOwed::default();
+        let t = tokio::time::Instant::now();
+        wait_stop_backstop(&owed).await;
+        assert_eq!(t.elapsed(), base);
+        // Two pending, published while the stop is under way.
+        let owed = DeliveriesOwed::default();
+        let seen = owed.clone();
+        let t = tokio::time::Instant::now();
+        let waiter = tokio::spawn(async move { wait_stop_backstop(&owed).await });
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        seen.add(2);
+        // One delivery finishes before the first re-read (the peak still
+        // counts); the abort must not come at `base`.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        seen.done(1);
+        tokio::time::sleep(base).await;
+        assert!(!waiter.is_finished(), "aborted at the one-delivery bound");
+        waiter.await.unwrap();
+        assert_eq!(
+            t.elapsed(),
+            Duration::from_millis(RecorderTimeouts::stop_abort_backstop_ms(2))
+        );
     }
 
     // ── Session-generation guard (a straggler must not clobber the live run) ──

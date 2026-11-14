@@ -35,6 +35,8 @@
 //! it then waits for the session end, as it effectively did before.
 
 use std::future::Future;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use sundayrec_core::capture::{AudioCodec, codec_for_extension};
 use sundayrec_core::preflight::min_disk_headroom_bytes;
@@ -91,18 +93,74 @@ impl Drop for AbortOnDrop {
 #[derive(Default)]
 pub(crate) struct DeliveryChain {
     tail: Option<AbortOnDrop>,
+    owed: DeliveriesOwed,
+}
+
+/// How many deliveries a session still owes: queued in the chain, plus (at a
+/// stop) the parts held back and the last one. Shared with the engine, whose
+/// stop backstop scales with it (E3).
+#[derive(Clone, Default)]
+pub(crate) struct DeliveriesOwed(Arc<(AtomicUsize, AtomicUsize)>);
+
+impl DeliveriesOwed {
+    #[cfg(test)]
+    pub(crate) fn get(&self) -> usize {
+        self.0.0.load(Ordering::Relaxed)
+    }
+    /// The most ever owed at once: what the stop backstop is sized for, so
+    /// deliveries finishing never shorten the time the last one has left.
+    pub(crate) fn peak(&self) -> usize {
+        self.0.1.load(Ordering::Relaxed)
+    }
+    pub(crate) fn add(&self, n: usize) {
+        let now = self.0.0.fetch_add(n, Ordering::Relaxed).saturating_add(n);
+        self.0.1.fetch_max(now, Ordering::Relaxed);
+    }
+    pub(crate) fn done(&self, n: usize) {
+        let _ = self
+            .0
+            .0
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(n))
+            });
+    }
 }
 
 impl DeliveryChain {
+    /// A chain that reports what it owes into `owed`.
+    pub(crate) fn with_owed(owed: DeliveriesOwed) -> Self {
+        Self { tail: None, owed }
+    }
+
+    /// Count `n` deliveries the chain does not run itself (the parts held back,
+    /// the last part) as owed.
+    pub(crate) fn owe_more(&self, n: usize) {
+        self.owed.add(n);
+    }
+
     /// Queue `job` behind everything already queued.
+    #[cfg(test)]
     pub(crate) fn push(&mut self, job: impl Future<Output = Delivered> + Send + 'static) {
+        self.push_parts(1, job);
+    }
+
+    /// Queue `job`, which delivers `parts` closed parts, behind everything
+    /// already queued.
+    pub(crate) fn push_parts(
+        &mut self,
+        parts: usize,
+        job: impl Future<Output = Delivered> + Send + 'static,
+    ) {
         let before = self.tail.take();
+        let owed = self.owed.clone();
+        owed.add(parts);
         let handle = tokio::spawn(async move {
             let (ok_before, first_before) = match before {
                 Some(h) => h.join().await,
                 None => (true, None),
             };
             let (ok, first) = job.await;
+            owed.done(parts);
             (ok_before && ok, first_before.or(first))
         });
         self.tail = Some(AbortOnDrop(handle));
@@ -272,7 +330,8 @@ where
     }
     if room(&closed).await {
         *finalized = open;
-        deliveries.push(deliver(closed));
+        let parts = closed.len();
+        deliveries.push_parts(parts, deliver(closed));
     } else {
         tracing::warn!(
             parts = closed.len(),
@@ -407,6 +466,35 @@ mod tests {
         );
         // Joined: an empty chain.
         assert_eq!(chain.join().await, (true, None));
+    }
+
+    /// E3: the peak is the most ever owed at once, and never falls.
+    #[test]
+    fn the_owed_peak_never_falls() {
+        let owed = DeliveriesOwed::default();
+        owed.add(2);
+        owed.done(2);
+        owed.add(1);
+        assert_eq!((owed.get(), owed.peak()), (1, 2));
+    }
+
+    /// E3: the chain reports what it owes, per part, and what the stop adds
+    /// (held-back parts + the last one) lands in the same count.
+    #[tokio::test]
+    async fn the_chain_counts_what_it_owes() {
+        let owed = DeliveriesOwed::default();
+        let mut chain = DeliveryChain::with_owed(owed.clone());
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        chain.push_parts(2, async move {
+            let _ = rx.await;
+            (true, None)
+        });
+        assert_eq!(owed.get(), 2);
+        chain.owe_more(1); // the last part, at the stop
+        assert_eq!(owed.get(), 3);
+        let _ = tx.send(());
+        let _ = chain.join().await;
+        assert_eq!(owed.get(), 1, "only the stop's own part is left");
     }
 
     /// Dropping the chain (the supervisor aborted by the stop backstop) aborts

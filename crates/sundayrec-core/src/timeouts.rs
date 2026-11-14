@@ -57,6 +57,29 @@ impl RecorderTimeouts {
     /// hard abort is the right answer. That is the point: abort only a TRUE hang.
     pub const STOP_ABORT_BACKSTOP_MS: u64 = 20 * 60_000;
 
+    /// What each delivery beyond the first adds to the backstop (E3): its
+    /// 15-min watchdog plus 2 min for probes, history and slow-disk I/O. A stop
+    /// can wait for a queued background delivery, the parts held back for lack
+    /// of room, and the last part, one after the other.
+    pub const STOP_ABORT_PER_EXTRA_DELIVERY_MS: u64 = 17 * 60_000;
+
+    /// The most the backstop ever grows to. Past it a stop is hung, not busy.
+    pub const STOP_ABORT_CEILING_MS: u64 = 60 * 60_000;
+
+    /// The stop backstop for a stop with `owed` deliveries still to run
+    /// (queued, held back, and the last part): [`Self::STOP_ABORT_BACKSTOP_MS`]
+    /// for one, growing per extra delivery up to the ceiling.
+    pub const fn stop_abort_backstop_ms(owed: usize) -> u64 {
+        let extra = owed.saturating_sub(1) as u64;
+        let ms = Self::STOP_ABORT_BACKSTOP_MS
+            .saturating_add(extra.saturating_mul(Self::STOP_ABORT_PER_EXTRA_DELIVERY_MS));
+        if ms > Self::STOP_ABORT_CEILING_MS {
+            Self::STOP_ABORT_CEILING_MS
+        } else {
+            ms
+        }
+    }
+
     /// How long a *quit* may wait for the finalisation before the process dies
     /// anyway (`sundayrec_core::window::quit_action` →
     /// `QuitAction::StopThenWait`/`WaitOnly`).
@@ -94,6 +117,27 @@ mod tests {
         const _: () =
             assert!(RecorderTimeouts::QUIT_WAIT_CAP_MS > RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
         assert_eq!(RecorderTimeouts::QUIT_WAIT_CAP_MS, 1_230_000);
+    }
+
+    #[test]
+    fn the_stop_backstop_grows_per_pending_delivery_up_to_a_ceiling() {
+        let one = RecorderTimeouts::stop_abort_backstop_ms(1);
+        assert_eq!(one, RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
+        assert_eq!(RecorderTimeouts::stop_abort_backstop_ms(0), one);
+        // Two deliveries: a second watchdog (+ margin) fits.
+        const CONCAT_WATCHDOG_MS: u64 = 15 * 60_000;
+        assert!(
+            RecorderTimeouts::stop_abort_backstop_ms(2)
+                >= RecorderTimeouts::STOP_FINALIZE_MS + 2 * CONCAT_WATCHDOG_MS
+        );
+        assert!(
+            RecorderTimeouts::stop_abort_backstop_ms(3)
+                > RecorderTimeouts::stop_abort_backstop_ms(2)
+        );
+        assert_eq!(
+            RecorderTimeouts::stop_abort_backstop_ms(usize::MAX),
+            RecorderTimeouts::STOP_ABORT_CEILING_MS
+        );
     }
 
     #[test]
