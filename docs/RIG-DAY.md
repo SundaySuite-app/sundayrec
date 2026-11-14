@@ -69,7 +69,7 @@ faktisk skal se nå — sist.
 - [ ] **(c, fortsettelse) Slot og spesialopptak på samme tid.** Sett opp den
       faste ukentlige tiden OG et spesialopptak til å begynne i samme minutt.
       **Forventet:** appen starter ÉTT opptak, ikke to som kjemper om samme
-      enhet.
+      enhet. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `a_slot_and_a_special_in_the_same_minute_start_exactly_one_recording`, `back_to_back_slots_stop_one_and_start_the_next_in_the_same_minute` og `a_slot_and_a_special_at_the_same_time_produce_exactly_one_late_start` (`src-tauri/src/scheduler/mod.rs`). Viser at planleggeren, kjørt mot en virtuell klokke, starter ÉTT opptak, og at Stopp kommer før Start i samme minutt. > **Beviser IKKE:** at en ekte opptaksmotor og et ekte lydkort får enheten i hendene i samme minutt (testene bruker en simulert motor og en virtuell klokke), at Windows slipper enheten raskt nok mellom to slotter, og at et spesialopptak som viker for en slot ikke gir varselet «Planlagt opptak hoppet over» (det gjør det fortsatt, se PLAN.md).
 - [ ] **(c, fortsettelse) Spesialopptak med eget lydkort.** La den vanlige
       lydenheten (Lyd-siden) være mikseren, og koble i tillegg til en
       USB-mikrofon. Gearikonet → Avansert → «Flere tider og spesialopptak»:
@@ -225,7 +225,7 @@ faktisk skal se nå — sist.
       Eierbeslutning 2026-10-04: robusthet foran kvalitet, så litt mykere
       bilde ved lav bitrate er riktig pris, men tapte bilder eller drift er
       et funn. Denne sjekken gjelder opptaket; en eksport i Redigering har
-      ikke flagget og skal være like skarp som før.
+      ikke flagget og skal være like skarp som før. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `rig_sync::video_under_cpu_load_keeps_30_fps_and_counts_what_it_drops` (`src-tauri/src/recorder/longrun/tests/rig_sync.rs`, `#[ignore]`, kjøres for hånd). Spinner alle kjerner mens videosporet kjører mot ekte WAV-skriver og ekte ffmpeg. > **Beviser IKKE:** at maskinvarekoderen (VideoToolbox) holder, at et ekte kamera leverer, eller at 60 minutter går bra. Kameraet er syntetisk (`VirtualCamera`/`SyntheticSource`), koderen er programvare-ffmpeg, og testen varer bare `SUNDAYREC_RIG_LOAD_SECS` sekunder (standard 120 s), ikke en gudstjeneste.
 
 - [ ] **(a1b) Lisensfila ligger i den installerte appen.** Installer en ekte
       utgivelse (ikke en `tauri dev`-bygging). Gearikonet → Avansert → bunnen:
@@ -313,7 +313,7 @@ faktisk skal se nå — sist.
       **Rødt funn:** varsel før 5 minutter, flere varsler i ett opptak, varsel
       på et normalt opptak, lydstyrketall som står stille mens du snakker, eller
       xrun-tall over null i loggen/diagnosen som ikke var der uten D3
-      (`native_xruns`; måleren går på skrivertråden og skal ikke røre det).
+      (`native_xruns`; måleren går på skrivertråden og skal ikke røre det). > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `segment::tests::a_muted_mixer_is_told_once_after_five_minutes_and_xruns_are_untouched` og `a_short_quiet_stretch_or_a_normal_level_is_never_told` (`src-tauri/src/recorder/native_capture/segment.rs`, `start_paused`), og `lufs::tests::a_normal_level_reads_normal_and_a_muted_mixer_reads_weak`. Beviser varselet etter 5 min, bare ÉN gang, og at xrun-tallet ikke røres. > **Beviser IKKE:** at systemvarselet faktisk vises og er hørbart/synlig når vinduet ikke har fokus, at terskelen på −40 LUFS passer en ekte mikser (punkt 1 og 3 i (d3-rigg)), eller at 5 minutter på veggklokka oppleves riktig. Tiden er virtuell og signalet syntetisk.
 
 - [ ] **(d3-rigg) Dempet mikser på flerkanalskortet (D3, riggen).** Dette er
       punktet som viser at terskelen på −40 LUFS er riktig for DERE, ikke bare
@@ -747,7 +747,7 @@ ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
       USB-webkamera + USB-mikser (og gjenta med ASIO-kort om det finnes).
       **Rødt funn:** driv som vokser over opptaket (klappet er 1 bilde unna
       ved start og 5 ved slutt), eller bilde som henger etter lyden fra første
-      sekund.
+      sekund. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `rig_sync::picture_and_sound_stay_within_a_frame_through_forced_splits` (kjører i CI) og `the_90_minute_recording_keeps_picture_and_sound_in_step` (`#[ignore]`, 90 minutter virtuell tid; `the_virtual_driver_agrees_with_the_real_clock` kjører den samme driveren 30 s i sanntid) i `src-tauri/src/recorder/longrun/tests/rig_sync.rs`. Klapp (støy + hvitt bilde) måles i den leverte mp4-en med ffprobe, innenfor 6 ms av forventet, med lydkort som driver 40–1200 ppm. > **Beviser IKKE:** synk på et ekte kamera og et ekte lydkort. Klokken er virtuell (ikke 90 ekte minutter), kameraet er syntetisk og stemples på den virtuelle verts-klokka, så kameraets egen forsinkelse, USB-buffere og ekte kortdrift er ikke med. Rødt på riggen er fortsatt et funn selv om testen er grønn.
 - [ ] **(v2) USB-kabelen til kameraet trekkes i 10 sekunder midt i.** Start et
       videoopptak med klapp i starten. Etter ca. 5 minutter: **trekk kabelen
       til kameraet** (på Macen: ta iPhonen ut av Continuity ved å koble fra
@@ -789,7 +789,7 @@ ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
       er urørt), men noter hvor mye CPU som skulle til og hvor mange bilder
       loggen sier ble sluppet — det er tallet `video.frames_dropped` vil vise
       i feltet. Windows: sammenlign med (c0a)-basisen.
-      **Rødt funn:** hakk i lyden under last, eller et opptak som slutter.
+      **Rødt funn:** hakk i lyden under last, eller et opptak som slutter. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** samme test som (e2): `rig_sync::video_under_cpu_load_keeps_30_fps_and_counts_what_it_drops`. Beviser jevn 30 fps i fila, ingen tapt lyd og en ærlig tapt-teller under last i en kort kjøring. > **Beviser IKKE:** noe om 60–90 minutter, om ekte CPU-forbruk i `sundayrec` + `ffmpeg` (Aktivitetsmonitor), maskinvarekoding, eller et ekte kamera. Telleren «står på 0» er bare vist på testmaskinen i et par minutter.
 - [ ] **(v5) Forhåndsvisningen fra samme kameraøkt (C4a, C4b).** Terminalen må
       ha kameratilgang; kjør i din egen terminalfane, fra repoet:
       `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_preview -- --ignored --nocapture`
@@ -925,7 +925,7 @@ during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
       **Rødt funn:** bilde og lyd som glir fra hverandre etter et kutt (mål
       forskjellen og hvilket kutt), svart eller frosset bilde i starten av en
       del, en eksport som aldri blir ferdig, eller en kopi som tar like lang tid
-      som før (da kopierte den ikke; send loggen).
+      som før (da kopierte den ikke; send loggen). > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `a_cut_only_video_export_copies_the_picture_and_keeps_every_cut_in_sync_or_skips`, `a_source_that_starts_late_is_copied_in_sync_too_or_skips` og `a_cut_only_export_of_a_recorded_video_keeps_every_clap_in_sync_or_skips` (`src-tauri/src/editor/mod.rs`). Genererte kilder med blits og pip hvert sekund; synk måles ved hvert kutt. > **Beviser IKKE:** tidsbruken (sekunder, ikke minutter) på en ekte 60–90 minutters gudstjeneste, eller en fil fra det ekte kameraet (nøkkelbildeintervall, B-bilder). Kilden er syntetisk og kort. Testene hopper over når ffmpeg-sidecaren ikke er hentet.
 
 ## Ørene
 
@@ -981,7 +981,7 @@ gudstjeneste-opptak eller -materiale for hånden.
       **Forventet ETTER (F2-C-D, #247):** hullet foran knappetrykket er
       omtrent 300 ms kortere (nesten hele forhåndsbufferen er med), og
       skjøten klikker ikke — klippet rampes ned til digital null de siste
-      10 ms.
+      10 ms. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `preroll::tests::button_press_mid_chord_gives_a_gapless_clip_that_ends_at_silence` (`src-tauri/src/recorder/native_capture/preroll.rs`). Konstant tone gjennom den ekte roterende skriveren; klippet sjekkes sampel for sampel: ingen hull foran knappetrykket og en nedrampe til null de siste 10 ms. > **Beviser IKKE:** at skjøten ikke KLIKKER i ørene, med orgel på full styrke på et ekte lydkort. Signalet er en syntetisk tone, ingen enhet er åpnet, og knappetrykket er et funksjonskall, ikke en ekte hendelse midt i musikk.
 
 - [ ] **(B3b) «Tale» renser av seg selv, og sier hva den gjorde.** Tre
       opptak, hvert i **Rediger → Lyd** med standardprofilen «Tale»; trykk
@@ -1176,6 +1176,59 @@ konstant-effekt-overganger. Ca. 30 min + selve gudstjenesten. Hodetelefoner.
 - [ ] **Kjøreren (Mac).** `$P ~/Downloads/2026.01.04.mp3 --at 3:src=600 --at 5:src=1200 --at 7:cuts=1300-1400@-1 --at 10:src=1350 --at 12:pause --at 13:play --for 17`
       **Forventet:** `underruns 0`, `xruns 0`; hvert hopp hørt etter under ca.
       150 ms; `cuts` fortsetter fra der den stod.
+
+## (x) Etter sømgjennomgangen (nov. 2026)
+
+Det bevisrunden (#451) og etterprøvingen ikke kunne bevise uten maskinvare.
+Bakgrunn og funn: [SOMMER-2026-11.md](SOMMER-2026-11.md). Alt under er ikke
+sett på ekte maskin ennå.
+
+- [ ] **(x1) Sen kamera-synk (S1-C).** Mac og Windows, ekte kamera (FaceTime,
+      USB, Continuity). Start et opptak med kamera på og klapp med en gang, før
+      kameraet har rukket å åpne (kameraet åpnes nå ved siden av lyden og kan
+      komme sent). Åpne mp4-en og mål klappet i lyd og bilde. Les også loggtiden
+      mellom `video track: opening the camera` og `recorder: native capture starting`.
+      **Forventet:** lyden starter uten å vente på kameraet; klappet er synkront
+      (±1 bilde) også når kameraet kom noen sekunder etter lyden. Noter
+      ventetiden per kameratype (svaret på «S1-C, faktiske tall»).
+      **Rødt funn:** bildet forskjøvet mot lyden når kameraet kommer sent, svart
+      bilde i starten som ikke blir med i fila, eller lyd som først starter når
+      kameraet er åpent.
+- [ ] **(x2) Skriverrotasjon på et ekte lydkort (X1, `splitMinutes = 2`).**
+      Sett «Del opp hvert … minutt» til 2 (Avansert) og ta opp en klokke som
+      tikker (eller en tonegenerator med tellende pip) i 7 minutter, rent
+      lydopptak, på det vanlige lydkortet. **Forventet:** tre filer, og
+      hullet mellom slutten av fil 1 og starten av fil 2 er null sampler (mål i
+      redigereren: tikkene fortsetter i samme takt over skjøten); ingen xrun-økning i
+      Diagnose. Windows: gjør det også med ASIO-kortet. **Rødt funn:** hørbart
+      hull eller klikk ved skjøten, eller en fil som mangler.
+- [ ] **(x3) Bakgrunnslevering på en svak PC (X1).** Den tregeste Windows-PC-en
+      dere har. Ta opp 60 minutter med deling hvert 5. minutt, mp3 (og én gang
+      mp4 med kamera). Se på `ring_overrun_samples` og xruns i Diagnose, og på
+      CPU og disk underveis. **Forventet:** ingen xruns og `ring_overrun_samples`
+      = 0 mens delene leveres i bakgrunnen; alle deler leveres i rekkefølge og
+      Stopp ferdigstiller uten at backstoppen (20 min, vokser per ventende
+      levering opp til 60 min) slår til. Prøv også `kill -9` midt i en
+      bakgrunnslevering og start appen med en gang: sammenlign den gjenopprettede
+      fila med fangsten (foreldreløs ffmpeg kan skrive i samme `_deliver_tmp`).
+      **Rødt funn:** tapt lyd i fangsten mens en levering går, eller en del som
+      mangler eller er ødelagt.
+- [ ] **(x4) Nektet kameratilgang på en ekte Mac (S1-B).** Systeminnstillinger
+      → Personvern → Kamera: slå av SundayRec. Start et opptak med kamera på
+      (manuelt, og så et planlagt). **Forventet:** opptaket går som rent
+      lydopptak, og varselet om at kameraet ikke er tillatt vises (toast i
+      appen). Slå tilgangen på igjen og ta opp: video virker. **Rødt funn:**
+      opptaket starter ikke, lyden mangler, eller ingen melding. (Varselet kan
+      utebli hvis starten tok over 30 s, det er kjent.)
+- [ ] **(x5) Deling i en videoøkt med ekte kamera (X1 × video).** Videoøkter
+      stopper og åpner fortsatt kamera og videospor ved deling. Sett deling til
+      2 minutter, ta opp 7 minutter med kamera og en klokke i bildet, i tillegg
+      én gang med en gjenoppkobling (trekk USB-kameraet kort) nær en grense.
+      **Forventet:** én mp4 per del, hver med bilde fra første til siste
+      sekund; hullet i lyd og bilde ved grensen er noen få sekunder og
+      **måles og noteres** (svaret på «X1, lengden»). **Rødt funn:** en del uten
+      bilde, en mp4 der bildet fortsetter inn i feil del, eller et hull på mer
+      enn ca. 15 s.
 
 ## Etterpå
 

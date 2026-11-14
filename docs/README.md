@@ -13,18 +13,19 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 
 ## Status og planer — levende, oppdateres når noe endres
 
-| Dokument                             | Hva                                                                          |
-| ------------------------------------ | ---------------------------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                   | Registeret: alt som gjenstår, hvem sitt det er, og hvor detaljene står       |
-| [VARSLING.md](VARSLING.md)           | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår |
-| [NEEDS-RICHARD.md](NEEDS-RICHARD.md) | Eierens punkter i detalj: kontoer, signering, beslutninger, uverifisert rigg |
-| [RIG-DAY.md](RIG-DAY.md)             | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                     |
-| [SMOKE-TEST.md](SMOKE-TEST.md)       | Maskinvare-runbook per funksjon — hva som skal skje på en ekte maskin        |
-| [AVHENGIGHETER.md](AVHENGIGHETER.md) | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista |
-| [OMBYGGING.md](OMBYGGING.md)         | Hovedplanen før utrulling: beslutninger, milepæler og arbeidspakker          |
-| [GJENNOMFORING.md](GJENNOMFORING.md) | Ombyggingen økt for økt: PR-ene, portene, modellvalget og startmeldingene    |
-| [LYDMOTOR.md](LYDMOTOR.md)           | Planen for redigeringens lyd i Rust, med ffmpeg bare til filer               |
-| [VIDEOMOTOR.md](VIDEOMOTOR.md)       | Planen for videoopptak: kamera i Rust, lyden først                           |
+| Dokument                               | Hva                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                     | Registeret: alt som gjenstår, hvem sitt det er, og hvor detaljene står                      |
+| [VARSLING.md](VARSLING.md)             | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår                |
+| [NEEDS-RICHARD.md](NEEDS-RICHARD.md)   | Eierens punkter i detalj: kontoer, signering, beslutninger, uverifisert rigg                |
+| [RIG-DAY.md](RIG-DAY.md)               | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                                    |
+| [SMOKE-TEST.md](SMOKE-TEST.md)         | Maskinvare-runbook per funksjon — hva som skal skje på en ekte maskin                       |
+| [AVHENGIGHETER.md](AVHENGIGHETER.md)   | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista                |
+| [OMBYGGING.md](OMBYGGING.md)           | Hovedplanen før utrulling: beslutninger, milepæler og arbeidspakker                         |
+| [GJENNOMFORING.md](GJENNOMFORING.md)   | Ombyggingen økt for økt: PR-ene, portene, modellvalget og startmeldingene                   |
+| [LYDMOTOR.md](LYDMOTOR.md)             | Planen for redigeringens lyd i Rust, med ffmpeg bare til filer                              |
+| [VIDEOMOTOR.md](VIDEOMOTOR.md)         | Planen for videoopptak: kamera i Rust, lyden først                                          |
+| [SOMMER-2026-11.md](SOMMER-2026-11.md) | Sømgjennomgangen nov. 2026: funn, status og PR-numre (hele rapporten ligger utenfor repoet) |
 
 ## Utgivelse og drift
 
