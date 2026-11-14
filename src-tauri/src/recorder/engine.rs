@@ -690,14 +690,11 @@ impl RecorderEngine {
 
 /// Wait out the stop backstop. It was sized for ONE delivery; a stop can wait
 /// for a queued background delivery, the parts held back, and the last part
-/// (E3), so it is re-read against the most deliveries seen owed — the peak, so
-/// that deliveries finishing never shorten the time the last one has left.
+/// (E3), so it is re-read against the most deliveries ever owed at once ([`DeliveriesOwed::peak`]).
 async fn wait_stop_backstop(owed: &DeliveriesOwed) {
     let started = tokio::time::Instant::now();
-    let mut peak = 0usize;
     loop {
-        peak = peak.max(owed.get());
-        let limit = Duration::from_millis(RecorderTimeouts::stop_abort_backstop_ms(peak));
+        let limit = Duration::from_millis(RecorderTimeouts::stop_abort_backstop_ms(owed.peak()));
         let elapsed = started.elapsed();
         if elapsed >= limit {
             return;

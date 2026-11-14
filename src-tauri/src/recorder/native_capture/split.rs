@@ -100,17 +100,24 @@ pub(crate) struct DeliveryChain {
 /// stop) the parts held back and the last one. Shared with the engine, whose
 /// stop backstop scales with it (E3).
 #[derive(Clone, Default)]
-pub(crate) struct DeliveriesOwed(Arc<AtomicUsize>);
+pub(crate) struct DeliveriesOwed(Arc<(AtomicUsize, AtomicUsize)>);
 
 impl DeliveriesOwed {
     pub(crate) fn get(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
+        self.0.0.load(Ordering::Relaxed)
+    }
+    /// The most ever owed at once: what the stop backstop is sized for, so
+    /// deliveries finishing never shorten the time the last one has left.
+    pub(crate) fn peak(&self) -> usize {
+        self.0.1.load(Ordering::Relaxed)
     }
     pub(crate) fn add(&self, n: usize) {
-        self.0.fetch_add(n, Ordering::Relaxed);
+        let now = self.0.0.fetch_add(n, Ordering::Relaxed).saturating_add(n);
+        self.0.1.fetch_max(now, Ordering::Relaxed);
     }
     pub(crate) fn done(&self, n: usize) {
         let _ = self
+            .0
             .0
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 Some(v.saturating_sub(n))
