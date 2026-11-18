@@ -299,7 +299,7 @@ windows = { version = "=0.62.2", features = [
     "Win32_Media_Audio",
     "Win32_System_Com",
 ] }
-windows-core = "=0.62.2"
+windows-core = "=0.100.0"
 
 # ── C1c: native camera capture on Windows ────────────────────────────────────
 # Cap's MIT Media Foundation / DirectShow crates (`crates/camera-*`, taken in by

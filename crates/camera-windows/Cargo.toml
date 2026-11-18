@@ -15,7 +15,7 @@ thiserror = "2"
 sundayrec-mf-util = { path = "../mf-util" }
 cap-camera-mediafoundation = { path = "../camera-mediafoundation" }
 cap-camera-directshow = { path = "../camera-directshow" }
-windows-core = "=0.62.2"
+windows-core = "=0.100.0"
 windows = { version = "=0.62.2", features = [
     "Win32_Foundation",
     "Win32_Media_DirectShow",
