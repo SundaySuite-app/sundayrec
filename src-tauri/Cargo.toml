@@ -130,7 +130,7 @@ cpal = "0.18"
 # pushes routed PCM into the ring and the writer drains it. Used by the native
 # capture engine on every platform (`recorder::native_capture`) and the legacy
 # Windows pipe path (`recorder::cpal_capture`).
-ringbuf = "0.5"
+ringbuf = "0.6"
 
 
 serde = { version = "1", features = ["derive"] }
