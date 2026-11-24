@@ -5,101 +5,46 @@
  * ren aritmetikk står her og er node-testet, alt som trenger `Intl` eller et
  * lerret gjør det ikke.
  *
- * ## Preken-vinduet er ÉN idé, ikke to
+ * ## Vinduet er det som blir igjen
  *
- * Canvasens 4.1 har to gullhåndtak i bølgeformen, og de gjør to forskjellige
- * ting avhengig av når man drar i dem: FØR «Behold bare prekenen» justerer de
- * FORSLAGET, etterpå justerer de KUTTGRENSENE. Det er én idé — «hvor begynner
- * og slutter prekenen» — med to representasjoner under seg, og hvis de to
- * representasjonene får hver sin kode kommer de til å bli uenige.
- *
- * Så: `sermonWindow()` svarer alltid med det samme vinduet uansett hvilken
- * side av «anvend» man står på, og `windowToCuts()` er den ene veien tilbake.
- *
- * ## Kuttene rundt prekenen er IKKE bare hodet og halen
- *
- * `sermonCutRegions` er ordrett legacys `applySermonTrim` (som selv speiler
- * `sundayrec_core::editor::sermon_cut_regions`): alt før prekenen, alt etter,
- * OG musikken som ligger INNE i den. Auto-pekingen kan spenne en sang mellom
- * to taleblokker, og den som ber om «bare prekenen» vil ha sangen bort. Indre
- * STILLHET beholdes — det er naturlige pauser, og å klippe dem hakker opp
- * talen.
+ * Canvasens 4.1 har to gullhåndtak i bølgeformen: inn-punktet og ut-punktet.
+ * `keepWindow()` svarer med den ytre grensen av det som er igjen etter
+ * kuttene, og `windowToCuts()` er den ene veien tilbake fra et dratt vindu til
+ * kuttlista. Å dra venstre håndtak er det samme som å kutte hodet.
  */
 
 import { computeKeepSegs } from "@lib/pages/editor/keep-segments";
 import { mergeCuts } from "@lib/pages/editor/cut-ops";
 
-import type { Cut, Range, Segment } from "./model";
+import type { Cut, Range } from "./model";
 
 /**
  * Hvor nær en filkant en grense må være for at kuttet skal droppes.
  *
- * Legacys eget tall (`applySermonTrim`), og grunnen er legacys egen: et kutt
+ * Legacys eget tall, og grunnen er legacys egen: et kutt
  * på under et halvsekund i hver ende er ikke et kutt, det er avrunding.
  */
 export const EDGE_EPSILON_SEC = 0.5;
 
-/** Korteste vindu vi lar et håndtak dra til. Under dette er det ikke en
- *  preken lenger, det er et uhell. */
+/** Korteste vindu vi lar et håndtak dra til. Under dette er det ikke et
+ *  utdrag lenger, det er et uhell. */
 export const MIN_WINDOW_SEC = 1;
 
-// ── Forslaget ───────────────────────────────────────────────────────────────
-
-/** Blokken analysen mener er prekenen, eller `null` når den ikke fant noen. */
-export function sermonSegment(
-  segments: readonly Segment[],
-): Segment | undefined {
-  return segments.find((s) => s.type === "sermon");
-}
-
-/** Forslaget som et vindu. `null` når analysen ikke fant noen preken — og da
- *  vises INGENTING, ikke et tomt kort. */
-export function suggestionRange(segments: readonly Segment[]): Range | null {
-  const sermon = sermonSegment(segments);
-  if (!sermon) return null;
-  return { start: sermon.start, end: sermon.end };
-}
-
-/**
- * Er det noe å trimme i det hele tatt?
- *
- * Legacys `showSuggestionBanner`-regel: hvis både hodet og halen er under et
- * halvsekund er «behold bare prekenen» det samme som «behold alt», og et kort
- * som tilbyr et valg uten forskjell er verre enn ingen kort.
- */
-export function suggestionIsWorthOffering(
-  range: Range | null,
-  durationSec: number,
-): boolean {
-  if (!range || durationSec <= 0) return false;
-  const head = range.start;
-  const tail = durationSec - range.end;
-  return head > EDGE_EPSILON_SEC || tail > EDGE_EPSILON_SEC;
-}
-
-// ── Preken-vinduet ──────────────────────────────────────────────────────────
+// ── Vinduet ─────────────────────────────────────────────────────────────────
 
 export interface WindowState {
   cuts: readonly Cut[];
   duration: number;
-  suggestion: Range | null;
-  applied: boolean;
 }
 
 /**
- * Vinduet håndtakene står på.
+ * Vinduet håndtakene står på: den ytre grensen av det som er igjen — altså
+ * slutten på ledende kutt og starten på det avsluttende. Uten kutt er det hele
+ * opptaket.
  *
- * Før «Behold bare prekenen»: forslaget. Etterpå: den ytre grensen av det som
- * er igjen — altså slutten på ledende kutt og starten på det avsluttende. Ett
- * svar, uansett hvilken side av knappen man står på.
- *
- * `null` når det ikke finnes noe vindu å tegne: verken et forslag å justere
- * eller et kutt å flytte.
+ * `null` når det ikke er noe igjen å tegne.
  */
-export function sermonWindow(state: WindowState): Range | null {
-  if (!state.applied) {
-    return state.suggestion ? { ...state.suggestion } : null;
-  }
+export function keepWindow(state: WindowState): Range | null {
   const keeps = computeKeepSegs([...state.cuts], state.duration);
   if (keeps.length === 0) return null;
   return { start: keeps[0].start, end: keeps[keeps.length - 1].end };
@@ -110,7 +55,7 @@ export function sermonWindow(state: WindowState): Range | null {
  *
  * Hodet og halen settes av vinduet; alt som allerede lå INNE i vinduet blir
  * med videre, klemt inn i de nye grensene. Det er det som gjør at å dra
- * venstre håndtak ikke sletter musikk-kuttene «Behold bare prekenen» la inn.
+ * venstre håndtak ikke sletter kuttene man har lagt inn midt i.
  */
 export function windowToCuts(
   window: Range,
@@ -160,34 +105,6 @@ export function dragHandle(
     durationSec,
   );
   return { start: window.start, end };
-}
-
-/**
- * Kuttene «Behold bare prekenen» legger inn.
- *
- * Ordrett legacys `applySermonTrim`, som selv speiler Rustens
- * `sermon_cut_regions`: hodet, halen, og musikken inne i prekenen. Indre
- * stillhet beholdes.
- */
-export function sermonCutRegions(
-  sermon: Range,
-  segments: readonly Segment[],
-  durationSec: number,
-): Cut[] {
-  const cuts: Cut[] = [];
-  if (sermon.start > EDGE_EPSILON_SEC) {
-    cuts.push({ start: 0, end: Math.min(sermon.start, durationSec) });
-  }
-  if (sermon.end < durationSec - EDGE_EPSILON_SEC) {
-    cuts.push({ start: Math.max(0, sermon.end), end: durationSec });
-  }
-  for (const s of segments) {
-    if (s.type !== "music") continue;
-    const start = Math.max(s.start, sermon.start);
-    const end = Math.min(s.end, sermon.end);
-    if (end > start + EDGE_EPSILON_SEC) cuts.push({ start, end });
-  }
-  return cuts.sort((a, b) => a.start - b.start);
 }
 
 // ── Resultatet ──────────────────────────────────────────────────────────────

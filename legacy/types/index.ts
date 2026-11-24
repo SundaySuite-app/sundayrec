@@ -8,8 +8,6 @@
 import type { ChannelMode } from '../bindings/ChannelMode'
 import type { FileFormat } from '../bindings/FileFormat'
 import type { FilenamePattern } from '../bindings/FilenamePattern'
-import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
-import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
 import type { UpdateChannel } from '../bindings/UpdateChannel'
 import type { Settings as SettingsGen } from '../bindings/Settings'
@@ -23,8 +21,6 @@ export type {
   DeviceChannels,
   ScheduleSlot,
   SpecialRecording,
-  PrepAnalysisSegment,
-  EditorSegment,
   ChapterMarker,
   UpdateChannel,
 }

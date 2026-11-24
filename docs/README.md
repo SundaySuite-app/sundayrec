@@ -48,8 +48,6 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 | Dokument                                                 | Hva                                                                    |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [APP-SHELL.md](APP-SHELL.md)                             | Frontend-skallet i `app/`: struktur, mønstre og historikk              |
-| [VAD.md](VAD.md)                                         | Stemmegjenkjenning (E9): hva som finnes, hva den får bestemme          |
-| [LEARNING.md](LEARNING.md)                               | Læringssløyfa: korreksjon → lokal post → aggregat → utgivelse          |
 | [ASIO-TEST-MATRIX.md](ASIO-TEST-MATRIX.md)               | Windows-lyd: test- og utgivelsessjekkliste for WASAPI/ASIO             |
 | [BUILD_ASIO.md](BUILD_ASIO.md)                           | Bygge med ASIO-støtte på Windows                                       |
 | [WINDOWS-PROCESS-HYGIENE.md](WINDOWS-PROCESS-HYGIENE.md) | Hvorfor lydtjenesten krasjet på kirke-PC-en, og hva appen gjør med det |

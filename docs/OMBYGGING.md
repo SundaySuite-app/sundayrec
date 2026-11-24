@@ -211,11 +211,11 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   1.0-sperre: VAD-en står i skyggemodus og bestemmer ingenting.
 - Hvorfor: `ab_eval` på syntetiske data ga grensefeil på 330–360 s for earshot mot
   0,3–0,5 s for Silero, og earshot merket holdte dype toner som tale. Tallene ligger i
-  [VAD.md](VAD.md) §Beslutning 2026-10-19.
+  [VAD.md](archive/VAD.md) §Beslutning 2026-10-19.
 - Planen under er den opprinnelige og gjelder bare hvis D1 tas opp igjen.
 
 - Ny `VadBackend` med `earshot` (MIT/Apache, 16 kHz, 256-samples rammer).
-  Skyggemodusen og porten i [VAD.md](VAD.md) er uendret. Den får bare en
+  Skyggemodusen og porten i [VAD.md](archive/VAD.md) er uendret. Den får bare en
   annen motor.
 - `tract-onnx`, `resources/vad/`, SHA-sjekken i `build.rs` og VAD-jobbens
   modellkontroll slettes. `vad`-featuren beholdes, men blir lett.

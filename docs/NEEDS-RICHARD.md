@@ -173,10 +173,10 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
 
 - **A real recording + a smoke run.** The cut/keep planning, the audio/video
   filter graphs, the codec/output-path/chapter decisions, the EBU R128
-  loudnorm measure/apply chains + JSON parse, and the VAD/sermon classifier are
-  all unit-tested in `sundayrec-core::{editor, mastering, audio_analysis}`. The
+  loudnorm measure/apply chains + JSON parse are
+  all unit-tested in `sundayrec-core::{editor, mastering}`. The
   I/O seam (`src-tauri/src/editor`) spawns the ffmpeg/ffprobe sidecar with that
-  argv (load / peaks / segments / mastering-analyze / export). NO new native dep
+  argv (load / peaks / mastering-analyze / export). NO new native dep
   (ffmpeg is a sidecar; WAV/PCM parsed by hand). All five runs are
   HARDWARE-UNVERIFIED — they need real media (smoke §12). Build proven to
   compile with `cargo build -p sundayrec --features editor`.

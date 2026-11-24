@@ -1,7 +1,7 @@
 //! One read when a recording is opened (B4a, `docs/LYDMOTOR.md` fase 4).
 //!
 //! Until B4a a recording was decoded four times between «open» and «ready»: the waveform
-//! (8 kHz mono), the sermon search (16 kHz mono), the channel diagnosis (`astats`, a whole
+//! (8 kHz mono), the sermon search (16 kHz mono, gone in F1), the channel diagnosis (`astats`, a whole
 //! round to a null sink) and «Tale»'s analysis (16 kHz, one or two channels). The shell now
 //! asks ffmpeg for ONE stream in the recording's own sample rate and its own channels (raw f32,
 //! no filter, no resampling there) and hands every block to [`OpenFold`], which feeds all of
@@ -10,7 +10,6 @@
 //! | Consumer | Fed from | Was |
 //! | -------- | -------- | --- |
 //! | waveform, 100 peaks a second | the mono mix at 8 kHz ([`Resampler`] from the 16 kHz stream) | `-ac 1 -ar 8000` |
-//! | sermon search ([`crate::detect`]) | the mono mix at 16 kHz, kept only when asked for | `-ac 1 -ar 16000` |
 //! | «Tale» ([`crate::tale`]) | the channels at 16 kHz | `-ar 16000 -ac 2` |
 //! | channel diagnosis and noise floor | the channels as they are, at the file's rate ([`ChannelMeter`]) | `-af astats` |
 //!
@@ -468,20 +467,17 @@ pub struct Read16 {
     pub analysis: SpeechAnalysis,
     /// Max-abs per 10 ms of the 8 kHz mono mix: [`crate::editor::PEAKS_PER_SEC`] a second.
     pub peaks: Vec<f32>,
-    /// The mono mix at 16 kHz, when it was asked for.
-    pub mono16: Option<Vec<f32>>,
     /// Frames out, at 16 kHz.
     pub frames16: u64,
 }
 
 /// Everything that reads the recording at 16 kHz or below: «Tale»'s analysis, the waveform
-/// peaks and (optionally) the PCM the sermon search works on.
+/// peaks.
 pub struct Pass16 {
     resamplers: Vec<Resampler>,
     analyzer: SpeechAnalyzer,
     peak_rs: Resampler,
     peaks: PeakAccumulator,
-    mono16: Option<Vec<f32>>,
     frames16: u64,
     planar: Vec<Vec<f32>>,
     mono: Vec<f32>,
@@ -489,9 +485,7 @@ pub struct Pass16 {
 }
 
 impl Pass16 {
-    /// `keep_mono16`: collect the 16 kHz mono mix (the sermon search needs it, and it is the
-    /// one thing here that grows with the recording: 345 MB for 90 minutes).
-    pub fn new(sample_rate: u32, channels: usize, keep_mono16: bool) -> Self {
+    pub fn new(sample_rate: u32, channels: usize) -> Self {
         let channels = channels.clamp(1, 2);
         Self {
             resamplers: (0..channels)
@@ -500,7 +494,6 @@ impl Pass16 {
             analyzer: SpeechAnalyzer::new(channels),
             peak_rs: Resampler::new(ANALYSIS_RATE, PEAKS_SAMPLE_RATE),
             peaks: PeakAccumulator::new(PEAKS_BUCKET_SAMPLES),
-            mono16: keep_mono16.then(Vec::new),
             frames16: 0,
             planar: vec![Vec::new(); channels],
             mono: Vec::new(),
@@ -522,9 +515,6 @@ impl Pass16 {
                 .extend(l.iter().zip(r).map(|(a, b)| 0.5 * (a + b)));
         } else {
             self.mono.extend_from_slice(&self.planar[0]);
-        }
-        if let Some(keep) = self.mono16.as_mut() {
-            keep.extend_from_slice(&self.mono);
         }
         self.eight.clear();
         self.peak_rs.process(&self.mono, &mut self.eight);
@@ -556,7 +546,6 @@ impl Pass16 {
         Read16 {
             analysis: self.analyzer.finish(),
             peaks: self.peaks.finish(),
-            mono16: self.mono16,
             frames16: self.frames16,
         }
     }
@@ -578,10 +567,10 @@ pub struct OpenFold {
 }
 
 impl OpenFold {
-    pub fn new(sample_rate: u32, channels: usize, keep_mono16: bool) -> Self {
+    pub fn new(sample_rate: u32, channels: usize) -> Self {
         Self {
             meter: LevelMeter::new(sample_rate, channels),
-            pass16: Pass16::new(sample_rate, channels, keep_mono16),
+            pass16: Pass16::new(sample_rate, channels),
         }
     }
 
@@ -841,7 +830,7 @@ mod tests {
 
     #[test]
     fn the_peaks_come_at_a_hundred_a_second_with_the_tail_bucket() {
-        let mut fold = OpenFold::new(48_000, 1, false);
+        let mut fold = OpenFold::new(48_000, 1);
         let x = sine(200.0, 48_000, 2.505, 0.5);
         for c in x.chunks(48_000) {
             fold.push(&[c.to_vec()]);
@@ -851,24 +840,6 @@ mod tests {
         assert_eq!(out.read16.peaks.len(), 251);
         let body = &out.read16.peaks[5..245];
         assert!(body.iter().all(|p| (p - 0.5).abs() < 0.01), "{body:?}");
-    }
-
-    #[test]
-    fn mono16_is_kept_only_when_asked_for_and_is_the_mix_of_the_channels() {
-        let l = sine(300.0, 48_000, 1.0, 0.4);
-        let r = vec![0.0f32; l.len()];
-        let run = |keep: bool| {
-            let mut fold = OpenFold::new(48_000, 2, keep);
-            fold.push(&[l.clone(), r.clone()]);
-            fold.finish()
-        };
-        assert!(run(false).read16.mono16.is_none());
-        let kept = run(true).read16;
-        let mono = kept.mono16.unwrap();
-        assert_eq!(mono.len() as u64, kept.frames16);
-        assert_eq!(mono.len(), 16_000);
-        // L alone at 0.4, R silent: the mix is half of L
-        assert!((rms(&mono[2_000..14_000]) - 0.2 / 2f64.sqrt()).abs() < 0.002);
     }
 
     /// Where the time goes, per component, on a minute of 48 kHz stereo noise. Not part of the
@@ -917,7 +888,7 @@ mod tests {
             }
         });
         time("pass16 (all of it)", &mut || {
-            let mut p = Pass16::new(48_000, 2, true);
+            let mut p = Pass16::new(48_000, 2);
             for b in &blocks {
                 p.push(b);
             }

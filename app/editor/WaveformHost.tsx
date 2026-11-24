@@ -27,7 +27,7 @@
  *
  * Håndtakene er ekte knapper med `role="slider"`. En tegnet firkant kan ikke
  * fokuseres, kan ikke leses opp og kan ikke flyttes med piltastene — og en
- * frivillig som ikke bruker mus skal kunne justere hvor prekenen begynner.
+ * frivillig som ikke bruker mus skal kunne justere hvor det som beholdes begynner og slutter.
  */
 
 import { effect } from "@preact/signals";
@@ -45,18 +45,9 @@ import {
   onCanvasWheel,
   onMinimapPointerDown,
 } from "./canvas-input";
-import { setSermonWindow } from "./cuts";
-import { dragHandle, exactSpan, sermonWindow, timecode } from "./editor-core";
-import {
-  applied,
-  cuts,
-  dragWindow,
-  duration,
-  E,
-  playheadSec,
-  suggestion,
-  viewport,
-} from "./model";
+import { setKeepWindow } from "./cuts";
+import { dragHandle, exactSpan, keepWindow, timecode } from "./editor-core";
+import { cuts, dragWindow, duration, E, playheadSec, viewport } from "./model";
 import { spanLabel } from "./span";
 import { centerOn } from "./viewport";
 import styles from "./editor.module.css";
@@ -116,7 +107,6 @@ export function WaveformHost() {
       void playheadSec.value;
       void viewport.value;
       void duration.value;
-      void suggestion.value;
       scheduleDraw();
     });
 
@@ -139,7 +129,7 @@ export function WaveformHost() {
       <canvas
         ref={canvasRef}
         // Bølgeformen er en tegning av lyd. Den tilgjengelige utgaven av det
-        // den sier står i kortet over og i resultatlinja under — to stemmer om
+        // den sier står i resultatlinja under — to stemmer om
         // det samme er verre enn én.
         aria-hidden="true"
         class={styles.canvas}
@@ -169,23 +159,16 @@ function syncBoth(canvas: HTMLCanvasElement, minimap: HTMLCanvasElement): void {
 // ── Gullvinduet ─────────────────────────────────────────────────────────────
 
 /**
- * «Preken · 28 min», med et håndtak i hver ende.
+ * «Beholdes · 28 min», med et håndtak i hver ende.
  *
- * Det samme vinduet uansett hvilken side av «Behold bare prekenen» man står
- * på — `sermonWindow` i `editor-core` er den ene som avgjør hvilken av de to
- * representasjonene som gjelder.
+ * Vinduet er det som blir igjen etter kuttene — `keepWindow` i `editor-core`.
  */
 function KeepWindow() {
   // Et pågående drag vinner: det er det eneste som er sant mellom
   // `pointerdown` og `pointerup`.
   const window_ =
     dragWindow.value ??
-    sermonWindow({
-      cuts: cuts.value,
-      duration: duration.value,
-      suggestion: suggestion.value,
-      applied: applied.value,
-    });
+    keepWindow({ cuts: cuts.value, duration: duration.value });
   const view = viewport.value;
   const visible = view.end - view.start;
   if (!window_ || visible <= 0) return null;
@@ -195,9 +178,8 @@ function KeepWindow() {
   // Helt utenfor utsnittet: ingenting å tegne, og ingen håndtak å tabbe til.
   if (right <= 0 || left >= 100) return null;
 
-  // SAMME tall som forslagskortet over bølgeformen. Avrundede minutter her og
-  // sekundpresist der ville betydd «Preken · 4 min» rett under «… — 3 min
-  // 30 s», altså to tall om det samme, samtidig, på samme skjerm.
+  // SAMME tall som resultatlinja under bølgeformen: sekundpresist begge steder,
+  // ellers ville to tall om det samme stått samtidig på samme skjerm.
   const span = spanLabel(exactSpan(window_.end - window_.start));
 
   return (
@@ -205,7 +187,6 @@ function KeepWindow() {
       <div
         class={styles.keep}
         data-testid="editor-keep"
-        data-applied={applied.value ? "true" : "false"}
         style={{
           left: `${clampPercent(left)}%`,
           width: `${clampPercent(right) - clampPercent(left)}%`,
@@ -213,7 +194,7 @@ function KeepWindow() {
       >
         <span class={styles.keepLabel}>
           {tf("app.editor.keepLabel", {
-            name: t("app.editor.sermon"),
+            name: t("app.editor.kept"),
             span,
           })}
         </span>
@@ -258,7 +239,7 @@ function Handle({
     // Musa eier `dragWindow` mens den drar; den registrerer selv.
     if (!pending || isWindowPointerDrag()) return;
     dragWindow.value = null;
-    setSermonWindow(pending, applied.value);
+    setKeepWindow(pending);
   };
 
   const onKeyDown = (
@@ -323,9 +304,7 @@ function Handle({
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
       onBlur={flush}
-      onPointerDown={(event) =>
-        beginWindowHandleDrag(side, event, applied.value)
-      }
+      onPointerDown={(event) => beginWindowHandleDrag(side, event)}
     />
   );
 }

@@ -33,8 +33,8 @@ pub mod commands;
 pub mod crash;
 pub mod db;
 pub mod diagnostics;
-// R1 non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/export
-// over the unit-tested `sundayrec_core::{editor,mastering,audio_analysis}`. The
+// R1 non-destructive editor — ffmpeg-driven load/peaks/mastering/export
+// over the unit-tested `sundayrec_core::{editor,mastering}`. The
 // `editor` feature is in `default` (the Rediger screen ships); building with
 // `--no-default-features` keeps the DTOs + `feature_disabled` stubs compiling.
 pub mod editor;
@@ -142,14 +142,8 @@ pub mod menu;
 // window closing raised `ExitRequested`, whose handler stops the recorder).
 // During a session the close now HIDES the window instead; outside one it quits
 // exactly as before. The decision is the pure `sundayrec_core::window`.
-pub mod window;
-// E9 neural voice-activity backend (Silero VAD over `tract`). DEFAULT-OFF and
-// deliberately CALLER-LESS: no Tauri command, no shipped code path. It is here
-// to be measured before the unified sermon detector is allowed to use it. The
-// framing/state contract it implements is `sundayrec_core::vad`.
-#[cfg(feature = "vad")]
-pub mod vad;
 pub mod wake;
+pub mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -701,7 +695,6 @@ pub fn run() {
             // picker it opens, a history row's id, or a drop on the window.
             commands::editor::editor_open_recording,
             commands::editor::editor_open_known,
-            commands::editor::editor_segments,
             commands::editor::editor_master_presets,
             commands::editor::editor_diagnose_channels,
             commands::editor::editor_auto_process,
@@ -724,8 +717,6 @@ pub fn run() {
             // «Legg ut»: the receipt's button. No argument — the URL comes
             // from the stored setting (see commands/publish.rs).
             commands::publish::publish_open_upload_page,
-            commands::editor::editor_record_sermon_pick,
-            commands::editor::editor_sermon_pick,
             commands::editor::editor_prepare_listen,
             commands::editor::editor_listen_open,
             commands::editor::editor_listen_chain,

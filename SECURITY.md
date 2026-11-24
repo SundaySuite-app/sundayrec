@@ -265,7 +265,7 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   (`crates/sundayrec-core/src/redact.rs`).
 - (**Whisper model integrity** — the SHA-256-verified model download — left
   with transcription in R2 of «Frivilligen først». The app downloads no
-  models any more; the VAD model is vendored and verified at build + load.)
+  models any more; the neural VAD and its vendored model left in F1.)
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.

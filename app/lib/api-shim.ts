@@ -352,11 +352,9 @@ const EVENT_MAP: Record<string, string> = {
   "editor-export-progress": "editor://export-progress",
   // B5b: what the playback engine tells the sound step (position, end, underrun, …).
   "editor-listen": "editor://listen",
-  // Fase 9: the editor passes that used to run for minutes behind a spinner. Both carry the
-  // same `EditorDecodeProgress { fraction }`; separate channels only because they drive
-  // separate surfaces (the loading screen, the «Analyser opptak» card).
+  // Fase 9: the editor pass that used to run for minutes behind a spinner. Carries
+  // `EditorDecodeProgress { fraction }` and drives the loading screen.
   "editor-peaks-progress": "editor://peaks-progress",
-  "editor-analysis-progress": "editor://analysis-progress",
 };
 
 // Per-event payload ADAPTERS: the Tauri backend emits typed Rust structs whose
@@ -1618,24 +1616,6 @@ const api: Record<string, unknown> = {
       { sourceToken, sidecar: "cutsDraft" },
       false,
     ).then(() => true),
-  // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
-  // the result directly to Suggestion[] and assigns E.suggestions, so return the
-  // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
-  // The result is cached in a `<stem>.segments.json` sidecar; `force` (the
-  // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
-  editorDetectSegments: async (sourceToken: string, force?: boolean) =>
-    call("editor_segments", { sourceToken, force: force ?? false }, []),
-  // E8 — the sermon dropdown's correction, persisted next to the recording in
-  // `<stem>.feedback.json`. Resolves to whether anything was written: picking
-  // the block the detector already chose is not a correction. Never throws; a
-  // failure to record must not interrupt an edit the user is in the middle of.
-  editorRecordSermonPick: async (sourceToken: string, request: unknown) =>
-    call("editor_record_sermon_pick", { sourceToken, request }, false),
-  // The other half: which of these segments the human's stored correction means
-  // (`null` when there is none). Matched on OFFSETS in the backend, because the
-  // indices in a stored record mean nothing once detection has run again.
-  editorSermonPick: async (sourceToken: string, segments: unknown) =>
-    call<number | null>("editor_sermon_pick", { sourceToken, segments }, null),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1644,7 +1624,7 @@ const api: Record<string, unknown> = {
   // Typed against the GENERATED binding (not a hand-typed twin) — a Rust
   // rename of any field now fails `npm run typecheck` here instead of this
   // command quietly answering `undefined` to every field the loader reads,
-  // which is exactly what a `kind`/`type` split did to `EditorSegment`.
+  // which is exactly what a `kind`/`type` split once did to a wire struct.
   editorLoadRecording: async (sourceToken: string) =>
     call<EditorMediaInfo | null>(
       "editor_load_recording",

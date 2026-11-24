@@ -554,7 +554,7 @@ ikke ser er kryss-PR-kjeder og skjøtefeil.
 **Ser etter:**
 
 - Kryss-PR-kjeder: en endring i A3a som A5b bygger videre på feil premiss.
-- [Skjøtefeil](LEARNING.md): to lag korrekte hver for seg, uenige i skjøten,
+- [Skjøtefeil](archive/LEARNING.md): to lag korrekte hver for seg, uenige i skjøten,
   begge grønne. 9 av 11 funn i gjennomgangen i august var av denne typen.
 - At A5 ikke etterlot døde grener, og at `sweep_stale_preroll_files()` faktisk
   ble flyttet og ikke mistet.
@@ -927,7 +927,7 @@ hørbart bedre (Ørene), og **et rent opptak er hørbart uendret**.
   parametre** — løftet i [LYDMOTOR.md](LYDMOTOR.md) §Målbildet.
 - Minnebruk på 90 minutter (2 GB f32): holder noe kodepath hele fila?
 - At mikseren og presettene gir samme kjede.
-- [Skjøtefeil](LEARNING.md) mellom kjernen og skallet.
+- [Skjøtefeil](archive/LEARNING.md) mellom kjernen og skallet.
 
 **Ferdig når:** nummererte funn med alvorsgrad; 🔴/🟠 rettet før beta.
 
@@ -1749,12 +1749,12 @@ RIG-DAY-punkt).
 > (12a96b37) beholdes **umerget**, uten PR. Grunnen: `ab_eval` på syntetiske data
 > ga grensefeil på 330–360 s for earshot mot 0,3–0,5 s for Silero, og earshot
 > merket holdte dype toner som tale (utviklerens påstand holdt ikke).
-> Detaljer: [VAD.md](VAD.md) §Beslutning 2026-10-19. Resten av denne seksjonen er
+> Detaljer: [VAD.md](archive/VAD.md) §Beslutning 2026-10-19. Resten av denne seksjonen er
 > den opprinnelige planen og gjelder bare hvis D1 tas opp igjen.
 
 **Modell:** Sonnet · **Gren:** `ombygging/d1-earshot-vad` · **Pakke:** D1
 
-**Mål:** Samme VAD, lettere motor. Skyggemodusen og porten i [VAD.md](VAD.md) er
+**Mål:** Samme VAD, lettere motor. Skyggemodusen og porten i [VAD.md](archive/VAD.md) er
 **uendret** — den får bare en annen motor, og bestemmer fortsatt ingenting.
 
 **Endrer / sletter:**
@@ -1768,7 +1768,7 @@ RIG-DAY-punkt).
 | `vad`-jobbens modellkontroll i `ci.yml`                                     | ut                      |
 | `vad`-featuren                                                              | beholdes, men blir lett |
 | `crates/sundayrec-core/src/ab_eval.rs`, `src-tauri/examples/vad_ab_eval.rs` | ny motor                |
-| [VAD.md](VAD.md)                                                            | skrives om              |
+| [VAD.md](archive/VAD.md)                                                    | skrives om              |
 
 **Påstanden om at `earshot` slår Silero er utviklerens egen,** og sang kan bli
 tolket som tale. Det er greit: VAD-en er i skyggemodus og bestemmer ingenting

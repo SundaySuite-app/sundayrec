@@ -77,14 +77,6 @@ type Api = {
   editorReadCutsDraft: (sourceToken: string) => Promise<unknown>;
   editorSaveCutsDraft: (sourceToken: string, cuts: unknown) => Promise<boolean>;
   editorDeleteCutsDraft: (sourceToken: string) => Promise<boolean>;
-  editorRecordSermonPick: (
-    sourceToken: string,
-    request: unknown,
-  ) => Promise<boolean>;
-  editorSermonPick: (
-    sourceToken: string,
-    segments: unknown,
-  ) => Promise<unknown>;
   settingsExportProfile: () => Promise<boolean>;
   settingsImportProfile: () => Promise<unknown>;
   getRecentIpcFailures: () => Array<{ cmd: string; error: string }>;
@@ -332,7 +324,7 @@ describe("historikk og papirkurv følger radens id (audit 2026-10-05)", () => {
   });
 });
 
-describe("sidevognene og prekenvalget — opptakets lapp, ikke stien (A3/A4)", () => {
+describe("sidevognene — opptakets lapp, ikke stien (A3/A4)", () => {
   // MUTASJONSPRØVEN: send `mediaPath` i stedet for `sourceToken` i én av dem,
   // og den blir rød — Rust tar ikke lenger imot en sti her.
   beforeEach(() => {
@@ -340,8 +332,6 @@ describe("sidevognene og prekenvalget — opptakets lapp, ikke stien (A3/A4)", (
       "editor_read_sidecar",
       "editor_write_sidecar",
       "editor_delete_sidecar",
-      "editor_record_sermon_pick",
-      "editor_sermon_pick",
     ]) {
       ipc.answers.set(cmd, async () => null);
     }
@@ -374,23 +364,6 @@ describe("sidevognene og prekenvalget — opptakets lapp, ikke stien (A3/A4)", (
       expect(args.sourceToken).toBe(TOKEN);
       expect(Object.keys(args)).not.toContain("mediaPath");
     }
-  });
-
-  it("prekenvalget sendes og leses med lappen", async () => {
-    await api.editorRecordSermonPick(TOKEN, { chosenIndex: 2 });
-    await api.editorSermonPick(TOKEN, []);
-    expect(callsTo("editor_record_sermon_pick")).toEqual([
-      {
-        cmd: "editor_record_sermon_pick",
-        args: { sourceToken: TOKEN, request: { chosenIndex: 2 } },
-      },
-    ]);
-    expect(callsTo("editor_sermon_pick")).toEqual([
-      {
-        cmd: "editor_sermon_pick",
-        args: { sourceToken: TOKEN, segments: [] },
-      },
-    ]);
   });
 
   it("shimmen sender ikke en sti til noen kommando — `mediaPath` er borte", () => {

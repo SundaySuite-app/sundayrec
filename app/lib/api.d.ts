@@ -38,7 +38,7 @@
 // `.d.ts`, not a module: this is ambient, and every file in the program sees it
 // without importing anything.
 
-import type { Settings, EditorSegment } from "../../legacy/types";
+import type { Settings } from "../../legacy/types";
 import type { MasterPreviewParams } from "./pages/editor/export-params";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { EditorListenAction } from "../../legacy/bindings/EditorListenAction";
@@ -319,25 +319,6 @@ declare global {
       editorPickOutputFolder: () => Promise<
         { ok: true; folder: ChosenPlace | null } | { ok: false; error: string }
       >;
-      // The generated binding, not a hand-written twin — see `Suggestion` in
-      // pages/editor/types.ts for what the twin cost us.
-      editorDetectSegments: (
-        sourceToken: string,
-        force?: boolean,
-      ) => Promise<EditorSegment[]>;
-      /** Persist a sermon-pick correction (E8). Resolves to whether it was
-       *  recorded — re-picking the detector's own block is not a correction.
-       *  Names the recording by its File token (A3/A4); Rust derives
-       *  `<stem>.feedback.json` from what the token resolves to. */
-      editorRecordSermonPick: (
-        sourceToken: string,
-        request: import("../../legacy/bindings/EditorSermonPickRequest").EditorSermonPickRequest,
-      ) => Promise<boolean>;
-      /** Index into `segments` of the block the human corrected us to, or null. */
-      editorSermonPick: (
-        sourceToken: string,
-        segments: EditorSegment[],
-      ) => Promise<number | null>;
       // Typed against the GENERATED `EditorAutoProcess` binding (nesting
       // `EditorChannelDiagnosis`) — the hand-typed twin this replaced had
       // silently DROPPED `imbalanceDb`/`peakLeftDb`/`peakRightDb` from the

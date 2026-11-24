@@ -51,7 +51,7 @@ import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
 import { isRecording } from "../state/recording";
 import type { EditorListenEvent } from "@legacy/bindings/EditorListenEvent";
 import { cuts, E } from "./model";
-import { sermonWindow } from "./editor-core";
+import { keepWindow } from "./editor-core";
 import {
   DEFAULT_SOUND_PROFILE,
   LISTEN_SPAN_SEC,
@@ -206,21 +206,16 @@ export const listenPreparing = computed(
   () => listenStale.value && listenSide.value === "after",
 );
 
-/** Hvor lyttingen begynner (kildesekunder): midt i prekenen. Linja «0:21:08 — fra prekenen». */
+/** Hvor lyttingen begynner (kildesekunder): midt i det som beholdes. Linja «0:21:08 — midt i utdraget». */
 export const listenStart = signal(0);
 /** Spillehodet slik motoren melder det (kildesekunder), eller `null` før første melding. */
 export const listenAt = signal<number | null>(null);
 /** Hull i lyden motoren har telt (ringen gikk tom mens det spilte). Til diagnose. */
 export const listenUnderruns = signal(0);
 
-/** Regn ut hvor lyttingen begynner, ut fra prekenvinduet slik det står NÅ. */
+/** Regn ut hvor lyttingen begynner, ut fra vinduet slik det står NÅ. */
 export function refreshListenStart(): void {
-  const window = sermonWindow({
-    cuts: E.cuts,
-    duration: E.duration,
-    suggestion: E.suggestion,
-    applied: E.applied,
-  });
+  const window = keepWindow({ cuts: E.cuts, duration: E.duration });
   listenStart.value = listenStartSec(window, E.duration);
 }
 
@@ -330,7 +325,7 @@ function bareRequest(start: number): MasterPreviewParams {
 }
 
 /** Åpne økta hvis den ikke er åpen. Venter ikke på noe annet enn at lydkortet er åpnet.
- *  `startSec`: hvor den står (kildesekunder) når den åpnes; lyd-steget starter midt i prekenen,
+ *  `startSec`: hvor den står (kildesekunder) når den åpnes; lyd-steget starter midt i det som beholdes,
  *  Klipp-steget der spillehodet står. */
 export function openEngine(startSec?: number): Promise<boolean> {
   return ensureSession(startSec);

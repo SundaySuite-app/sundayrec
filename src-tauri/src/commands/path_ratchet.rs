@@ -233,7 +233,7 @@ fn lex(src: &str, blank_literals: bool) -> String {
 /// with no per-command ACL a compromised webview can send any path the guard
 /// lets through, with no dialog and no history row behind it. That is how every
 /// finding of the A- and B-families worked, and the last seven commands that
-/// took one — the editor's sidecars and sermon pick (`media_path`),
+/// took one — the editor's sidecars (`media_path`),
 /// `recordings_reveal` (`path`) and `trash_move` (`paths`) — now name a thing
 /// Rust knows instead: a File token, a history row's id, an Export token. A
 /// command that really must take a path from the webview is an [`EXEMPT`]
@@ -250,8 +250,6 @@ const RETIRED_PARAMS: &[(&str, &str)] = &[
     ("editor_read_sidecar", "media_path"),
     ("editor_write_sidecar", "media_path"),
     ("editor_delete_sidecar", "media_path"),
-    ("editor_record_sermon_pick", "media_path"),
-    ("editor_sermon_pick", "media_path"),
     ("recordings_reveal", "path"),
     ("trash_move", "paths"),
 ];
@@ -452,14 +450,6 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
         },
     ),
     (
-        "editor_segments",
-        "source_token",
-        Token {
-            resolver: "resolve_source(&chosen",
-            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
-        },
-    ),
-    (
         "editor_diagnose_channels",
         "source_token",
         Token {
@@ -483,7 +473,7 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
         },
     ),
-    // ── The sidecars and the sermon pick (A3/A4, PR-D): the same File token,
+    // ── The sidecars (A3/A4, PR-D): the same File token,
     //    and the sidecar's path is derived in Rust from what it resolves to.
     //    `with_source` resolves the token and only then runs the seam.
     (
@@ -504,22 +494,6 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
     ),
     (
         "editor_delete_sidecar",
-        "source_token",
-        Token {
-            resolver: "with_source(&chosen",
-            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
-        },
-    ),
-    (
-        "editor_record_sermon_pick",
-        "source_token",
-        Token {
-            resolver: "with_source(&chosen",
-            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
-        },
-    ),
-    (
-        "editor_sermon_pick",
         "source_token",
         Token {
             resolver: "with_source(&chosen",
@@ -1941,7 +1915,7 @@ fn injected_parameters_are_matched_by_type_name_not_substring() {
         "StateImport",
         "ManualStartRequest",
         "Request",
-        "crate::editor::EditorSermonPickRequest",
+        "crate::editor::EditorExportRequest",
         "Option<String>",
     ] {
         assert!(!is_injected(ty), "{ty} is renderer input, not injected");
@@ -3897,13 +3871,11 @@ fn reveal_and_trash_take_nothing_that_names_a_place_but_an_id_or_a_token() {
         vec![("recording_ids".to_string(), "Vec<String>".to_string())]
     );
     // The sidecar commands: the token, the KIND of sidecar (a closed enum) and
-    // — for the write and the sermon pick — what to put in it. No place.
+    // — for the write — what to put in it. No place.
     for (name, extra) in [
         ("editor_read_sidecar", vec!["sidecar"]),
         ("editor_write_sidecar", vec!["sidecar", "value"]),
         ("editor_delete_sidecar", vec!["sidecar"]),
-        ("editor_record_sermon_pick", vec!["request"]),
-        ("editor_sermon_pick", vec!["segments"]),
     ] {
         let sent: Vec<String> = sent_by(name).into_iter().map(|(n, _)| n).collect();
         let mut want = vec!["source_token".to_string()];

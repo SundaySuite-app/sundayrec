@@ -61,7 +61,7 @@ export interface ShortcutInput {
   /** Fokus står på noe Space AKTIVERER (knapp, lenke, `role=button|switch|…`). */
   targetIsInteractive: boolean;
   /** Fokus står på noe som bruker PILTASTENE selv (`role=slider`,
-   *  `input[type=range]`, radiogrupper, faner) — preken-håndtakene i Klipp. */
+   *  `input[type=range]`, radiogrupper, faner) — vindushåndtakene i Klipp. */
   targetIsSlider: boolean;
   /** `event.repeat` — tasten holdes nede (auto-repeat). */
   repeat: boolean;
@@ -167,7 +167,7 @@ export function decideShortcut(input: ShortcutInput): ShortcutAction {
  *     Ikke i et skrivefelt: der eier feltet sin egen angre.
  *   - **←/→ flytter spillehodet 1 s (Shift: 5 s), Home/End til start/slutt** —
  *     bare i Klipp (Lyd har ingen tidslinje), og aldri når fokus står på noe
- *     som bruker piltastene selv (preken-håndtakene er `role=slider`).
+ *     som bruker piltastene selv (vindushåndtakene er `role=slider`).
  */
 function decideEditor(input: ShortcutInput, lower: string): ShortcutAction {
   const {

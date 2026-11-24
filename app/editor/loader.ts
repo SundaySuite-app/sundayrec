@@ -32,7 +32,6 @@ import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
 import { confirmAbandonExport } from "./discard";
 import { isMissingFileFailure } from "./loader-core";
 import {
-  analyzing,
   E,
   fileName,
   filePath,
@@ -49,7 +48,6 @@ import {
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import { seekTo, teardownPlayback } from "./playback";
-import { runAnalysis } from "./sermon";
 import { fitAll } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
@@ -115,8 +113,8 @@ export async function closeFile(): Promise<boolean> {
  */
 function closeFileNow(): void {
   // Å LUKKE er like mye et generasjonsskifte som å åpne. Uten bumpen sto hver
-  // `seq !== E.loadSeq`-vakt (her, i `export.ts`, i `sermon.ts`) igjen som sann
-  // etter en lukking, og en `runExport`/`runAnalysis` som fortsatt hang i en
+  // `seq !== E.loadSeq`-vakt (her og i `export.ts`) igjen som sann
+  // etter en lukking, og en `runExport` som fortsatt hang i en
   // await fortsatte som om fila var åpen — inn i en `E.filePath` som `resetFileState`
   // nettopp hadde tømt.
   E.loadSeq += 1;
@@ -351,18 +349,6 @@ async function openFileNow(
   };
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
-
-  // Analysen kjører alltid ved åpning, men etter første maling: den er nok en
-  // full ffmpeg-passering over opptaket, og å starte den før arbeidsflaten er
-  // på skjermen ville latt to dekodinger av den samme filen konkurrere.
-  //
-  // Flagget settes HER og ikke inne i `runAnalysis`: mellom «klar» og «analysen
-  // begynner» er det et opphold, og i det oppholdet ville skjermen sagt «vi
-  // fant ingen preken» — som er usant, for vi har ikke lett ennå.
-  analyzing.value = true;
-  whenIdle(() => {
-    if (seq === E.loadSeq) void runAnalysis(seq);
-  });
 }
 
 // ── Fremdriften ─────────────────────────────────────────────────────────────
@@ -395,23 +381,4 @@ async function withPhase<T>(
     unsub?.();
     loadProgress.value = null;
   }
-}
-
-/**
- * Kjør `fn` når hovedtråden neste gang er ledig, så den ikke konkurrerer med
- * arbeidsflatens første maling. Faller tilbake på en vanlig timer der
- * `requestIdleCallback` mangler (Safari/WKWebView, altså hver macOS-bygging) —
- * fristen er den samme uansett; dette er en utsettelse, ikke en scheduler.
- */
-function whenIdle(fn: () => void): void {
-  const ric = (
-    window as unknown as {
-      requestIdleCallback?: (
-        cb: () => void,
-        opts?: { timeout: number },
-      ) => number;
-    }
-  ).requestIdleCallback;
-  if (typeof ric === "function") ric(fn, { timeout: 1500 });
-  else window.setTimeout(fn, 1500);
 }

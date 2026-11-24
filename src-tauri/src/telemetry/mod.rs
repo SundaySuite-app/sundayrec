@@ -60,8 +60,11 @@ use sundayrec_core::telemetry::{TELEMETRY_SCHEMA, TelemetryPayload, TelemetryPre
 use crate::db::store;
 use crate::error::AppResult;
 
+/// The settings row the banded corrections were persisted under before F1 removed them.
+/// Only ever deleted now ([`purge_collected`]).
+const LEGACY_KEY_CORRECTIONS: &str = "telemetry.corrections";
+
 pub mod config;
-pub mod corrections;
 pub mod counters;
 mod display_ratchet;
 pub mod http_sender;
@@ -162,15 +165,10 @@ pub async fn consent_set(pool: &SqlitePool, granted: bool) -> AppResult<Telemetr
 /// forgets one of them leaves collected data on a machine whose owner said no.
 pub async fn on_consent_revoked(pool: &SqlitePool) -> AppResult<()> {
     // The synchronous counter path checks this mirror, so flipping it FIRST
-    // means nothing new is accumulated while the purge below runs. The banded
-    // corrections consult the SAME mirror — one flag for both accumulators,
-    // because two mirrors of one fact are two things that can disagree, and the
-    // way they would disagree is "still counting after a revoke".
-    counters::set_active(false);
-    // `set_active(false)` drops the counter map itself; the correction map is
-    // a separate `OnceLock` and has to be told too. A revoke must not leave
+    // means nothing new is accumulated while the purge below runs.
+    // `set_active(false)` drops the counter map itself, so a revoke leaves no
     // counts in RAM waiting for a change of mind.
-    corrections::clear();
+    counters::set_active(false);
     // Reset the watermarks so a later re-grant starts from ITS own "now" rather
     // than sweeping up everything that happened while telemetry was off.
     purge_collected(pool, payload::Watermarks::default()).await
@@ -190,7 +188,9 @@ async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> Ap
     payload::clear_pending_findings(pool).await?;
     payload::set_watermarks(pool, reset_to).await?;
     counters::purge(pool).await?;
-    corrections::purge(pool).await?;
+    // The banded-corrections row older builds persisted (the collection itself is
+    // gone, F1). A revoke or a new install id still removes what is left of it.
+    store::delete_setting(pool, LEGACY_KEY_CORRECTIONS).await?;
     if dropped > 0 {
         tracing::info!("telemetry: purged {dropped} queued report(s)");
     }
@@ -251,7 +251,6 @@ pub async fn drain_in(
         // Peeked, not taken: a payload that turns out empty, or an enqueue that
         // fails, must leave the counts where they are.
         counters: counters::snapshot(),
-        corrections: corrections::snapshot(),
     };
     let (built, next) = payload::build(pool, &ctx, since, install_id.as_deref()).await?;
 
@@ -265,14 +264,11 @@ pub async fn drain_in(
     // while the payload was being written is not lost.
     counters::consume(&ctx.counters);
     counters::persist(pool).await?;
-    corrections::consume(&ctx.corrections);
-    corrections::persist(pool).await?;
     if queued {
         tracing::info!(
             crashes = built.crashes.len(),
             quality = built.quality.len(),
             findings = built.findings.len(),
-            corrections = built.corrections.len(),
             "telemetry: queued one report (it is sent by the sender loop, and only if this build has an endpoint)"
         );
     }
@@ -353,7 +349,6 @@ pub async fn preview_payload_in(
         now_ms: now_ms(),
         consent_version: CONSENT_VERSION,
         counters: counters::snapshot(),
-        corrections: corrections::snapshot(),
     };
     // `install_id_if_any`, never `ensure_install_id`: a user who has not opted in
     // must be able to read this page without it minting an identifier for them.
@@ -396,9 +391,6 @@ pub async fn startup(app: &AppHandle, pool: &SqlitePool) {
     if let Err(e) = counters::load(pool).await {
         tracing::warn!("telemetry: could not restore counters: {e}");
     }
-    if let Err(e) = corrections::load(pool).await {
-        tracing::warn!("telemetry: could not restore banded corrections: {e}");
-    }
     // A force-quit mid-send strands a row in `sending` forever otherwise.
     match queue_store::reset_stale_sending(pool).await {
         Ok(n) if n > 0 => tracing::info!("telemetry: requeued {n} report(s) stranded mid-send"),
@@ -436,17 +428,11 @@ pub fn spawn_periodic_drain(app: AppHandle) {
                         tracing::warn!("telemetry: periodic drain failed: {e}");
                     }
                     // Flush the counters even when nothing was queued, so a quit
-                    // between drains loses at most one interval's clicks — and
-                    // the banded corrections with them, which matter more per
-                    // item: a click is one of thousands, a correction is a
-                    // person having told us something.
-                    if counters::is_active() {
-                        if let Err(e) = counters::persist(&db.pool).await {
-                            tracing::warn!("telemetry: could not persist counters: {e}");
-                        }
-                        if let Err(e) = corrections::persist(&db.pool).await {
-                            tracing::warn!("telemetry: could not persist banded corrections: {e}");
-                        }
+                    // between drains loses at most one interval's clicks.
+                    if counters::is_active()
+                        && let Err(e) = counters::persist(&db.pool).await
+                    {
+                        tracing::warn!("telemetry: could not persist counters: {e}");
                     }
                 }
             }

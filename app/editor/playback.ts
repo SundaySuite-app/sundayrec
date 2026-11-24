@@ -18,8 +18,8 @@
  *
  * ## Forhåndslytting er den eneste modusen
  *
- * Én knapp, og den hopper alltid over kuttene: en frivillig som nettopp har trykket «Behold
- * bare prekenen» vil høre RESULTATET.
+ * Én knapp, og den hopper alltid over kuttene: en frivillig som nettopp har lagt inn et kutt
+ * vil høre RESULTATET.
  *
  * ## Spillehodet er det motoren sier
  *

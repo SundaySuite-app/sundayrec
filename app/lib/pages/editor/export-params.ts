@@ -193,8 +193,7 @@ export function buildExportRequest(
  *
  * The return type is the GENERATED `EditorExportRequest` binding, so a Rust
  * rename of any field fails `npm run typecheck` right here — the same class
- * of bug a `kind`/`type` split was for `EditorSegment` (see e2e/editor-
- * fixtures.ts): the shim would go on building a payload the backend can no
+ * of bug a `kind`/`type` split once was for a wire struct: the shim would go on building a payload the backend can no
  * longer parse, quietly, with every other gate green.
  *
  * `processing.channelRepair` is always sent as `null`: the app never

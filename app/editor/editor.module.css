@@ -274,14 +274,6 @@
   margin: 0;
 }
 
-/* ── «Er ikke dette prekenen?» ─────────────────────────────────────────── */
-
-.picker {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
 /* ── Stegene 2 og 3 ────────────────────────────────────────────────────── */
 
 /*

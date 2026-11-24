@@ -10,10 +10,7 @@
  * på lerretet selv, slik at `app/styles/tokens.css` er den eneste ordboka —
  * gaten `check-app-css-tokens.mjs` finnes for å holde det slik.
  *
- * Segmentlagene (tale · musikk · stillhet) er IKKE med. De hører til
- * lag-popoveren i legacys verktøylinje, og canvasens 4.1 tegner dem ikke: der
- * er bølgeformen prekenvinduet, kuttene og spillehodet. Analysen kjører
- * likevel — den er det forslaget bygger på.
+ * Det som tegnes er bølgeformen, vinduet, kuttene og spillehodet.
  *
  * ## Tegne-scheduleren
  *

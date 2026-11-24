@@ -97,10 +97,7 @@ use crate::test_recording::{TestRecordingSignal, classify_signal, size_is_plausi
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
 pub mod consent;
-pub mod corrections;
 pub mod queue;
-
-pub use corrections::{CorrectionReport, MAX_CORRECTIONS};
 
 /// The payload schema version. Bumped when a field changes MEANING (a new
 /// optional field does not need it); the receiving endpoint keys its parsing off
@@ -1216,16 +1213,10 @@ pub struct TelemetryPayload {
     pub quality: Vec<QualityReport>,
     pub findings: Vec<FindingReport>,
     pub wake_failures: Vec<WakeFailureReport>,
-    /// Editor corrections, as coarse bands and counts — see
-    /// [`corrections`] for the boundaries and the argument for them.
-    ///
-    /// Collected under consent v2 and no earlier. The endpoint accepts this
-    /// field as OPTIONAL and always will: an install still running a build from
-    /// before it existed sends a payload without it, and a 400 there would be
-    /// dropped without retry and never surface anywhere. See
-    /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`, which states
-    /// the same rule from the receiving side and the deploy order it implies.
-    pub corrections: Vec<CorrectionReport>,
+    // (The banded `corrections` collection left the wire with the learning
+    // loop. It was INDEPENDENTLY optional on the receiving side, so a payload
+    // without it is accepted by the Worker exactly as a pre-E8 payload always
+    // was; no schema bump.)
     // (v0.15: `companionOutcomes` left the wire with the AI companion. It was
     // INDEPENDENTLY optional on the receiving side — `sunday-telemetry/src/
     // schema.ts` `OPTIONAL_PAYLOAD_KEYS` — so a payload without it is accepted
@@ -1252,13 +1243,12 @@ impl TelemetryPayload {
             quality: Vec::new(),
             findings: Vec::new(),
             wake_failures: Vec::new(),
-            corrections: Vec::new(),
         }
     }
 
     /// Whether this payload carries anything worth sending. A payload with no
-    /// crashes, no quality records, no findings, no wake failures, no banded
-    /// correction and no non-zero counter is just a
+    /// crashes, no quality records, no findings, no wake failures
+    /// and no non-zero counter is just a
     /// header — sending it would be a ping, and a ping is not what the user
     /// consented to.
     ///
@@ -1273,10 +1263,6 @@ impl TelemetryPayload {
             && self.findings.is_empty()
             && self.wake_failures.is_empty()
             && self.counters.iter().all(|c| c.value == 0)
-            // Zero-count entries are empty for the same reason zero-valued
-            // counters are: the accumulator never emits one, so a payload
-            // holding only zeroes is a header wearing a collection.
-            && self.corrections.iter().all(|c| c.count == 0)
     }
 
     /// Trim every collection to its cap, keeping the NEWEST records (the ends of
@@ -1287,11 +1273,6 @@ impl TelemetryPayload {
         keep_last(&mut self.quality, MAX_QUALITY);
         keep_last(&mut self.findings, MAX_FINDINGS);
         keep_last(&mut self.wake_failures, MAX_WAKE_FAILURES);
-        // Bounded by construction rather than by policy — the collection is
-        // keyed by three closed enums, so it cannot hold more entries than their
-        // product. Trimmed anyway, because "cannot happen" is the wrong thing to
-        // rest a size cap on when the endpoint rejects an oversized array.
-        keep_last(&mut self.corrections, MAX_CORRECTIONS);
     }
 }
 
@@ -1503,10 +1484,6 @@ mod tests {
         ("quality", "nested QualityReport[]"),
         ("findings", "nested FindingReport[]"),
         ("wakeFailures", "nested WakeFailureReport[]"),
-        (
-            "corrections",
-            "nested CorrectionReport[] — bands and counts, never seconds",
-        ),
         // ── CrashReport ──────────────────────────────────────────────────────
         ("kind", "enum CrashKind / WakeFailureKind"),
         ("at", "num — unix ms UTC"),
@@ -1561,27 +1538,6 @@ mod tests {
         // ── CounterReport ────────────────────────────────────────────────────
         ("name", "enum CounterName — the closed allow-list"),
         ("value", "num"),
-        // ── CorrectionReport ─────────────────────────────────────────────────
-        //
-        // Four fields, three of them closed enums and one a count. What is NOT
-        // here is the point of the whole collection: no `deltaSec`, no `at`, no
-        // recording. A band is a magnitude with the precision taken out of it
-        // (`corrections::CORRECTION_BAND_EDGES_SEC`), and a wall-clock time is
-        // never sent as part of a correction — a time of day next to a duration
-        // identifies one service at one church.
-        (
-            "signal",
-            "enum CorrectionSignal — which guess was corrected",
-        ),
-        (
-            "direction",
-            "enum CorrectionDirection — earlier|later, never a sign bit",
-        ),
-        (
-            "band",
-            "enum CorrectionBand — a coarse bucket, never a number of seconds",
-        ),
-        ("count", "num — how many records had that shape"),
         // ── WireSettings ─────────────────────────────────────────────────────
         ("channels", "enum ChannelMode"),
         ("sampleRateMode", "enum SampleRate"),
@@ -1715,24 +1671,6 @@ mod tests {
                 reason: Some("no_resume".into()),
                 delta_sec: Some(-12),
             }],
-            corrections: vec![
-                CorrectionReport::new(
-                    corrections::CorrectionKey {
-                        signal: corrections::CorrectionSignal::SermonStart,
-                        direction: corrections::CorrectionDirection::Earlier,
-                        band: corrections::CorrectionBand::From30To60s,
-                    },
-                    2,
-                ),
-                CorrectionReport::new(
-                    corrections::CorrectionKey {
-                        signal: corrections::CorrectionSignal::SermonPickEnd,
-                        direction: corrections::CorrectionDirection::Later,
-                        band: corrections::CorrectionBand::Over120s,
-                    },
-                    1,
-                ),
-            ],
         }
     }
 
@@ -1872,14 +1810,7 @@ mod tests {
         let root = json.as_object().expect("payload is an object");
         check("payload", vec![root]);
         check("settings", vec![root["settings"].as_object().unwrap()]);
-        for list in [
-            "counters",
-            "crashes",
-            "quality",
-            "findings",
-            "wakeFailures",
-            "corrections",
-        ] {
+        for list in ["counters", "crashes", "quality", "findings", "wakeFailures"] {
             let items: Vec<_> = root[list]
                 .as_array()
                 .unwrap_or_else(|| panic!("{list} is not an array"))
@@ -2756,31 +2687,6 @@ mod tests {
     }
 
     #[test]
-    fn a_payload_carrying_only_corrections_is_worth_sending() {
-        // The other half of the ratchet below. A payload whose ONLY content is a
-        // banded correction has to be both sent AND labelled non-empty: if
-        // `is_empty` missed this collection, the preview would print the bands on
-        // screen under the caption «ingenting å sende akkurat nå», which is the
-        // transparency affordance contradicting itself.
-        let mut p = TelemetryPayload::new(NIL_INSTALL_ID, 2, "0.10.0", 0);
-        assert!(p.is_empty());
-        p.corrections = vec![CorrectionReport::new(
-            corrections::CorrectionKey {
-                signal: corrections::CorrectionSignal::SermonStart,
-                direction: corrections::CorrectionDirection::Earlier,
-                band: corrections::CorrectionBand::From30To60s,
-            },
-            0,
-        )];
-        assert!(
-            p.is_empty(),
-            "a zero count is a header, like a zero counter"
-        );
-        p.corrections[0].count = 1;
-        assert!(!p.is_empty());
-    }
-
-    #[test]
     fn every_record_collection_counts_towards_is_empty() {
         // A ratchet beside `every_wire_field_is_classified`, guarding a
         // different promise. `is_empty` is what «vis hva som sendes» labels the
@@ -2796,14 +2702,7 @@ mod tests {
         // way to make it pass was to teach `is_empty` to consult it. The same
         // ratchet runs the other way: `stale` below is what caught the
         // companion collection leaving the payload.
-        const CONSULTED: &[&str] = &[
-            "counters",
-            "crashes",
-            "quality",
-            "findings",
-            "wakeFailures",
-            "corrections",
-        ];
+        const CONSULTED: &[&str] = &["counters", "crashes", "quality", "findings", "wakeFailures"];
 
         let value = serde_json::to_value(maximal_payload()).expect("serialise");
         let Value::Object(map) = value else {

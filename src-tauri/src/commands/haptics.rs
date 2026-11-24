@@ -1,8 +1,7 @@
 //! Trackpad haptics (macOS Force Touch).
 //!
 //! The editor fires subtle, throttled haptic taps at meaningful moments —
-//! snapping a trim handle to a segment boundary, hitting a trim min/max limit,
-//! and the playhead crossing a chapter/segment marker while scrubbing. The
+//! hitting a trim min/max limit and the playhead crossing a chapter/segment marker while scrubbing. The
 //! renderer drives the *when* (it owns the interaction); this command is the
 //! thin native *how*.
 //!

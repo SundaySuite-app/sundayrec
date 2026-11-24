@@ -53,8 +53,8 @@ export.
   SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
   `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
-  `editor`, `tray`, `updater`. Default-OFF and opt-in: `asio`,
-  `vad`. `src-tauri/Cargo.toml`'s `[features]` block is the authority — it
+  `editor`, `tray`, `updater`. Default-OFF and opt-in: `asio`.
+  `src-tauri/Cargo.toml`'s `[features]` block is the authority — it
   explains why each one sits where it does. Since R2 the workspace has **no
   C/C++ toolchain dependency** (whisper-rs/libwhisper was the only one): a
   stock Rust toolchain plus the ffmpeg sidecar builds everything except the
@@ -150,11 +150,10 @@ Deliberately not wired into `npm run check`: it needs a browser binary
 tests a different thing at a different cadence. See the header of
 `playwright.config.ts` for the reasoning behind each config choice.
 
-CI (`.github/workflows/ci.yml`) runs six parallel jobs on every push to
+CI (`.github/workflows/ci.yml`) runs five parallel jobs on every push to
 `main`, every PR, `v*` tags, and manual dispatch (the repo is public, so
 Actions minutes are free): **check** (the `npm run check` chain plus a
-feature-off `cargo clippy`), **vad** (clippy + tests with the default-off
-`vad` feature), **build-smoke** (a `--no-bundle` Tauri build), **e2e** (the
+feature-off `cargo clippy`), **build-smoke** (a `--no-bundle` Tauri build), **e2e** (the
 Playwright tier), **windows-check** (Windows `cargo check` + clippy, incl. an
 asio-less approximation of the release feature combo), and **audit**
 (npm + cargo dependency audit). Releases are built and published as drafts by

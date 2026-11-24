@@ -145,12 +145,12 @@ export function soundExportFields(state: SoundState): SoundExportFields {
 }
 
 /**
- * Utsnittet før/etter-lyttingen bruker: 20 sekunder fra MIDTEN av prekenen.
+ * Utsnittet før/etter-lyttingen bruker: 20 sekunder fra MIDTEN av det som beholdes.
  *
- * Midten, og ikke starten: det første minuttet av en preken er ofte en
- * innledning som er tatt opp mens folk setter seg, og det er ikke materialet
- * man vurderer en lydprofil på. Uten et prekenvindu er midten av det som blir
- * IGJEN etter kuttene det nærmeste vi kommer.
+ * Midten, og ikke starten: det første minuttet er ofte en innledning som er
+ * tatt opp mens folk setter seg, og det er ikke materialet man vurderer en
+ * lydprofil på. Midten av det som blir IGJEN etter kuttene er det nærmeste vi
+ * kommer.
  *
  * Klemt slik at hele utsnittet ligger inne i fila — bakenden klemmer også
  * (`clamp_preview_start`), men et startpunkt som ligger 5 sekunder før slutten

@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 # Optional Electron-parity seams (PU-1/2…). Each gates its impure I/O over the
 # unit-tested `sundayrec-core` decisions. The SHIPPED set (editor/tray/updater)
-# is in `default` below; `asio` and `vad` stay OFF until their hardware
+# is in `default` below; `asio` stays OFF until its hardware
 # path is proven. The headless CI gate builds both `default` and
 # `--no-default-features` so every seam keeps compiling.
 [features]
@@ -36,9 +36,9 @@ default = ["editor", "tray", "updater"]
 tray = ["tauri/tray-icon"]
 # (The `publish` feature — podcast RSS — left with the sharing cluster, as did
 # `streaming`/`ndi`/`bridge` in v0.14. SundayRec is a recording app.)
-# R1: non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/
+# R1: non-destructive editor — ffmpeg-driven load/peaks/mastering/
 # export/frame-extract over the unit-tested
-# `sundayrec-core::{editor,mastering,audio_analysis}` decisions. NO new native dep
+# `sundayrec-core::{editor,mastering}` decisions. NO new native dep
 # (ffmpeg is a sidecar; WAV/PCM parsed by hand), so the feature gate only compiles
 # the I/O seam in/out. NOW IN `default` (see above) so the Rediger screen is live:
 # the ffmpeg runs are still HARDWARE-UNVERIFIED (need real media). Build OFF
@@ -67,29 +67,9 @@ updater = ["dep:tauri-plugin-updater"]
 # MSVC — see `docs/BUILD_ASIO.md`. cpal's asio build script is a no-op on
 # non-Windows targets, so `--features asio` is harmless on macOS/Linux CI.
 asio = ["cpal/asio"]
-# E9 learning loop: the neural voice-activity backend (Silero VAD via `tract`).
-# DEFAULT-OFF and NOT in any release feature list — nothing in a shipped code
-# path calls it yet. It exists so the sermon detector can be given a real speech
-# probability once the two existing detectors are unified behind one seam; the
-# integration is a separate change.
-#
-# `tract-onnx` is PURE RUST (no `-sys` crate, no C/C++ toolchain, no system
-# library) — that is why it was chosen over onnxruntime for an app that has to
-# build unattended on three platforms. The 2.8 MB model is VENDORED at
-# `resources/vad/` and embedded with `include_bytes!`, so enabling the feature
-# adds ~2.8 MB to the binary and NOTHING to the installer's runtime behaviour:
-# no download UI, no cache directory, no "model missing" branch, and analysis
-# still works on a church PC with no internet. `sha2` re-verifies the embedded
-# bytes at load time; build.rs verifies the file on disk when this feature is on.
-vad = ["dep:tract-onnx"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-# Verifies the SHA-256 of the vendored VAD model at BUILD time when
-# `--features vad` is on (build scripts see enabled features as CARGO_FEATURE_*).
-# A corrupted or swapped model does not crash at run time — it returns numbers —
-# so this has to fail at the earliest possible moment.
-sha2 = "0.11"
 
 [dependencies]
 # Pure, GUI-free domain core — the recorder behaviour distilled from Electron.
@@ -220,14 +200,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # Launch-at-login (OS login item) so scheduled recordings actually fire after a
 # reboot. Always compiled — auto-start is core to the unattended-recorder use case.
 tauri-plugin-autostart = "2"
-# SHA-256. Two callers:
-#   - the missed-recording ledger hashes a slot's label into its `notify_seen`
-#     key (`notify::MissedSlot::seen_key`) — every build;
-#   - `--features vad` re-verifies the embedded model's bytes at load time.
+# SHA-256: the missed-recording ledger hashes a slot's label into its
+# `notify_seen` key (`notify::MissedSlot::seen_key`) — every build.
 sha2 = "0.11"
-# E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
-# no system onnxruntime to ship or find. Only pulled under `--features vad`.
-tract-onnx = { version = "0.23.4", optional = true }
 # R7 auto-update plugin (pull API). Pulled only under `--features updater`; a
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.

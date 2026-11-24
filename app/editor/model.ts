@@ -40,16 +40,12 @@
  */
 
 import { signal } from "@preact/signals";
-import type { EditorSegment } from "@legacy/bindings/EditorSegment";
 import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
 import type { Cut } from "@lib/pages/editor/types";
 
 export type { Cut };
 
-/** Ett analysert segment, slik `editor_segments` sender det. */
-export type Segment = EditorSegment;
-
-/** Et tidsvindu i opptaket. Brukes for forslaget og for preken-vinduet. */
+/** Et tidsvindu i opptaket. Brukes for vinduet mellom de to håndtakene. */
 export interface Range {
   start: number;
   end: number;
@@ -100,7 +96,7 @@ export const E = {
   /** Stien til opptaket som er åpent. Tom = ingen. Bare til visning
    *  (mappenavnet, filtypen) og avspilling (`asset://` trenger en adresse) —
    *  INGEN kommando tar den imot: verken de som leser eller rendrer opptaket
-   *  eller sidevognene og prekenvalget (A3/A4), som alle tar `sourceToken`. */
+   *  eller sidevognene (A3/A4), som alle tar `sourceToken`. */
   filePath: "",
   /** Lappen Rust ga opptaket da det ble åpnet (`OpenedRecording.token`). Det
    *  eneste som peker ut opptaket for `editor_*`-kommandoene (A2). Tom = ingen. */
@@ -121,21 +117,6 @@ export const E = {
   cutHistoryIdx: -1,
   /** Eldste øyeblikksbilder er kastet av 50-grensen: angre forbi det er tomt. */
   cutHistoryTruncated: false,
-
-  /** Analysens segmenter, slik brukeren ser dem. */
-  segments: [] as Segment[],
-  /**
-   * Indeksen DETEKTOREN selv pekte på, før en lagret korreksjon ble lagt
-   * oppå. Det er grunnlinja hver korreksjon registreres mot (E8-kontrakten).
-   */
-  autoSermonIndex: null as number | null,
-
-  /** Vinduet vi tror er prekenen, før noen har svart på det. */
-  suggestion: null as Range | null,
-  /** Har «Behold bare prekenen» blitt brukt? */
-  applied: false,
-  /** Har «Behold alt» lagt kortet bort? */
-  dismissed: false,
 
   /** Utsnittet bølgeformen viser, i sekunder. */
   vpStart: 0,
@@ -179,10 +160,6 @@ export const fileName = signal("");
 export const startedAtMs = signal<number | null>(null);
 export const duration = signal(0);
 export const cuts = signal<readonly Cut[]>([]);
-export const segments = signal<readonly Segment[]>([]);
-export const suggestion = signal<Range | null>(null);
-export const applied = signal(false);
-export const dismissed = signal(false);
 export const dirty = signal(false);
 export const playing = signal(false);
 export const playheadSec = signal(0);
@@ -207,16 +184,12 @@ export const playbackSource = signal<PlaybackSource>("original");
 export const mediaInfo = signal<MediaInfo | null>(null);
 /** Steget som vises. */
 export const activeStep = signal<Step>("cut");
-/** Er kuttverktøyene avslørt? «Klipp manuelt» slår dem på. */
-export const manualMode = signal(false);
-/** Kjører analysen fortsatt i bakgrunnen? */
-export const analyzing = signal(false);
 
 /**
  * Vinduet mens et håndtak er i bevegelse, eller `null`.
  *
- * Uten det står gullvinduet stille til fingeren slippes: overlegget leser enten
- * forslaget eller kuttlista, og ingen av dem skrives per pekerhendelse (et
+ * Uten det står gullvinduet stille til fingeren slippes: overlegget leser
+ * kuttlista, og den skrives ikke per pekerhendelse (et
  * kuttflett per bevegelse ville lagt et øyeblikksbilde i angrestabelen 125
  * ganger i sekundet). Så draget får sitt eget speil, og det er det eneste som
  * lever mellom `pointerdown` og `pointerup`.
@@ -287,19 +260,6 @@ export function syncCuts(): void {
   cuts.value = E.cuts.slice();
 }
 
-/** Speil segmentene. Kopier av samme grunn: `promoteSermon` bytter `type` på
- *  de samme objektene. */
-export function syncSegments(): void {
-  segments.value = E.segments.map((s) => ({ ...s }));
-}
-
-/** Speil forslaget og de to svarene på det. */
-export function syncSuggestion(): void {
-  suggestion.value = E.suggestion ? { ...E.suggestion } : null;
-  applied.value = E.applied;
-  dismissed.value = E.dismissed;
-}
-
 /** Speil utsnittet. */
 export function syncViewport(): void {
   viewport.value = { start: E.vpStart, end: E.vpEnd };
@@ -332,11 +292,6 @@ export function resetFileState(): void {
   E.cutHistory = [];
   E.cutHistoryIdx = -1;
   E.cutHistoryTruncated = false;
-  E.segments = [];
-  E.autoSermonIndex = null;
-  E.suggestion = null;
-  E.applied = false;
-  E.dismissed = false;
   E.vpStart = 0;
   E.vpEnd = 0;
   E.playStartSec = 0;
@@ -358,16 +313,12 @@ export function resetFileState(): void {
   playing.value = false;
   playbackSource.value = "original";
   mediaInfo.value = null;
-  manualMode.value = false;
-  analyzing.value = false;
   activeStep.value = "cut";
   loadPhase.value = null;
   loadProgress.value = null;
   loadError.value = null;
   dragWindow.value = null;
   syncCuts();
-  syncSegments();
-  syncSuggestion();
   syncViewport();
   clearDirty();
 }

@@ -938,44 +938,32 @@ export const SCENES: Scene[] = [
   {
     id: "redigering--klipp",
     page: "Bibliotek og redigering",
-    state: "Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag",
+    state: "Arbeidsflaten, steget «Klipp» — bølgeform og de to håndtakene",
     recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
       await openEditor(page);
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
     },
     full: true,
     narrow: true,
   },
   {
-    id: "redigering--klipp-leter",
-    page: "Bibliotek og redigering",
-    state: "«Leter etter prekenen …» — analysen er ikke ferdig",
-    recipe: "`editor_segments` som aldri svarer",
-    boot: {
-      fixtures: editorScene({
-        editor_segments: fn("() => new Promise(() => {})"),
-      }),
-      settings: CHOSEN,
-      goto: "editor",
-    },
-    act: async (page) => {
-      await openEditor(page);
-      await expect(page.getByTestId("editor-searching")).toBeVisible();
-    },
-    full: true,
-  },
-  {
     id: "redigering--kuttliste",
     page: "Bibliotek og redigering",
     state: "Kuttlista — det som blir borte, som rader man kan angre",
-    recipe: "åpne, så klikk `editor-keep-sermon`",
+    recipe: "åpne, så flytt startshåndtaket 3:30 inn med PageUp",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
       await openEditor(page);
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
-      await page.getByTestId("editor-keep-sermon").click();
+      const start = page.getByTestId("editor-handle-start");
+      await expect(start).toBeVisible();
+      await start.focus();
+      for (let i = 0; i < 7; i++) await page.keyboard.down("PageUp");
+      await page.keyboard.up("PageUp");
+      await page.evaluate(() =>
+        (document.activeElement as HTMLElement)?.blur(),
+      );
       await expect(page.getByTestId("editor-cut-list")).toBeVisible();
     },
     full: true,
@@ -988,13 +976,7 @@ export const SCENES: Scene[] = [
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
       await openEditor(page);
-      // ⚠️ VENT PÅ ANALYSEN FØRST. «Hør et utsnitt» starter der prekenen er
-      // (`refreshListenStart` → `sermonWindow`), og prekenvinduet fylles av et
-      // ASYNKRONT `editor_segments`-svar. Bytter man steg før det har landet,
-      // står tidspunktet på 0:04:50 (midten av opptaket); etterpå står det på
-      // 0:05:05 (midten av prekenen). Uten denne ventingen fotograferte
-      // scenen tilfeldig det ene eller det andre.
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
       await page.getByTestId("editor-steps-row-sound").click();
       await expect(page.getByTestId("editor-sound")).toBeVisible();
     },
@@ -1008,8 +990,7 @@ export const SCENES: Scene[] = [
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
       await openEditor(page);
-      // Se `redigering--lyd`: prekenvinduet må ha landet før steget byttes.
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
       await page.getByTestId("editor-steps-row-sound").click();
       await page.getByTestId("editor-mixer-open").click();
       await expect(page.getByTestId("editor-mixer-stages")).toBeVisible();

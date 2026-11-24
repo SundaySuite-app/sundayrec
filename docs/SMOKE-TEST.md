@@ -178,8 +178,8 @@ sets `default = ["editor", "tray", "updater"]`,
 so **all three are ON in a plain `npm run tauri dev` / `cargo build` and in every
 release**. The `--features <flag>` lines below them are redundant, not
 prerequisites, and a `feature_disabled` response from any of those three is a BUG
-to report — not the expected result. Only `asio`/`vad` are genuinely
-default-off and need an explicit `--features`. To exercise a disabled path
+to report — not the expected result. Only `asio` is genuinely
+default-off and needs an explicit `--features`. To exercise a disabled path
 deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
 `bridge` were removed with the Direkte page — their old §R3/§R3b sections are
 gone from this runbook. R1 «Frivilligen først» 2026-08-23: cloud backup (§7),
@@ -1085,11 +1085,10 @@ Spesialopptak med eget lydkort»):
 ## 12. Non-destructive editor [HW] — `editor` (IN DEFAULT)
 
 The editor I/O seam (`src-tauri/src/editor`) drives the bundled ffmpeg/ffprobe
-sidecar over the unit-tested `sundayrec-core::{editor, mastering,
-audio_analysis}` decisions: load (ffprobe duration/channels/format/rate/streams),
+sidecar over the unit-tested `sundayrec-core::{editor, mastering}` decisions:
+load (ffprobe duration/channels/format/rate/streams),
 peaks (8 kHz mono decode **streamed on a pipe** → core down-sample, cached in a
-`<stem>.peaks.json` sidecar), segments (16 kHz s16le decode → VAD/sermon
-classifier, cached the same way), mastering analyze (pass-1 loudnorm measure),
+`<stem>.peaks.json` sidecar), mastering analyze (pass-1 loudnorm measure),
 and export (core cut-plan + processing + mastering → mp3/aac/wav/flac/mp4/mov).
 NO new native dep — ffmpeg is a sidecar and the PCM is folded into peaks by hand.
 
@@ -1106,19 +1105,19 @@ Three things the editor overhaul settled, and what you are checking here:
 
 - **Playback is the ORIGINAL**, streamed by a media element over `asset://`.
   The open round (B4a: ONE ffmpeg read in the recording's own rate, resampled to
-  16 kHz and 8 kHz in Rust) feeds the waveform, the sermon search, the channel
+  16 kHz and 8 kHz in Rust) feeds the waveform, the channel
   diagnosis and «Tale»; nothing decodes the recording into renderer memory. A transcoded AAC proxy is the fallback, taken only when the
   webview has no decoder for the container or the original won't open — and it
   announces itself with a notice.
-- **Caches**: peaks and segments land in sidecars beside the recording, keyed on
+- **Caches**: the peaks land in a sidecar beside the recording, keyed on
   size+mtime. A second open of the same file must not re-decode it. A FIRST open
   reads the file once for everything (one `ffmpeg` in Activity Monitor / Task
-  Manager while «Analyserer bølgeform…» and «Leter etter prekenen …» run, not
-  one after the other), and the log says what the round cost: `open round: time
+  Manager while «Analyserer bølgeform…» runs, not several after one another),
+  and the log says what the round cost: `open round: time
 spent per half`.
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::opening_a_recording_reads_it_once_for_every_consumer_or_skips
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::consumers_asking_at_once_share_one_read_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_and_force_reads_again_or_skips
+  - VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_or_skips
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_ffmpeg_itself_or_skips
   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_ninety_minute_recording_is_decoded_once_or_skips
 - **Export is honest**: it always runs on the untouched original; a mastering
@@ -1144,13 +1143,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    destination (the trash excepted): Tauri catches OS drags itself, so an
    overlay that only appears on `dragenter` is not there to be hit when the
    event arrives.
-   - **Expected:** step 1 is **«Klipp»**, and it opens on the only question a
-     volunteer has — _is this the sermon?_ The suggestion card is already there
-     («Vi tror prekenen er her — fra … til … »), so keeping just the sermon is
-     ONE click, not two through a tab.
+   - **Expected:** step 1 is **«Klipp»**: the waveform, a gold window with a
+     handle at each end (the whole recording until something is cut), the
+     transport and the cut tools. There is no analysis and no suggestion — the
+     volunteer decides where the kept part begins and ends.
    - **Expected:** the duration paints almost immediately (ffprobe reads
      container headers only), then the waveform. The loading line says which
-     phase it is in («Leter etter prekenen …»). Press play: it must sound like
+     phase it is in («Analyserer bølgeform…»). Press play: it must sound like
      the file, not like a telephone — that is the `asset://` transport on the
      original. No quality notice for a normal wav/flac/mp3/m4a.
    - **Expected:** the clock reads `h:mm:ss` the whole way. A service of 1 h
@@ -1164,18 +1163,15 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - **Expected:** a "Klargjør avspilling…" line, then playback works and a
      notice says it is going through a temporary file at full quality, and that
      export still uses the original.
-2. Adjust the gold sermon window by **dragging its handles**, and — if the
-   detector picked the wrong block — choose the right one from the block
-   dropdown.
+2. Adjust the gold window by **dragging its handles**.
    - **Expected:** the handles are real focusable controls
-     (`role="slider"`, «Der prekenen begynner» / «Der prekenen slutter»), so
-     arrow keys move them. A volunteer who does not use a mouse must still be
-     able to say where the sermon starts; a drawn rectangle cannot be focused,
-     read aloud or nudged.
-   - **Expected:** the correction is remembered («Vi husker det til neste
-     gang») — see step 8.
-3. Press **«Behold bare prekenen»** — or open **«Klipp manuelt»** and mark cuts
-   by dragging on the waveform. Remove one with **✕**.
+     (`role="slider"`, «Der det som beholdes begynner» / «Der det som beholdes
+     slutter»), so arrow keys move them. A volunteer who does not use a mouse
+     must still be able to say where the kept part starts; a drawn rectangle
+     cannot be focused, read aloud or nudged. Moving a handle cuts the head or
+     the tail, and a held arrow key is ONE undo step.
+3. Mark cuts by dragging on the waveform (the cut tools are always there).
+   Remove one with **✕**.
    - **Expected:** the cut list shows each kept region as `{name} · {span}`, and
      the result line reads «Resultat: … (av …)». Red cut bands overlay the
      waveform (the canvas paint itself is still // GUI-UNVERIFIED); removed rows
@@ -1189,7 +1185,7 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      words map to real numbers in `sound-profiles.ts`; the mapping table is in
      `docs/APP-SHELL.md` §P4b.
    - Press **«Lytt»** and A/B **Før** / **Etter**.
-   - **Expected:** a 20-second sample taken **from the sermon** (not from the
+   - **Expected:** a 20-second sample taken **from the middle of what is kept** (not from the
      first 20 seconds of the file, which is often an empty room) renders and
      plays. It is a real render through the real chain — and it writes to a
      temp file, never next to the original.
@@ -1399,9 +1395,9 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      button were dropped — the restore is automatic now, see
      editor/loader.ts). After a successful **Eksporter** the draft is deleted,
      so a later reopen restores nothing.
-   - The draft, «Innhold» and the sermon pick are all named by the recording's
+   - The draft and «Innhold» are both named by the recording's
      File token (A3/A4): the page never sends the path, and Rust derives
-     `<stem>.cuts-draft.json`, `.meta.json` and `.feedback.json` beside the
+     `<stem>.cuts-draft.json` and `.meta.json` beside the
      file the token stands for. Nothing about where they land has changed.
    - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
    - VERIFIED-BY: app/editor/cuts.test.ts::skrives med opptakets lapp, aldri stien
@@ -1413,36 +1409,23 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      mechanism survives as step 2's **«Lytt»**, which renders a 20-second sample
      through the same chain. See «Flater som ikke finnes lenger».
 
-7. **E8 sermon-pick correction survives a reopen:** on a recording where the
-   auto-pick is wrong, choose the right block in the sermon dropdown, close the
-   editor, and reopen the same recording.
-   - **Expected:** once the analysis card finishes, **your** block is the starred
-     one in the dropdown and the highlighted one on the timeline — not the
-     detector's. A `<base>.feedback.json` sits next to the recording; open it
-     and check what is in it: offsets, durations, confidences and reason CODES,
-     and no path, filename or clock time anywhere.
-   - Picking the detector's own block again DELETES the file (agreement is not a
-     correction), and cycling through three options before settling leaves ONE
-     record — the block you settled on.
-   - The restore rides on detection, so it happens when detection does: video
-     files and a restored cuts-draft do not auto-analyse, and there the
-     correction comes back when you press **Analyser opptak**.
+7. ~~**E8 sermon-pick correction survives a reopen**~~ — REMOVED (F1 «rent
+   bord»): the sermon search, the block dropdown and the correction capture
+   left the app. A `<stem>.feedback.json` or `<stem>.segments.json` an older
+   build wrote is no longer read; it still travels with its recording through
+   the trash.
 8. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
-   «Frivilligen først»): the AI companion and its `companionSuggestions` /
-   `companionOutcomes` left the app 2026-08-23. What remains of this step:
-   - (The `trimAdjustments` signal was only ever written by the review queue's
-     publish step — gone in R1 — so nothing writes it; existing sidecars keep
-     theirs. `docs/LEARNING.md` §Status says what is live, dormant and gone.)
+   «Frivilligen først», and the banded `corrections` collection with F1): what
+   remains of this step is the telemetry preview and consent:
    - With diagnostics ON, **the gear → Avansert → «Del anonym diagnostikk» →
-     «Hva sendes»** should list `corrections` (a signal, a direction and a
-     coarse band) with a count after step 7 — and the caption must NOT say
-     «Ingenting å sende akkurat nå.» while it is on screen. With diagnostics OFF, do the same edit and
-     confirm the collection stays empty: nothing is accumulated for someone who
-     has not opted in, not even in memory.
-   - The preview surface's half of this (the collection rendered, the caption
+     «Hva sendes»** lists what the next payload carries — and the caption must
+     NOT say «Ingenting å sende akkurat nå.» while it is on screen. With
+     diagnostics OFF nothing is accumulated for someone who has not opted in,
+     not even in memory.
+   - The preview surface's half of this (the payload rendered, the caption
      honest while it is on screen) — the accumulation gating stays
      backend-verified:
-   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying corrections shows them, not «ingenting å sende»
+   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying counters shows them, not «ingenting å sende»
    - The consent question itself (the one-time card, and a decline recorded as
      a real answer so nothing is ever collected without an explicit yes):
    - VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
@@ -1455,7 +1438,7 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
 
 > [HW] The ffprobe/decode/measure/render runs only execute against real media —
 > never in the gate (samme markør). The core argv-building, filter-graph,
-> loudnorm parse, and VAD/sermon decisions are unit-tested in Rust core, and
+> and loudnorm parse decisions are unit-tested in Rust core, and
 > the renderer's load→peaks→regions→export data flow is covered by the browser
 > tier (e2e/editor.spec.ts — the "no JS unit-test harness on this branch" note
 > that used to sit here predates E5.2). The waveform/cut-band canvas paint
@@ -1667,8 +1650,8 @@ them honest meanwhile.
 ## §PU-6 — ~~Episode prep + human-review queue~~ — REMOVED (R1 «Frivilligen først»)
 
 The review queue, the reminder ladder, the tray callout and the editor's
-review mode left the app 2026-08-23. The editor ALWAYS auto-detects the sermon
-on open now (§12 step 8).
+review mode left the app 2026-08-23. The editor no longer detects the sermon
+(F1 «rent bord»).
 
 ---
 
@@ -2039,7 +2022,7 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **The stereo / mono / «Miks L+R» channel-mode picker**                   | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
 | ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~ | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
 | **E-mail alerts** (SMTP card, address + test, relay, receipt)            | the native OS notification on the recording machine — always on for failures, the answer on «Hvem får beskjed hvis noe går galt?» (§8, §11). An upgraded install clears the SMTP password and says once what changed.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **The editor's keyboard-shortcut legend**                                | the shortcuts the legend described are not all rebuilt; the sermon handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **The editor's keyboard-shortcut legend**                                | the shortcuts the legend described are not all rebuilt; the window handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Claims this runbook used to point at a test for, and no longer can
 

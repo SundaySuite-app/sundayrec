@@ -17,9 +17,58 @@
 
 use std::process::{Command, ExitCode};
 
-use sundayrec_core::audio_analysis::fft;
 use sundayrec_core::pcm_stream::PcmFormat;
 use sundayrec_core::tale::{ANALYSIS_RATE, analyze_stream};
+
+/// Iterative in-place Cooley-Tukey radix-2 FFT over parallel re/im buffers of
+/// length N (power of two).
+pub fn fft(re: &mut [f64], im: &mut [f64]) {
+    let n = re.len();
+    assert_eq!(n, im.len(), "fft: re/im length mismatch");
+    assert!(n >= 2 && (n & (n - 1)) == 0, "fft: size must be power of 2");
+
+    // bit-reversal permutation
+    let mut j = 0usize;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j ^= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+
+    // butterflies
+    let mut size = 2;
+    while size <= n {
+        let half = size >> 1;
+        let table_step = -2.0 * std::f64::consts::PI / size as f64;
+        let mut i = 0;
+        while i < n {
+            for k in 0..half {
+                let angle = table_step * k as f64;
+                let wr = angle.cos();
+                let wi = angle.sin();
+                let a_re = re[i + k];
+                let a_im = im[i + k];
+                let b_re = re[i + k + half];
+                let b_im = im[i + k + half];
+                let t_re = wr * b_re - wi * b_im;
+                let t_im = wr * b_im + wi * b_re;
+                re[i + k] = a_re + t_re;
+                im[i + k] = a_im + t_im;
+                re[i + k + half] = a_re - t_re;
+                im[i + k + half] = a_im - t_im;
+            }
+            i += size;
+        }
+        size <<= 1;
+    }
+}
 
 fn ffmpeg() -> String {
     if let Ok(p) = std::env::var("SUNDAYREC_FFMPEG") {

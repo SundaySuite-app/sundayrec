@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Redigeringen er enklere.** SundayRec leter ikke lenger etter prekenen og foreslår ikke
+  hvor den er. Du ser bølgeformen med to håndtak, flytter dem dit det du vil beholde
+  begynner og slutter, og klipper bort resten. Kuttverktøyene står alltid fremme.
+- **Ingenting læres av det du retter lenger.** Korreksjoner i redigeringen lagres ikke, og
+  de deles ikke, heller ikke som grove tall.
+
 ## v0.30.1 — tryggere lange og planlagte opptak
 
 - **Et langt lydopptak mister ikke lenger lyd når det bytter fil.** Når et opptak ble så

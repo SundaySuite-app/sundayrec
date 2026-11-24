@@ -7,37 +7,29 @@
 //!
 //! 1. [`opened`] is the one door. It looks the recording up in [`OPEN_BOOK`] (path, size and
 //!    mtime), and a caller that arrives while the read is under way waits for it instead of
-//!    starting a second one. Four consumers come here today: the waveform ([`super::peaks`]),
-//!    the sermon search ([`super::segments`]), the channel diagnosis and one-click vocal chain
+//!    starting a second one. Three consumers come here today: the waveform ([`super::peaks`]),
+//!    the channel diagnosis and one-click vocal chain
 //!    ([`super::diagnose_channels`], [`super::auto_process`]) and «Tale» ([`super::tale_clean_for`],
 //!    behind the sound step's sentence, the preview and the export).
 //! 2. [`read_once`] is the read: ffmpeg decodes (no `-af`, no resampling there) to raw f32 on
 //!    stdout; one thread cuts the pipe into one-second blocks, and two more take every block:
 //!    the level meter ([`LevelMeter`]: peak, RMS and the noise floor at the file's own rate) and
-//!    the 16 kHz half ([`Pass16`]: resampling, «Tale»'s analysis, the waveform peaks and, when the
-//!    sermon search is wanted, the 16 kHz mono PCM). The read costs the slowest of the three, not
-//!    their sum. Cancel, the stall budget and progress are [`pcm::run_chain`]'s, as for the
-//!    export. Whether a read carries the search is the caller's [`Search`]: the editor's open
-//!    wants it, the export's and the preview's ask for «Tale» only.
-//! 3. The sermon search ([`detect`](sundayrec_core::detect)) runs on its own blocking thread
-//!    AFTER the read, so the waveform and the sentence do not wait for it. It writes the
-//!    `.segments.json` sidecar itself and publishes the result on a watch; [`Opened::detected`]
-//!    is how [`super::segments`] waits for it.
+//!    the 16 kHz half ([`Pass16`]: resampling, «Tale»'s analysis and the waveform peaks). The read
+//!    costs the slower of the two, not their sum. Cancel, the stall budget and progress are
+//!    [`pcm::run_chain`]'s, as for the export.
 //!
-//! The sidecars (`.peaks.json`, `.segments.json`) are unchanged and keyed as before: a warm
-//! sidecar still means no read at all for that consumer. What is NOT cached on disk, the channel
+//! The `.peaks.json` sidecar is unchanged and keyed as before: a warm sidecar still means no
+//! read at all for that consumer. What is NOT cached on disk, the channel
 //! levels and «Tale»'s decision, is kept per file for the life of the process, as «Tale»'s was.
 //!
 //! The recording is decoded once however many of these ask. [`super::analysis_decodes_of`] counts
 //! the reads so a test can say so.
 
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use sundayrec_core::audio_analysis::{FRAME_MS, HeuristicScorer, SAMPLE_RATE};
-use sundayrec_core::detect::Detection;
 use sundayrec_core::levels::ChannelLevels;
 use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16, SourceLevels};
 use sundayrec_core::pcm_stream::{for_each_block, output_args};
@@ -45,9 +37,8 @@ use sundayrec_core::tale::SpeechAnalysis;
 use tokio::sync::watch;
 
 use super::{
-    EDITOR_CACHE_VERSION, EXPORT_PHASE_MEASURING, EditorSegment, EditorSidecar, ExportEngine,
-    SegmentsCache, count_analysis_decode, export_stall_ms, media_stat, pcm, tale_cache_key,
-    write_sidecar_raw,
+    EXPORT_PHASE_MEASURING, ExportEngine, count_analysis_decode, export_stall_ms, media_stat, pcm,
+    tale_cache_key,
 };
 use crate::error::{AppError, AppResult};
 
@@ -64,43 +55,6 @@ pub(super) struct Opened {
     /// «Tale»'s measurements; [`SpeechAnalysis::decide`] turns them into what the profile takes
     /// along.
     pub(super) analysis: SpeechAnalysis,
-    /// The sermon search, when this read carried it (the segments sidecar was missing or the
-    /// operator asked for it again).
-    detect: Option<watch::Receiver<DetectState>>,
-}
-
-/// `None` while the sermon search runs.
-type DetectState = Option<Result<Arc<Detected>, String>>;
-
-/// The sermon search's answer: the editor's projection, and the detection behind it.
-pub(super) struct Detected {
-    pub(super) segments: Vec<EditorSegment>,
-    detection: Detection,
-    handed_out: AtomicBool,
-    /// The 16 kHz mono PCM the search ran on, kept for the shadow VAD (`vad` feature, default
-    /// off) so that it scores the same samples without a read of its own. Taken once
-    /// ([`Self::take_shadow_pcm`]); a build without the feature drops the PCM when the search is
-    /// done, as before.
-    #[cfg(feature = "vad")]
-    shadow_pcm: Mutex<Option<Vec<f32>>>,
-}
-
-impl Detected {
-    /// The detection behind the segments, but only to the FIRST caller: the shadow VAD and the
-    /// review queue act on "a pass that actually ran", and a second ask is a cache hit in all
-    /// but name.
-    pub(super) fn take_detection(&self) -> Option<Detection> {
-        (!self.handed_out.swap(true, Ordering::AcqRel)).then(|| self.detection.clone())
-    }
-
-    /// The PCM behind the detection, for the shadow VAD; to the first caller only.
-    #[cfg(feature = "vad")]
-    pub(super) fn take_shadow_pcm(&self) -> Option<Vec<f32>> {
-        self.shadow_pcm
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-    }
 }
 
 impl Opened {
@@ -110,37 +64,6 @@ impl Opened {
         self.levels
             .levels
             .ok_or_else(|| AppError::Recording("channel analysis produced no levels".into()))
-    }
-
-    /// Whether this read carries the sermon search.
-    pub(super) fn has_detection(&self) -> bool {
-        self.detect.is_some()
-    }
-
-    /// The sermon search's answer if it is already there; waits for nothing.
-    #[cfg(feature = "vad")]
-    pub(super) fn detected_now(&self) -> Option<Arc<Detected>> {
-        let rx = self.detect.as_ref()?;
-        let state = rx.borrow();
-        match state.as_ref() {
-            Some(Ok(d)) => Some(d.clone()),
-            _ => None,
-        }
-    }
-
-    /// Wait for the sermon search that follows the read. `None` if this read did not carry one.
-    pub(super) async fn detected(&self) -> Option<AppResult<Arc<Detected>>> {
-        let mut rx = self.detect.clone()?;
-        let state = rx.wait_for(|s| s.is_some()).await;
-        Some(match state {
-            Ok(s) => match s.as_ref() {
-                Some(Ok(d)) => Ok(d.clone()),
-                Some(Err(e)) => Err(AppError::Recording(e.clone())),
-                None => Err(AppError::Recording("analysis did not finish".into())),
-            },
-            // The task died without an answer (a panic in the classifier).
-            Err(_) => Err(AppError::Recording("analysis task did not finish".into())),
-        })
     }
 }
 
@@ -176,55 +99,27 @@ fn key_of(path: &str) -> Option<String> {
 }
 
 /// The recording's read, if one is kept or under way. Starts nothing.
+#[cfg(test)]
 pub(super) fn peek(path: &str) -> Option<Arc<Opened>> {
     OPEN_BOOK.cached(&key_of(path)?)
 }
 
-/// Whether a read has to carry the sermon search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Search {
-    /// No: the caller wants the waveform, the levels or «Tale» only (the export and the preview
-    /// ask for «Tale»'s decision; they should not pay for 345 MB of PCM and a classifier).
-    Skip,
-    /// Yes when the segments sidecar is missing or stale: the editor's open.
-    IfMissing,
-    /// Yes, and a kept read goes: the operator asked for the analysis again.
-    Force,
-}
-
 /// The read of `path`: from [`OPEN_BOOK`], from the read already running, or by starting it.
-///
-/// `search` says whether the read has to carry the sermon search ([`Search`]). A read that is
-/// already running without it is joined as it is, and the caller that needs it asks again
-/// ([`super::segments`]).
 ///
 /// `on_progress` gets the read's 0..1 fraction, capped at 0.99: whoever asked decides when
 /// its own work is done.
 pub(super) async fn opened(
     engine: &ExportEngine,
     path: &str,
-    search: Search,
     on_progress: &impl Fn(f32),
 ) -> AppResult<Arc<Opened>> {
-    let Some((size_bytes, mtime_ms)) = media_stat(path) else {
+    if media_stat(path).is_none() {
         return Err(AppError::Validation("file_not_found".into()));
-    };
-    let key = key_of(path);
-    let carry_detect = match search {
-        Search::Skip => false,
-        Search::IfMissing => super::read_segments_cache(path, size_bytes, mtime_ms).is_none(),
-        Search::Force => true,
-    };
-    if search == Search::Force
-        && let Some(k) = &key
-    {
-        OPEN_BOOK.forget(k);
     }
+    let key = key_of(path);
     let tx = flight_sender(key.as_deref());
     let mut rx = tx.subscribe();
-    let work = OPEN_BOOK.get_or_measure(key.clone(), || {
-        read_once(engine, path, carry_detect, size_bytes, mtime_ms, tx.clone())
-    });
+    let work = OPEN_BOOK.get_or_measure(key.clone(), || read_once(engine, path, tx.clone()));
     tokio::pin!(work);
     let out = loop {
         tokio::select! {
@@ -242,9 +137,6 @@ pub(super) async fn opened(
 async fn read_once(
     engine: &ExportEngine,
     path: &str,
-    carry_detect: bool,
-    size_bytes: u64,
-    mtime_ms: u64,
     progress: Arc<watch::Sender<f32>>,
 ) -> AppResult<Arc<Opened>> {
     progress.send_replace(0.0);
@@ -305,7 +197,7 @@ async fn read_once(
                 });
                 let p16 = scope.spawn(move || {
                     let mut busy = Duration::ZERO;
-                    let mut p = Pass16::new(rate, channels, carry_detect);
+                    let mut p = Pass16::new(rate, channels);
                     for block in p16_in {
                         let t = Instant::now();
                         p.push(&block);
@@ -358,66 +250,9 @@ async fn read_once(
         "tale analysis"
     );
 
-    let detect = read
-        .read16
-        .mono16
-        .map(|pcm16| spawn_detection(path.to_string(), pcm16, size_bytes, mtime_ms));
     Ok(Arc::new(Opened {
         peaks: read.read16.peaks,
         levels: read.levels,
         analysis,
-        detect,
     }))
-}
-
-/// The sermon search over the 16 kHz mono PCM, on its own thread, after the read.
-fn spawn_detection(
-    path: String,
-    pcm16: Vec<f32>,
-    size_bytes: u64,
-    mtime_ms: u64,
-) -> watch::Receiver<DetectState> {
-    let (tx, rx) = watch::channel(None);
-    tauri::async_runtime::spawn_blocking(move || {
-        // ONE detector for both consumers (E9). `HeuristicScorer` is the seam: the frame scorer
-        // is the only thing a VAD model replaces, and it is chosen here and nowhere else.
-        let detection =
-            sundayrec_core::detect::analyse_pcm(&pcm16, SAMPLE_RATE, FRAME_MS, &HeuristicScorer);
-        // Only the shadow VAD wants the samples after the search, and it takes them from here
-        // rather than reading the file again.
-        #[cfg(not(feature = "vad"))]
-        drop(pcm16);
-        // The editor displays a projection of that one detection: bounds, class and
-        // confidence, with the offered sermon block promoted. `detection` itself keeps what the
-        // projection drops (`avg_rms_db`, the attention reasons) and is handed on whole.
-        let segments: Vec<EditorSegment> = sundayrec_core::detect::promote_sermon(&detection)
-            .into_iter()
-            .map(|d| EditorSegment {
-                start: d.start,
-                end: d.end,
-                duration: d.duration,
-                label: d.label,
-                kind: d.kind,
-                confidence: Some(d.confidence),
-            })
-            .collect();
-        // Best-effort cache write — a forced re-analysis refreshes it too.
-        let cache = SegmentsCache {
-            version: EDITOR_CACHE_VERSION,
-            size_bytes,
-            mtime_ms,
-            segments: segments.clone(),
-        };
-        if let Ok(json) = serde_json::to_string(&cache) {
-            let _ = write_sidecar_raw(&path, EditorSidecar::Segments, &json);
-        }
-        tx.send_replace(Some(Ok(Arc::new(Detected {
-            segments,
-            detection,
-            handed_out: AtomicBool::new(false),
-            #[cfg(feature = "vad")]
-            shadow_pcm: Mutex::new(Some(pcm16)),
-        }))));
-    });
-    rx
 }

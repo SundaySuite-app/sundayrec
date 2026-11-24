@@ -151,25 +151,17 @@ test.describe("telemetry preview", () => {
     await expect(page.getByTestId("dialog-pre")).toHaveCount(0);
   });
 
-  test("a payload carrying corrections shows them, not «ingenting å sende»", async ({
+  test("a payload carrying counters shows them, not «ingenting å sende»", async ({
     page,
   }) => {
-    // SMOKE-TEST §12.8: when correction signals exist and diagnostics is on,
+    // SMOKE-TEST §12.8: when counters exist and diagnostics is on,
     // «vis hva som sendes» must list them — and the caption must NOT claim
     // there is nothing to send while they are on screen.
     const RICH = JSON.stringify(
       {
         installId: "a1b2c3d4-0000-0000-0000-000000000000",
         app: { version: "0.10.0", os: "macos", arch: "aarch64" },
-        counters: [],
-        corrections: [
-          {
-            signal: "sermon_start",
-            direction: "earlier",
-            band: "30_60s",
-            count: 1,
-          },
-        ],
+        counters: [{ name: "editor.opened", value: 3 }],
         crashes: [],
       },
       null,
@@ -186,8 +178,7 @@ test.describe("telemetry preview", () => {
     await page.getByTestId("adv-diag-preview").click();
 
     const body = page.getByTestId("dialog-pre");
-    await expect(body).toContainText("corrections");
-    await expect(body).toContainText("30_60s");
+    await expect(body).toContainText("editor.opened");
     const hint = page.getByTestId("dialog-message");
     await expect(hint).not.toContainText("Ingenting å sende akkurat nå.");
     await expect(hint).toHaveText(

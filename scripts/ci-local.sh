@@ -77,18 +77,6 @@ step "command reachability regression"; npm run reachability
 step "rust — clippy (feature-off)"
 cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
-# ci.yml's "Rust clippy + tests (vad feature)" step. E9's neural VAD is
-# default-off, so EVERY step above compiles the seam out — these tests are the
-# only place the model's failure modes (a 512-sample window instead of 576, `sr`
-# at 8000, inputs bound by index, a lost symbolic batch dim) are ever exercised,
-# and the only place the feature-ON side is held to `-D warnings`. It was
-# missing here while ci.yml had it, so this mirror reported green over an
-# untested seam — exactly the "a step in only one place" gap this script exists
-# to prevent.
-step "rust — clippy + tests (vad feature)"
-cargo clippy --workspace --all-targets --features vad -- -D warnings
-cargo test --workspace --features vad vad::
-
 step "tauri build (no bundle)";        npm run tauri build -- --no-bundle
 
 CURRENT="done"

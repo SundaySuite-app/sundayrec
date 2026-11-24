@@ -15,22 +15,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   addCut,
-  applySermon,
   clearCuts,
   clearDraft,
-  deleteCut,
-  keepAll,
   redoCut,
   restoreDraftCuts,
+  setKeepWindow,
   undoCut,
 } from "./cuts";
 import {
-  applied,
   clearDirty,
   cuts,
   dragWindow,
   dirty,
-  dismissed,
   E,
   resetFileState,
 } from "./model";
@@ -68,8 +64,6 @@ beforeEach(() => {
   E.duration = 3600;
   E.cutHistory = [[]];
   E.cutHistoryIdx = 0;
-  // Et forslag å svare på: «vi tror prekenen er her».
-  E.suggestion = { start: 600, end: 2400 };
 });
 
 afterEach(() => {
@@ -155,9 +149,9 @@ describe("angre/gjør om merker fila som endret", () => {
   });
 });
 
-// ── (b) «Fjern alle kutt» og kortets to svar ────────────────────────────────
+// ── (b) Et håndtak i bevegelse ──────────────────────────────────────────────
 
-describe("angre mens et preken-håndtak er i bevegelse", () => {
+describe("angre mens et vindushåndtak er i bevegelse", () => {
   // Review av #433: ⌘Z midt i et håndtaksdrag ble skrevet over når draget
   // registrerte seg ved slipp.
   it("gjør ingenting så lenge `dragWindow` står", () => {
@@ -175,81 +169,46 @@ describe("angre mens et preken-håndtak er i bevegelse", () => {
   });
 });
 
-describe("clearCuts svarer på HELE forslaget", () => {
-  // ⚠️ FUNNET, og det er ekte. `clearCuts` nullstiller `applied` — den er
-  // altså allerede i gang med å ta tilbake svaret på forslaget — men lar
-  // `dismissed` stå. `undoCut` tilbake til null kutt nullstiller BEGGE, med en
-  // kommentar om at «da skal kortet komme tilbake». To veier til nøyaktig
-  // samme tilstand, to forskjellige svar.
-  //
-  // MUTASJONSPRØVEN: fjern `E.dismissed = false` fra `clearCuts`, og denne
-  // blir rød.
-  it("«Fjern alle kutt» åpner forslaget igjen, akkurat som Angre gjør", () => {
-    keepAll();
-    expect(dismissed.value).toBe(true);
-
+describe("«Fjern alle kutt»", () => {
+  it("tømmer lista, og Angre henter kuttene tilbake", () => {
     addCut(600, 900);
+    addCut(1200, 1500);
     clearCuts();
-
     expect(cuts.value).toHaveLength(0);
-    expect(applied.value).toBe(false);
-    expect(dismissed.value).toBe(false);
+
+    undoCut();
+    expect(cuts.value).toHaveLength(2);
   });
 
-  it("Angre tilbake til null kutt gjør det samme — regelen er én", () => {
-    keepAll();
-    addCut(600, 900);
-    undoCut();
-    expect(applied.value).toBe(false);
-    expect(dismissed.value).toBe(false);
+  it("gjør ingenting når det ikke er noen kutt", () => {
+    clearDirty();
+    clearCuts();
+    expect(dirty.value).toBe(false);
   });
 });
 
-// ── (c) «Anvendt» over en kuttliste som er tom ──────────────────────────────
+// ── (c) Vinduet blir kutt ───────────────────────────────────────────────────
 
-describe("«Behold bare prekenen» er ikke anvendt når ingenting er kuttet", () => {
-  // ⚠️ FUNNET, og det er ekte — men det er STØRRE enn `redoCut`. Granskningen
-  // pekte på at gjøre-om aldri setter `applied = false` når den lander på null
-  // kutt. Riktig; men veien DIT går gjennom vanlig sletting, som har nøyaktig
-  // samme hull: `commit()` rører ikke `applied` i det hele tatt. Sletter man
-  // kuttene «Behold bare prekenen» la inn, ett for ett, står `applied` igjen
-  // som `true` over en fil der ingenting er trimmet — og kortet som ville
-  // tilbudt trimmingen på nytt er borte for godt.
-  //
-  // Invarianten er derfor håndhevet ETT sted (`reconcileApplied` i cuts.ts),
-  // og både `commit`, `undoCut` og `redoCut` går gjennom den.
-  //
-  // MUTASJONSPRØVEN: fjern kallet til `reconcileApplied()` fra `commit`, og
-  // den første blir rød; fjern det fra `redoCut`, og den andre blir rød.
-  it("sletting av det siste kuttet tar «anvendt» med seg", () => {
-    applySermon();
-    expect(applied.value).toBe(true);
-    const n = cuts.value.length;
-    expect(n).toBeGreaterThan(0);
+describe("setKeepWindow", () => {
+  it("setter hode og hale, og ett angre-steg tar dem bort igjen", () => {
+    setKeepWindow({ start: 600, end: 2400 });
+    expect(cuts.value).toEqual([
+      { start: 0, end: 600 },
+      { start: 2400, end: 3600 },
+    ]);
 
-    for (let i = n - 1; i >= 0; i--) deleteCut(i);
-
-    expect(cuts.value).toHaveLength(0);
-    expect(applied.value).toBe(false);
-  });
-
-  it("gjøre om TIL null kutt tar «anvendt» med seg", () => {
-    applySermon();
-    const n = cuts.value.length;
-    for (let i = n - 1; i >= 0; i--) deleteCut(i);
-    // Nå: tom liste i historikken. Angre henter kuttene tilbake …
     undoCut();
-    expect(cuts.value.length).toBeGreaterThan(0);
-    // … og gjøre om lander på den tomme igjen.
-    redoCut();
     expect(cuts.value).toHaveLength(0);
-    expect(applied.value).toBe(false);
   });
 
-  it("…og «anvendt» står så lenge det FINNES kutt", () => {
-    applySermon();
-    expect(applied.value).toBe(true);
-    expect(cuts.value.length).toBeGreaterThan(0);
+  it("beholder kuttene som lå inne i vinduet", () => {
+    addCut(1000, 1100);
+    setKeepWindow({ start: 600, end: 2400 });
+    expect(cuts.value).toEqual([
+      { start: 0, end: 600 },
+      { start: 1000, end: 1100 },
+      { start: 2400, end: 3600 },
+    ]);
   });
 });
 
@@ -273,9 +232,6 @@ describe("restoreDraftCuts klemmer til E.duration", () => {
   it("et kutt som BEGYNNER etter varigheten blir tomt og forkastes", () => {
     restoreDraftCuts([{ start: E.duration + 10, end: E.duration + 90 }]);
     expect(cuts.value).toHaveLength(0);
-    // Og kortet som ville tilbudt gjenopprettingen skal ikke late som noe ble
-    // gjenopprettet.
-    expect(applied.value).toBe(false);
   });
 
   it("et kutt godt innenfor varigheten kommer tilbake uendret", () => {

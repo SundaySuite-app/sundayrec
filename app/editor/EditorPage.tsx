@@ -2,9 +2,8 @@
  * REDIGER — arbeidsflaten når en fil er åpen, steg 1: KLIPP.
  *
  * Canvasens sett 4, artboard 4.1. Legacys editor har 47 kontroller i tre faner
- * pluss en eksportmodal med 25 til; her er det ÉN skjerm med ett spørsmål:
- * *er dette prekenen?* Svaret er ett klikk, og alt annet er tilgjengelig for
- * den som vil ha det.
+ * pluss en eksportmodal med 25 til; her er det ÉN skjerm: bølgeformen, to
+ * håndtak for hvor det du beholder begynner og slutter, og kuttverktøyene.
  *
  * ## Hvem monterer denne, og når
  *
@@ -25,8 +24,7 @@
  *
  * ## Haken betyr «du har svart», ikke «det er en verdi her»
  *
- *   **Klipp** ✓ når spørsmålet er besvart: kutt finnes, eller «Behold bare
- *   prekenen» / «Behold alt» er brukt.
+ *   **Klipp** ✓ når det finnes kutt.
  *   **Lyd** ✓ når brukeren har VÆRT der. «Tale» er standarden, og en hake fra
  *   første sekund ville påstått at noen bestemte seg — det er nettopp forskjellen
  *   mellom en standardverdi og et valg.
@@ -37,13 +35,6 @@
  * andre spørsmål. Å forlate steget river derfor lerretet ned — `WaveformHost`
  * rydder etter seg (`cancelDraw`, `ResizeObserver`), toppene blir liggende i
  * `E`, og en retur tegner dem opp igjen uten å laste noe på nytt.
- *
- * ## Forslagskortet vises bare når det finnes et forslag
- *
- * Fant ikke analysen noen preken, står det ingenting der — ikke et tomt kort
- * og ikke en unnskyldning. Til gjengjeld åpnes kuttverktøyene av seg selv i
- * det tilfellet: skjermen tilbyr det den KAN gjøre, i stedet for å be om et
- * klikk for å avsløre den eneste veien videre.
  *
  * ## Slippsonen er alltid montert
  *
@@ -67,49 +58,34 @@ import { navigate } from "../router/router";
 import { Banner } from "../ui/Banner/Banner";
 import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
-import { Card } from "../ui/Card/Card";
-import { Select } from "../ui/Select/Select";
 import { Tabs } from "../ui/Tabs/Tabs";
 import {
-  applySermon,
   canRedo,
   canUndo,
   clearCuts,
   deleteCut,
-  keepAll,
   redoCut,
   undoCut,
 } from "./cuts";
 import { confirmDiscard } from "./discard";
-import {
-  exactSpan,
-  keptSeconds,
-  suggestionIsWorthOffering,
-  timecode,
-} from "./editor-core";
+import { exactSpan, keptSeconds, timecode } from "./editor-core";
 import { Loading, LoadFailed } from "./LoadStates";
 import { closeFile } from "./loader";
 import {
   activeStep,
-  analyzing,
-  applied,
   cuts,
   dirty,
-  dismissed,
   duration,
   fileName,
   loadError,
   loadState,
-  manualMode,
   playbackSource,
   playheadSec,
   playing,
-  segments,
   startedAtMs,
-  suggestion,
   type Step,
 } from "./model";
-import { byTestId, focusAfterRender, PLAY_SELECTOR } from "./focus";
+import { byTestId, focusAfterRender } from "./focus";
 import { teardownPlayback, togglePlay } from "./playback";
 import {
   PLAY_KEYS_ARIA,
@@ -119,7 +95,6 @@ import {
   UNDO_KEYS_ARIA,
   undoShortcutHint,
 } from "./shortcut-labels";
-import { candidatesFor, chooseSermon } from "./sermon";
 import { soundVisited } from "./sound";
 import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
@@ -128,9 +103,6 @@ import { WaveformHost } from "./WaveformHost";
 import { longDateTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
 import styles from "./editor.module.css";
-
-/** Merket foran blokken som ER valgt. Et symbol, ikke tekst å oversette. */
-const STAR = "★ ";
 
 /**
  * Overskriften Rediger skal ha.
@@ -186,7 +158,7 @@ export function EditorPage() {
 
 function Workspace() {
   const step = activeStep.value;
-  const cutAnswered = applied.value || dismissed.value || cuts.value.length > 0;
+  const cutAnswered = cuts.value.length > 0;
 
   return (
     <>
@@ -227,11 +199,9 @@ function CutStep() {
   return (
     <>
       <PlaybackNotice />
-      <SuggestionCard />
       <WaveformHost />
       <Transport />
-      <ManualTools />
-      <SermonPicker />
+      <CutTools />
     </>
   );
 }
@@ -362,64 +332,6 @@ function PlaybackNotice() {
   );
 }
 
-/**
- * «Vi tror prekenen er her».
- *
- * Vises bare når analysen fant noe OG det er noe å trimme OG ingen har svart
- * på det ennå. Ellers ingenting — se toppen av fila.
- */
-function SuggestionCard() {
-  const range = suggestion.value;
-  const total = duration.value;
-  if (applied.value || dismissed.value) return null;
-  if (analyzing.value) {
-    return (
-      <p data-testid="editor-searching" class={styles.hint}>
-        {t("app.editor.searching")}
-      </p>
-    );
-  }
-  if (!suggestionIsWorthOffering(range, total) || !range) return null;
-
-  return (
-    <Card
-      tone="selected"
-      testId="editor-suggestion"
-      title={t("app.editor.found")}
-      description={tf("app.editor.foundDesc", {
-        from: timecode(range.start),
-        to: timecode(range.end),
-        span: spanLabel(exactSpan(range.end - range.start)),
-      })}
-      actions={
-        <>
-          <Button
-            variant="primary"
-            testId="editor-keep-sermon"
-            onClick={() => {
-              applySermon();
-              // Kortet forsvinner med knappen; spill-knappen er neste steg.
-              focusAfterRender(byTestId(PLAY_SELECTOR));
-            }}
-          >
-            {t("app.editor.keepSermon")}
-          </Button>
-          <Button
-            variant="secondary"
-            testId="editor-keep-all"
-            onClick={() => {
-              keepAll();
-              focusAfterRender(byTestId(PLAY_SELECTOR));
-            }}
-          >
-            {t("app.editor.keepAll")}
-          </Button>
-        </>
-      }
-    />
-  );
-}
-
 const REMOVE_SELECTOR = '[data-testid="editor-cut-remove"]';
 
 /** Spill/pause, klokka, og resultatet. */
@@ -461,30 +373,13 @@ function Transport() {
           total: spanLabel(exactSpan(total)),
         })}
       </span>
-      <Button
-        variant="ghost"
-        testId="editor-manual"
-        onClick={() => (manualMode.value = !manualMode.value)}
-      >
-        {manualMode.value ? t("app.editor.manualHide") : t("app.editor.manual")}
-      </Button>
     </div>
   );
 }
 
-/**
- * Kuttverktøyene, avslørt av «Klipp manuelt».
- *
- * `manualMode` er den ENE sannheten om hvorvidt de står. To andre steder skrur
- * den PÅ: «Behold bare prekenen» (så det man fjernet er synlig og Angre er
- * innen rekkevidde) og en analyse som ikke fant noen preken (da er dette den
- * eneste veien videre). Begge skriver flagget i stedet for å legge til en
- * betingelse her — to skrivere på ett flagg er greit; to REGLER om det samme
- * flagget er skjøten dette skallet er skrevet for å unngå.
- */
-function ManualTools() {
+/** Kuttverktøyene: angre, gjør om, fjern alle, og lista over kutt. */
+function CutTools() {
   const list = cuts.value;
-  if (!manualMode.value) return null;
 
   return (
     <div data-testid="editor-tools" class={styles.tools}>
@@ -563,52 +458,6 @@ function ManualTools() {
           </ul>
         </>
       )}
-    </div>
-  );
-}
-
-/**
- * «Er ikke dette prekenen?»
- *
- * Vises bare når det finnes mer enn ett troverdig alternativ — en liste med
- * ett valg er ikke et valg. Blokkene og indeksene kommer fra
- * `@lib/pages/editor/sermon-candidates`, som er den ENE lista både tilbudet og
- * korreksjonen bygges på: to lister var nettopp feilen som lot en korreksjon
- * lande på feil segment, stille.
- */
-function SermonPicker() {
-  const list = segments.value;
-  const candidates = candidatesFor(list);
-  if (candidates.length < 2) return null;
-  const chosen = candidates.find(
-    (c) => list[c.index]?.type === "sermon",
-  )?.index;
-
-  return (
-    <div class={styles.picker}>
-      <span id="editor-picker-label" class={styles.label}>
-        {t("editor.sermonPickerLabel")}
-      </span>
-      <span id="editor-picker-desc" class={styles.hint}>
-        {t("app.editor.notSermonDesc")}
-      </span>
-      <Select
-        testId="editor-picker"
-        labelId="editor-picker-label"
-        describedBy="editor-picker-desc"
-        value={String(chosen ?? candidates[0].index)}
-        onChange={(next) => chooseSermon(Number(next))}
-        options={candidates.map((candidate, position) => ({
-          value: String(candidate.index),
-          label:
-            (candidate.index === chosen ? STAR : "") +
-            tf("app.editor.blockOption", {
-              n: position + 1,
-              at: timecode(candidate.segment.start),
-              span: spanLabel(exactSpan(candidate.segment.duration)),
-            }),
-        }))}
-      />
     </div>
   );
 }

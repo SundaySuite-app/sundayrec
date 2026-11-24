@@ -87,56 +87,6 @@ pub fn build_keeps(cut_regions: &[CutRegion], duration: f64) -> Vec<KeepSegment>
     keeps
 }
 
-/// Build the cut regions for the "trim to sermon" action — keep the sermon, drop
-/// everything else. It cuts (a) the head before the sermon, (b) the tail after
-/// it, and (c) any `music` block that falls INSIDE the sermon span. (c) matters
-/// for the Case-0 pick (`find_sermon_segment`), whose span runs from the first to
-/// the last speech block and can straddle a song between two talk sections — the
-/// user wants ALL music gone, not just the head/tail. Interior SILENCE is kept on
-/// purpose (natural pauses in speech; cutting them would chop the talk into
-/// fragments).
-///
-/// Returns an empty list when there is no detected sermon (`kind == "sermon"`) —
-/// the caller then leaves the recording whole. Regions are clamped to
-/// `[0, duration]` and sorted; feed them straight to [`build_keeps`]. Mirrors the
-/// renderer `applySermonTrim` so the two stay in lockstep (the renderer applies
-/// the cuts today; this is the canonical, unit-tested algorithm + the seam-ready
-/// version for when detection moves server-side).
-pub fn sermon_cut_regions(
-    segments: &[crate::detect::DetectedSegment],
-    duration: f64,
-) -> Vec<CutRegion> {
-    let Some(sermon) = segments.iter().find(|s| s.kind == "sermon") else {
-        return Vec::new();
-    };
-    let mut cuts: Vec<CutRegion> = Vec::new();
-    if sermon.start > KEEP_EPSILON {
-        cuts.push(CutRegion {
-            start: 0.0,
-            end: sermon.start,
-        });
-    }
-    if sermon.end < duration - KEEP_EPSILON {
-        cuts.push(CutRegion {
-            start: sermon.end,
-            end: duration,
-        });
-    }
-    for s in segments.iter().filter(|s| s.kind == "music") {
-        let start = s.start.max(sermon.start);
-        let end = s.end.min(sermon.end);
-        if end > start + KEEP_EPSILON {
-            cuts.push(CutRegion { start, end });
-        }
-    }
-    cuts.sort_by(|a, b| {
-        a.start
-            .partial_cmp(&b.start)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    cuts
-}
-
 // ── Codec arguments ───────────────────────────────────────────────────────────
 
 /// The lossy encoders' sample-rate ceiling. Above this a lossy render buys
@@ -1746,13 +1696,15 @@ pub enum Sidecar {
     /// `<base>.peaks.json` — the quantised waveform cache (P3). Derived data,
     /// not user state: deleting it costs one recompute, nothing else.
     Peaks,
-    /// `<base>.segments.json` — the content-detection cache (P3). Same deal.
+    /// `<base>.segments.json` — the content-detection cache (P3). Nothing
+    /// writes or reads one since the sermon search left the app (F1); the kind
+    /// stays in this table so a sidecar an older build wrote still TRAVELS with
+    /// its recording through the trash, like `.transcript.json`.
     Segments,
-    /// `<base>.feedback.json` — what the human told us we got wrong: the sermon
-    /// pick and the proposed trim (E8). NOT
-    /// derived data and NOT a cache: deleting it destroys a signal that only
-    /// exists because a person took the trouble to correct us once.
-    /// Shape: [`crate::feedback::RecordingFeedback`].
+    /// `<base>.feedback.json` — what a human corrected in an older build (the
+    /// sermon pick and the proposed trim, E8). Nothing writes or reads one any
+    /// more (F1); the kind stays so the file still travels with its recording
+    /// through the trash instead of being orphaned.
     Feedback,
 }
 
@@ -2013,74 +1965,6 @@ mod tests {
     fn cutting_everything_yields_no_keeps() {
         let keeps = build_keeps(&[cut(0.0, 100.0)], 100.0);
         assert!(keeps.is_empty());
-    }
-
-    // ── sermon_cut_regions ─────────────────────────────────────────────────────
-    fn ds(start: f64, end: f64, kind: &str) -> crate::detect::DetectedSegment {
-        crate::detect::DetectedSegment {
-            start,
-            end,
-            duration: end - start,
-            label: kind.to_string(),
-            kind: kind.to_string(),
-            confidence: 0.9,
-        }
-    }
-
-    #[test]
-    fn sermon_cut_trims_head_tail_and_interior_music() {
-        let segs = vec![
-            ds(0.0, 200.0, "music"), // head worship
-            ds(200.0, 1600.0, "sermon"),
-            ds(800.0, 820.0, "music"),   // a clip played mid-sermon
-            ds(1600.0, 1700.0, "music"), // closing song
-        ];
-        let cuts = sermon_cut_regions(&segs, 1700.0);
-        assert_eq!(
-            cuts,
-            vec![
-                CutRegion {
-                    start: 0.0,
-                    end: 200.0
-                },
-                CutRegion {
-                    start: 800.0,
-                    end: 820.0
-                },
-                CutRegion {
-                    start: 1600.0,
-                    end: 1700.0
-                },
-            ]
-        );
-        // The kept material is exactly the sermon minus the interior song.
-        let keeps = build_keeps(&cuts, 1700.0);
-        assert_eq!(
-            keeps,
-            vec![
-                KeepSegment {
-                    start: 200.0,
-                    end: 800.0
-                },
-                KeepSegment {
-                    start: 820.0,
-                    end: 1600.0
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn sermon_cut_is_empty_for_sermon_only_recording() {
-        // Whole file is the sermon → nothing to trim.
-        let segs = vec![ds(0.0, 1800.0, "sermon")];
-        assert!(sermon_cut_regions(&segs, 1800.0).is_empty());
-    }
-
-    #[test]
-    fn sermon_cut_is_empty_when_no_sermon_detected() {
-        let segs = vec![ds(0.0, 100.0, "music"), ds(100.0, 200.0, "speech")];
-        assert!(sermon_cut_regions(&segs, 200.0).is_empty());
     }
 
     // ── codec_args ───────────────────────────────────────────────────────────

@@ -198,7 +198,7 @@ function TaleSaid() {
 }
 
 /**
- * «Lytt: Før | Etter», fra midten av prekenen.
+ * «Lytt: Før | Etter», fra midten av det som beholdes.
  *
  * Lyttingen spilles av avspillingsmotoren (B5b), ikke av et `<audio>`-element: Rust spiller
  * opptaket med kuttene på lydkortet og har både originalen («Før») og lyden gjennom profilens

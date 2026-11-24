@@ -3,95 +3,41 @@ import { describe, expect, it } from "vitest";
 import {
   dragHandle,
   exactSpan,
+  keepWindow,
   keptSeconds,
   MIN_WINDOW_SEC,
-  sermonCutRegions,
-  sermonWindow,
-  suggestionIsWorthOffering,
-  suggestionRange,
   timecode,
   windowToCuts,
 } from "./editor-core";
-import type { Segment } from "./model";
 
-/** Et opptak med hode, preken, en sang inni, og en hale. 600 sekunder. */
-const SEGMENTS: Segment[] = [
-  { start: 0, end: 30, duration: 30, label: "Stillhet", type: "silence" },
-  { start: 30, end: 180, duration: 150, label: "Tale", type: "speech" },
-  { start: 180, end: 210, duration: 30, label: "Musikk", type: "music" },
-  { start: 210, end: 420, duration: 210, label: "Preken", type: "sermon" },
-  { start: 420, end: 600, duration: 180, label: "Tale", type: "speech" },
-];
-
+/** Et opptak på 600 sekunder. */
 const DURATION = 600;
 
-describe("forslaget", () => {
-  it("er prekenblokkens vindu", () => {
-    expect(suggestionRange(SEGMENTS)).toEqual({ start: 210, end: 420 });
+describe("vinduet", () => {
+  it("er hele opptaket når ingenting er kuttet", () => {
+    expect(keepWindow({ cuts: [], duration: DURATION })).toEqual({
+      start: 0,
+      end: DURATION,
+    });
   });
 
-  it("finnes ikke når ingen blokk er merket som preken", () => {
-    const none = SEGMENTS.map((s) =>
-      s.type === "sermon" ? { ...s, type: "speech" } : s,
-    );
-    expect(suggestionRange(none)).toBeNull();
-  });
-
-  it("tilbys bare når det faktisk er noe å trimme", () => {
-    expect(suggestionIsWorthOffering({ start: 210, end: 420 }, DURATION)).toBe(
-      true,
-    );
-    // Prekenen ER hele opptaket: «behold bare prekenen» og «behold alt» er da
-    // samme handling, og et valg uten forskjell er verre enn ingen kort.
-    expect(
-      suggestionIsWorthOffering({ start: 0, end: DURATION }, DURATION),
-    ).toBe(false);
-    // Under et halvsekund i hver ende er avrunding, ikke et kutt.
-    expect(
-      suggestionIsWorthOffering({ start: 0.2, end: DURATION - 0.2 }, DURATION),
-    ).toBe(false);
-    expect(suggestionIsWorthOffering(null, DURATION)).toBe(false);
-  });
-});
-
-describe("prekenvinduet", () => {
-  it("er forslaget før «Behold bare prekenen»", () => {
-    expect(
-      sermonWindow({
-        cuts: [],
-        duration: DURATION,
-        suggestion: { start: 210, end: 420 },
-        applied: false,
-      }),
-    ).toEqual({ start: 210, end: 420 });
-  });
-
-  it("er den ytre grensen av det som er igjen etterpå", () => {
-    // Hode, hale OG musikk-kuttet inne i prekenen: vinduet er fortsatt
-    // 210–420, ikke det første indre kuttet.
+  it("er den ytre grensen av det som er igjen", () => {
+    // Hode, hale OG et kutt inne i utdraget: vinduet er fortsatt 210–420, ikke
+    // det første indre kuttet.
     const cuts = [
       { start: 0, end: 210 },
       { start: 300, end: 330 },
       { start: 420, end: DURATION },
     ];
-    expect(
-      sermonWindow({
-        cuts,
-        duration: DURATION,
-        suggestion: { start: 210, end: 420 },
-        applied: true,
-      }),
-    ).toEqual({ start: 210, end: 420 });
+    expect(keepWindow({ cuts, duration: DURATION })).toEqual({
+      start: 210,
+      end: 420,
+    });
   });
 
   it("finnes ikke når kuttene dekker hele opptaket", () => {
     expect(
-      sermonWindow({
-        cuts: [{ start: 0, end: DURATION }],
-        duration: DURATION,
-        suggestion: null,
-        applied: true,
-      }),
+      keepWindow({ cuts: [{ start: 0, end: DURATION }], duration: DURATION }),
     ).toBeNull();
   });
 });
@@ -105,8 +51,7 @@ describe("vinduet tilbake til kutt", () => {
   });
 
   it("beholder kuttene som lå INNE i vinduet", () => {
-    // Å dra venstre håndtak skal ikke slette musikk-kuttet «Behold bare
-    // prekenen» la inn.
+    // Å dra venstre håndtak skal ikke slette kuttet midt i.
     const existing = [
       { start: 0, end: 210 },
       { start: 300, end: 330 },
@@ -172,37 +117,6 @@ describe("håndtakene", () => {
       start: 210,
       end: 400,
     });
-  });
-});
-
-describe("kuttene rundt prekenen", () => {
-  it("fjerner hodet, halen og musikken inni — men ikke stillheten", () => {
-    expect(
-      sermonCutRegions({ start: 210, end: 420 }, SEGMENTS, DURATION),
-    ).toEqual([
-      { start: 0, end: 210 },
-      { start: 420, end: DURATION },
-    ]);
-  });
-
-  it("tar en sang som ligger inne i prekenen", () => {
-    const withInnerSong: Segment[] = [
-      ...SEGMENTS,
-      { start: 300, end: 330, duration: 30, label: "Musikk", type: "music" },
-    ];
-    expect(
-      sermonCutRegions({ start: 210, end: 420 }, withInnerSong, DURATION),
-    ).toEqual([
-      { start: 0, end: 210 },
-      { start: 300, end: 330 },
-      { start: 420, end: DURATION },
-    ]);
-  });
-
-  it("lager ingen kutt når prekenen er hele opptaket", () => {
-    expect(sermonCutRegions({ start: 0, end: DURATION }, [], DURATION)).toEqual(
-      [],
-    );
   });
 });
 

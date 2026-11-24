@@ -166,11 +166,10 @@ uttrykkelig unntatt fra resten av Caps AGPL) er grunnlaget for
 
 ## Notert, ikke planlagt
 
-- **`earshot` som VAD-motor** og **lydstyrke under opptak** er flyttet inn i
-  planen som pakke D1 og D3 i [OMBYGGING.md](OMBYGGING.md). `earshot` erstatter
-  tract + Silero. Påstanden om at den slår Silero er utviklerens egen, og sang
-  kan bli tolket som tale, men VAD-en er i skyggemodus og bestemmer ingenting
-  før porten i [VAD.md](VAD.md) er passert.
+- **`earshot` som VAD-motor** er ikke lenger aktuell: den nevrale VAD-en
+  (tract + Silero), skyggemodusen og prekensøket ble fjernet i F1 «rent bord»
+  (se [VAD.md](archive/VAD.md)). **Lydstyrke under opptak** er pakke D3 i
+  [OMBYGGING.md](OMBYGGING.md).
 - **Klippliste til DaVinci/Premiere** (FCPXML/EDL, som auto-editor og
   filmcrafts `interchange` lager). _Når:_ et medieteam vil gjøre ferdig
   redigeringen et annet sted.

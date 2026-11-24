@@ -1,7 +1,7 @@
 //! Editor commands (R1 P2b) — the thin IPC layer over `crate::editor`.
 //!
 //! All five delegate to the seam, which delegates every decision to the
-//! unit-tested `sundayrec-core` (`editor`/`mastering`/`audio_analysis`). The
+//! unit-tested `sundayrec-core` (`editor`/`mastering`). The
 //! ffmpeg/ffprobe runs are HARDWARE-UNVERIFIED behind `--features editor`; in the
 //! default build the seam returns a clear `feature_disabled` error the renderer
 //! handles gracefully (the panel shows a "not built into this build" hint).
@@ -43,8 +43,8 @@
 //!
 //! The opening commands also answer with the canonical path — for display and
 //! for `<audio src>` (`asset://` needs an address). No command accepts it back:
-//! not the ones that read or render the recording, and not the sidecar and
-//! sermon-pick commands either (A3/A4, PR-D): those take the same token and
+//! not the ones that read or render the recording, and not the sidecar
+//! commands either (A3/A4, PR-D): those take the same token and
 //! derive `<stem>.meta.json` & co. in Rust from what it resolves to.
 
 use std::path::{Path, PathBuf};
@@ -60,8 +60,7 @@ use crate::db::{Db, store};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
     EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest, EditorMediaInfo,
-    EditorPeaks, EditorSegment, EditorSidecar, ExportEngine, ExportFolder, MasterEngine,
-    ResolvedExport,
+    EditorPeaks, EditorSidecar, ExportEngine, ExportFolder, MasterEngine, ResolvedExport,
 };
 use crate::error::{AppError, AppResult};
 use crate::settings;
@@ -430,94 +429,6 @@ pub async fn editor_peaks(
     editor::peaks(&source, decode_progress(app, "editor://peaks-progress")).await
 }
 
-/// Content-detect timeline segments (silence/speech/music + promoted sermon).
-/// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
-/// opptak» button) skips the cache read and re-runs the analysis; the automatic
-/// post-open run leaves it unset and gets the cached answer for free.
-#[tauri::command]
-pub async fn editor_segments(
-    app: tauri::AppHandle,
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-    force: Option<bool>,
-) -> AppResult<Vec<EditorSegment>> {
-    let source = resolve_source(&chosen, &source_token).await?;
-    let (segments, analysis) = editor::segments(
-        &source,
-        force.unwrap_or(false),
-        decode_progress(app.clone(), "editor://analysis-progress"),
-    )
-    .await?;
-    if let Some(detection) = analysis {
-        shadow_the_analysis(&app, &source, &detection);
-    }
-    Ok(segments)
-}
-
-/// Score the same recording with the neural VAD, in the background, and record
-/// how its answer differed. SHADOW MODE — see [`crate::vad::shadow`].
-///
-/// ## Where the trigger is, and why here
-///
-/// Three properties had to hold at once, and this is the only site with all
-/// three:
-///
-///   - **Not on the operator's clock.** The pass costs about two minutes for a
-///     90-minute service, so it runs detached, AFTER `editor_segments` has
-///     already returned the segments. The «Analyser opptak» wait is exactly what
-///     it is in a build without the feature; nothing the operator is watching
-///     waits on the model.
-///   - **Only on a pass that actually ran.** `analysis` is `Some` only when the
-///     detection was computed rather than read from the segments cache. A cache
-///     hit has no `Detection` to compare against, and re-deriving one to shadow
-///     it would be
-///     two full passes for a screen the operator already has.
-///   - **Only where a shadow is safe to run.** This is reachable from the
-///     editor, on a machine that has just finished an analysis pass. It is not
-///     reachable during a recording.
-///
-/// Default-OFF: the whole thing compiles out without `--features vad`, so a
-/// shipped build spends nothing and records nothing. That is the containment the
-/// etappe is for — the model is measured before it is allowed to matter.
-#[cfg(all(feature = "vad", feature = "editor"))]
-fn shadow_the_analysis(
-    app: &tauri::AppHandle,
-    input_path: &str,
-    detection: &sundayrec_core::detect::Detection,
-) {
-    let input_path = input_path.to_string();
-    // Cloned, not moved: the shadow pass must never be able to reach the
-    // detection the app acts on.
-    let heuristic = detection.clone();
-    let progress = decode_progress(app.clone(), "editor://shadow-progress");
-    crate::crash::watch_handle(
-        "vad::shadow::observe",
-        tauri::async_runtime::spawn(async move {
-            crate::vad::shadow::observe(
-                input_path,
-                heuristic,
-                sundayrec_core::shadow::ShadowSettings::default(),
-                progress,
-            )
-            .await;
-        }),
-    );
-}
-
-/// No-op without BOTH `vad` and `editor`: there is no model to shadow with, or
-/// no analysis decode to feed it.
-///
-/// A real function rather than a `#[cfg]` at the call site, so the two arms
-/// cannot drift — the signature is checked in both builds, which is exactly the
-/// failure a stub of this shape is otherwise good at hiding.
-#[cfg(not(all(feature = "vad", feature = "editor")))]
-fn shadow_the_analysis(
-    _app: &tauri::AppHandle,
-    _input_path: &str,
-    _detection: &sundayrec_core::detect::Detection,
-) {
-}
-
 /// The built-in mastering presets for the editor's preset dropdown. Pure core
 /// (no ffmpeg / feature gate), so the panel is never empty.
 #[tauri::command]
@@ -868,11 +779,11 @@ pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<
 
 // ── The sidecars: derived from the recording, never named (A3/A4) ────────────
 //
-// The five sidecar and sermon-pick commands used to take the recording's path
+// The sidecar commands used to take the recording's path
 // (`media_path`) and trust `path_guard` to judge it — which it can only do
 // against the protected home folders. A compromised webview could therefore
-// write, read and DELETE `<stem>.meta.json`, `<stem>.cuts-draft.json` and
-// `<stem>.feedback.json` beside any file the user can write to, and learn
+// write, read and DELETE `<stem>.meta.json`, `<stem>.cuts-draft.json`
+// beside any file the user can write to, and learn
 // whether such a file exists.
 //
 // Now they take the recording's File token (`source_token`) and nothing else.
@@ -883,8 +794,8 @@ pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<
 // The seam still takes a string, but only ever this one.
 
 /// Run `work` on the recording a `source_token` stands for, off the async
-/// runtime (the file may be on a USB stick or a share). The ONE shape the five
-/// sidecar and sermon-pick commands share, so none of them can reach the seam
+/// runtime (the file may be on a USB stick or a share). The ONE shape the
+/// sidecar commands share, so none of them can reach the seam
 /// with a string of its own: a token that does not resolve never runs `work`.
 async fn with_source<T, F>(chosen: &ChosenPaths, source_token: &str, work: F) -> AppResult<T>
 where
@@ -915,33 +826,9 @@ pub async fn editor_read_sidecar(
     .await?
 }
 
-/// The feedback sidecar is not a sidecar the generic commands may touch.
-///
-/// [`EditorSidecar::Feedback`]'s own doc comment says "written/read by the seam
-/// only" — but the enum is deserialised straight off IPC, so `Feedback` is a
-/// value the renderer can name, and nothing stopped it. Going through
-/// [`editor_write_sidecar`] would bypass all three things that make that file
-/// safe: [`crate::editor`]'s `FEEDBACK_LOCK` (so a write racing shadow mode's
-/// detached task loses one of them), the schema check that refuses to overwrite
-/// a record this build cannot parse, and the atomic temp-and-rename that keeps a
-/// crash mid-write from truncating it. [`editor_delete_sidecar`] would skip
-/// `RecordingFeedback::is_empty` and remove the whole record — a person's
-/// corrections and the trim adjustments together.
-///
-/// The typed commands below are the only way in. This turns an intent that was
-/// only ever written down into one the wiring enforces.
-fn refuse_feedback_sidecar(sidecar: EditorSidecar) -> AppResult<()> {
-    if sidecar == EditorSidecar::Feedback {
-        return Err(crate::error::AppError::Validation(
-            "feedback_sidecar_is_not_generic: use the editor_record_* commands".into(),
-        ));
-    }
-    Ok(())
-}
-
 /// The most a sidecar the webview writes may weigh once serialised. What the
 /// renderer writes (`meta`, `cutsDraft`) is kilobytes; the big derived caches
-/// (peaks, segments) are written by Rust. The cap keeps a compromised page from
+/// (peaks) are written by Rust. The cap keeps a compromised page from
 /// filling the recording's folder, or the pretty-printer's memory, through
 /// this one command.
 const MAX_SIDECAR_BYTES: usize = 2 * 1024 * 1024;
@@ -968,7 +855,6 @@ pub async fn editor_write_sidecar(
     sidecar: EditorSidecar,
     value: serde_json::Value,
 ) -> AppResult<bool> {
-    refuse_feedback_sidecar(sidecar)?;
     vet_sidecar_size(&value)?;
     with_source(&chosen, &source_token, move |source| {
         editor::write_sidecar(&source, sidecar, &value)
@@ -984,7 +870,6 @@ pub async fn editor_delete_sidecar(
     source_token: String,
     sidecar: EditorSidecar,
 ) -> AppResult<bool> {
-    refuse_feedback_sidecar(sidecar)?;
     with_source(&chosen, &source_token, move |source| {
         editor::delete_sidecar(&source, sidecar)
     })
@@ -1005,45 +890,6 @@ pub fn editor_church_day_name(date: String) -> Option<String> {
     chrono::NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d")
         .ok()
         .and_then(sundayrec_core::church_calendar::liturgical_day_name)
-}
-
-/// Record that the human overrode the sermon auto-pick (E8), into the
-/// recording's `<stem>.feedback.json`. Returns whether anything was persisted:
-/// re-picking the block the detector already chose is not a correction, and an
-/// unreadable feedback file is left alone rather than overwritten.
-///
-/// **Takes the recording's File token** — the target is a file next to a
-/// recording Rust opened, never one the webview named (see
-/// [`editor_read_sidecar`]).
-#[tauri::command]
-pub async fn editor_record_sermon_pick(
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-    request: crate::editor::EditorSermonPickRequest,
-) -> AppResult<bool> {
-    with_source(&chosen, &source_token, move |source| {
-        editor::record_sermon_pick(&source, &request)
-    })
-    .await
-}
-
-/// Which of `segments` the human's stored sermon correction means, or `null`
-/// when there is none (or the recording no longer matches the one it describes).
-/// The reopen half of E8: detection returns its own answer, this says what the
-/// person decided last time.
-///
-/// **Takes the recording's File token** — read-only in effect, but it resolves
-/// the same sidecar the write side does, from the same token.
-#[tauri::command]
-pub async fn editor_sermon_pick(
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-    segments: Vec<EditorSegment>,
-) -> AppResult<Option<u32>> {
-    with_source(&chosen, &source_token, move |source| {
-        editor::sermon_pick_index(&source, &segments)
-    })
-    .await
 }
 
 // ── V1/PR3: fire prober som aldri fikk en dør ────────────────────────────────
@@ -2445,27 +2291,5 @@ mod tests {
             assert_eq!(code_of(ran), "export_folder_unknown", "{forged:?}");
             assert_eq!(given, None, "{forged:?} reached the seam");
         }
-    }
-
-    /// The generic sidecar commands must not be a second door into the file
-    /// holding a human's corrections. Both the write and the delete would skip
-    /// `FEEDBACK_LOCK`, the schema check and the whole-record emptiness question
-    /// that the typed `editor_record_*` commands go through.
-    #[test]
-    fn the_generic_sidecar_commands_refuse_the_feedback_file() {
-        for sidecar in [
-            EditorSidecar::Meta,
-            EditorSidecar::CutsDraft,
-            EditorSidecar::Peaks,
-            EditorSidecar::Segments,
-        ] {
-            assert!(
-                refuse_feedback_sidecar(sidecar).is_ok(),
-                "{sidecar:?} is an ordinary sidecar"
-            );
-        }
-        let err = refuse_feedback_sidecar(EditorSidecar::Feedback)
-            .expect_err("the feedback record is not a generic sidecar");
-        assert!(err.to_string().contains("feedback_sidecar_is_not_generic"));
     }
 }

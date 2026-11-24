@@ -1,5 +1,4 @@
 import { BOOT_FIXTURES, fn, type Fixtures } from "./harness";
-import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 import type { EditorMediaInfo } from "../legacy/bindings/EditorMediaInfo";
 import type { EditorExportResult } from "../legacy/bindings/EditorExportResult";
 import type { EditorAutoProcess } from "../legacy/bindings/EditorAutoProcess";
@@ -35,30 +34,11 @@ export const OTHER_OPENED: OpenedRecording = {
   path: "/Users/test/Opptak/2026-07-05 Kveldsmøte.mp3",
 };
 
-/**
- * A recording whose timeline has THREE plausible sermon candidates, all ≥ 60 s
- * and already in time order — which is what makes the picker offer a real
- * choice.
- *
- * Typed as the GENERATED `EditorSegment` binding on purpose: these fixtures
- * stand in for what `editor_segments` puts on the wire, so a Rust-side field
- * rename must fail `npm run typecheck` here rather than quietly making the whole
- * sermon-detection UI inert (which is exactly what a `kind` / `type` split did
- * to every shipped build until this was fixed).
- */
-export const SEGMENTS: EditorSegment[] = [
-  { start: 0, end: 30, duration: 30, label: "Stillhet", type: "silence" },
-  { start: 30, end: 180, duration: 150, label: "Tale", type: "speech" },
-  { start: 180, end: 210, duration: 30, label: "Musikk", type: "music" },
-  { start: 210, end: 420, duration: 210, label: "Preken", type: "sermon" },
-  { start: 420, end: 600, duration: 180, label: "Tale", type: "speech" },
-];
-
 export function editorFixtures(over: Fixtures = {}): Fixtures {
   return {
     ...BOOT_FIXTURES,
     // Typed as the GENERATED `EditorMediaInfo` binding — same reasoning as
-    // `SEGMENTS` below: a Rust rename here must fail `npm run typecheck`
+    // `EXPORT_RESULT` below: a Rust rename here must fail `npm run typecheck`
     // rather than leave `editorLoadRecording` answering `undefined` in prod.
     editor_load_recording: {
       durationSec: DURATION,
@@ -79,10 +59,6 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
     editor_peaks: fn(`() => {
       (window.__E2E_CALLS__ ||= {}).editor_peaks = ((window.__E2E_CALLS__.editor_peaks || 0) + 1);
       return { peaks: Array.from({ length: ${DURATION} * 100 }, (_, i) => Math.abs(Math.sin(i / 137))), sampleRate: 8000 };
-    }`),
-    editor_segments: fn(`() => {
-      (window.__E2E_CALLS__ ||= {}).editor_segments = ((window.__E2E_CALLS__.editor_segments || 0) + 1);
-      return ${JSON.stringify(SEGMENTS)};
     }`),
     editor_read_sidecar: null,
     editor_write_sidecar: true,
@@ -148,8 +124,7 @@ export const EXPORTED =
 /** The `editor_export` result, typed as the GENERATED `EditorExportResult`
  *  binding — `fn()` fixtures are opaque strings to `tsc`, so the DTO is built
  *  here (where it IS real TypeScript) and its JSON spliced into the fixture
- *  source below. A Rust rename of `outputPath` fails here, same reasoning as
- *  `SEGMENTS`. */
+ *  source below. A Rust rename of `outputPath` fails here. */
 const EXPORT_RESULT: EditorExportResult = {
   outputPath: EXPORTED,
   revealToken: REVEAL_TOKEN,
@@ -204,7 +179,7 @@ export const EXPORT_HELD = fn(`(args) => {
 
 /** The channel diagnosis `editor_auto_process` answers with, typed as the
  *  GENERATED `EditorAutoProcess` binding (nesting `EditorChannelDiagnosis` +
- *  `EditorChannelRepair`) — same reasoning as `SEGMENTS`: a Rust rename of
+ *  `EditorChannelRepair`) — a Rust rename of
  *  any of these fields must fail `npm run typecheck`. `balanced` + `mode:
  *  "none"` = nothing to repair, which is the ordinary recording. */
 export const AUTO_PROCESS = {
