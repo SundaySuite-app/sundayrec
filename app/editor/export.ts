@@ -51,7 +51,6 @@ import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress
 import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness";
 import type { ChosenPlace } from "@legacy/bindings/ChosenPlace";
 
-import { locale } from "../i18n";
 import { isRecording } from "../state/recording";
 import { settings } from "../state/settings";
 import {
@@ -67,7 +66,6 @@ import {
   type ExportFormat,
 } from "./export-core";
 import { DEFAULT_EXPORT_FORMAT } from "./export-core";
-import { renderDescription } from "./publish-core";
 import { clearDirty, E, mediaInfo } from "./model";
 import { clearDraft } from "./cuts";
 import {
@@ -107,42 +105,14 @@ export const exportTitle = signal("");
 export const exportSpeaker = signal("");
 /** Fritekst. Blir `comment`-taggen. Les den gjennom `currentDescription()`. */
 export const exportDescription = signal("");
-/**
- * Følger beskrivelsen fortsatt malen fra Oppsett?
- *
- * Sann til noen skriver i feltet selv — da er teksten deres, og malen røres
- * ikke igjen — eller til en lagret, ikke-tom beskrivelse leses inn fra
- * `.meta.json`.
- * Mens den er sann, fylles `{tittel}`, `{taler}` og de andre inn LIVE: en
- * tittel skrevet etter at siden åpnet, står i beskrivelsen med én gang.
- */
-export const descriptionFollowsTemplate = signal(true);
-
-/**
- * Beskrivelsen slik den står i feltet og slik den blir sendt.
- *
- * Malen (`settings.publishDescriptionTemplate`) med feltene fylt inn så lenge
- * ingen har skrevet i beskrivelsen selv og malen ikke er tom; ellers det som
- * står i `exportDescription`.
- */
+/** Beskrivelsen slik den står i feltet og slik den blir sendt. */
 export function currentDescription(): string {
-  const template = settings.value.publishDescriptionTemplate ?? "";
-  if (!descriptionFollowsTemplate.value || template.trim() === "") {
-    return exportDescription.value;
-  }
-  return renderDescription(template, {
-    title: exportTitle.value,
-    speaker: exportSpeaker.value,
-    date: localIsoDate(E.startedAtMs),
-    church: settings.value.churchName ?? "",
-    locale: locale.value,
-  });
+  return exportDescription.value;
 }
 
 /** Brukeren skrev i beskrivelsen: teksten er deres herfra. */
 export function editDescription(next: string): void {
   exportDescription.value = next;
-  descriptionFollowsTemplate.value = false;
 }
 
 // ── Kjøringen ───────────────────────────────────────────────────────────────
@@ -167,13 +137,6 @@ export const exportedSeconds = signal(0);
 export const exportedBytes = signal<number | null>(null);
 /** Mappen fila havnet i. */
 export const exportedFolder = signal("");
-/**
- * Innholdet slik det ble SENDT med eksporten, eller `null`.
- *
- * Et øyeblikksbilde, ikke feltene: kvitteringen skal si hva som faktisk står i
- * fila, også om noen redigerer tittelen etterpå uten å eksportere på nytt.
- */
-export const exportedContent = signal<ExportContent | null>(null);
 /**
  * Hva mastringen faktisk gjorde med nivået, eller `null`.
  *
@@ -257,7 +220,6 @@ export function resetExport(): void {
   exportTitle.value = "";
   exportSpeaker.value = "";
   exportDescription.value = "";
-  descriptionFollowsTemplate.value = true;
   exporting.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
@@ -269,7 +231,6 @@ export function resetExport(): void {
   exportedBytes.value = null;
   exportedFolder.value = "";
   exportedLoudness.value = null;
-  exportedContent.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFailed.value = false;
@@ -278,20 +239,15 @@ export function resetExport(): void {
 /**
  * Fyll «Innhold» for fila som nettopp ble åpnet.
  *
- * Det som er lagret i `.meta.json` vinner. Finnes det ingenting, og opptaket
- * er fra en kjent helligdag, foreslås dagens navn som tittel («1. påskedag») —
- * fra den samme tabellen som gir opptakene navn (`editor_church_day_name`).
- * En vanlig søndag får INGEN tittel: appen vet ikke hva prekenen het, og en
- * gjettet tittel ville gitt hver eneste eksport et nytt filnavn.
- *
- * Dagnavnene er norske, så forslaget gis bare når appen står på norsk.
+ * Det som er lagret i `.meta.json` vinner. Finnes det ingenting, står
+ * feltene tomme: appen vet ikke hva prekenen het, og en gjettet tittel ville
+ * gitt hver eneste eksport et nytt filnavn.
  *
  * `seq` er `E.loadSeq` fra åpningen; en fil som byttes mens vi venter, får
  * ikke den forriges innhold. Og et felt noen rakk å skrive i, overskrives ikke.
  */
 export async function loadExportContent(
   sourceToken: string,
-  startedAtMs: number | null,
   seq: number,
 ): Promise<void> {
   let saved: ExportContent | null = null;
@@ -308,20 +264,7 @@ export async function loadExportContent(
     exportTitle.value = saved.title;
     exportSpeaker.value = saved.speaker;
     exportDescription.value = saved.description;
-    // Det som ble sendt sist, er fasiten — også en beskrivelse som en gang
-    // kom fra malen. En mal endret i mellomtiden skal ikke skrive om den.
-    // Men en TOM beskrivelse er ingen tekst å verne om: den som eksporterte
-    // med bare en tittel før malen fantes, skal få malen neste gang.
-    descriptionFollowsTemplate.value = saved.description.trim() === "";
-    return;
   }
-  const date = localIsoDate(startedAtMs);
-  if (!date || locale.peek() !== "no") return;
-  const day = await window.api
-    .editorChurchDayName(date)
-    .catch((): string | null => null);
-  if (seq !== E.loadSeq || !day || exportTitle.peek()) return;
-  exportTitle.value = day;
 }
 
 /**
@@ -381,7 +324,6 @@ export function exportAgain(): void {
   exportedPath.value = null;
   exportedRevealToken.value = null;
   exportedLoudness.value = null;
-  exportedContent.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFailed.value = false;
@@ -556,7 +498,6 @@ export async function runExport(
     metadata: {
       ...content,
       date: localIsoDate(E.startedAtMs),
-      album: settings.value.churchName?.trim() || null,
     },
     ...sound,
   });
@@ -635,7 +576,6 @@ export async function runExport(
     exportedSeconds.value = keptSeconds;
     exportedBytes.value = video ? null : estimate;
     exportedLoudness.value = result.loudness ?? null;
-    exportedContent.value = content;
     // Eksporten lyktes — utkastet har gjort jobben sin. Men bare hvis den
     // eksporterte det som står nå: et kutt lagt til MENS den gikk er ikke i
     // fila, og da må både «ulagrede endringer» og utkastet stå igjen (audit

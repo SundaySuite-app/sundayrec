@@ -394,8 +394,7 @@ pub const ASIO_AVAILABLE: bool = cfg!(all(target_os = "windows", feature = "asio
 /// close, re-open, then press record — costs ONE driver sweep instead of one
 /// per click, and short enough that an interface plugged in mid-service shows
 /// up without restarting the app. Windows ships no device-change listener
-/// (see [`crate::audio::device_watch`]), so this TTL, plus the explicit
-/// [`invalidate_asio_cache`] the diagnose tool calls, is the whole freshness
+/// (see [`crate::audio::device_watch`]), so this TTL is the whole freshness
 /// story on the platform ASIO exists on.
 pub const ASIO_CACHE_TTL: Duration = Duration::from_secs(30);
 
@@ -456,29 +455,14 @@ impl AsioCache {
         *crate::util::lock_recover(&self.entry) = Some((now, fresh.clone()));
         fresh
     }
-
-    /// Drop the memo, so the next call probes.
-    pub(crate) fn invalidate(&self) {
-        *crate::util::lock_recover(&self.entry) = None;
-    }
 }
 
 static ASIO_CACHE: AsioCache = AsioCache::new(ASIO_CACHE_TTL);
 
-/// Forget the memoised ASIO enumeration, so the next call asks the drivers again.
-///
-/// Called by the diagnose tool, whose whole job is to report what is on the
-/// machine RIGHT NOW; a Windows device-change listener would call it too, if one
-/// shipped (see [`crate::audio::device_watch`] for why none does).
-pub fn invalidate_asio_cache() {
-    ASIO_CACHE.invalidate();
-}
-
 /// Enumerate the ASIO input devices visible on this machine. Empty when ASIO is
 /// unavailable (non-Windows, feature off, or no driver installed).
 ///
-/// Memoised for [`ASIO_CACHE_TTL`] — see [`AsioCache`]. Use
-/// [`invalidate_asio_cache`] first when a stale answer would be wrong.
+/// Memoised for [`ASIO_CACHE_TTL`] — see [`AsioCache`].
 pub fn list_asio_devices() -> Vec<AsioDevice> {
     if !ASIO_AVAILABLE {
         return Vec::new();
@@ -1082,28 +1066,6 @@ mod tests {
             Some(vec![device("ASIO4ALL v2")])
         );
         assert_eq!(cache.peek_at(t0 + Duration::from_secs(31)), None);
-    }
-
-    #[test]
-    fn invalidating_the_memo_forces_the_next_sweep() {
-        use std::cell::Cell;
-        let sweeps = Cell::new(0u32);
-        let probe = || {
-            sweeps.set(sweeps.get() + 1);
-            vec![device("ASIO4ALL v2")]
-        };
-        let cache = AsioCache::new(Duration::from_secs(30));
-        let t0 = Instant::now();
-
-        let _ = cache.get_or_fill_at(t0, probe);
-        cache.invalidate();
-        let _ = cache.get_or_fill_at(t0, probe);
-
-        assert_eq!(
-            sweeps.get(),
-            2,
-            "diagnose must see the machine as it is now"
-        );
     }
 
     /// The picker's blocking enumeration and a recording start CAN land at the

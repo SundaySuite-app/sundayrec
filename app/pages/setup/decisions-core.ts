@@ -33,7 +33,7 @@ import type { LevelWord } from "../../audio/level-words";
 import type { Settings } from "../../state/settings";
 
 /** De fem spørsmålene, i rekkefølgen de stilles. */
-export type DecisionId = "sound" | "folder" | "quality" | "church" | "notify";
+export type DecisionId = "sound" | "folder" | "quality" | "language" | "notify";
 
 /** `done` = svart og i orden · `todo` = må gjøres · `unknown` = ikke målt ennå. */
 export type DecisionStatus = "done" | "todo" | "unknown";
@@ -54,7 +54,7 @@ export type Answer =
   | { key: "path"; path: string }
   | { key: "quality"; format: QualityId }
   | { key: "qualityCustom"; format: string; bitrate: string }
-  | { key: "church"; name: string }
+  | { key: "language"; language: string }
   | { key: "onMachine" }
   | { key: "notificationsOff" };
 
@@ -67,7 +67,6 @@ export type Detail =
   | { key: "noFolder" }
   | { key: "qualityDesc"; format: QualityId }
   | { key: "qualityCustomDesc" }
-  | { key: "language"; language: string }
   | { key: "onMachineDesc" }
   | { key: "onMachineUnverifiedDesc" }
   | { key: "notificationsOffDesc" };
@@ -116,7 +115,7 @@ export interface DecisionFacts {
    *
    * De to er like i dag: alle sju språk er aktive (F2-S6), så en profil satt
    * til tysk LESER tysk. Skillet står fordi det er det ærlige: mens fem
-   * kataloger var pauset leste en tysk profil engelsk, og et kirkekort som
+   * kataloger var pauset leste en tysk profil engelsk, og et språkkort som
    * svarte «Språk: tysk» ville sagt noe brukeren kan se med egne øyne at ikke
    * stemmer. Kortet skal si det som står på skjermen, ikke det som står i
    * basen — og de to kan skille lag igjen (en pause, en katalog som ikke
@@ -287,18 +286,19 @@ export function decideQuality(facts: DecisionFacts): Decision {
 }
 
 /**
- * 4 — Hvilken kirke? Språket vises alltid, også når navnet mangler.
+ * 4 — Hvilket språk? Alltid besvart: appen har alltid et språk.
  *
- * Språket er en del av svaret og ikke et eget spørsmål: det er den ene
- * innstillingen på denne skjermen som endrer alt en frivillig leser, og et
- * kirkekort som ikke nevnte den ville betydd at «hvor bytter jeg språk?» ikke
- * har noe svar på nivå 1.
+ * Svaret er språket appen FAKTISK rendrer i (`facts.locale`), ikke det som
+ * står i `settings.language` — det er det ene kortet på nivå 1 som endrer alt
+ * en frivillig leser, og det skal si det som står på skjermen.
  */
-export function decideChurch(facts: DecisionFacts): Decision {
-  const name = (facts.settings.churchName ?? "").trim();
-  const language: Detail = { key: "language", language: facts.locale };
-  if (!name) return decision("church", "todo", { key: "notSetUp" }, language);
-  return decision("church", "done", { key: "church", name }, language);
+export function decideLanguage(facts: DecisionFacts): Decision {
+  return decision(
+    "language",
+    "done",
+    { key: "language", language: facts.locale },
+    null,
+  );
 }
 
 /**
@@ -357,7 +357,7 @@ export function decisionsFor(facts: DecisionFacts): Decision[] {
     decideSound(facts),
     decideFolder(facts),
     decideQuality(facts),
-    decideChurch(facts),
+    decideLanguage(facts),
     decideNotify(facts),
   ];
 }

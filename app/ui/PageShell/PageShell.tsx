@@ -11,7 +11,7 @@
  * Så D3 river den. Det som var i skinnen bor nå i to bånd som til sammen er
  * hundre piksler høye i stedet for to hundre piksler brede:
  *
- *   TOPPLINJEN  (44 px) merket, produktnavnet og kirken — og dra-sonen.
+ *   TOPPLINJEN  (44 px) merket og produktnavnet — og dra-sonen.
  *   BUNNLINJEN  (56 px) statuslinjen til venstre, de tre destinasjonene
  *               sentrert, versjonen og tannhjulet til høyre.
  *
@@ -203,7 +203,6 @@ export function PageShell({ children, heading }: PageShellProps) {
     headingRef.current?.focus();
   }, [current.page, current.tab]);
 
-  const church = (s.churchName ?? "").trim();
   const next = nextRecording.value.next;
   const status = statusLine({
     isRecording: isRecording.value,
@@ -227,12 +226,6 @@ export function PageShell({ children, heading }: PageShellProps) {
       >
         <AppLogo size={22} />
         <b class={styles.logoText}>{PRODUCT}</b>
-        <div
-          data-testid="shell-church"
-          class={`${styles.church} ${church ? "" : styles.churchUnset}`}
-        >
-          {church || t("app.rail.churchUnset")}
-        </div>
       </header>
 
       {/*

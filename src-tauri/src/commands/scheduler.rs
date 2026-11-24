@@ -1,7 +1,7 @@
 //! Scheduler commands (Fase 5.1) — the thin IPC layer over [`crate::scheduler`].
 //!
 //! The renderer:
-//!   - saves slots/specials through the normal `settings_save`, then calls
+//!   - saves the slots through the normal `settings_save`, then calls
 //!     `scheduler_reschedule` so the supervisor picks up the change immediately,
 //!   - reads `scheduler_status` for the "next recording" + the next 14 days.
 //!

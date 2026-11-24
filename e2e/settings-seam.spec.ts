@@ -60,7 +60,7 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
         protectRecording: false,
         updateChannel: "beta",
         reminderMinutes: 15,
-        churchName: "Domkirken",
+        deviceName: "Domkirken",
         // P1b's new key. Legacy has NO control for it, which is exactly why it
         // belongs here: the shell saves the whole stored object, so a field it
         // never renders must still survive the round trip. A key that only the
@@ -95,7 +95,7 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
     expect(stored.launchAtLogin).toBe(true);
     expect(stored.protectRecording).toBe(false);
     expect(stored.reminderMinutes).toBe(15);
-    expect(stored.churchName).toBe("Domkirken");
+    expect(stored.deviceName).toBe("Domkirken");
     expect(stored.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });

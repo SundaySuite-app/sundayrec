@@ -28,8 +28,8 @@
  * byttes ut så hvert `invoke` kan leses av og besvares.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -414,131 +414,5 @@ describe("opptaksmappen — Rust åpner mappevelgeren og lagrer den (A2-familien
     expect(
       (api as unknown as Record<string, unknown>).pickFolder,
     ).toBeUndefined();
-  });
-});
-
-describe("innstillingsprofilen — Rust åpner vinduet, ingen sti sendes (A1)", () => {
-  // Før valgte webviewet fila i sitt eget vindu og sendte STIEN; et
-  // kompromittert webview kunne sendt en hvilken som helst sti uten å vise noe
-  // vindu. Nå åpner kommandoen selv lagre-/åpne-vinduet, og shimmen sender
-  // INGENTING — det er hele poenget, og det denne blokka pinner.
-
-  it("eksporten sender ingen argumenter, og et avbrutt vindu er false", async () => {
-    ipc.answers.set("settings_export_profile", async () => false);
-    expect(await api.settingsExportProfile()).toBe(false);
-    ipc.answers.set("settings_export_profile", async () => true);
-    expect(await api.settingsExportProfile()).toBe(true);
-    expect(callsTo("settings_export_profile")).toEqual([
-      { cmd: "settings_export_profile", args: undefined },
-      { cmd: "settings_export_profile", args: undefined },
-    ]);
-  });
-
-  it("importen sender ingen argumenter, og et avbrutt vindu er null", async () => {
-    ipc.answers.set("settings_import_profile", async () => null);
-    expect(await api.settingsImportProfile()).toBeNull();
-    expect(callsTo("settings_import_profile")).toEqual([
-      { cmd: "settings_import_profile", args: undefined },
-    ]);
-  });
-
-  it("en avvisning når kortet, som den er — kortet sier selv hva som gikk galt", async () => {
-    const refusal = {
-      code: "io",
-      message: "io error: Permission denied (os error 13)",
-    };
-    ipc.answers.set("settings_export_profile", () => Promise.reject(refusal));
-    await expect(api.settingsExportProfile()).rejects.toEqual(refusal);
-    // Ingen ekstra toast fra shimmen: kortet viser sin egen.
-    expect(toasts).toEqual([]);
-  });
-
-  it("de gamle sti-kommandoene og webviewets egne profilvinduer er borte", () => {
-    const shim = readFileSync(join(repoRoot, "app/lib/api-shim.ts"), "utf8");
-    for (const gone of [
-      "settings_export_to_file",
-      "settings_import_from_file",
-      "pickSettingsFile",
-      "pickSavePath",
-    ]) {
-      expect(shim).not.toContain(gone);
-    }
-    expect(
-      (api as unknown as Record<string, unknown>).pickSavePath,
-    ).toBeUndefined();
-  });
-});
-
-describe("ingen vei til opener-pluginen fra webviewet", () => {
-  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-  function sources(dir: string): string[] {
-    return readdirSync(dir).flatMap((name) => {
-      const full = join(dir, name);
-      if (name === "node_modules" || name === "bindings") return [];
-      if (statSync(full).isDirectory()) return sources(full);
-      return /\.(ts|tsx|js|mjs)$/.test(name) && !/\.test\.tsx?$/.test(name)
-        ? [full]
-        : [];
-    });
-  }
-
-  it("app/ og legacy/ importerer ikke @tauri-apps/plugin-opener og kaller ingen plugin:opener-kommando", () => {
-    const files = [
-      ...sources(join(repo, "app")),
-      ...sources(join(repo, "legacy")),
-    ];
-    // Leser den i det hele tatt? En skanner som fant null filer er alltid grønn.
-    expect(files.length).toBeGreaterThan(50);
-    const offenders = files.filter((f) => {
-      const src = readFileSync(f, "utf8");
-      return (
-        src.includes("@tauri-apps/plugin-opener") ||
-        src.includes("plugin:opener")
-      );
-    });
-    expect(offenders.map((f) => relative(repo, f))).toEqual([]);
-  });
-
-  it("package.json har ikke lenger opener-pluginen som avhengighet", () => {
-    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
-    expect(pkg.dependencies?.["@tauri-apps/plugin-opener"]).toBeUndefined();
-  });
-});
-
-describe("ingen vei til dialog-pluginen fra webviewet (PR-F)", () => {
-  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  // Nålene er stavet i to halvdeler så denne fila ikke treffer seg selv.
-  const needles = ["@tauri-apps/plugin" + "-dialog", "plugin:" + "dialog"];
-
-  function sources(dir: string): string[] {
-    return readdirSync(dir).flatMap((name) => {
-      const full = join(dir, name);
-      if (name === "node_modules" || name === "bindings") return [];
-      if (statSync(full).isDirectory()) return sources(full);
-      return /\.(ts|tsx|js|mjs)$/.test(name) ? [full] : [];
-    });
-  }
-
-  it("ingen kilde i app/, legacy/ eller e2e/ nevner dialog-pluginen", () => {
-    const files = [
-      ...sources(join(repo, "app")),
-      ...sources(join(repo, "legacy")),
-      ...sources(join(repo, "e2e")),
-    ];
-    expect(files.length).toBeGreaterThan(50);
-    const offenders = files.filter((f) => {
-      const src = readFileSync(f, "utf8");
-      return needles.some((n) => src.includes(n));
-    });
-    expect(offenders.map((f) => relative(repo, f))).toEqual([]);
-  });
-
-  it("package.json og låsfila har ikke lenger dialog-pluginen", () => {
-    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
-    expect(pkg.dependencies?.[needles[0]]).toBeUndefined();
-    expect(pkg.devDependencies?.[needles[0]]).toBeUndefined();
-    const lock = readFileSync(join(repo, "package-lock.json"), "utf8");
-    expect(lock).not.toContain(needles[0]);
   });
 });

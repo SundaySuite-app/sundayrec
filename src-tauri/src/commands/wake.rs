@@ -142,12 +142,7 @@ fn upcoming_for_wake(
     s: &sundayrec_core::settings::Settings,
     now: chrono::NaiveDateTime,
 ) -> Vec<chrono::NaiveDateTime> {
-    upcoming_dates(
-        s.active_slots(),
-        &s.special_recordings,
-        now,
-        WAKE_HORIZON_DAYS,
-    )
+    upcoming_dates(s.active_slots(), now, WAKE_HORIZON_DAYS)
 }
 
 /// The wake points we expect the OS to have scheduled, derived from the current
@@ -227,29 +222,6 @@ mod tests {
                 WAKE_LEAD_MINUTES
             )
             .is_empty()
-        );
-    }
-
-    #[test]
-    fn a_dated_special_still_wakes_a_disarmed_profile() {
-        // `active_slots` gates the WEEKLY plan only: a concert somebody entered
-        // by hand is not covered by «Ta opp automatisk», so the machine must
-        // still get out of bed for it — and the button must not claim the plan
-        // is switched off when it just armed one.
-        let mut s = sunday_profile(false);
-        s.special_recordings = vec![sundayrec_core::schedule::SpecialRecording {
-            id: None,
-            date: "2026-08-21".to_string(),
-            name: "Konsert".to_string(),
-            start: "19:00".to_string(),
-            stop: "20:30".to_string(),
-            device_id: None,
-        }];
-        let upcoming = upcoming_for_wake(&s, now());
-        assert_eq!(upcoming.len(), 1);
-        assert_eq!(
-            wake_idle_reason(s.auto_record_enabled, upcoming.len()),
-            None
         );
     }
 

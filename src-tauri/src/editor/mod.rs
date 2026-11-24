@@ -206,8 +206,8 @@ pub struct EditorExportRequest {
     /// Optional description (FFMETADATA `comment`).
     #[serde(default)]
     pub description: Option<String>,
-    /// Optional church name (FFMETADATA `album`) — `settings.churchName`, so an
-    /// episode is filed under the congregation wherever the tags are read.
+    /// Optional album tag (FFMETADATA `album`). The renderer sends none since F2
+    /// (the church name it used to carry is gone).
     #[serde(default)]
     pub album: Option<String>,
     /// Optional service date as `YYYY-MM-DD` (FFMETADATA `date`). Also the

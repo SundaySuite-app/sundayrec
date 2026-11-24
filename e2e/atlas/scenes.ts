@@ -29,8 +29,6 @@ import {
   OLD_SUNDAY_MS,
   PREV_SUNDAY_MS,
   settleVu,
-  SPECIAL_DATE,
-  stubClipboard,
 } from "./harness";
 import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
 
@@ -67,10 +65,9 @@ import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
  *    there is one recording engine now): it gates on `currentOs() === "win"`,
  *    and `navigator.userAgentData.platform` beats any user-agent override, so
  *    Desktop Chrome can never be Windows here.
- *  - **Native pickers** («Åpne fil…», «Velg mappe», profil-import/-eksport).
+ *  - **Native pickers** («Åpne fil…», «Velg mappe»).
  *    All of them are opened by Rust itself (`editor_open_recording`,
- *    `settings_pick_save_folder`, `settings_export_profile`/
- *    `settings_import_profile`), which no fixture answers. The state
+ *    `settings_pick_save_folder`), which no fixture answers. The state
  *    BEFORE the click is photographed; the state after does not exist out here.
  *  - **Playback.** `asset://` is dead outside Tauri, so the editor's playback
  *    notice is always the honest «ikke tilgjengelig» one and the play button
@@ -168,7 +165,6 @@ const CHOSEN = {
   ...SETTLED_SETTINGS,
   deviceId: "x32",
   deviceName: "Behringer X32",
-  churchName: "Bryn menighet",
   saveFolder: "/Users/frivillig/Opptak",
 };
 
@@ -276,42 +272,10 @@ async function openEditor(page: Page): Promise<void> {
   );
 }
 
-// ── Diagnose fixtures ───────────────────────────────────────────────────────
-
-function report(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    markdown: "# SundayRec-diagnose\n\nAlt vel.\n",
-    findings: [],
-    savedTo:
-      "/Users/frivillig/Library/Application Support/SundayRec/diagnose.md",
-    captureOk: true,
-    videoOk: null,
-    captureProbeSkipped: null,
-    ...over,
-  };
-}
-
-function finding(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    code: "SR-AUDIO-01",
-    severity: "critical",
-    title: "Ingen lydenhet funnet",
-    detail: "Verken Windows-lyd, ASIO eller ffmpeg fant en mikrofon/lydkort.",
-    hint: "Sjekk at lydkortet er tilkoblet og driveren installert.",
-    ...over,
-  };
-}
-
-/** The four commands one diagnose run makes, answered by a healthy machine. */
+/** The commands a healthy machine answers (devices, permissions, ffmpeg, wake). */
 const HEALTHY: Fixtures = {
   ...BASE,
   ...DEVICES,
-  run_diagnostics: report(),
-  diagnose_audio: {
-    dshow: ["Behringer X32", "MacBook Pro-mikrofon"],
-    wasapi: [],
-    wasapiAvailable: false,
-  },
   media_permissions: { camera: "authorized", microphone: "authorized" },
   ffmpeg_health: { available: true, version: "ffmpeg version 7.1", path: "/x" },
   // F2-I18N-R2: `satisfies` er poenget. `platform` sto på `"macos"` — ikke en
@@ -1141,7 +1105,7 @@ export const SCENES: Scene[] = [
     state: "Hele flaten — kirkeprofil øverst, Avansert under",
     recipe: "`?goto=settings:general` på en frisk maskin",
     boot: settingsScene(CHOSEN),
-    wait: "setup-church",
+    wait: "setup-language",
     full: true,
     narrow: true,
   },
@@ -1168,7 +1132,7 @@ export const SCENES: Scene[] = [
     id: "innstillinger--systemkortet",
     page: "Innstillinger",
     state:
-      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg, profil, diagnose",
+      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg",
     recipe: "rull til `advanced-help`",
     boot: settingsScene(CHOSEN, {
       ...HEALTHY,
@@ -1244,24 +1208,14 @@ export const SCENES: Scene[] = [
   {
     id: "innstillinger--tidsplan",
     page: "Innstillinger",
-    state: "Tidsplanen — to faste tider, ett spesialopptak, vekking",
-    recipe: "`slots` + `specialRecordings` + `wake_capabilities`",
+    state: "Tidsplanen — to faste tider, vekking",
+    recipe: "`slots` + `wake_capabilities`",
     boot: settingsScene({
       ...CHOSEN,
       autoRecordEnabled: true,
       slots: [
         { days: [0], start: "11:00", stop: "12:30", max: null },
         { days: [2], start: "19:00", stop: "20:30", max: null },
-      ],
-      specialRecordings: [
-        {
-          id: null,
-          date: SPECIAL_DATE,
-          name: "Julaften",
-          start: "16:00",
-          stop: "17:30",
-          deviceId: null,
-        },
       ],
     }),
     wait: "advanced-schedule",
@@ -1274,206 +1228,14 @@ export const SCENES: Scene[] = [
     id: "innstillinger--tidsplan-tom",
     page: "Innstillinger",
     state: "Tidsplanen — ingen faste tider ennå",
-    recipe: "`slots: []`, `specialRecordings: []`",
+    recipe: "`slots: []`",
     boot: settingsScene({
       ...CHOSEN,
       slots: [],
-      specialRecordings: [],
     }),
     wait: "advanced-schedule",
     act: async (page) => {
       await page.getByTestId("advanced-schedule").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-
-  // ── Diagnoseraden (V1/PR2) ────────────────────────────────────────────────
-  {
-    id: "diagnose--hvile",
-    page: "Innstillinger › Diagnose",
-    state: "I hvile — «Kjør» og «Test-opptak», ingenting annet",
-    recipe: "diagnosen åpner en enhet, så den kjører aldri av seg selv",
-    boot: settingsScene({ ...CHOSEN, deviceName: "Behringer X32" }),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-      await expect(page.getByTestId("adv-diagnose-result")).toHaveCount(0);
-    },
-  },
-  {
-    id: "diagnose--resultat",
-    page: "Innstillinger › Diagnose",
-    state: "Resultatet — fem statusrader, funn, enhetsliste, kopiknapp",
-    recipe: "`run_diagnostics` med tre funn, så klikk `adv-diagnose-run`",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: report({
-          findings: [
-            finding({
-              code: "SR-DISK-01",
-              severity: "warning",
-              title: "Marsboere oppdaget",
-              hint: "Ikke få panikk.",
-              detail: "Bare 4,2 GB ledig på /Users/frivillig/Opptak.",
-            }),
-            finding({
-              code: "SR-PERM-01",
-              severity: "critical",
-              detail: "macOS nekter mikrofontilgang for SundayRec.",
-            }),
-            finding({
-              // UKJENT kode ⇒ motorens egen prosa står, som den skal.
-              code: "SR-FRA-FRAMTIDEN-01",
-              severity: "warning",
-              title: "Noe helt nytt fra en nyere bakende",
-              detail: "En detalj bare motoren kjenner.",
-              hint: "Motorens eget råd.",
-            }),
-          ],
-        }),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-result")).toBeVisible();
-      // Enhetslista er en `<details>` og står lukket — den er halve poenget
-      // med raden, så den åpnes før lukkeren går.
-      await page.getByTestId("adv-diagnose-devices").locator("summary").click();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--proven-hoppet-over",
-    page: "Innstillinger › Diagnose",
-    state: "Lydprøven ble ikke kjørt — den tredje tilstanden, ærlig",
-    recipe: "`captureOk: null` + `captureProbeSkipped` med motorens egen grunn",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: report({
-          captureOk: null,
-          captureProbeSkipped: "en annen klient holder enheten",
-        }),
-        diagnose_audio: {
-          dshow: ["MacBook Pro-mikrofon"],
-          wasapi: [],
-          wasapiAvailable: false,
-        },
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(
-        page.getByTestId("adv-diagnose-probe-skipped"),
-      ).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--ipc-ring",
-    page: "Innstillinger › Diagnose",
-    state: "Kommandoer som ikke svarte denne økten",
-    recipe: "la `get_disk_space` og `recordings_list` kaste, så kjør",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        get_disk_space: fn(`() => { throw new Error("disken svarte ikke") }`),
-        recordings_list: fn(`() => { throw new Error("basen er låst") }`),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-ipc")).toBeVisible();
-      await page.getByTestId("adv-diagnose-ipc").locator("summary").click();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--feilet",
-    page: "Innstillinger › Diagnose",
-    state: "Diagnosen kunne ikke kjøres",
-    recipe: "`run_diagnostics` kaster — den går utenom `call()`s fallback",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: fn(`() => { throw new Error("basen svarte ikke") }`),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-failed")).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--testopptak",
-    page: "Innstillinger › Diagnose",
-    state: "Test-opptaket ble gjennomført",
-    recipe: "`run_test_recording` → `{ ok: true, signal: 'normal' }`",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_test_recording: {
-          ok: true,
-          error: null,
-          sizeBytes: 1_000_000,
-          signal: "normal",
-        },
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-test").click();
-      await expect(page.getByTestId("adv-diagnose-test-result")).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--kopiert",
-    page: "Innstillinger › Diagnose",
-    state: "«Kopier full rapport» — kvitteringen som forsvinner av seg selv",
-    recipe: "stubbet utklippstavle + klikk `adv-diagnose-copy`",
-    boot: settingsScene({ ...CHOSEN, deviceName: "Behringer X32" }),
-    pre: (page) => stubClipboard(page),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await page.getByTestId("adv-diagnose-copy").click();
-      // Aldri på ORDET: scenen fotograferes på begge språk, og en assertion på
-      // norsk tekst gjør den engelske kjøringen rød uten at noe er galt.
-      await expect(
-        page.locator('[data-testid^="toast-"][data-testid$="-message"]'),
-      ).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--fra-menylinjen",
-    page: "Innstillinger › Diagnose",
-    state: "Menylinjens «Kjør diagnose» — bytter skjerm OG kjører",
-    recipe: "start på OPPTAK, `emitEvent('tray://action', 'run-diagnostics')`",
-    boot: {
-      fixtures: HEALTHY,
-      settings: { ...CHOSEN, deviceName: "Behringer X32" },
-      goto: "home",
-    },
-    wait: "record-source",
-    act: async (page) => {
-      await emitEventAt(page, "tray://action", "run-diagnostics");
-      await expect(page.getByTestId("adv-diagnose-result")).toBeVisible();
     },
     full: true,
   },
@@ -1542,7 +1304,7 @@ export const SCENES: Scene[] = [
     act: async (page) => {
       await skipGate(page);
       await nextSteps(page, 2);
-      await expect(page.getByTestId("setup-church")).toBeVisible();
+      await expect(page.getByTestId("setup-language")).toBeVisible();
     },
     full: true,
   },
@@ -1573,7 +1335,6 @@ export const SCENES: Scene[] = [
       settings: {
         ...FIRST_RUN_SETTINGS,
         saveFolder: "/Users/frivillig/Opptak",
-        churchName: "Bryn menighet",
       },
     },
     wait: "first-run",

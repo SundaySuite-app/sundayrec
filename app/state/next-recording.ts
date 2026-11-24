@@ -79,8 +79,7 @@ let wakeArmed: boolean | null = null;
  */
 function derive(): void {
   const s = settings.value;
-  const specials = s.specialRecordings ?? [];
-  const next = buildNext(lastNextIso, specials);
+  const next = buildNext(lastNextIso);
   nextRecording.value = {
     ...nextRecording.peek(),
     next,

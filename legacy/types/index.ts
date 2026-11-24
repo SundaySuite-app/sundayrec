@@ -13,20 +13,18 @@ import type { UpdateChannel } from '../bindings/UpdateChannel'
 import type { Settings as SettingsGen } from '../bindings/Settings'
 import type { DeviceChannels } from '../bindings/DeviceChannels'
 import type { ScheduleSlot } from '../bindings/ScheduleSlot'
-import type { SpecialRecording } from '../bindings/SpecialRecording'
 export type {
   ChannelMode,
   FileFormat,
   FilenamePattern,
   DeviceChannels,
   ScheduleSlot,
-  SpecialRecording,
   ChapterMarker,
   UpdateChannel,
 }
 // ────────────────────────────────────────────────────────────────────────────
 
-// DeviceChannels / ScheduleSlot / SpecialRecording are generated (re-exported above).
+// DeviceChannels / ScheduleSlot are generated (re-exported above).
 
 export interface RecordingEntry {
   /**

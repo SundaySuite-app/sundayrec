@@ -3,12 +3,12 @@
  *
  * Fram til S2 var dette ÉN flat liste under «Avansert», uten overskrifter. Det
  * var riktig så lenge listen var kort; nå har den tidsplan, utlegging,
- * opptaksvalg, oppdateringer, feilsøking og lisenser, og en frivillig som
+ * opptaksvalg, oppdateringer, logg og lisenser, og en frivillig som
  * leter etter «flere tider» skal ikke måtte lese seg gjennom alt. Hver
  * seksjon har en overskrift og én setning (`SettingsSection`), og
  * innholdslista øverst på siden (`SetupPage`) hopper mellom dem.
  *
- * Tidsplanen er ikke «avansert»: en frivillig trenger den. Kirkeprofilen
+ * Tidsplanen er ikke «avansert»: en frivillig trenger den. Språkvalget
  * (første seksjon) bor i `SetupPage`.
  *
  ## Hva som IKKE er her, og hvorfor
@@ -34,8 +34,6 @@
  *   Mikseren bygges i P4, så knappen ville ikke åpnet noe. En død knapp lærer
  *   en frivillig at knappene her ikke er til å stole på, så raden kommer
  *   sammen med mikseren.
- * - **Månedskalenderen** — spesialopptak er en LISTE her, ikke et rutenett. Se
- *   `advanced/ScheduleCard.tsx` for hva som ble utelatt.
  *
  * ## Hvorfor rader og ikke et trekkspill
  *
@@ -60,10 +58,8 @@ import { Card } from "../../ui/Card/Card";
 import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
-import { DiagnoseRow } from "./advanced/DiagnoseRow";
 import { LicensesCard } from "./advanced/LicensesCard";
-import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
-import { PublishCard } from "./advanced/PublishCard";
+import { LogRow } from "./advanced/MaintenanceRows";
 import { ScheduleCard } from "./advanced/ScheduleCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";
 import { UpdateRow } from "./advanced/UpdateRow";
@@ -87,7 +83,7 @@ const AUTO_DELETE_GUARD_DAYS = 30;
 
 export function AdvancedPage() {
   // Nivå 1 og de gamle dyplenkene peker på et sted INNE i denne lista
-  // (`?goto=settings:general` → toppen, «Flere tider …» → `schedule`). Uten
+  // (`?goto=settings:general` → toppen, tidsplanen → `schedule`). Uten
   // dette lander man bare på toppen og må lete etter det man klikket seg fram
   // til.
   const anchor = route.value.anchor;
@@ -106,14 +102,6 @@ export function AdvancedPage() {
         intro={t("app.setup.advanced.schedDesc")}
       >
         <ScheduleCard />
-      </SettingsSection>
-
-      <SettingsSection
-        id="sec-publish"
-        sectionKey="publish"
-        intro={t("app.setup.advanced.publishDesc")}
-      >
-        <PublishCard />
       </SettingsSection>
 
       <SettingsSection
@@ -192,14 +180,6 @@ export function AdvancedPage() {
       >
         <Card testId="advanced-help">
           <LogRow />
-          <ProfileRow />
-          {/*
-            Diagnosen sist, og det er rekkefølgen som mener noe: loggen og
-            profilen er filer man HENTER, diagnosen er et spørsmål man STILLER.
-            Den er også den eneste raden her som folder ut et svar under seg,
-            så alt annet i kortet blir stående der det var når den gjør det.
-          */}
-          <DiagnoseRow />
         </Card>
       </SettingsSection>
 

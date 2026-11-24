@@ -18,7 +18,7 @@ describe("the sequence", () => {
       "sound",
       "folder",
       "quality",
-      "church",
+      "language",
       "notify",
     ]);
     expect(FIRST_RUN_STEP_COUNT).toBe(5);

@@ -736,12 +736,10 @@ pub struct ChapterMarker {
 /// Optional recording metadata for the export — title/speaker/description plus
 /// chapters. Mirrors the `RecordingMetadata` shape the editor consumed.
 ///
-/// `album` and `date` joined with «Innhold» in the export: the church name and
-/// the service date, so a podcast app or SoundCloud that reads the tags files
-/// the episode under the congregation and the right Sunday. Both are plain
-/// strings the renderer already has — `settings.churchName` and the
-/// recording's `startedAt` as `YYYY-MM-DD` — and both are omitted when empty,
-/// like the other three.
+/// `album` and `date` joined with «Innhold» in the export: an album tag (the
+/// renderer sends none since F2) and the service date, so a podcast app that
+/// reads the tags files the episode under the right Sunday. Both are plain
+/// strings and both are omitted when empty, like the other three.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RecordingMetadata {
     pub title: Option<String>,

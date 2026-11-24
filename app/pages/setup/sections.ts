@@ -3,14 +3,13 @@
  * innholdslista øverst hopper til.
  *
  * `id` er elementets `id` (ikke et rute-anker: `route.anchor` peker på kortene
- * INNE i seksjonene, som `engine`, `schedule` og `publish`). `title` er
+ * INNE i seksjonene, som `engine` og `schedule`). `title` er
  * katalognøkkelen til overskriften.
  */
 
 export const SETTINGS_SECTIONS = [
-  { id: "sec-church", key: "church" },
+  { id: "sec-language", key: "language" },
   { id: "sec-schedule", key: "schedule" },
-  { id: "sec-publish", key: "publish" },
   { id: "sec-recording", key: "recording" },
   { id: "sec-updates", key: "updates" },
   { id: "sec-help", key: "help" },

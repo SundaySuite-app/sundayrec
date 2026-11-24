@@ -22,9 +22,8 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 
 Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
 finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
-export with title/speaker/description tags), «Legg ut» on the export
-receipt (the church's upload page — SoundCloud by default — one click away,
-with the text ready to copy; the app itself uploads nothing), a native
+export with title/speaker/description tags; the app itself uploads
+nothing), a native
 notification on the machine when a take fails, OS wake-from-sleep
 scheduling, and a menubar/tray. Most of that is in the **default** build; only the subsystems
 that need an absent SDK or an owner decision are behind default-off cargo

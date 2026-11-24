@@ -330,7 +330,7 @@ async function openFileNow(
   // 3b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
   // navn på en helligdag. To raske oppslag, og EKSPORTERING skal ha dem før
   // noen rekker å se feltene. Vokter selv på `seq`.
-  await loadExportContent(token, E.startedAtMs, seq);
+  await loadExportContent(token, seq);
   if (seq !== E.loadSeq) return;
 
   loadPhase.value = null;

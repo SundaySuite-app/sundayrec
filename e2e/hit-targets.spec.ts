@@ -393,11 +393,11 @@ test.describe("treffflater", () => {
       expect(t.boxH, `advanced/${t.id}: boksen står stille`).toBe(22);
     }
     // F1-UX1/W2: den TETTESTE siden i appen er også den med flest ghost-
-    // knapper (kopier, forhåndsvis, eksporter/importer, diagnose, …) — samme
+    // knapper (kopier, forhåndsvis, vis, fjern, …) — samme
     // gulv, og `toBeGreaterThanOrEqual` av samme grunn som toggle-tallet over:
     // denne siden vokser oftest.
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    expect(ghosts.length).toBeGreaterThanOrEqual(9);
+    expect(ghosts.length).toBeGreaterThanOrEqual(5);
     for (const g of ghosts) {
       expect(g.hitH, `advanced/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
         GHOST_FLOOR - PROBE_STEP,

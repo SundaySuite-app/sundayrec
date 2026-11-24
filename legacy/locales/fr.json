@@ -7,8 +7,7 @@
       "setup": "Réglages"
     },
     "rail": {
-      "label": "Sections de l’application",
-      "churchUnset": "Pas encore configuré"
+      "label": "Sections de l’application"
     },
     "status": {
       "ready": "Tout est prêt",
@@ -97,7 +96,7 @@
       "q1": "Quelle source audio ?",
       "q2": "Où sauvegarder les enregistrements ?",
       "q3": "Quelle qualité ?",
-      "q4": "Quelle église ?",
+      "q4": "Quelle langue ?",
       "q5": "Qui est averti si quelque chose ne va pas ?",
       "notSetUp": "Pas configuré",
       "onMachine": "Sur l’ordinateur",
@@ -157,15 +156,11 @@
       },
       "qualityCustom": "Personnalisé · {format} {bitrate}",
       "qualityCustomDesc": "Cette combinaison ne fait pas partie des trois. Choisissez une carte pour changer.",
-      "church": {
-        "lede": "Le nom et la langue que l’application utilise.",
-        "name": "Paroisse ou église",
-        "nameDesc": "Affiché en haut de l’application.",
-        "placeholder": "Par exemple paroisse de Bryn",
-        "languageLabel": "Langue de l’application",
-        "languageDesc": "Le changement est immédiat.",
-        "language": "Langue : {language}",
-        "languagePaused": "Cette langue est temporairement indisponible — l’application s’affiche en {language} pour l’instant."
+      "language": {
+        "lede": "La langue que l’application utilise.",
+        "label": "Langue de l’application",
+        "desc": "Le changement est immédiat.",
+        "paused": "Cette langue est temporairement indisponible — l’application s’affiche en {language} pour l’instant."
       },
       "notify": {
         "lede": "L’ordinateur vous prévient toujours quand quelque chose ne va pas — vous qui êtes devant.",
@@ -329,49 +324,22 @@
         "logEmpty": "Le journal d’erreurs est encore vide.",
         "logCopied": "Journal d’erreurs copié",
         "logCopyFailed": "Impossible de copier le journal d’erreurs.",
-        "profile": "Transférer la configuration vers un autre ordinateur",
-        "profileDesc": "Enregistrez les réglages dans un fichier, puis chargez-les sur l’autre ordinateur. Les mots de passe ne sont jamais inclus.",
         "licenses": "Licences",
         "licensesDesc": "Les logiciels tiers sur lesquels SundayRec repose, et ffmpeg (GPL) avec l'emplacement de son code source.",
         "licensesOpen": "Afficher les licences",
         "licensesClose": "Fermer",
         "licensesFailed": "Le texte des licences est introuvable. Essayez de réinstaller l'application.",
         "licensesFrameTitle": "Licences et mentions des tiers",
-        "export": "Enregistrer la configuration",
-        "import": "Charger la configuration",
-        "importTitle": "Charger la configuration ?",
-        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier que vous choisissez. La source audio, la caméra, le dossier des enregistrements et « Lancer automatiquement avec l’ordinateur » restent tels qu’ils sont ici. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
-        "importConfirm": "Oui, charger la configuration",
-        "exported": "La configuration a été enregistrée.",
-        "exportFailed": "Impossible d’enregistrer la configuration : {err}",
-        "imported": "La configuration a été chargée.",
-        "importFailed": "Impossible de charger la configuration : {err}",
-        "importNotProfile": "Ce fichier n’est pas une configuration SundayRec, ou il est endommagé. Rien n’a été modifié.",
-        "importTooLarge": "Ce fichier est trop volumineux pour être une configuration. Rien n’a été modifié.",
-        "schedTitle": "Autres horaires et enregistrements ponctuels",
+        "schedTitle": "Autres horaires",
         "schedDesc": "L’horaire hebdomadaire se règle sur la page Enregistrement, dans la carte « Enregistrer automatiquement ». Ici, vous en ajoutez d’autres.",
         "schedTimes": "Horaires hebdomadaires",
         "schedNone": "Pas encore d’horaires hebdomadaires.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Ajouter un horaire hebdomadaire",
+        "schedAddSave": "Ajouter",
+        "wakeTestBlocked": "Impossible pendant un enregistrement.",
         "schedRemove": "Retirer",
         "schedFirstIsSetup": "Le premier horaire est celui que vous voyez dans la carte « Enregistrer automatiquement » sur la page Enregistrement.",
-        "specialsTitle": "Enregistrements ponctuels",
-        "specialsDesc": "Une seule date — un concert, une veillée de Noël.",
-        "specialsNone": "Aucun enregistrement ponctuel prévu.",
-        "specialDate": "Date",
-        "specialStart": "Début",
-        "specialAdd": "Ajouter",
-        "specialRemove": "Retirer",
-        "specialDefaultName": "Culte",
-        "specialRow": "{date} · {start}–{stop}",
-        "specialNeedsDate": "Choisissez d’abord une date.",
-        "specialPast": "La date est passée — aucun enregistrement ne démarrera.",
-        "specialDeviceSame": "Comme l’enregistrement habituel",
-        "specialDevice": "Source audio de cet enregistrement",
-        "specialDeviceHint": "Choisissez une source audio à part si cet enregistrement doit venir d’autre chose que d’habitude. Si elle n’est pas branchée au démarrage, la source habituelle est utilisée — et vous êtes prévenu.",
-        "specialRowDevice": "{date} · {start}–{stop} · {device}",
-        "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (non connecté actuellement)",
         "wake": "Sortir l’ordinateur de veille",
         "wakeDesc": "Sans cela, l’ordinateur doit être allumé au moment où l’enregistrement démarre.",
         "autoDeleteConfirmBody": "Les enregistrements plus anciens que cela sont déplacés vers la corbeille. En dessous de 30 jours, un culte peut disparaître avant que quelqu’un ait eu le temps de le télécharger.",
@@ -430,175 +398,20 @@
           "onBattery": "sur batterie"
         },
         "audioTech": "À propos de la technologie audio",
-        "diagnoseReportWhere": "Envoyez le rapport à la personne qui vous aide, ou à dev@sundaysuite.app.",
-        "publishDesc": "Après un export, l’app peut ouvrir la page sur laquelle vous publiez, avec le titre et la description prêts à copier. SundayRec n’envoie rien lui-même.",
-        "publishWhere": "Où publiez-vous ?",
-        "publishChannelName": {
-          "custom": "Votre propre page",
-          "none": "Aucune"
-        },
-        "publishChannelDesc": {
-          "soundcloud": "Souvent aussi votre podcast",
-          "youtube": "Envoi dans YouTube Studio",
-          "spotify": "Podcast dans Spotify for Creators",
-          "custom": "Par exemple WordPress ou votre hébergeur de podcast",
-          "none": "Le récapitulatif n’affiche que le fichier"
-        },
-        "publishUrl": "Lien vers la page d’envoi",
-        "publishUrlDesc": "Doit commencer par https://",
-        "publishUrlNotHttps": "Le lien doit commencer par https://",
-        "publishUrlInvalid": "Cela ne ressemble pas à une adresse web",
-        "publishTemplate": "Description type",
-        "publishTemplateDesc": "Remplie à l’export, où elle peut être modifiée. {title}, {speaker}, {date} et {church} sont remplacés.",
-        "publishTemplatePlaceholder": "Sermon de {church}, {date}. Orateur : {speaker}.",
         "audioTechNote": "Le texte ci-dessous est une mention de licence de Steinberg et reste en anglais."
       },
       "sections": {
         "nav": "Aller à",
-        "church": "Paroisse et langue",
+        "language": "Langue",
         "schedule": "Planning",
-        "publish": "Publication",
         "recording": "L'enregistrement",
         "recordingDesc": "Comment l'enregistrement lui-même doit se dérouler : le son d'avant le Démarrage, l'arrêt au silence, la durée maximale, la division en plusieurs fichiers et la suppression des anciens enregistrements.",
         "updates": "Mises à jour et confidentialité",
         "updatesDesc": "Vous décidez si l'application cherche de nouvelles versions et si elle envoie des statistiques anonymes.",
         "help": "Aide et dépannage",
-        "helpDesc": "Si quelque chose ne fonctionne pas : vérifier l’ordinateur, récupérer le journal d’erreurs, ou transférer la configuration vers un autre ordinateur.",
+        "helpDesc": "Si quelque chose ne fonctionne pas : récupérer le journal d’erreurs.",
         "about": "À propos",
         "aboutDesc": "Licences et mentions des logiciels sur lesquels SundayRec est construit."
-      }
-    },
-    "diagnose": {
-      "title": "Vérifier l’ordinateur",
-      "desc": "Vérifie la source audio, les autorisations, le moteur d’enregistrement et le disque, et produit un rapport à transmettre.",
-      "run": "Lancer la vérification",
-      "running": "Vérification …",
-      "failed": "La vérification n’a pas pu s’exécuter : {err}",
-      "probeSkipped": "Le test du son n’a pas été lancé : {why}",
-      "copy": "Copier le rapport complet",
-      "copied": "Le rapport est copié",
-      "copyFailed": "Impossible de copier le rapport",
-      "savedTo": "Enregistré dans",
-      "devicesTitle": "Toutes les sources audio que l’application voit",
-      "noDevices": "Aucune source audio trouvée",
-      "ipcTitle": "Parties de l’application qui n’ont pas répondu cette fois ({n})",
-      "test": "Enregistrement d’essai (10 s)",
-      "testRunning": "Enregistrement du test…",
-      "testBlocked": "Impossible pendant un enregistrement.",
-      "testOk": "L’enregistrement d’essai s’est bien passé — {signal}.",
-      "testFail": "L’enregistrement d’essai a échoué : {why}",
-      "r": {
-        "devices": "Sources audio trouvées",
-        "selected": "Source audio choisie",
-        "mic": "Accès au microphone",
-        "engine": "Moteur d’enregistrement (ffmpeg)",
-        "probe": "Test du son"
-      },
-      "v": {
-        "notFound": "introuvable",
-        "defaultDevice": "Valeur par défaut de l’ordinateur",
-        "ffmpegOk": "Disponible",
-        "ffmpegMissing": "Introuvable",
-        "unknown": "Impossible à déterminer",
-        "probeSkipped": "Non exécuté",
-        "probeOk": "Son reçu",
-        "probeFail": "Aucun son reçu",
-        "auth": {
-          "authorized": "Accordé",
-          "denied": "Refusé",
-          "restricted": "Bloqué par un administrateur système",
-          "notDetermined": "Pas encore demandé",
-          "unknown": "Impossible à déterminer sur cette plateforme"
-        }
-      },
-      "testErr": {
-        "deviceNotFound": "source audio introuvable",
-        "permissionDenied": "accès au microphone refusé",
-        "ffmpegError": "le moteur d’enregistrement a échoué",
-        "noAudio": "aucun son dans l’enregistrement"
-      },
-      "testSig": {
-        "silent": "complètement silencieux",
-        "low": "signal faible",
-        "normal": "niveau normal"
-      },
-      "f": {
-        "ffmpeg01": {
-          "title": "Le moteur d’enregistrement (ffmpeg) est absent",
-          "hint": "Réinstallez SundayRec — le moteur d’enregistrement est fourni avec l’application."
-        },
-        "audio01": {
-          "title": "Aucune source audio trouvée",
-          "hint": "Vérifiez que la table de mixage ou la carte son est branchée et que son pilote est installé. Sur un PC partagé : le service audio est-il actif ?"
-        },
-        "audio02": {
-          "title": "La source audio choisie est introuvable",
-          "hint": "Branchez la source audio, ou choisissez-en une autre sous « Quelle source audio ? » sur la page Enregistrement."
-        },
-        "rate01": {
-          "title": "Une fréquence d’échantillonnage fixe est sélectionnée",
-          "hint": "Si la carte son tourne à une autre fréquence, ffmpeg rééchantillonne et vous pouvez avoir des saccades. Choisissez de nouveau « Auto », sauf si vous avez une raison précise."
-        },
-        "video01": {
-          "title": "La vidéo est activée, mais aucune caméra n’a été trouvée",
-          "hint": "Branchez la caméra, ou désactivez « Inclure la vidéo » sur la page Enregistrement."
-        },
-        "video02": {
-          "title": "La caméra n’a donné aucune image",
-          "hint": "Vérifiez que la caméra est branchée, qu’aucun autre programme ne l’utilise, et que l’application a accès à la caméra."
-        },
-        "disk01": {
-          "title": "Peu d’espace libre",
-          "hint": "Libérez de l’espace ou choisissez un autre dossier d’enregistrement avant un long enregistrement."
-        },
-        "disk02": {
-          "title": "Impossible d’écrire dans le dossier d’enregistrement",
-          "hint": "Choisissez un dossier dans lequel vous pouvez écrire, sous « Où sauvegarder les enregistrements ? » sur la page Enregistrement."
-        },
-        "perm01": {
-          "title": "L’accès au microphone est refusé",
-          "hint": "Accordez l’accès dans Réglages Système → Confidentialité et sécurité → Microphone, puis redémarrez l’application."
-        },
-        "perm02": {
-          "title": "L’accès à la caméra est refusé",
-          "hint": "Accordez l’accès dans Réglages Système → Confidentialité et sécurité → Caméra, puis redémarrez l’application."
-        },
-        "engine01": {
-          "title": "Le dernier enregistrement s’est terminé par une erreur",
-          "hint": "Le code d’erreur est sur la ligne au-dessus. Faites un enregistrement d’essai pour voir si cela fonctionne maintenant."
-        },
-        "capture01": {
-          "title": "Le dernier enregistrement montrait des signes de saccades",
-          "hint": "Fermez les autres programmes lourds et vérifiez le câble et l’alimentation de la carte son. Faites ensuite un nouvel enregistrement et voyez si les chiffres baissent."
-        },
-        "capture02": {
-          "title": "Le test du son n’a reçu aucun son",
-          "hint": "Vérifiez que la bonne source audio est choisie sous « Quelle source audio ? » sur la page Enregistrement, que le câble est branché et qu’aucun autre programme n’utilise le microphone. Relancez ensuite la vérification."
-        },
-        "crash01": {
-          "title": "L’application a planté",
-          "hint": "Transmettez ce rapport — ce sont les fichiers de plantage qui permettent de trouver l’erreur."
-        },
-        "task01": {
-          "title": "Des tâches en arrière-plan ont dû être redémarrées",
-          "hint": "L’application les a relancées d’elle-même, donc rien ne s’est arrêté. Si cela se répète, joignez ce rapport — les noms ci-dessus disent quelle partie est instable."
-        },
-        "log01": {
-          "title": "Le journal d’erreurs n’est pas actif",
-          "hint": "En général, cela signifie que le dossier de l’application n’a pas pu être créé. Redémarrez l’application ; si cela persiste, vérifiez l’espace disque et les autorisations."
-        },
-        "log02": {
-          "title": "Des parties du journal d’erreurs manquent",
-          "hint": "Le journal d’erreurs est incomplet parce que l’enregistrement a eu la priorité — c’est le bon choix. Un disque lent mérite un coup d’œil avant le prochain long enregistrement."
-        },
-        "ok": {
-          "title": "Aucun problème détecté",
-          "hint": "Vous êtes prêt à enregistrer."
-        },
-        "recLoss": {
-          "title": "Il manque du son au dernier enregistrement",
-          "hint": "C’est grave : l’enregistrement a perdu du son en route. Fermez les autres programmes lourds, branchez la carte son directement sur l’ordinateur (pas via un hub), et signalez-le avec ce rapport — les chiffres ici sont la preuve."
-        }
       }
     },
     "language": {
@@ -781,17 +594,7 @@
       "contentSpeakerPlaceholder": "Qui a parlé ?",
       "contentDescription": "Description",
       "contentDescriptionPlaceholder": "Passage biblique, thème ou une ligne sur l’église",
-      "contentHint": "Tout est facultatif. Avec un titre, le fichier porte ce nom – c’est ce que SoundCloud et les sites similaires proposent lors de l’envoi.",
-      "publishTitle": "Publier sur {channel}",
-      "publishTitleCustom": "Publier",
-      "publishOpen": "Ouvrir {channel}",
-      "publishOpenCustom": "Ouvrir la page d’envoi",
-      "publishHint": "Faites glisser le fichier sur la page qui s’ouvre, puis collez le titre et la description.",
-      "publishCopy": "Copier",
-      "publishCopied": "Copié",
-      "publishCopyFailed": "Impossible de copier. Sélectionnez le texte et copiez-le vous-même.",
-      "publishNothing": "Aucun lien https valide dans Réglages → Publication ; rien n’a été ouvert.",
-      "publishFailed": "Impossible d’ouvrir la page. Ouvrez-la vous-même dans le navigateur."
+      "contentHint": "Tout est facultatif. Avec un titre, le fichier porte ce nom – c’est ce que SoundCloud et les sites similaires proposent lors de l’envoi."
     },
     "span": {
       "hours": "{h} h",
@@ -808,9 +611,6 @@
       "missedDesc": "L’ordinateur était éteint. L’enregistrement automatique exige qu’il soit allumé ou en veille.",
       "missedWhy": "Que puis-je faire ?",
       "missedHelp": "Laissez l’ordinateur allumé, ou laissez-le en veille — SundayRec le réveille dix minutes avant l’enregistrement. S’il est complètement éteint, rien ne peut le démarrer. Vérifiez aussi que « Lancer automatiquement avec l’ordinateur » est activé dans la carte « Enregistrer automatiquement » sur la page Enregistrement, pour que l’application soit relancée après un redémarrage.",
-      "emailRemovedTitle": "Les alertes par e-mail ont été supprimées",
-      "emailRemovedDesc": "SundayRec n’envoie plus d’e-mail quand quelque chose ne va pas. L’ordinateur vous prévient par une notification à l’écran — elle ne peut pas être désactivée.",
-      "emailRemovedOk": "Compris",
       "globalErrorTitle": "Quelque chose s’est mal passé"
     }
   },
@@ -829,8 +629,7 @@
       "diskLow": "Seulement {gb} Go libres sur le disque d’enregistrement — peut-être pas assez pour un enregistrement entier.",
       "micDenied": "L’accès au microphone n’est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone.",
       "cameraDenied": "L’accès à la caméra n’est pas accordé.",
-      "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours.",
-      "specialDeviceMissing": "Le périphérique audio « {device} » de l’enregistrement ponctuel n’est pas connecté. S’il n’est pas connecté avant le début, le périphérique audio habituel sera utilisé."
+      "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours."
     },
     "preflightErrors": {
       "one": "{n} erreur à corriger avant l’enregistrement",
@@ -900,11 +699,10 @@
     "saveFailed": "Impossible d’enregistrer le réglage"
   },
   "error": {
-    "tryAgainHint": "Si le problème persiste, ouvrez Réglages → Aide et dépannage → Vérifier l’ordinateur, ou redémarrez l’application.",
+    "tryAgainHint": "Si le problème persiste, ouvrez Réglages → Aide et dépannage et récupérez le journal d’erreurs, ou redémarrez l’application.",
     "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet.",
     "settingsLoadFailed": "Impossible de lire les réglages — affichage des valeurs par défaut. Les modifications effectuées maintenant peuvent être perdues.",
     "settingsLoadRetry": "Réessayer",
-    "settingsMigrationCorrupt": "Les réglages de la version précédente n’ont pas pu être lus — l’application démarre avec les valeurs par défaut.",
     "recordingsFolderMissing": "Le dossier des enregistrements n’existe pas encore. Il est créé au démarrage du premier enregistrement. S’il se trouve sur un disque externe, vérifiez que le disque est branché."
   },
   "editor": {
@@ -1070,7 +868,7 @@
     "errorFfmpegMissing": "Erreur interne : le composant d’enregistrement est manquant — réinstallez l’application",
     "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes",
     "errorStartTimeout": "L’enregistrement n’a pas démarré à temps — vérifiez que le microphone (et la caméra) sont branchés, et que SundayRec est autorisé sous Réglages Système → Confidentialité et sécurité",
-    "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète.",
+    "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et récupérez le journal d’erreurs (Réglages → Aide et dépannage) si cela se répète.",
     "errorVideoCapture": "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
     "errorCameraFormat": "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez.",
     "errorCameraPermission": "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra",
@@ -1108,7 +906,7 @@
     "promptTitle": "Envoyer des statistiques d’utilisation anonymes ?",
     "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à SundaySuite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Mises à jour et confidentialité.",
     "rePromptTitle": "Nous vous reposons la question",
-    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
+    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons pour être sûrs que votre réponse correspond à ce qui est partagé maintenant : uniquement des compteurs anonymes et des chiffres techniques sur les enregistrements (si le son a décroché, combien de temps, et ce qui a échoué) — jamais de son, de noms, de fichiers ni de texte. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },
   "tooltip": {
     "unsavedChanges": "Modifications non enregistrées",

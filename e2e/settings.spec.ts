@@ -70,14 +70,14 @@ test.describe("settings", () => {
     );
   });
 
-  test("the church profile fields round-trip into storage and survive a reload", async ({
+  test("the language setting round-trips into storage and survives a reload", async ({
     page,
   }) => {
-    // SMOKE-TEST §R7 settings completeness — R7-feltene (kirkeprofilen) må gå
+    // SMOKE-TEST §R7 settings completeness — en vanlig innstilling må gå
     // gjennom den samme etterslepende lagringen som alt annet og komme tilbake
-    // etter en full nedrivning, ikke bare bli stående i feltet.
+    // etter en full nedrivning, ikke bare bli stående i kontrollen.
     //
-    // D2: kirkeprofilen ER Innstillinger, øverst, sammen med Avansert — og
+    // D2: språkvalget ER Innstillinger, øverst, sammen med Avansert — og
     // tannhjulet er hele veien dit. Ingen rad å klikke seg gjennom først.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
@@ -85,32 +85,24 @@ test.describe("settings", () => {
       goto: "settings",
     });
 
-    const field = page.getByTestId("church-name-control-input");
+    const field = page.getByTestId("language-control-input");
     await expect(field).toBeVisible();
-    await field.fill("Betel Trondheim");
-    // Fritekst committer etterslept på input; blur skyller den ventende commit.
-    await field.blur();
+    await field.selectOption("en");
 
-    await expect(page.getByTestId("church-name-receipt")).toHaveText(
-      "Lagret ✓",
+    await expect(page.getByTestId("language-row-receipt")).toHaveText(
+      "Saved ✓",
     );
     await expect
-      .poll(async () => (await storedSettings(page)).churchName)
-      .toBe("Betel Trondheim");
+      .poll(async () => (await storedSettings(page)).language)
+      .toBe("en");
 
     await page.reload();
     await page.waitForFunction(
       () => typeof (window as any).showPage === "function",
     );
     // Etter en reload står `?goto=settings` fortsatt i URL-en, så vi er tilbake
-    // på flaten — og feltet bærer det som faktisk ble lagret.
-    await expect(page.getByTestId("church-name-control-input")).toHaveValue(
-      "Betel Trondheim",
-    );
-    // Og topplinja, som leser den samme verdien fra det samme signalet.
-    await expect(page.getByTestId("shell-church")).toHaveText(
-      "Betel Trondheim",
-    );
+    // på flaten — og kontrollen bærer det som faktisk ble lagret.
+    await expect(page.getByTestId("language-control-input")).toHaveValue("en");
   });
 
   test("the value survives a full reload, not just a re-render", async ({
@@ -172,14 +164,14 @@ test.describe("settings", () => {
     }
 
     // `settings:general` er den gamle System-fanen, og den er hele
-    // Innstillinger-flaten nå: kirkeprofilen og Avansert, uten en fane-akse.
+    // Innstillinger-flaten nå: språkvalget og Avansert, uten en fane-akse.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings:general",
     });
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
-    await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("setup-language")).toBeVisible();
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
   });
 });

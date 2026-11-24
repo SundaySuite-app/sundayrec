@@ -89,8 +89,8 @@ som hadde e-post slått på (smoke §8).
   verify. **(R7 update)** the tray is now actually **installed** in `setup()`
   under `--features tray`: `tray::install` builds the `TrayIcon` from the
   unit-tested core menu model and wires `on_menu_event` → `handle_menu_event`
-  (Stop calls `RecorderEngine::stop()` directly; start/preflight/diagnostics
-  emit `tray://action`; show/quit are in-process). Build proven with
+  (Stop calls `RecorderEngine::stop()` directly; start emits
+  `tray://action`; show/quit are in-process). Build proven with
   `cargo build -p sundayrec --features tray` + clippy `-D warnings`. (The
   `sundayrec://` scheme, `tauri-plugin-deep-link` and `dispatch_deep_link`
   left with the Sunday-suite integrations in R1.)

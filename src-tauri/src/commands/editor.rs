@@ -876,22 +876,6 @@ pub async fn editor_delete_sidecar(
     .await
 }
 
-/// The liturgical day a service date falls on — «1. påskedag», «julaften» —
-/// or `null` for an ordinary Sunday or a date that does not parse.
-///
-/// The export's «Innhold» card offers it as the title on a feast day. It is
-/// the SAME table the `church` filename pattern names recordings from
-/// (`sundayrec_core::church_calendar`), asked over IPC rather than re-typed in
-/// TypeScript (the old slug-answering `shared/church-calendar.ts` port is
-/// gone): two calendars that disagree about Easter are worse than one. Featureless — it is a table lookup, not editor
-/// I/O. `date` is `YYYY-MM-DD`.
-#[tauri::command]
-pub fn editor_church_day_name(date: String) -> Option<String> {
-    chrono::NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d")
-        .ok()
-        .and_then(sundayrec_core::church_calendar::liturgical_day_name)
-}
-
 // ── V1/PR3: fire prober som aldri fikk en dør ────────────────────────────────
 //
 // `editor_probe_peak`, `editor_probe_streams`, `editor_read_file` og
@@ -1117,29 +1101,6 @@ mod tests {
             scope["deny"].as_array().is_some_and(|d| !d.is_empty()),
             "the deny list stays (it is also pinned against path_guard's list)"
         );
-    }
-
-    // ── The liturgical-day lookup behind the «Innhold» title ─────────────────
-
-    #[test]
-    fn a_feast_day_has_a_name_and_an_ordinary_sunday_has_none() {
-        // Easter 2027 is 28 March.
-        assert_eq!(
-            editor_church_day_name("2027-03-28".into()).as_deref(),
-            Some("1. påskedag")
-        );
-        assert_eq!(
-            editor_church_day_name(" 2026-12-24 ".into()).as_deref(),
-            Some("julaften")
-        );
-        assert_eq!(editor_church_day_name("2026-09-27".into()), None);
-    }
-
-    #[test]
-    fn a_date_that_does_not_parse_is_no_name_not_an_error() {
-        for bad in ["", "27.09.2026", "2026-02-30", "i morgen"] {
-            assert_eq!(editor_church_day_name(bad.into()), None, "{bad:?}");
-        }
     }
 
     // ── The decode-progress throttle ─────────────────────────────────────────

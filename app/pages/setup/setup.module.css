@@ -182,8 +182,6 @@
   color: var(--ink-3);
 }
 
-/* Vekkehistorikken (W6): en logg, ikke prosa — samme grep som
-   DiagnoseRow.module.css bruker for IPC-ringen og enhetslista. */
 /* Plattformens forbehold og råd (`wake_capabilities`): en kort punktliste, ikke
    et diagnosekort. Punktmarkøren er hele forskjellen fra hint-avsnittet over —
    dette er FLERE ting, og en vegg av setninger uten kuler leses som én. */

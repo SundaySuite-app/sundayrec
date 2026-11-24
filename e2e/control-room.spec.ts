@@ -437,7 +437,7 @@ test.describe("rammen kommer tilbake når kortet lukkes", () => {
       "true",
     );
     await expect(page.getByTestId("setup-sec-recording")).toBeVisible();
-    await expect(page.getByTestId("setup-church-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-language-lede")).toBeVisible();
   });
 });
 

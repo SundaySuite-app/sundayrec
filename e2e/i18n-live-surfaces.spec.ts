@@ -42,7 +42,6 @@ test.describe("language switch keeps live-painted state", () => {
         language: "no",
         deviceId: "dev-that-left",
         deviceName: "Behringer X32",
-        churchName: "Bryn menighet",
       },
       goto: "home",
     });
@@ -59,7 +58,7 @@ test.describe("language switch keeps live-painted state", () => {
 
     // Bytt språk under Innstillinger — den ene flaten som eier språkvalget.
     await page.getByTestId("nav-setup").click();
-    await page.getByTestId("church-language-control-input").selectOption("en");
+    await page.getByTestId("language-control-input").selectOption("en");
 
     // 1. En innstillings-malt flate er malt om PÅ ENGELSK — ikke stående på
     //    norsk, og ikke nullstilt til noe generisk.
@@ -191,7 +190,7 @@ test.describe("engine codes render as catalogue sentences", () => {
     // rød — rå-koder på skjermen er nøyaktig det oppslaget finnes for å unngå.
     await expect(notes).not.toContainText("winS5NeedsBios");
 
-    await page.getByTestId("church-language-control-input").selectOption("en");
+    await page.getByTestId("language-control-input").selectOption("en");
 
     await expect(notes).toContainText("it disappears");
     await expect(notes).toContainText("startup settings (BIOS)");
@@ -240,7 +239,7 @@ test.describe("engine codes render as catalogue sentences", () => {
     // …og oppslaget skjer ved RENDER, så et språkbytte etterpå virker. F2-W9
     // oversatte ved mottak; da hadde denne stått igjen på norsk.
     await page.getByTestId("nav-setup").click();
-    await page.getByTestId("church-language-control-input").selectOption("de");
+    await page.getByTestId("language-control-input").selectOption("de");
     await page.getByTestId("nav-record").click();
 
     await expect(page.getByTestId("banner-preflight")).toContainText(
@@ -279,27 +278,7 @@ test.describe("engine codes render as catalogue sentences", () => {
       goto: "home",
     });
 
-  test("a special recording's missing device is named on the preflight row", async ({
-    page,
-  }) => {
-    await bootWithFinding(
-      page,
-      missingDevice("specialDeviceMissing", { device: "Zoom H6" }),
-    );
-    const banner = page.getByTestId("banner-preflight");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText(
-      "Lydkilden «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
-        "Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
-    );
-    // MUTASJONSPRØVEN: slå opp `deviceMissing` for begge kodene i `preflightText`,
-    // og linja over blir rød; la `specialDeviceMissing` falle ut av katalogen,
-    // og enhetstesten i `app/pages/record/preflight-text.test.ts` gjør det.
-    await expect(banner).not.toContainText("valgt i innstillingene");
-    await expect(banner).not.toContainText("English reserve");
-  });
-
-  test("the global device's missing finding keeps the sentence it always had", async ({
+  test("the missing device finding is translated on its code", async ({
     page,
   }) => {
     await bootWithFinding(page, missingDevice("deviceMissing", {}));
@@ -308,6 +287,6 @@ test.describe("engine codes render as catalogue sentences", () => {
     await expect(banner).toContainText(
       "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
     );
-    await expect(banner).not.toContainText("spesialopptaket");
+    await expect(banner).not.toContainText("English reserve");
   });
 });

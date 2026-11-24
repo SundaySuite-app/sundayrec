@@ -167,7 +167,7 @@ test.describe("opptaksradene", () => {
       goto: "settings",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("setup-language")).toBeVisible();
     // Resten er delt i seksjoner med overskrift (og en innholdsliste øverst).
     await expect(page.getByTestId("setup-toc")).toBeVisible();
     await expect(

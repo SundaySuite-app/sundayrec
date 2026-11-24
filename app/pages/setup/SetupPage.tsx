@@ -11,7 +11,7 @@
  *
  * Igjen står de to tingene som IKKE hører til en søndag:
  *
- *   • **kirkeprofilen** — navnet og språket, spørsmål 4. Det er ikke noe man
+ *   • **språkvalget** — spørsmål 4. Det er ikke noe man
  *     tar stilling til fem minutter før gudstjenesten; det settes én gang.
  *   • **Resten** — tidsplan, utlegging, opptaksvalg, oppdateringer, feilsøking
  *     og lisenser, delt i seksjoner med en innholdsliste øverst
@@ -42,7 +42,7 @@ import { navigate, route } from "../../router/router";
 import { loadAudioDevices } from "../../state/devices";
 import { refreshDiskSpace } from "../../state/disk";
 import { AdvancedPage } from "./AdvancedPage";
-import { ChurchPage } from "./ChurchPage";
+import { LanguagePage } from "./LanguagePage";
 import { SETTINGS_SECTIONS } from "./sections";
 import { SettingsSection } from "./SettingsSection";
 import { FirstRunResumeChip } from "./FirstRunResumeChip";
@@ -51,14 +51,14 @@ import styles from "./setup.module.css";
 
 /** De fem spørsmålene, som `route.tab`-verdier. Fortsatt navnerommet
  *  første-gangs-sekvensen og `decisions-core` bruker. */
-export type SetupTab = "sound" | "folder" | "quality" | "church" | "notify";
+export type SetupTab = "sound" | "folder" | "quality" | "language" | "notify";
 
 export function isSetupTab(tab: string | undefined): tab is SetupTab {
   return (
     tab === "sound" ||
     tab === "folder" ||
     tab === "quality" ||
-    tab === "church" ||
+    tab === "language" ||
     tab === "notify"
   );
 }
@@ -84,9 +84,9 @@ export function SetupPage() {
   }, []);
 
   // En gammel fane-id som slapp gjennom: send den til kortet som eier
-  // spørsmålet. `church` er unntaket — kirkeprofilen bor HER.
+  // spørsmålet. `language` er unntaket — språkvalget bor HER.
   useEffect(() => {
-    if (isSetupTab(tab) && tab !== "church" && isControlId(tab)) {
+    if (isSetupTab(tab) && tab !== "language" && isControlId(tab)) {
       navigate("record", { anchor: tab });
     }
   }, [tab]);
@@ -116,9 +116,9 @@ export function SetupPage() {
           ))}
         </ul>
       </nav>
-      <SettingsSection id="sec-church" sectionKey="church">
-        {/* Setningen under overskriften er kirkeprofilens egen «lede». */}
-        <ChurchPage />
+      <SettingsSection id="sec-language" sectionKey="language">
+        {/* Setningen under overskriften er språkvalgets egen «lede». */}
+        <LanguagePage />
       </SettingsSection>
       <AdvancedPage />
     </div>

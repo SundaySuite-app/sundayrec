@@ -61,7 +61,6 @@ pub fn action_id(action: TrayAction) -> &'static str {
         TrayAction::StopRecording => "stop-recording",
         TrayAction::OpenRecordingsFolder => "open-recordings-folder",
         TrayAction::RunPreflight => "run-preflight",
-        TrayAction::RunDiagnostics => "run-diagnostics",
         TrayAction::Quit => "quit",
     }
 }
@@ -76,7 +75,6 @@ pub fn action_from_id(id: &str) -> Option<TrayAction> {
         "stop-recording" => TrayAction::StopRecording,
         "open-recordings-folder" => TrayAction::OpenRecordingsFolder,
         "run-preflight" => TrayAction::RunPreflight,
-        "run-diagnostics" => TrayAction::RunDiagnostics,
         "quit" => TrayAction::Quit,
         _ => return None,
     })
@@ -427,7 +425,6 @@ mod tests {
             TrayAction::StopRecording,
             TrayAction::OpenRecordingsFolder,
             TrayAction::RunPreflight,
-            TrayAction::RunDiagnostics,
             TrayAction::Quit,
         ] {
             assert_eq!(action_from_id(action_id(action)), Some(action));

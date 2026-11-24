@@ -15,17 +15,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 import { isRecording } from "../state/recording";
-import { settings } from "../state/settings";
 import {
   cancelExport,
   currentDescription,
-  descriptionFollowsTemplate,
   editDescription,
   exportDescription,
   exportedBytes,
-  exportedContent,
   exportedFolder,
   exportedPath,
   exportedSeconds,
@@ -544,7 +540,7 @@ describe("mappen er en lapp fra Rust", () => {
  * Feltene fantes i `EditorExportRequest` siden P2b; skallet sendte dem aldri.
  */
 describe("runExport — innholdet", () => {
-  it("sender tittel, taler og beskrivelse trimmet, med dato og menighet", async () => {
+  it("sender tittel, taler og beskrivelse trimmet, med dato", async () => {
     installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
     E.startedAtMs = new Date(2026, 8, 27, 11, 0).getTime();
     exportTitle.value = "  Den gode hyrde ";
@@ -559,12 +555,6 @@ describe("runExport — innholdet", () => {
       speaker: "Kari",
       description: "Joh 10",
       date: "2026-09-27",
-    });
-    // Kvitteringen leser øyeblikksbildet, ikke feltene.
-    expect(exportedContent.value).toEqual({
-      title: "Den gode hyrde",
-      speaker: "Kari",
-      description: "Joh 10",
     });
   });
 
@@ -625,61 +615,25 @@ describe("runExport — innholdet", () => {
 
     expect(savedContent).toEqual([]);
     expect(deletedContent).toEqual([]);
-    expect(exportedContent.value).toBeNull();
   });
 });
 
 /**
- * Den faste beskrivelsen fra Oppsett — fylt inn LIVE til noen skriver selv.
+ * «Innhold»s beskrivelse er bare det som er skrevet — ingen mal fra Oppsett.
  */
-describe("beskrivelsesmalen i «Innhold»", () => {
-  const TEMPLATE = "«{tittel}» — {taler}, {kirke}.";
-
-  beforeEach(() => {
-    settings.value = {
-      ...SETTINGS_DEFAULTS,
-      churchName: "Sentrumskirken",
-      publishDescriptionTemplate: TEMPLATE,
-    };
-  });
-
-  afterEach(() => {
-    settings.value = { ...SETTINGS_DEFAULTS };
-  });
-
-  it("følger tittel og taler mens de skrives", () => {
-    exportTitle.value = "Nåde";
-    expect(currentDescription()).toBe("«Nåde» — , Sentrumskirken.");
-    exportSpeaker.value = "Ola";
-    expect(currentDescription()).toBe("«Nåde» — Ola, Sentrumskirken.");
-  });
-
-  it("slutter å følge malen i det noen skriver i beskrivelsen", () => {
-    exportTitle.value = "Nåde";
-    editDescription("Min egen tekst");
-    exportTitle.value = "Noe annet";
-    expect(descriptionFollowsTemplate.value).toBe(false);
-    expect(currentDescription()).toBe("Min egen tekst");
-  });
-
-  it("uten mal er beskrivelsen bare det som er skrevet", () => {
-    settings.value = { ...SETTINGS_DEFAULTS, publishDescriptionTemplate: "" };
-    exportDescription.value = "Fritekst";
-    expect(currentDescription()).toBe("Fritekst");
-  });
-
-  it("det som sendes, er den utfylte malen", async () => {
+describe("beskrivelsen i «Innhold»", () => {
+  it("er det som står i feltet, og det som sendes", async () => {
     installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
-    exportTitle.value = "Nåde";
-    exportSpeaker.value = "Ola";
+    editDescription("Min egen tekst");
+    expect(currentDescription()).toBe("Min egen tekst");
 
     await runExport(120, 1_000_000);
 
     const metadata = exportRequests[0]?.metadata as Record<string, unknown>;
-    expect(metadata.description).toBe("«Nåde» — Ola, Sentrumskirken.");
+    expect(metadata.description).toBe("Min egen tekst");
   });
 
-  it("en lagret beskrivelse vinner over malen — også om malen er endret siden", async () => {
+  it("en lagret beskrivelse leses inn ved åpning", async () => {
     (globalThis as unknown as { window: unknown }).window = {
       api: {
         editorReadContent: () =>
@@ -688,34 +642,15 @@ describe("beskrivelsesmalen i «Innhold»", () => {
             speaker: "",
             description: "Slik den ble sendt",
           }),
-        editorChurchDayName: () => Promise.resolve(null),
       },
     };
-    await loadExportContent(E.sourceToken, null, E.loadSeq);
-    expect(descriptionFollowsTemplate.value).toBe(false);
+    await loadExportContent(E.sourceToken, E.loadSeq);
     expect(currentDescription()).toBe("Slik den ble sendt");
   });
 
-  it("en lagret, men TOM beskrivelse gir malen plass", async () => {
-    (globalThis as unknown as { window: unknown }).window = {
-      api: {
-        editorReadContent: () =>
-          Promise.resolve({
-            title: "Bare tittel",
-            speaker: "",
-            description: "",
-          }),
-        editorChurchDayName: () => Promise.resolve(null),
-      },
-    };
-    await loadExportContent(E.sourceToken, null, E.loadSeq);
-    expect(descriptionFollowsTemplate.value).toBe(true);
-    expect(currentDescription()).toBe("«Bare tittel» — , Sentrumskirken.");
-  });
-
-  it("en ny fil følger malen igjen", () => {
+  it("en ny fil starter med en tom beskrivelse", () => {
     editDescription("Min egen tekst");
     resetExport();
-    expect(descriptionFollowsTemplate.value).toBe(true);
+    expect(currentDescription()).toBe("");
   });
 });

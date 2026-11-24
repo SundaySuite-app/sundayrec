@@ -35,13 +35,14 @@ export const FIRST_ASK: PromptCopy = {
     "SundayRec kan sende anonym feil- og bruksstatistikk til SundaySuite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Oppdateringer og personvern.",
 };
 
-/** The wording for someone whose recorded answer predates a scope widening. */
+/** The wording for someone whose recorded answer predates the current consent
+ *  version. It names only what is shared now: counters and technical numbers. */
 export const RE_ASK: PromptCopy = {
   titleKey: "onboarding.rePromptTitle",
   titleFallback: "Vi spør deg om igjen",
   descKey: "onboarding.rePromptDesc",
   descFallback:
-    "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.",
+    "Du har svart på dette før, men vi spør på nytt for å være sikre på at svaret ditt gjelder det som deles nå: bare anonyme tellere og tekniske tall om opptakene (om lyd falt ut, hvor lenge og hva som feilet) — aldri lyd, navn, filer eller tekst. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.",
 };
 
 /** Pick the copy for a card that has already been decided to show.

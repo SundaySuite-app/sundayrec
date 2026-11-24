@@ -28,7 +28,6 @@ const SOUND_CHOSEN = {
   ...SETTLED_SETTINGS,
   deviceName: "Behringer X32",
   deviceId: "x32",
-  churchName: "Bryn menighet",
 };
 
 /**
@@ -126,7 +125,7 @@ test.describe("skallet", () => {
     await expect(page.getByTestId("rail")).toHaveCount(0);
   });
 
-  test("topplinja bærer merket og kirken, og starter til høyre for trafikklysene", async ({
+  test("topplinja bærer merket, og starter til høyre for trafikklysene", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
@@ -140,14 +139,11 @@ test.describe("skallet", () => {
 
     const bar = (await page.getByTestId("topbar").boundingBox())!;
     const logo = (await page.getByTestId("app-logo").boundingBox())!;
-    const church = (await page.getByTestId("shell-church").boundingBox())!;
 
     // Ett bånd, øverst, og alt inni det.
     expect(bar.y).toBe(0);
     expect(logo.y).toBeGreaterThanOrEqual(bar.y);
     expect(logo.y + logo.height).toBeLessThanOrEqual(bar.y + bar.height);
-    // Kirken står til HØYRE for merket, ikke under det.
-    expect(church.x).toBeGreaterThan(logo.x + logo.width);
 
     // ⚠️ Trafikklys-offsetet kan bare måles der klassen faktisk settes. I
     // Chromium er `currentOs()` ikke `darwin`, så regelen står ikke på — men
@@ -322,21 +318,6 @@ test.describe("skallet", () => {
     });
     await expect(page.getByTestId("status-text")).toHaveText(
       "Lite plass igjen",
-    );
-  });
-
-  test("kirkenavnet står i topplinja — og sier fra når det mangler", async ({
-    page,
-  }) => {
-    await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
-    await expect(page.getByTestId("shell-church")).toHaveText("Bryn menighet");
-
-    await boot(page, {
-      fixtures: BOOT_FIXTURES,
-      settings: { ...SOUND_CHOSEN, churchName: "" },
-    });
-    await expect(page.getByTestId("shell-church")).toHaveText(
-      "Ikke satt opp ennå",
     );
   });
 

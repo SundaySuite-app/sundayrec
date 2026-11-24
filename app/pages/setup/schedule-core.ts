@@ -41,11 +41,8 @@ export function autoRecordOn(settings: Settings): boolean {
 /**
  * Kommer det til å skje NOE av seg selv?
  *
- * `autoRecordOn` er de faste tidene; et spesialopptak er en enkelt dato noen
- * har lagt inn, og det skjer uansett hva bryteren står på. Det er ikke en
- * mening om saken — det er nøyaktig hva bakenden gjør: `scheduler/mod.rs`
- * sender `settings.active_slots()` (gatet av flagget) OG
- * `settings.special_recordings` (ugatet) inn i `next_recording`.
+ * Bare de faste tidene, gatet av flagget — nøyaktig hva bakenden gjør:
+ * `scheduler/mod.rs` sender `settings.active_slots()` inn i `next_recording`.
  *
  * Finnes her, ved siden av regelen den bygger på, fordi den har mer enn én
  * leser: `state/next-recording.ts` fyller `hasAnySchedule` med den, og
@@ -61,9 +58,7 @@ export function autoRecordOn(settings: Settings): boolean {
  * på den første siden som leser den.
  */
 export function anythingScheduled(settings: Settings): boolean {
-  return (
-    autoRecordOn(settings) || (settings.specialRecordings ?? []).length > 0
-  );
+  return autoRecordOn(settings);
 }
 
 /** Ukedag: 0 = mandag … 6 = søndag. Samme tall som `ScheduleSlot.days`. */

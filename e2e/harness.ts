@@ -230,20 +230,6 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
         ((w.__settingsSaves ??= []) as unknown[]).push(s);
         return merged;
       };
-    if (!("settings_import" in map))
-      map.settings_import = (args?: Record<string, unknown>) => {
-        // Emulates the backend's merge-over-defaults (`Settings::from_json_merged`).
-        const merged = {
-          ...p.defaults,
-          ...(JSON.parse((args?.json as string) ?? "{}") as Record<
-            string,
-            unknown
-          >),
-        };
-        db.write(merged);
-        ((w.__settingsImports ??= []) as unknown[]).push(args?.json);
-        return merged;
-      };
 
     // Fixtures ARE re-installed every navigation: they stand in for a backend,
     // and a backend does not disappear because the page reloaded.
@@ -309,10 +295,6 @@ export const BOOT_FIXTURES: Fixtures = {
   recordings_list: [],
   trash_list: [],
   list_audio_devices: [],
-  // The one-time «E-postvarsler er fjernet» banner: not pending, so it stays
-  // out of every spec that is not about it.
-  notice_email_removed_pending: false,
-  notice_email_removed_dismiss: VOID,
   // Varsler er slått på i OS-et: kortet «Hvem får beskjed?» er grønt i
   // hver spec som ikke handler om det motsatte.
   notification_permission: "granted",
@@ -372,15 +354,6 @@ export async function storedSettings(
         unknown
       >,
     SETTINGS_DB_KEY,
-  );
-}
-
-/** Every raw JSON string `settings_import` has received (the migration path). */
-export async function settingsImportPayloads(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () =>
-      (window as unknown as { __settingsImports?: string[] })
-        .__settingsImports ?? [],
   );
 }
 

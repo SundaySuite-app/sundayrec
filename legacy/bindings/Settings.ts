@@ -3,10 +3,8 @@ import type { ChannelMode } from "./ChannelMode";
 import type { DeviceChannels } from "./DeviceChannels";
 import type { FileFormat } from "./FileFormat";
 import type { FilenamePattern } from "./FilenamePattern";
-import type { PublishTarget } from "./PublishTarget";
 import type { SampleRate } from "./SampleRate";
 import type { ScheduleSlot } from "./ScheduleSlot";
-import type { SpecialRecording } from "./SpecialRecording";
 import type { UpdateChannel } from "./UpdateChannel";
 
 /**
@@ -205,10 +203,6 @@ protectRecording: boolean,
  * read, and `false` would silently disarm every church that already had a
  * Sunday slot — the exact failure this app exists to prevent. A fresh
  * profile has no slots anyway, so `true` there arms nothing.
- *
- * Only WEEKLY slots are gated. `special_recordings` are dated one-offs
- * somebody entered by hand for a specific concert; the level-1 switch is
- * about the recurring plan and never silently cancels those.
  */
 autoRecordEnabled: boolean, 
 /**
@@ -229,43 +223,6 @@ autoRecordEnabled: boolean,
  * that reads `slots` directly is a bug in waiting.
  */
 slots: Array<ScheduleSlot>, 
-/**
- * One-off dated recordings (concerts, special services). Empty by default.
- * Auto-pruned 7 days after they end ([`crate::schedule::prune_specials`]).
- */
-specialRecordings: Array<SpecialRecording>, 
-/**
- * Congregation/church name. Drives the `church` filename pattern and the
- * localized "church" labels. Empty string = unset (matches the Electron
- * `''` default, not `null`). See `store.ts` `churchName: ''`.
- */
-churchName: string, 
-/**
- * Person responsible for recordings (shown in diagnostics).
- * Empty string = unset (Electron `responsiblePerson: ''`).
- */
-responsiblePerson: string, 
-/**
- * The channel the export receipt's «Legg ut» panel opens. SoundCloud by
- * default; `none` hides the panel. Lenient: an unknown channel written by
- * a newer build costs this field, not the whole blob.
- */
-publishTarget: PublishTarget, 
-/**
- * The church's own upload page, used when `publish_target` is `custom`.
- * Stored as typed; vetted every time it is OPENED
- * ([`crate::publish::custom_upload_url`]: `https://` only, no userinfo),
- * so a bad link is a panel that says so, never a URL handed to the OS.
- */
-publishCustomUrl: string, 
-/**
- * A fixed description the «Innhold» card starts from, with `{tittel}`,
- * `{taler}`, `{dato}` and `{kirke}` filled in (English aliases accepted).
- * Empty = the description starts empty. Rendered in the renderer
- * (`renderDescription`), never here: it is prefill, not a tag the backend
- * composes.
- */
-publishDescriptionTemplate: string, 
 /**
  * Fire a native notification when a scheduled recording starts? Default true.
  */

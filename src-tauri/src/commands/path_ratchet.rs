@@ -256,8 +256,11 @@ const RETIRED_PARAMS: &[(&str, &str)] = &[
 
 /// Path-taking commands that were not guarded but REPLACED: the webview no
 /// longer names the path at all, because the successor opens the native dialog
-/// itself and acts only on what that dialog answered (finding A1 — SECURITY.md:
-/// «a settings file's location comes from a dialog Rust opens»). The «old name»
+/// itself and acts only on what that dialog answered (SECURITY.md: «a settings
+/// file's location comes from a dialog Rust opens»). (The settings-profile pair,
+/// `settings_export_to_file`/`settings_import_from_file` → `…_profile`, left the
+/// list in F2 when the profile export/import was removed altogether: neither the
+/// old nor the new name exists any more.) The «old name»
 /// may also be the dialog plugin's own command, which the page used to call
 /// from JavaScript before PR-D/PR-F took the permission away.
 ///
@@ -268,8 +271,6 @@ const RETIRED_PARAMS: &[(&str, &str)] = &[
 /// from the sources AND from `generate_handler!`, and the successor is
 /// registered and has no path-shaped parameter.
 const REPLACED: &[(&str, &str)] = &[
-    ("settings_export_to_file", "settings_export_profile"),
-    ("settings_import_from_file", "settings_import_profile"),
     // The webview widened its own `asset://` scope to any file it named (behind
     // `path_guard`). Now the scope grows only when RUST opens a recording — the
     // picker, or a drop on the window — and the other way in, a history row's
@@ -421,9 +422,7 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
     // in `save_from_renderer` -> `keep_stored_save_folder` / `keep_stored_clips`
     // (tests: `a_full_object_is_still_a_valid_patch_and_keeps_the_folder_rules`,
     // `settings_save_keeps_the_stored_save_folder`,
-    // `settings_save_keeps_the_stored_intro_and_outro`). `publish_target` is an
-    // enum naming a publishing CHANNEL, not a place on this machine; the custom
-    // link is vetted when opened (`publish::custom_upload_url`).
+    // `settings_save_keeps_the_stored_intro_and_outro`).
 ];
 
 /// Every `#[tauri::command]` PARAMETER named `*_token` ([`is_token_param`]), as
@@ -1242,24 +1241,12 @@ fn reaches_store(
 /// The ratchet above judges a command by what its parameters are NAMED and what
 /// they are TYPED. A `blob: String` that the command then deserialises into
 /// `Settings` is neither: no name says «place», no type is a path, and the
-/// folder arrives inside the JSON. That is exactly how `settings_import` took a
-/// save folder from the webview (#314, B1). So the shape is held to a CLOSED
+/// folder arrives inside the JSON. That is exactly how the (removed) settings
+/// hand-over command took a save folder from the webview (#314, B1). So the shape is held to a CLOSED
 /// list: a command that parses a place-carrying struct out of a string is a
 /// decision somebody defends here, with the reason it cannot name a place that
 /// matters.
-const PARSED_PLACE_STRUCTS: &[(&str, &str, &str, &str)] = &[(
-    "settings_import",
-    "json",
-    "Settings",
-    "the localStorage hand-over of an old installation, ONCE: Rust counts it \
-     (`legacy_import_done`, claimed in the transaction that writes the settings, \
-     and closed by the first `settings_get`), clips are never carried \
-     (`keep_stored_clips`), and a save folder in it must pass \
-     `vet_handover_save_folder` (exists, writable, not protected, not the app's \
-     own data) or the stored one stays. Proofs: \
-     `a_second_hand_over_cannot_move_the_recordings_folder`, \
-     `a_save_folder_in_the_apps_own_data_folder_is_refused`",
-)];
+const PARSED_PLACE_STRUCTS: &[(&str, &str, &str, &str)] = &[];
 
 /// The functions that turn text into a typed value. `from_json_merged` is
 /// `Settings`' own door.
@@ -1576,7 +1563,8 @@ fn every_command_that_parses_a_string_into_settings_is_on_the_closed_list() {
          into a struct that carries a place — `Settings` has the save folder.\n\
          The ratchet judges parameters by NAME and TYPE, and neither says\n\
          «place» here: the folder rides inside the JSON. That is how\n\
-         `settings_import` let the webview name the recordings folder (#314, B1).\n\
+         the settings hand-over command let the webview name the recordings folder\n\
+         (#314, B1).\n\
          \n\
          {}\n\
          \n\
@@ -2007,7 +1995,7 @@ fn the_parser_actually_finds_commands() {
     );
     for known in [
         "editor_peaks",
-        "settings_export_profile",
+        "settings_pick_save_folder",
         "editor_read_sidecar",
     ] {
         assert!(

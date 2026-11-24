@@ -73,7 +73,7 @@ export const ALL_LOCALES: readonly Locale[] = [
  *
  * At de to listene er like NÅ er en tilstand, ikke en sannhet. PAUSE-
  * mekanismen står (`PAUSED_LOCALES` / `PAUSED_KEYS` der, `languageOptions` /
- * `isPausedLanguage` i `app/pages/setup/church-core.ts`), fordi et språk som
+ * `isPausedLanguage` i `app/pages/setup/language-core.ts`), fordi et språk som
  * ikke rekker en runde skal kunne tas ut herfra uten at noen må finne opp
  * håndteringen på nytt. Derfor er dette fortsatt sin egen liste og ikke et
  * alias for `ALL_LOCALES`.

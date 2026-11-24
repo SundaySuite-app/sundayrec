@@ -10,6 +10,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   begynner og slutter, og klipper bort resten. Kuttverktøyene står alltid fremme.
 - **Ingenting læres av det du retter lenger.** Korreksjoner i redigeringen lagres ikke, og
   de deles ikke, heller ikke som grove tall.
+- **Appen er skåret ned til kjernen.** Borte er: Diagnose-raden med testopptak og
+  målebenk (loggen kan fortsatt vises og kopieres), «Legg ut» på eksportkvitteringen
+  og i Innstillinger, kirkeprofilen og kirkekalenderen (språkvalget står igjen som
+  «Hvilket språk?»), spesialopptak (tidsplanen er de ukentlige tidene), eksport og
+  import av innstillingsprofil, overføringen av innstillinger fra den gamle
+  Electron-appen, bannerboksen om fjernede e-postvarsler, og trykkflate-pulsene i
+  redigeringen. «Sjekk maskinen» er også fjernet fra menylinjen. Gamle verdier i
+  innstillingene leses og ignoreres uten feilmelding.
+- **Filnavnet «kirkeår» er borte.** Et lagret filnavnmønster «church» leses som dato,
+  som er standarden.
+- **Personvernteksten sier nå bare det som faktisk samles inn:** krasj, kvalitetsdata om
+  opptakene, funksjonstellere og planlagte opptak som ikke startet. Korrigeringsintervaller
+  og diagnosefunn er ikke lenger omtalt som noe som deles — de samles ikke inn.
 
 ## v0.30.1 — tryggere lange og planlagte opptak
 

@@ -150,8 +150,7 @@ It also ships `NSCameraUseContinuityCameraDeviceType` (C1a): on macOS 14+ an
 iPhone used as a webcam is then listed as a Continuity camera instead of as a
 built-in one. The native camera capture (`src-tauri/src/camera/`) is what
 every video recording reads the camera through since C3b — and the camera
-picker, its «what this camera delivers» line and the diagnose camera check read
-the same list. Its hardware check is RIG-DAY (c1a), a one-line
+picker and its «what this camera delivers» line read the same list. Its hardware check is RIG-DAY (c1a), a one-line
 `cargo test … -- --ignored` from a terminal that has camera access.
 
 ---
@@ -484,69 +483,50 @@ records its own health automatically during every recording (Pillar 0).
 xrun/discontinuity lines — only exist in history rows recorded BEFORE C3b (the
 ffmpeg capture is gone). **Every session now** reports `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
 WASAPI themselves report through cpal 0.18 — counted by the engine, no stderr
-involved; shown as part of `xruns` in the diagnose report) plus an **exact
+involved; part of `xruns` in the file) plus an **exact
 frame-count cross-check**
 (frames written vs ffprobe/wall clock, with a verdict + REC-LOSS alarm). The
 key "recording mode lags" signal — how often the live-levels IPC channel was
 **full** (`levels_dropped`) — applies to both. Everything persists to
-`last-recording.json` + a rolling `recording-telemetry-history.json` and
-surfaces in the diagnose report.
+`last-recording.json` + a rolling `recording-telemetry-history.json`.
 
-✅ **The Diagnose screen is back** (V1/PR2) — as a ROW, not a modal: **the gear
-→ Avansert → «Diagnose» → «Kjør»**. It answers with five status rows (devices,
-chosen device, microphone access, engine, the capture probe), the coded findings
-translated on their `code`, the audio-device list, this session's failed IPC
-calls, where the report was written, and «Kopier full rapport». There is also a
-**«Test-opptak (~10 s)»** button, which is OFF while a recording runs — it opens
-the device for real. Since M1R #7 it records through the same native engine and
-with the same channel choice and sample rate as a real recording, so on a mixer
-with channel 4/5 selected, mute channel 4/5 (not 1/2) and the test must say
-«svakt/stille»; an ASIO-only device must test fine too (it used to be «fant ikke
-enheten»). If the pre-roll buffer was running it is released for the ten seconds
-and re-armed afterwards — check the meters come back.
-
-⚠️ Findings show the engine's own `detail` line untranslated. That line carries
-the NUMBERS (free GB, «15,3 % av lyden mangler») and Rust only sends it as
-finished prose; the title and the advice are translated. Noted for the language
-round, not a bug to report.
+⚠️ **The Diagnose screen is gone** (removed in the rent-bord pruning, F2): there
+is no «Kjør diagnose», no «Test-opptak» button and no capture bench any more.
+The numbers are still written to disk after every recording — read them there.
 
 **Read the numbers after a normal recording:**
 
 1. Record a service (or ~15 s of speech) normally, then stop.
-2. Run the diagnosis (above) and read the **«Siste opptak (teknisk)»** section
-   of the copied report. Off disk is still available and still authoritative:
-   `<app-data>/last-recording.json` (and the rolling
-   `<app-data>/recording-telemetry-history.json` for the trend) is the same JSON
-   the report is composed from. `<app-data>` is resolved in §13's table.
-   - **Expected:** the fields behind the report's **"Siste opptak (teknisk)"**
-     section — `Dropp`, `xruns`, `IPC-overbelastning (tapte nivå-oppdateringer)`
-     and `Avsluttet rent` — with the newest recording first in the history file.
-   - The report content and the SR-CAPTURE-01 rule are still gated in Rust; only
-     the surface that displayed them is gone:
-   - VERIFIED-BY: crates/sundayrec-core/src/diagnostics.rs::degraded_last_recording_warns_and_renders_section
-   - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
+2. Read `<app-data>/last-recording.json` (and the rolling
+   `<app-data>/recording-telemetry-history.json` for the trend). `<app-data>`
+   is resolved in §13's table.
+   - **Expected:** the fields `drops`, `xruns`, `levelsDropped` (the live-levels
+     IPC channel was full) and `exitOk`, with the newest recording first in the
+     history file.
+   - **Healthy target:** `levelsDropped 0` + clean exit, and per session
      type: **native audio** → `ring_overrun_samples 0`, `xruns 0` (this is
      `native_xruns` — a real count from the audio system) + the frame-count
-     cross-check verdict exact (video sessions too, since C3b; `Dropp` stays 0 —
+     cross-check verdict exact (video sessions too, since C3b; `drops` stays 0 —
      it only ever counted the ffmpeg capture).
-   - A degraded recording also raises finding **SR-CAPTURE-01** with the counts.
+   - A degraded recording raises the persistent `recording://quality` alarm (the
+     verdict is `selftest_verdict`, kept for exactly this check).
 
 **Prove the telemetry has teeth (it must DETECT a bad recording):**
 
 3. Start a CPU hog (e.g. `yes > /dev/null &` ×4, or a heavy export), record ~15 s,
    stop, re-read the file.
-   - **Expected:** the numbers rise — `IPC-overbelastning` and/or `Dropp`/`xruns`
-     go up, and SR-CAPTURE-01 appears. If they DON'T move under deliberate stress,
-     the instrumentation is wrong — report that.
+   - **Expected:** the numbers rise — `levelsDropped` and/or `drops`/`xruns` go
+     up. If they DON'T move under deliberate stress, the instrumentation is
+     wrong — report that.
 4. Kill the hog, record again → numbers return toward 0.
 
 **Per-lever check (paste the before/after numbers into the PR / release notes):**
 
-| Lever                                    | What changed                          | Look at                                                | Expected                                 |
-| ---------------------------------------- | ------------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
-| **B** scrolling-waveform redraw → 30 fps | less main-thread work while recording | `IPC-overbelastning` (`levels_dropped`)                | lower than before, esp. under load       |
-| **A** forced sample-rate surfacing       | resampling = a stutter cause          | finding **SR-RATE-01** + the report's `sampleRateMode` | `auto` = no finding; a forced rate flags |
-| **C/D/E** (data-gated)                   | buffer/back-pressure/disk             | only pursue if the above numbers stay high             | —                                        |
+| Lever                                    | What changed                          | Look at                                    | Expected                                  |
+| ---------------------------------------- | ------------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| **B** scrolling-waveform redraw → 30 fps | less main-thread work while recording | `levelsDropped` (`levels_dropped`)         | lower than before, esp. under load        |
+| **A** forced sample-rate surfacing       | resampling = a stutter cause          | the stored `sampleRateMode`                | `auto` = no resampling; a forced rate may |
+| **C/D/E** (data-gated)                   | buffer/back-pressure/disk             | only pursue if the above numbers stay high | —                                         |
 
 > [HW] The Pass/Warn/Fail thresholds (`selftest::FAIL_GAP_SEC` …) are
 > conservative defaults — calibrate them from the FIRST known-good capture on the
@@ -603,22 +583,10 @@ lenger».
      page shows the folder Rust stored. Cancelling the window changes nothing.
      Saving any other setting afterwards (change the language, say) leaves the
      folder as it was.
-   - **Upgrading from the old app (the localStorage hand-over, #314 B1):** on a
-     machine that still has the old app's settings, the FIRST launch of this
-     version carries over the old recordings folder (and the rest). It happens
-     once, counted by Rust (`legacy_import_done`): nothing the page sends later
-     can repeat it, and a folder that does not exist, cannot be written to, or is
-     the app's own data folder (`<app-data>/recovery` and the like) is never
-     taken — the folder you already had stays, and the rest is imported.
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_first_hand_over_from_an_old_installation_carries_its_folder
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_second_hand_over_cannot_move_the_recordings_folder
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_page_reading_its_settings_closes_the_hand_over
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::the_first_hand_over_is_taken_and_a_second_one_is_refused_and_writes_nothing
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::a_hand_over_on_an_install_with_a_bridged_settings_row_still_runs_once
+   - The folder must not be the app's own data folder either (`<app-data>/recovery`
+     and the like): that one is refused with a sentence of its own. (The old
+     localStorage hand-over from the Electron app is gone — F2.)
    - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_save_folder_in_the_apps_own_data_folder_is_refused
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file
-   - VERIFIED-BY: app/lib/migrate-legacy-settings.test.ts::treats «settings_import_done» as done: key removed, flag set, nothing rescheduled
    - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
@@ -710,28 +678,12 @@ maskinen».
 
 The section number stays so cross-references still resolve.
 
-**Upgrading an install that had e-mail set up** (v0.20.x → this build) is the
-one thing left to check here:
-
-1. On a machine where v0.20.x had SMTP configured and «E-post hvis noe går
-   galt» switched ON, install this build and open it.
-   - **Expected:** Opptak shows ONE banner, «E-postvarsler er fjernet», with
-     «Den er grei». Pressing it removes the banner, and it does not come back
-     on the next launch.
-   - **Expected (since v0.25.0):** no keychain prompt at all — the app no
-     longer touches the keychain. The entry `no.sundayrec.app` /
-     `email.smtp_password` is deleted only by v0.23.0/v0.24.0; an install that
-     skipped both keeps it, unread, like the other retired entries listed in
-     `settings::email_cleanup` (remove it by hand in Keychain Access /
-     Credential Manager if wanted).
-   - **Expected:** every other setting survived (church name, reminder, the
-     notification toggle, the schedule).
-   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::an_upgraded_install_is_cleaned_once_and_keeps_everything_else
-   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_removed_email_fields_imports_cleanly
-   - VERIFIED-BY: e2e/record.spec.ts::e-postvarslene er borte: beskjeden står til den er lest, og så aldri mer
-2. On a machine that never switched e-mail alerts on, the same upgrade shows
-   NO banner.
-   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::default_email_fields_are_rewritten_without_a_banner
+**Upgrading an install that had e-mail set up** needs no step any more: the
+one-time «E-postvarsler er fjernet» banner and the clean-up of the old e-mail
+settings keys were removed in the rent-bord pruning (F2). The typed settings
+simply ignore the old keys, and the keychain is never touched (since v0.25.0;
+the old `no.sundayrec.app` / `email.smtp_password` entry, if an install ever
+had one, can be removed by hand in Keychain Access / Credential Manager).
 
 ---
 
@@ -788,7 +740,7 @@ As of **R7** the tray is actually **installed** in `setup()` whenever the
 feature is on (`tray::install` builds the `TrayIcon` from the core menu
 model and wires `on_menu_event` → `handle_menu_event`). The menu
 **start/stop/show** actions are wired to the backend: **Stop** calls
-`RecorderEngine::stop()` directly; **start** / preflight / diagnostics emit
+`RecorderEngine::stop()` directly; **start** emits
 `tray://action` for the renderer to turn into the matching `invoke(...)`;
 **show**/**quit** are handled in-process.
 
@@ -804,13 +756,12 @@ three assumptions that have each failed separately.
 
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
    - **Expected:** the menu shows status → [next recording] → open → start/stop
-     → folder → diagnostics → quit, in the UI language.
-   - ⚠️ **There is NO «Sjekk systemet» row**, and this runbook used to say there
-     was. The tray carries ONE system action on purpose: the status row already
-     answers «is the system OK?» at a glance, and a quick preflight next to
-     «Diagnoser system…» read as a confusing near-duplicate. Report a missing
-     preflight item as expected, not as a bug.
-   - VERIFIED-BY: crates/sundayrec-core/src/tray.rs::tray_exposes_one_system_action_diagnostics_not_preflight
+     → folder → quit, in the UI language.
+   - ⚠️ **There is NO «Sjekk systemet» and NO «Diagnostikk» row.** The tray
+     carries no system action on purpose: the status row already answers «is
+     the system OK?» at a glance (the diagnose page itself was removed in F2).
+     Report a missing check item as expected, not as a bug.
+   - VERIFIED-BY: crates/sundayrec-core/src/tray.rs::the_tray_carries_no_system_check_item
 2. Click **Stopp opptak** while recording.
    - **Expected:** the recording stops (the `RecorderEngine::stop()` path), the
      overlay comes down and a new row appears in **Redigering**, even with the
@@ -842,12 +793,6 @@ three assumptions that have each failed separately.
      down here rather than deleted because a handler nobody calls is exactly the
      kind of thing that gets re-wired by accident — see `docs/APP-SHELL.md`
      §D2 «Rutekontrakten».
-
-✅ **Diagnostikk** in the tray navigates to **Innstillinger** (the gear),
-scrolls the Diagnose row into view and RUNS it (V1/PR2). Until then it navigated
-and stopped: the router armed the action and no surface picked it up.
-
-- VERIFIED-BY: e2e/diagnose.spec.ts::the tray's «Diagnostikk» lands on the row and runs it
 
 > [GUI] The `tauri::tray` item install and the menu paint need a real desktop
 > session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
@@ -999,86 +944,24 @@ privileges` prompt — has no caller in the new shell, so a Mac that needs
 > confirmed on a Mac/Windows box. The `SetWaitableTimer` call itself does not even
 > compile on macOS — CI's `windows-check` lane is what proves it builds.
 
-## 11b. Special recording with its own audio device [HW] (no feature)
+## 11b. ~~Special recording with its own audio device~~ — REMOVED (F2)
 
-**The gear → Avansert → «Flere tider og spesialopptak» → Spesialopptak → «Legg
-til»** has a device select: «Samme som vanlig opptak» (the default, stored as
-`deviceId: null`) and then the same device list the Lyd page shows
-(`list_audio_devices`, ASIO devices as `asio::<name>`). A listed special with a
-device of its own says so in its row (`… · <device>`, `(ikke tilkoblet nå)`
-while that device is not in the list).
+Special (one-off, dated) recordings left the app in the rent-bord pruning (F2),
+and the per-special device override with them: the schedule is the weekly
+slots only. The section number stays so cross-references still resolve. What is
+left to check here is the invariant the removal must not break — a weekly slot
+composes the same `RecordingOpts` as always, and a missing device is the
+generic preflight finding:
 
-At the START (`fire()`, and the late-start net in `check_missed`), the
-scheduler resolves that id against the inputs enumerated right then
-(`start_settings`), bounded at 5 s. Present → the recording opens that device,
-with the channel pair the Lyd page holds for it (default routing if none).
-Missing, timed out or failed → the recording runs on the global device and an
-always-on native notification («Lydenheten «…» for spesialopptaket var ikke
-tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.») says so. The
-30-minute preflight checks the special's device through the same decision, and
-names it when it is missing — but it only claims a miss it has ESTABLISHED: while
-a recording runs (no enumeration at all), while the pre-roll or VU may hold an
-ASIO driver (for an ASIO special — asio-sys loads one driver per process), or
-when the enumeration came back empty or failed, it checks the global device as
-before.
-
-The named sentence («Lydenheten «…» for spesialopptaket er ikke tilkoblet. …»)
-is the finding code `specialDeviceMissing`, with the name carried as
-`params.device`, and exactly two surfaces use it: the always-on native
-notification and the Record page's own preflight row. Each looks the code up in
-its own catalogue (`AlertText` / `status.preflightCode`); a Rust test holds the
-two to the same words in all seven languages. The `device_missing` warning
-banner is a separate surface with its own sentence («Lydenheten «…» er ikke
-tilkoblet.»), which names the device too. A missing GLOBAL device (a weekly
-slot, or a special without a device of its own) keeps the generic «Lydenheten
-som er valgt i innstillingene er ikke tilkoblet.» on the notification and on the
-row.
-
-The Sunday invariant — a weekly slot, or a special without a device, composes
-byte-identical `RecordingOpts` and enumerates nothing — and the decision table
-are covered without hardware:
-
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::golden_a_weekly_slot_records_exactly_as_before
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::golden_a_special_without_a_device_records_exactly_as_before
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_special_with_a_present_device_records_from_it
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_missing_special_device_falls_back_to_exactly_the_global_recording
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_slow_enumeration_falls_back_instead_of_holding_the_start
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::only_an_asio_picker_id_asks_for_the_asio_sweep
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_live_recording_means_no_special_enumeration_and_no_missing_claim
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_asio_special_is_not_checked_while_another_asio_driver_may_be_held
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_empty_enumeration_is_not_a_missing_device
-- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::a_missing_special_device_is_a_named_finding
-- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_global_device_finding_is_untouched_by_the_named_variant
-- VERIFIED-BY: src-tauri/src/preflight/mod.rs::a_missing_resolved_device_is_named_on_its_finding
-- VERIFIED-BY: src-tauri/src/preflight/mod.rs::the_settings_device_is_checked_but_never_named_as_a_specials
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_scheduled_start_with_video_on_hands_the_engine_the_camera_and_an_mp4
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_missing_device_finding_is_generic_with_no_params
 - VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_card_and_the_notification_say_the_same_words
-- VERIFIED-BY: app/pages/record/preflight-text.test.ts::navngir spesialopptakets enhet, med samme ord som OS-varselet
-- VERIFIED-BY: app/pages/record/preflight-text.test.ts::den globale enheten beholder akkurat den teksten den alltid har hatt
-- VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::resolve_special_device_table
-- VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::a_special_device_carries_its_own_channel_pair
-- VERIFIED-BY: app/pages/setup/advanced/specials-core.test.ts::round-trips UI → sanitize → core JSON → UI
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::enheten som mangler beholder akkurat den teksten den alltid har hatt
 
-What is left for the rig (also `docs/RIG-DAY.md`, Mac item «(c, fortsettelse)
-Spesialopptak med eget lydkort»):
+An old profile that still has `specialRecordings` in its stored settings loads
+fine: the key is ignored and dropped at the next save.
 
-1. Global device = the mixer; add a special a few minutes ahead on a USB mic.
-   - **Expected:** it starts unattended on the USB mic (the VU follows the
-     mic), with the mic's own channel pair; the next weekly slot still records
-     from the mixer.
-2. Same again, but unplug the USB mic before the start.
-   - **Expected:** the recording starts on the mixer, and the notification
-     above names the mic — also with «Varsle når opptak starter» off.
-3. **Windows:** a WASAPI mic on the special with an ASIO driver installed →
-   no ASIO driver panel at the start, plugged in or not (w14). An ASIO device
-   on the special → the take runs on ASIO (`set_audio_engine: asio`), and the
-   log has no `reason=Timeout` fallback line. A special on a SECOND ASIO
-   interface while the global ASIO device is held (Record-page VU or pre-roll
-   open) → falls back to the global interface with the warning, and its
-   preflight does not claim the device is missing.
-
-> [HW] The enumeration inside the scheduled start (cpal/WASAPI through the COM
-> anchor, and a cold ASIO sweep against the 5 s bound) only runs for real on a
-> rig.
+- VERIFIED-BY: crates/sundayrec-core/src/settings.rs::slots_round_trip_through_json
 
 ---
 
@@ -1220,30 +1103,14 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      before exporting. The line over the button predicts
      `<YYYY-MM-DD> <tittel>.<fmt>` for a recording opened from the library, the
      delivered file has that name, and `ffprobe -show_format <file>` lists
-     `title`, `artist` (the speaker), `comment` (the description), `album` (the
-     church name from Oppsett) and `date`. Close the file and open the same
+     `title`, `artist` (the speaker), `comment` (the description) and `date`. Close the file and open the same
      recording again: the three fields are filled in from its `.meta.json`.
      VERIFIED-BY: e2e/export-page.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
      VERIFIED-BY: e2e/export-page.spec.ts::det som ble lagret sist, står i feltene neste gang
      VERIFIED-BY: crates/sundayrec-core/src/editor.rs::export_stem_matches_the_shared_vectors
-   - **Expected («Legg ut»):** under the receipt, the panel **«Legg ut på
-     SoundCloud»** (the default channel) shows the exported title and
-     description, each with its own **«Kopier»**; **«Åpne SoundCloud»** opens
-     `https://soundcloud.com/upload` in the **system browser** (not inside the
-     app). Drag the file in from «Vis i Finder» and note whether SoundCloud
-     pre-fills the track title from the file name or from the ID3 `title` tag.
-     Then set **Innstillinger → Avansert → Legg ut** to «Egen side» with an
-     `http://` link: Oppsett refuses it on the spot, and a link that got in
-     some other way makes the receipt say it was not opened. «Ingen» removes
-     the panel. The browser opening is the OS handler and stays GUI-UNVERIFIED;
-     the rest is covered:
-     VERIFIED-BY: e2e/publish.spec.ts::SoundCloud er standarden: tittel og beskrivelse kan kopieres hver for seg, og knappen åpner siden
-     VERIFIED-BY: e2e/publish.spec.ts::en egen lenke bakenden ikke godtar, blir en setning — ikke en knapp som ikke gjør noe
-     VERIFIED-BY: e2e/publish.spec.ts::«Ingen» betyr ingen panel — bare fila
-     VERIFIED-BY: e2e/publish.spec.ts::en lenke som ikke er https, sies fra om og lagres ikke
-     VERIFIED-BY: e2e/publish.spec.ts::malen fylles inn live, og fryses når noen skriver selv
-     VERIFIED-BY: crates/sundayrec-core/src/publish.rs::custom_upload_url_matches_the_shared_vectors
-     VERIFIED-BY: crates/sundayrec-core/src/publish.rs::the_fixed_channels_are_https_and_do_not_need_a_link
+   - **«Legg ut» is gone** (F2): the receipt has no upload panel, no channel
+     setting and no description template — the file and the «Innhold» tags are
+     the hand-off; SundayRec does not upload anything.
    - **Expected:** when it is done, the receipt offers three ways on — «Vis i
      Finder», «Eksporter i annet format», «Til biblioteket».
    - The destination half of the old modal's honesty claim:
@@ -1362,7 +1229,6 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_with_no_saved_clip_is_no_intro
    - VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::the_localstorage_hand_over_does_not_carry_the_clips_either
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_pick_that_is_not_a_file_stores_nothing
    - The ratchet holds the shape from the outside:
@@ -1415,7 +1281,8 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    build wrote is no longer read; it still travels with its recording through
    the trash.
 8. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
-   «Frivilligen først», and the banded `corrections` collection with F1): what
+   «Frivilligen først», and the banded `corrections` collection with F1 — the
+   consent text and `PRIVACY.md` no longer mention it): what
    remains of this step is the telemetry preview and consent:
    - With diagnostics ON, **the gear → Avansert → «Del anonym diagnostikk» →
      «Hva sendes»** lists what the next payload carries — and the caption must
@@ -1496,14 +1363,10 @@ Targets the "editor is unstable" reports. Run this stress loop after the fixes:
 Etappe 2 gave the app a memory of its own failures — a panic hook + bounded
 crash ring (E2.1), a supervisor that restarts long-lived tasks and records
 when it had to (E2.2), a rotating file log (E2.3), a renderer-side ring of
-failed IPC calls (E2.4), and a real capture/video probe wired back into
-Diagnose (E2.5). None of it needs a feature flag; all of it is exercised here.
+failed IPC calls (E2.4), and a real capture/video probe (E2.5). None of it needs a feature flag; all of it is exercised here.
 
-The IPC ring and the probe both have a SCREEN again since V1/PR2: the Diagnose
-row renders «Kommandoer som ikke svarte denne økten» and the capture probe's
-tri-state (got sound / got no sound / did not run, with the engine's own reason).
-
-- VERIFIED-BY: e2e/diagnose.spec.ts::a probe that did not run is not a cross, and says WHY in the engine's own words
+The IPC ring and the capture probe have no screen any more (the Diagnose page
+was removed in F2); they stay as backend-only facts.
 
 ### Trigger a deliberate crash
 
@@ -1526,9 +1389,9 @@ npm run tauri dev
   would be.
   - **Expected:** the terminal logs a `PANIC: …` line and a new
     `crash-<millis>-<seq>.json` appears in `<app-data>/crashes/`.
-  - ⚠️ The finding **SR-CRASH-01** ("Appen har krasjet") is still RAISED by
-    `sundayrec-core::diagnostics`, but there is no screen that shows findings —
-    read the crash file instead. See «Flater som ikke finnes lenger».
+  - There is no screen that shows crashes (the Diagnose page, and its
+    **SR-CRASH-01** finding, were removed in F2) — read the crash file instead.
+    See «Flater som ikke finnes lenger».
 
 ### Where the files land
 
@@ -1627,22 +1490,15 @@ file shows an error toast, never an empty page.
   the end; `Contents/Resources/resources/THIRD-PARTY-NOTICES.html` (macOS) /
   `resources\THIRD-PARTY-NOTICES.html` next to the exe (Windows) must exist.
 
-### ⚠️ Capture probe — backend only, no surface
+### ⚠️ Capture probe — removed (F2)
 
-`run_diagnostics` still runs a real ~2 s capture (and, with video on, grabs one
-real camera frame) through the SAME backend a recording uses, and still refuses
-politely while a recording is running or while the VU meter holds the input
-(`capture_probe_skipped`). **Nothing in the shell calls it.** The command is
-registered, tested in Rust and unreachable from the UI, so these three paths
-cannot be exercised by hand at all until a screen exists. They are listed under
-«Flater som ikke finnes lenger» with the rest, and the Rust tests are what keeps
-them honest meanwhile.
+The capture/video probe lived in `run_diagnostics`; the Diagnose page, the
+test recording and the capture bench were removed in F2, and so was the probe.
+Nothing in the app opens a device to «test» it any more.
 
-> [HW] The panic/crash-ring plumbing and the finding rules are unit-tested in
-> `sundayrec-core::diagnostics` + `src-tauri/src/crash.rs`; only the
-> end-to-end wiring — does a REAL panic reach a REAL file, does the REAL log
-> rotate on a REAL disk, does the REAL device refuse the probe at the right
-> moments — needs a rig. See `docs/NEEDS-RICHARD.md` for what is still
+> [HW] The panic/crash-ring plumbing is unit-tested in `src-tauri/src/crash.rs`;
+> only the end-to-end wiring — does a REAL panic reach a REAL file, does the
+> REAL log rotate on a REAL disk — needs a rig. See `docs/NEEDS-RICHARD.md` for what is still
 > owner-verified only.
 
 ---
@@ -1744,15 +1600,15 @@ in a release build, the lock cost nothing.
 ### Settings completeness (no feature)
 
 R7 closed the gap between the Electron `store.ts` `Settings` and the Tauri model:
-church profile (`churchName`/`responsiblePerson`), notification toggles
-(`notifyStart`/`notifyStop`) plus the editor intro/outro paths. (The e-mail
-config R7 also added is gone with e-mail alerts, §8.) All carry defaults +
-validation in `sundayrec-core::settings`.
+notification toggles (`notifyStart`/`notifyStop`) plus the editor intro/outro
+paths. (The e-mail config R7 also added is gone with e-mail alerts, §8; the
+church profile `churchName`/`responsiblePerson` and the publish settings are gone
+too, F2.) All carry defaults + validation in `sundayrec-core::settings`.
 
-1. Walk **the gear → «Hvilken kirke?»** (name + language) and the **«Hvem får
+1. Walk **the gear → «Hvilket språk?»** (the language) and the **«Hvem får
    beskjed hvis noe går galt?»** card on Opptak (the OS toggle, the reminder).
-   The church profile is deliberately the ONE question that did not move into
-   the control room: it is set once, not five minutes before a service.
+   The language is deliberately the ONE question that did not move into the
+   control room: it is set once, not five minutes before a service.
    - **Expected:** every field round-trips through `settings_save` (debounced)
      into SQLite and survives a relaunch.
    - **Expected:** a save that FAILS rolls the control back to what is actually
@@ -1761,104 +1617,35 @@ validation in `sundayrec-core::settings`.
      "disappeared" at the next launch. The one exception is deliberate: the
      weekly time is an explicit-save field, and there a failed write does NOT
      throw away what you typed.
-   - The church-profile round-trip (debounced save → storage → reload):
-   - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
+   - The language round-trip (debounced save → storage → reload):
+   - VERIFIED-BY: e2e/settings.spec.ts::the language setting round-trips into storage and survives a reload
    - Since R4 there is no curated subset to drop a key from: `settings_save`
      carries a PATCH of the changed fields that Rust merges over the stored
      row, boot only reads, and a field written is a field read back (the
      #113/#115 class ends structurally):
    - VERIFIED-BY: e2e/settings-seam.spec.ts::boot performs no settings_save at all
    - VERIFIED-BY: e2e/settings-seam.spec.ts::one change sends only that field — untouched fields keep their stored values
-   - An existing install's localStorage blob is migrated into sqlite exactly
-     once (old names translated, floats coerced, secrets stripped, key
-     removed):
-   - VERIFIED-BY: e2e/settings-migration.spec.ts::an old blob is imported once, translated, and the key removed
-   - VERIFIED-BY: e2e/settings-migration.spec.ts::a corrupt blob yields defaults without crashing, and is not retried
 2. **R2 «Frivilligen først» — the dead fields are really gone, tolerantly.**
-   Import a pre-v0.15 profile (one exported by v0.14 carries `hasLaunched`,
+   A stored settings blob from before v0.15 (one that carries `hasLaunched`,
    `sampleRate`, `inputVolume`, the EQ/compressor/limiter fields, `avSync`,
    `minimizeToTray`, `videoBitrate`, `outputMode`, `trimSilence`,
    `showLiveLevels`, `separateAudioFormat`, `localAdaptivity`,
    `videoResolution`/`videoFramerate`/`videoContainer`/`videoCodec`/
-   `videoEncoder`, `editorHwEncode`).
-   - **Expected:** the import succeeds, every neighbour keeps its value, and a
-     fresh export no longer carries any of them. The **«Ta med kamera»** card
-     on Opptak shows the on/off, the camera pick and «Behold separat lydfil» —
-     nothing else — and Avansert has no «Hva appen har lagt merke til» / «Hva
-     appen har justert» cards.
-   - Import/export themselves are on **the gear → Avansert →
-     «Innstillingsprofil»**, and
-     the import asks first («Dette erstatter innstillingene på denne maskinen
-     …») because it is the one settings action that is not undoable.
+   `videoEncoder`, `editorHwEncode`) loads without error.
+   - **Expected:** every neighbour keeps its value, and the next save no longer
+     carries any of them. The **«Ta med kamera»** card on Opptak shows the
+     on/off, the camera pick and «Behold separat lydfil» — nothing else — and
+     Avansert has no «Hva appen har lagt merke til» / «Hva appen har justert»
+     cards. (There is no settings import or export any more — the
+     «Innstillingsprofil» row left in F2.)
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
-   - VERIFIED-BY: app/lib/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
-3. **The profile's save/open window is the app's own (A1).** Click
-   **Eksporter**, then **Importer** (answer «Ja, importer»).
-   - **Expected:** each opens the OS window over the app — the save window
-     proposing `sundayrec-innstillinger.json`. Cancelling either says nothing
-     and changes nothing; saving says «Innstillingene ble eksportert.»,
-     importing «Innstillingene ble importert.» and the screens show the
-     imported values at once.
-   - **Expected (Windows):** the filter names are in the app's language —
-     «Innstillingsprofil (JSON)» in the save window, that and «Alle filer» in
-     the open window. **macOS** shows no filter names at all (its panel takes
-     one list of extensions): the save window keeps the `.json` ending and the
-     open window offers `.json` files.
-   - **Expected:** the import's question comes BEFORE the open window — «Avbryt»
-     there opens no window at all — and a double-click on either button opens
-     one window, not two.
-   - **Expected:** the exported file has no `deviceId`, `saveFolder`,
-     `launchAtLogin`, `videoEnabled` or other machine-local key. Importing a
-     profile from another machine — even a full one from a laptop nobody set
-     up — leaves this machine's sound card and channels, camera, recordings
-     folder and «Start automatisk med maskinen» as they were (after a reboot
-     SundayRec still starts). Automatic deletion is never switched on or made
-     shorter by an import. A profile with an empty schedule leaves this
-     machine's schedule and special recordings in place. A special recording's
-     own sound card is not in the exported file and is not taken from an
-     imported one.
-   - **Expected:** picking a file that is not a profile (a recording, a text
-     file, `{}`) says «Filen er ikke en innstillingsprofil fra SundayRec, eller
-     den er skadet. Ingenting ble endret.» — and nothing is: folder, language
-     and schedule as before. A file over 1 MiB says it is too large.
-   - Neither command takes a path from the webview; the window is opened in
-     Rust and only its answer is written or read:
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::replaced_commands_stay_replaced
-   - VERIFIED-BY: app/lib/api-shim-files.test.ts::eksporten sender ingen argumenter, og et avbrutt vindu er false
-   - VERIFIED-BY: app/lib/api-shim-files.test.ts::importen sender ingen argumenter, og et avbrutt vindu er null
-   - A cancel writes nothing / changes nothing, a pick gets the JSON or is imported, and the picked path still meets the guard:
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_export_writes_nothing_and_says_so
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_destination_gets_the_settings_as_pretty_json
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_import_changes_nothing
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_profile_is_imported_stored_and_returned
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_guard_still_judges_a_picked_destination
-   - A wrong file changes nothing; a profile never takes the folder or the schedule away:
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_that_is_not_a_settings_profile_is_refused_and_changes_nothing
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_over_the_cap_is_refused_and_one_at_the_cap_is_read
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_never_moves_this_machines_save_folder
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_without_a_schedule_keeps_this_machines
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::an_unreadable_field_costs_that_field_not_the_import
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_lenient_fields_garbage_is_skipped_and_does_not_count
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_leading_byte_order_mark_is_not_the_end_of_the_profile
-   - This machine's own settings stay; retention is never switched on or shortened:
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_blank_laptops_profile_leaves_the_church_pc_recording_as_before
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_blank_laptops_profile_takes_nothing_from_the_church_pc
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::half_a_device_group_moves_nothing
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::retention_can_be_switched_off_or_lengthened_never_on_or_shortened
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_weekly_plan_can_be_armed_never_disarmed
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_export_leaves_this_machine_out
-   - A special recording's own sound card does not travel, and no setting goes unclassified:
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_special_recordings_sound_card_is_not_carried_either_way
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::every_settings_field_is_classified
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_machine_local_line_is_pinned
-   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_church_pc_fixture_sets_every_machine_local_field_off_its_default
-   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::får sin egen setning, og ingenting leses inn
-   - The question before the window, a quiet cancel, one window at a time:
-   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et nei på spørsmålet åpner ikke noe vindu
-   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et avbrutt vindu er stille og leser ingenting inn
-   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et dobbeltklikk åpner ikke et vindu nummer to mens det første står
-   - The OS window itself (parented, filter names, the replace-question) needs
-     the real app. // GUI-UNVERIFIED
+3. **No command takes settings as text, and none takes a settings file path.**
+   The profile export/import and the localStorage hand-over were removed in F2,
+   so the path ratchet's closed list of string-to-`Settings` parsers is empty:
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_command_that_parses_a_string_into_settings_is_on_the_closed_list
+   - A stored `churchName`, `publishTarget` or `specialRecordings` (from an older
+     build) is ignored on load and absent from the next save:
+   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::removed_church_publish_and_special_fields_are_ignored_and_not_rewritten
 
 ---
 
@@ -1940,11 +1727,10 @@ gated behind a default-off feature.
 The Song/Plan/SundayEdit/Stage hand-offs, the integrations panel and the
 `sundayrec://` scheme left the app 2026-08-23.
 
-### Audio diagnostics (no feature) — `list_devices` + `diagnose_audio`
+### Device inventory (no feature) — `list_devices`
 
-Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
-`ffmpeg -list_devices` enumeration; the diagnostics shaping
-(`build_audio_diagnostics`) is pure + tested.
+Mirrors `src/main/ipc/audio-devices.ts`. (`diagnose_audio`, the second command
+of this section, left with the Diagnose page in F2.)
 
 ⚠️ The camera list comes from **`list_devices`** (the shim's `listVideoDevices`
 picks `video_inputs` out of the inventory), NOT from a `list_video_devices`
@@ -1961,9 +1747,6 @@ the only camera enumeration there is.
      that. No camera at all reads «Finner ikke noe kamera», with the advice to
      connect one or turn the option off. A missing ffmpeg / no devices yields
      empty lists, not an error. // HARDWARE-UNVERIFIED.
-   - ✅ `diagnose_audio` (the audio-input name list, WASAPI loopback not
-     ported) is reached again since V1/PR2: it is what the Diagnose row's
-     device count, «Valgt enhet» row and device list are built from.
 
 ## What "passed" means
 
@@ -1981,7 +1764,7 @@ browser tier, that is the first thing to suspect.
 
 For any build that touches **recording, capture, the editor, the meter loop, or
 boot ordering**, also run **§5b** (recording-health telemetry) and **§12b**
-(editor stability loop) and paste the diagnose "Siste opptak" numbers into the
+(editor stability loop) and paste the `last-recording.json` numbers (§5b) into the
 release notes — that is the standing gate that stops unverified audio/editor
 fixes from shipping (see `RELEASE-CHECKLIST.md`).
 
@@ -1998,31 +1781,32 @@ BACKEND is untouched and only the surface is gone.
 
 The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet».
 
-| gone                                                                     | what is left, and where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~**The Diagnose modal** (Innstillinger → Lyd)~~                         | **BACK** in V1/PR2 — as a ROW on Avansert, not a modal (the result stays open beside the setting you are about to change). Findings are translated on their stable `code`, with the engine's own prose as the fallback for a code the catalogue does not know yet (§5b).                                                                                                                                                                                                                                                                                                                                                                              |
-| ~~**The capture/video probe's three paths**~~                            | **BACK** in V1/PR2 — the probe row states all three (got sound / got no sound / did not run) and prints the engine's skip reason verbatim rather than showing a cross for something it does not know (§5b, §13).                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Editing a recording's note**                                           | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **The Lyd / Video filter chips, sortable columns**                       | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **The month calendar + day detail + wake-diagnostics card**              | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **The export MODAL**                                                     | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **The «Normaliser» toggle**                                              | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **The mastering apply panel** (`_mastert`)                               | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **Intro/outro jingle rows**                                              | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **The editor's three TABS**                                              | **two** STEPS — Klipp → Lyd — since D3 turned the third into a destination. The chosen step is NOT remembered across a reopen, deliberately: every open starts at «is this the sermon?».                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **The left RAIL** (D3)                                                   | a 44 px top bar (mark, product name, church — and the window's drag region) and a 56 px bottom bar (status left, the three destinations centred, version + gear right). `--rail-w` is deleted; nothing in the app is 208 px wide any more.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **The editor's EMPTY STATE** (D3)                                        | the recordings list. REDIGERING with no file open IS the empty state, so «Åpne fil…» moved to the list's head and the drop zone wraps the whole page (never the trash). `app.editor.emptyTitle` / `emptyDesc` are deleted from all catalogues.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Step 3 «Eksporter» in the step strip** (D3)                            | the **Eksportering** destination. «Neste: Eksporter» navigates there and the file stays open — the export's signals live at module scope, so a run and its receipt survive going away and coming back. `app.editor.stepExport` is deleted.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **`#modal-manual`** (source/camera/filename)                             | those are the control-room cards' answers now, on the same screen as Start; start is one button (§5).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **The «backend OK» header**                                              | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **The wake ADMIN prompt** (`wake_reschedule`)                            | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`healStoredDeviceId`**                                                 | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ~~**The live camera picture** (`recording_preview_frame`)~~              | **BACK** in D2/PR2, **replaced by one camera session in C4b** — `camera_preview_start` feeds Opptak and the overlay alike (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **«+30 min» / «Avbryt auto-stopp»** on the overlay                       | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **The stereo / mono / «Miks L+R» channel-mode picker**                   | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
-| ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~ | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
-| **E-mail alerts** (SMTP card, address + test, relay, receipt)            | the native OS notification on the recording machine — always on for failures, the answer on «Hvem får beskjed hvis noe går galt?» (§8, §11). An upgraded install clears the SMTP password and says once what changed.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **The editor's keyboard-shortcut legend**                                | the shortcuts the legend described are not all rebuilt; the window handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| gone                                                                                   | what is left, and where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The Diagnose page, the test recording and the capture bench** (F2)                   | removed. What is left: the numbers a recording writes to `<app-data>/last-recording.json` and the history ring (§5b), and the recorder's own post-recording truth check that raises the `recording://quality` alarm (`selftest_verdict`).                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **«Legg ut» / publish help, church profile and church calendar** (F2)                  | removed. The file and the «Innhold» tags are the hand-off; the filename default is the date (a stored `church` pattern reads as `date`). Language is the one thing left of the old church page (§R7).                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Special recordings, profile export/import, legacy settings migration, haptics** (F2) | removed. The schedule is the weekly slots only; there is no settings file to move between machines.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Editing a recording's note**                                                         | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **The Lyd / Video filter chips, sortable columns**                                     | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **The month calendar + day detail + wake-diagnostics card**                            | one list and one sentence on Avansert — «Flere tider» and the wake line (§11).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **The export MODAL**                                                                   | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **The «Normaliser» toggle**                                                            | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **The mastering apply panel** (`_mastert`)                                             | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Intro/outro jingle rows**                                                            | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **The editor's three TABS**                                                            | **two** STEPS — Klipp → Lyd — since D3 turned the third into a destination. The chosen step is NOT remembered across a reopen, deliberately: every open starts at «is this the sermon?».                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **The left RAIL** (D3)                                                                 | a 44 px top bar (mark, product name — and the window's drag region) and a 56 px bottom bar (status left, the three destinations centred, version + gear right). `--rail-w` is deleted; nothing in the app is 208 px wide any more.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **The editor's EMPTY STATE** (D3)                                                      | the recordings list. REDIGERING with no file open IS the empty state, so «Åpne fil…» moved to the list's head and the drop zone wraps the whole page (never the trash). `app.editor.emptyTitle` / `emptyDesc` are deleted from all catalogues.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Step 3 «Eksporter» in the step strip** (D3)                                          | the **Eksportering** destination. «Neste: Eksporter» navigates there and the file stays open — the export's signals live at module scope, so a run and its receipt survive going away and coming back. `app.editor.stepExport` is deleted.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **`#modal-manual`** (source/camera/filename)                                           | those are the control-room cards' answers now, on the same screen as Start; start is one button (§5).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **The «backend OK» header**                                                            | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **The wake ADMIN prompt** (`wake_reschedule`)                                          | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **`healStoredDeviceId`**                                                               | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ~~**The live camera picture** (`recording_preview_frame`)~~                            | **BACK** in D2/PR2, **replaced by one camera session in C4b** — `camera_preview_start` feeds Opptak and the overlay alike (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **«+30 min» / «Avbryt auto-stopp»** on the overlay                                     | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **The stereo / mono / «Miks L+R» channel-mode picker**                                 | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
+| ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~               | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
+| **E-mail alerts** (SMTP card, address + test, relay, receipt)                          | the native OS notification on the recording machine — always on for failures, the answer on «Hvem får beskjed hvis noe går galt?» (§8, §11).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **The editor's keyboard-shortcut legend**                                              | the shortcuts the legend described are not all rebuilt; the window handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Claims this runbook used to point at a test for, and no longer can
 
@@ -2031,14 +1815,9 @@ screen that is gone, so a pointer at the replacement would have claimed coverage
 of something nobody built.
 
 - ~~`e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report`~~
-  — **replaced** in V1/PR2. The screen exists again, so the claim is covered
-  again; the title is NOT reused, because the new surface is a row and not a
-  modal and a pointer should name what it actually opens:
-  - VERIFIED-BY: e2e/diagnose.spec.ts::a run answers with five status rows, and every one says which way it went
-  - VERIFIED-BY: e2e/diagnose.spec.ts::findings are translated on their CODE, and an unknown code keeps the engine's prose
-  - VERIFIED-BY: e2e/diagnose.spec.ts::«Kopier full rapport» puts the backend's markdown on the clipboard
-  - VERIFIED-BY: e2e/diagnose.spec.ts::a diagnosis that could not run says so instead of showing an empty report
-  - VERIFIED-BY: e2e/diagnose.spec.ts::the test recording is OFF while a recording runs, and says why
+  — **gone with the Diagnose page** (F2). It was replaced by `e2e/diagnose.spec.ts`
+  in V1/PR2; that spec and the screen were then removed together, so there is
+  nothing to point at.
 - `e2e/history.spec.ts::a note reaches the backend and shows on the row`
 - `e2e/history.spec.ts::a filter that matches nothing says so in its own words`
 - `e2e/editor.spec.ts::the export modal is honest about destination and level`

@@ -21,7 +21,7 @@
 //!   - notify* (notifications)                             → Fase 6
 //!   - `editorIntroPath` / `editorOutroPath` (editor)      → Fase 4
 //!   - `deviceChannels` (per-device channel maps)          → Fase 2/3
-//!   - `video*`, church profile                            → their phases
+//!   - `video*`                                            → their phase
 //!
 //! When those land, add the field here with its serde tag matching the Electron
 //! key and extend [`Settings::validate`] / [`Default`] accordingly.
@@ -31,8 +31,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::publish::PublishTarget;
-use crate::schedule::{ScheduleSlot, SpecialRecording};
+use crate::schedule::ScheduleSlot;
 
 /// Input channel layout. Serialised to the EXACT Electron string union
 /// (`'stereo' | 'monoL' | 'monoR' | 'monoMix'`, see `types/index.ts:1`), so the
@@ -82,17 +81,17 @@ pub enum FileFormat {
     Aac,
 }
 
-/// How recording filenames are generated. Serialised lowercase to match the
-/// Electron union (`'date' | 'church' | 'plain' | 'datetime'`,
-/// see `types/index.ts:3`).
+/// How recording filenames are generated. Serialised lowercase.
+///
+/// (F2: the `church` pattern — named after the liturgical day — left with the
+/// church calendar. A stored `"church"` reads as `date`, the default.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "FilenamePattern.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FilenamePattern {
-    /// Date only (the Electron default).
+    /// Date only (the default). Also what a stored `"church"` reads as.
+    #[serde(alias = "church")]
     Date,
-    /// Liturgical/church name + date.
-    Church,
     /// "Gudstjeneste" + date.
     Plain,
     /// Date + time.
@@ -401,10 +400,6 @@ pub struct Settings {
     /// read, and `false` would silently disarm every church that already had a
     /// Sunday slot — the exact failure this app exists to prevent. A fresh
     /// profile has no slots anyway, so `true` there arms nothing.
-    ///
-    /// Only WEEKLY slots are gated. `special_recordings` are dated one-offs
-    /// somebody entered by hand for a specific concert; the level-1 switch is
-    /// about the recurring plan and never silently cancels those.
     #[serde(default = "default_true")]
     pub auto_record_enabled: bool,
     /// Weekly recurring recording windows. Empty by default. The scheduler
@@ -424,41 +419,6 @@ pub struct Settings {
     /// that reads `slots` directly is a bug in waiting.
     #[serde(default)]
     pub slots: Vec<ScheduleSlot>,
-    /// One-off dated recordings (concerts, special services). Empty by default.
-    /// Auto-pruned 7 days after they end ([`crate::schedule::prune_specials`]).
-    #[serde(default)]
-    pub special_recordings: Vec<SpecialRecording>,
-
-    // ── Church profile (R7 — Electron `churchName`/`responsiblePerson`) ────────
-    /// Congregation/church name. Drives the `church` filename pattern and the
-    /// localized "church" labels. Empty string = unset (matches the Electron
-    /// `''` default, not `null`). See `store.ts` `churchName: ''`.
-    #[serde(default)]
-    pub church_name: String,
-    /// Person responsible for recordings (shown in diagnostics).
-    /// Empty string = unset (Electron `responsiblePerson: ''`).
-    #[serde(default)]
-    pub responsible_person: String,
-
-    // ── «Legg ut» — where the finished file goes (no upload; see `publish`) ────
-    /// The channel the export receipt's «Legg ut» panel opens. SoundCloud by
-    /// default; `none` hides the panel. Lenient: an unknown channel written by
-    /// a newer build costs this field, not the whole blob.
-    #[serde(default, deserialize_with = "lenient")]
-    pub publish_target: PublishTarget,
-    /// The church's own upload page, used when `publish_target` is `custom`.
-    /// Stored as typed; vetted every time it is OPENED
-    /// ([`crate::publish::custom_upload_url`]: `https://` only, no userinfo),
-    /// so a bad link is a panel that says so, never a URL handed to the OS.
-    #[serde(default)]
-    pub publish_custom_url: String,
-    /// A fixed description the «Innhold» card starts from, with `{tittel}`,
-    /// `{taler}`, `{dato}` and `{kirke}` filled in (English aliases accepted).
-    /// Empty = the description starts empty. Rendered in the renderer
-    /// (`renderDescription`), never here: it is prefill, not a tag the backend
-    /// composes.
-    #[serde(default)]
-    pub publish_description_template: String,
 
     // ── Notifications (R7 — Electron `notifyStart`/`notifyStop`) ───────────────
     /// Fire a native notification when a scheduled recording starts? Default true.
@@ -605,14 +565,6 @@ impl Default for Settings {
 
             auto_record_enabled: true,
             slots: Vec::new(),
-            special_recordings: Vec::new(),
-
-            church_name: String::new(),
-            responsible_person: String::new(),
-
-            publish_target: PublishTarget::default(),
-            publish_custom_url: String::new(),
-            publish_description_template: String::new(),
 
             notify_start: true,
             notify_stop: true,
@@ -697,7 +649,6 @@ impl Settings {
     /// slice must be resolved against this slice too — which is automatic,
     /// because "all of them" and "none of them" are the only two answers.
     ///
-    /// Specials are deliberately NOT gated; see [`Settings::auto_record_enabled`].
     pub fn active_slots(&self) -> &[ScheduleSlot] {
         if self.auto_record_enabled {
             &self.slots
@@ -741,9 +692,9 @@ impl Settings {
     /// The merge is FIELD BY FIELD: a field whose value cannot be read (an enum
     /// variant this build does not know — a beta that stored `format: "opus"`
     /// and was then rolled back — or a value of the wrong type) loses only
-    /// itself and keeps its default; every other setting survives. The two
-    /// hand-built lists, `slots` and `specialRecordings`, go one step finer:
-    /// only the unreadable ELEMENTS are dropped (reported as `slots[2]`). Only a blob
+    /// itself and keeps its default; every other setting survives. The
+    /// hand-built list `slots` goes one step finer: only the unreadable
+    /// ELEMENTS are dropped (reported as `slots[2]`). Only a blob
     /// that is not a JSON object at all falls back to the full defaults, so a
     /// corrupt store never bricks the app. Use
     /// [`Settings::from_json_merged_reporting`] to learn which fields were
@@ -782,12 +733,12 @@ impl Settings {
                 kept.insert(key, v);
                 continue;
             }
-            // The two lists a volunteer builds by hand (the weekly plan and the
-            // dated one-offs) are rescued ELEMENT by element: one unreadable
+            // The list a volunteer builds by hand (the weekly plan) is rescued
+            // ELEMENT by element: one unreadable
             // entry must not take the whole plan with it — a missing Sunday slot
             // is a missed recording. The dropped entries are named by position
             // (`slots[2]`) so the warning in `settings::load` has a trail.
-            if matches!(key.as_str(), "slots" | "specialRecordings")
+            if key == "slots"
                 && let serde_json::Value::Array(items) = &v
             {
                 let mut good = Vec::new();
@@ -905,10 +856,6 @@ mod tests {
         assert!(s.protect_recording);
         // Schedule (Fase 5)
         assert!(s.slots.is_empty());
-        assert!(s.special_recordings.is_empty());
-        // Church profile (R7) — Electron `''` not `null`.
-        assert_eq!(s.church_name, "");
-        assert_eq!(s.responsible_person, "");
         // Notifications (R7)
         assert!(s.notify_start);
         assert!(s.notify_stop);
@@ -924,10 +871,8 @@ mod tests {
     fn r7_fields_merge_from_partial_json() {
         // A partial blob carrying only the new R7 keys fills the rest from
         // defaults (Electron `store.get(key, default)` semantics).
-        let s =
-            Settings::from_json_merged(r#"{"churchName":"Domkirken","responsiblePerson":"Kari"}"#);
-        assert_eq!(s.church_name, "Domkirken");
-        assert_eq!(s.responsible_person, "Kari");
+        let s = Settings::from_json_merged(r#"{"deviceName":"Domkirken"}"#);
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         // Untouched field keeps its default.
         assert!(s.notify_start);
     }
@@ -1112,9 +1057,10 @@ mod tests {
             serde_json::to_string(&FilenamePattern::Date).unwrap(),
             "\"date\""
         );
+        // A stored `church` (the removed liturgical-day pattern) reads as `date`.
         assert_eq!(
-            serde_json::to_string(&FilenamePattern::Church).unwrap(),
-            "\"church\""
+            serde_json::from_str::<FilenamePattern>("\"church\"").unwrap(),
+            FilenamePattern::Date
         );
         assert_eq!(
             serde_json::to_string(&FilenamePattern::Plain).unwrap(),
@@ -1149,7 +1095,6 @@ mod tests {
         // Schedule keys must match the Electron `Settings` interface.
         assert!(obj.contains_key("autoRecordEnabled"));
         assert!(obj.contains_key("slots"));
-        assert!(obj.contains_key("specialRecordings"));
     }
 
     // ── `auto_record_enabled` (P1b) ─────────────────────────────────────────
@@ -1195,8 +1140,8 @@ mod tests {
     }
 
     #[test]
-    fn slots_and_specials_round_trip_through_json() {
-        use crate::schedule::{ScheduleSlot, SpecialRecording};
+    fn slots_round_trip_through_json() {
+        use crate::schedule::ScheduleSlot;
         let original = Settings {
             slots: vec![ScheduleSlot {
                 days: vec![6],
@@ -1204,24 +1149,26 @@ mod tests {
                 stop: "12:30".to_string(),
                 max: Some(120),
             }],
-            special_recordings: vec![SpecialRecording {
-                id: Some("s1".to_string()),
-                date: "2026-12-24".to_string(),
-                name: "Julaften".to_string(),
-                start: "16:00".to_string(),
-                stop: "17:00".to_string(),
-                device_id: None,
-            }],
             ..Default::default()
         };
         let json = serde_json::to_string(&original).unwrap();
         let back = Settings::from_json_merged(&json);
         assert_eq!(back.slots, original.slots);
-        assert_eq!(back.special_recordings, original.special_recordings);
         // An older blob without the schedule keys defaults them to empty.
         let legacy = Settings::from_json_merged(r#"{ "sampleRate": 44100 }"#);
         assert!(legacy.slots.is_empty());
-        assert!(legacy.special_recordings.is_empty());
+        // An old blob that still carries `specialRecordings` reads fine: the key is ignored.
+        let with_specials = Settings::from_json_merged(
+            r#"{ "specialRecordings": [{"date":"2026-12-24","name":"Julaften","start":"16:00","stop":"17:00"}] }"#,
+        );
+        assert!(with_specials.slots.is_empty());
+        assert!(
+            !serde_json::to_value(&with_specials)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .contains_key("specialRecordings")
+        );
     }
 
     #[test]
@@ -1268,28 +1215,22 @@ mod tests {
 
     #[test]
     fn one_unreadable_list_element_costs_only_that_element() {
-        // The weekly plan and the dated one-offs are rescued per ELEMENT: a slot
+        // The weekly plan is rescued per ELEMENT: a slot
         // whose `days` is garbage must not take the Sunday slot beside it.
         let json = r#"{
-            "churchName": "Domkirken",
+            "deviceName": "Domkirken",
             "slots": [
                 {"days":[6],"start":"11:00","stop":"12:30","max":null},
                 {"days":"sunday","start":"11:00","stop":"12:30","max":null},
                 {"days":[2],"start":"19:00","stop":"20:00","max":null}
-            ],
-            "specialRecordings": [
-                {"date":"2026-12-24","name":7,"start":"16:00","stop":"17:00"},
-                {"date":"2026-12-25","name":"Juledag","start":"11:00","stop":"12:00"}
             ]
         }"#;
         let (s, dropped) = Settings::from_json_merged_reporting(json);
         assert_eq!(s.slots.len(), 2);
         assert_eq!(s.slots[0].days, vec![6]);
         assert_eq!(s.slots[1].days, vec![2]);
-        assert_eq!(s.special_recordings.len(), 1);
-        assert_eq!(s.special_recordings[0].name, "Juledag");
-        assert_eq!(s.church_name, "Domkirken");
-        assert_eq!(dropped, vec!["slots[1]", "specialRecordings[0]"]);
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
+        assert_eq!(dropped, vec!["slots[1]"]);
 
         // A list that is not a list at all still loses just the field.
         let (s, dropped) =
@@ -1337,7 +1278,7 @@ mod tests {
         // The audit PoC: a beta stored `format: "opus"`; the older build does not
         // know it. Before, the WHOLE blob failed → no slots, no saveFolder.
         let blob = r#"{
-            "churchName": "Domkirken",
+            "deviceName": "Domkirken",
             "saveFolder": "/Volumes/Opptak",
             "silenceThreshold": -40,
             "format": "opus",
@@ -1346,7 +1287,7 @@ mod tests {
         }"#;
         let (s, mut dropped) = Settings::from_json_merged_reporting(blob);
         assert_eq!(s.save_folder.as_deref(), Some("/Volumes/Opptak"));
-        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.slots.len(), 1);
         // Only the broken fields fell back, and they are named.
@@ -1497,7 +1438,7 @@ mod tests {
         let s = Settings::from_json_merged(
             r#"{
                 "silenceThreshold": -40,
-                "churchName": "Domkirken",
+                "deviceName": "Domkirken",
                 "streamDestinations": [
                     {"id": "yt", "name": "YouTube",
                      "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
@@ -1512,7 +1453,7 @@ mod tests {
         .validated();
         // The neighbours survived — dropping stream fields costs nothing else.
         assert_eq!(s.silence_threshold, -40);
-        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         // And the round-trip writes a blob WITHOUT the retired fields.
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
@@ -1540,7 +1481,7 @@ mod tests {
         let s = Settings::from_json_merged(
             r#"{
                 "silenceThreshold": -40,
-                "churchName": "Domkirken",
+                "deviceName": "Domkirken",
                 "webhookUrl": "https://hooks.slack.com/services/T/B/X",
                 "webhookOnWarning": true,
                 "webhookAllowLocal": true,
@@ -1555,7 +1496,7 @@ mod tests {
         )
         .validated();
         assert_eq!(s.silence_threshold, -40);
-        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
         for gone in [
@@ -1574,43 +1515,41 @@ mod tests {
         }
     }
 
-    // «Legg ut»: a blob from before the three publish fields existed gets the
-    // defaults (SoundCloud, no link, no template) and loses nothing else.
+    // F2 (rent bord): the church profile, the «Legg ut» settings and the dated
+    // one-off recordings left the app. A blob an older build wrote still loads,
+    // the neighbours survive, and the next write carries none of the keys.
     #[test]
-    fn a_blob_without_the_publish_fields_gets_their_defaults() {
-        let s = Settings::from_json_merged(r#"{"churchName": "Domkirken"}"#).validated();
-        assert_eq!(s.church_name, "Domkirken");
-        assert_eq!(s.publish_target, PublishTarget::Soundcloud);
-        assert_eq!(s.publish_custom_url, "");
-        assert_eq!(s.publish_description_template, "");
-    }
-
-    #[test]
-    fn the_publish_fields_round_trip_under_their_camel_case_names() {
+    fn removed_church_publish_and_special_fields_are_ignored_and_not_rewritten() {
         let s = Settings::from_json_merged(
             r#"{
+                "deviceName": "Domkirken",
+                "churchName": "Domkirken",
+                "responsiblePerson": "Kari",
                 "publishTarget": "custom",
                 "publishCustomUrl": "https://kirken.no/last-opp",
-                "publishDescriptionTemplate": "Preken av {taler}, {dato}."
+                "publishDescriptionTemplate": "Preken av {taler}, {dato}.",
+                "specialRecordings": [
+                    {"date":"2026-12-24","name":"Julaften","start":"16:00","stop":"17:00"}
+                ],
+                "filenamePattern": "church"
             }"#,
-        );
-        assert_eq!(s.publish_target, PublishTarget::Custom);
-        assert_eq!(s.publish_custom_url, "https://kirken.no/last-opp");
-        assert_eq!(s.publish_description_template, "Preken av {taler}, {dato}.");
+        )
+        .validated();
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
+        // The removed liturgical-day pattern reads as the default.
+        assert_eq!(s.filename_pattern, FilenamePattern::Date);
         let json = serde_json::to_value(&s).unwrap();
-        assert_eq!(json["publishTarget"], "custom");
-        let none = Settings::from_json_merged(r#"{"publishTarget": "none"}"#);
-        assert_eq!(none.publish_target, PublishTarget::Off);
-    }
-
-    #[test]
-    fn an_unknown_publish_target_costs_that_field_and_nothing_else() {
-        // A newer build's channel, read by this one: the save folder and the
-        // schedule must not be reset along with it (`lenient`).
-        let s =
-            Settings::from_json_merged(r#"{"publishTarget": "mastodon", "silenceThreshold": -40}"#);
-        assert_eq!(s.publish_target, PublishTarget::Soundcloud);
-        assert_eq!(s.silence_threshold, -40);
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "churchName",
+            "responsiblePerson",
+            "publishTarget",
+            "publishCustomUrl",
+            "publishDescriptionTemplate",
+            "specialRecordings",
+        ] {
+            assert!(!obj.contains_key(gone), "{gone} must not survive a save");
+        }
     }
 
     // The SMTP alerter and the SundaySuite e-mail relay were removed together:
@@ -1622,7 +1561,7 @@ mod tests {
     fn legacy_blob_with_removed_email_fields_imports_cleanly() {
         let s = Settings::from_json_merged(
             r#"{
-                "churchName": "Domkirken",
+                "deviceName": "Domkirken",
                 "notifyStart": false,
                 "emailOnError": true,
                 "emailAddress": "vakt@kirka.no",
@@ -1635,7 +1574,7 @@ mod tests {
             }"#,
         )
         .validated();
-        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         assert!(!s.notify_start);
         assert_eq!(s.reminder_minutes, 10);
         let json = serde_json::to_value(&s).unwrap();
@@ -1674,12 +1613,12 @@ mod tests {
                 r#"{{
                     "classicFfmpegPreroll": {flag},
                     "preRollSeconds": 20,
-                    "churchName": "Domkirken"
+                    "deviceName": "Domkirken"
                 }}"#
             ))
             .validated();
             assert_eq!(s.pre_roll_seconds, 20);
-            assert_eq!(s.church_name, "Domkirken");
+            assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
             let json = serde_json::to_value(&s).unwrap();
             assert!(
                 !json
@@ -1701,12 +1640,12 @@ mod tests {
                 r#"{{
                     "classicFfmpegAudio": {flag},
                     "preRollSeconds": 20,
-                    "churchName": "Domkirken"
+                    "deviceName": "Domkirken"
                 }}"#
             ))
             .validated();
             assert_eq!(s.pre_roll_seconds, 20);
-            assert_eq!(s.church_name, "Domkirken");
+            assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
             let json = serde_json::to_value(&s).unwrap();
             assert!(
                 !json.as_object().unwrap().contains_key("classicFfmpegAudio"),
@@ -1729,14 +1668,14 @@ mod tests {
                     "videoEnabled": true,
                     "videoDeviceName": "Logitech BRIO",
                     "preRollSeconds": 20,
-                    "churchName": "Domkirken"
+                    "deviceName": "Domkirken"
                 }}"#
             ))
             .validated();
             assert!(s.video_enabled);
             assert_eq!(s.video_device_name.as_deref(), Some("Logitech BRIO"));
             assert_eq!(s.pre_roll_seconds, 20);
-            assert_eq!(s.church_name, "Domkirken");
+            assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
             let json = serde_json::to_value(&s).unwrap();
             let obj = json.as_object().unwrap();
             assert!(
@@ -1774,13 +1713,13 @@ mod tests {
                 "videoCodec": "h265",
                 "videoEncoder": "software",
                 "editorHwEncode": true,
-                "churchName": "Domkirken"
+                "deviceName": "Domkirken"
             }"#,
         )
         .validated();
         assert_eq!(s.sample_rate_mode, SampleRate::R44100);
         assert_eq!(s.format, FileFormat::Flac);
-        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.device_name.as_deref(), Some("Domkirken"));
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
         for gone in [

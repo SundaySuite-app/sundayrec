@@ -7,8 +7,7 @@
       "setup": "Settings"
     },
     "rail": {
-      "label": "Places in the app",
-      "churchUnset": "Not set up yet"
+      "label": "Places in the app"
     },
     "status": {
       "ready": "All set",
@@ -97,7 +96,7 @@
       "q1": "Which sound source?",
       "q2": "Where are recordings saved?",
       "q3": "Which quality?",
-      "q4": "Which church?",
+      "q4": "Which language?",
       "q5": "Who gets told if something goes wrong?",
       "notSetUp": "Not set up",
       "onMachine": "On the computer",
@@ -157,15 +156,11 @@
       },
       "qualityCustom": "Custom · {format} {bitrate}",
       "qualityCustomDesc": "This combination isn’t one of the three. Pick a card to change it.",
-      "church": {
-        "lede": "The name and the language the app uses.",
-        "name": "Congregation or church",
-        "nameDesc": "Shown at the top of the app.",
-        "placeholder": "For example Bryn Church",
-        "languageLabel": "Language in the app",
-        "languageDesc": "Changes right away.",
-        "language": "Language: {language}",
-        "languagePaused": "This language is temporarily unavailable — the app shows {language} for now."
+      "language": {
+        "lede": "The language the app uses.",
+        "label": "Language in the app",
+        "desc": "Changes right away.",
+        "paused": "This language is temporarily unavailable — the app shows {language} for now."
       },
       "notify": {
         "lede": "The computer always tells you when something goes wrong — whoever is at it.",
@@ -329,49 +324,22 @@
         "logEmpty": "The error log is still empty.",
         "logCopied": "Error log copied",
         "logCopyFailed": "Could not copy the error log.",
-        "profile": "Move the setup to another computer",
-        "profileDesc": "Save the settings in a file, and load them on the other computer. Passwords are never included.",
         "licenses": "Licenses",
         "licensesDesc": "The software from others that SundayRec is built on, and ffmpeg (GPL) with where its source code is.",
         "licensesOpen": "Show licenses",
         "licensesClose": "Close",
         "licensesFailed": "The license text could not be found. Try reinstalling the app.",
         "licensesFrameTitle": "Licenses and third-party notices",
-        "export": "Save setup",
-        "import": "Load setup",
-        "importTitle": "Load setup?",
-        "importBody": "This replaces the settings on this computer with the contents of the file you choose. The sound source, camera, recordings folder and “Start automatically with the computer” stay as they are here. Recordings, the library and passwords are untouched.",
-        "importConfirm": "Yes, load the setup",
-        "exported": "The setup was saved.",
-        "exportFailed": "Could not save the setup: {err}",
-        "imported": "The setup was loaded.",
-        "importFailed": "Could not load the setup: {err}",
-        "importNotProfile": "That file is not a setup saved by SundayRec, or it is damaged. Nothing was changed.",
-        "importTooLarge": "That file is too large to be a saved setup. Nothing was changed.",
-        "schedTitle": "More times and one-off recordings",
+        "schedTitle": "More times",
         "schedDesc": "The weekly time is set on the Record page, in the “Record automatically” card. Here you add more.",
         "schedTimes": "Weekly times",
         "schedNone": "No weekly times yet.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Add a weekly time",
+        "schedAddSave": "Add",
+        "wakeTestBlocked": "Not while a recording is running.",
         "schedRemove": "Remove",
         "schedFirstIsSetup": "The first time is the one you see in the “Record automatically” card on the Record page.",
-        "specialsTitle": "One-off recordings",
-        "specialsDesc": "A single date — a concert, a Christmas Eve.",
-        "specialsNone": "No one-off recordings planned.",
-        "specialDate": "Date",
-        "specialStart": "Starts",
-        "specialAdd": "Add",
-        "specialRemove": "Remove",
-        "specialDefaultName": "Service",
-        "specialRow": "{date} · {start}–{stop}",
-        "specialNeedsDate": "Choose a date first.",
-        "specialPast": "That date has passed — a recording will not start.",
-        "specialDeviceSame": "Same as the usual recording",
-        "specialDevice": "Sound source for this recording",
-        "specialDeviceHint": "Choose a sound source of its own if this recording should come from something other than usual. If it is not connected when the recording starts, the usual one is used — and you are told.",
-        "specialRowDevice": "{date} · {start}–{stop} · {device}",
-        "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (not connected now)",
         "wake": "Wake the machine from sleep",
         "wakeDesc": "Without this the machine has to be awake when the recording starts.",
         "autoDeleteConfirmBody": "Recordings older than this are moved to the trash. Under 30 days can mean a service is gone before anyone has downloaded it.",
@@ -430,175 +398,20 @@
           "onBattery": "running on battery"
         },
         "audioTech": "About the audio technology",
-        "diagnoseReportWhere": "Send the report to whoever is helping you, or to dev@sundaysuite.app.",
-        "publishDesc": "After an export the app can open the page you upload to, with the title and description ready to copy. SundayRec does not upload anything itself.",
-        "publishWhere": "Where do you publish?",
-        "publishChannelName": {
-          "custom": "Your own page",
-          "none": "None"
-        },
-        "publishChannelDesc": {
-          "soundcloud": "Often your podcast too",
-          "youtube": "Upload in YouTube Studio",
-          "spotify": "Podcast in Spotify for Creators",
-          "custom": "For example WordPress or your podcast host",
-          "none": "The receipt shows only the file"
-        },
-        "publishUrl": "Link to the upload page",
-        "publishUrlDesc": "Must start with https://",
-        "publishUrlNotHttps": "The link must start with https://",
-        "publishUrlInvalid": "This does not look like a web address",
-        "publishTemplate": "Standard description",
-        "publishTemplateDesc": "Filled in on export, where it can be changed. {title}, {speaker}, {date} and {church} are replaced.",
-        "publishTemplatePlaceholder": "Sermon from {church}, {date}. Speaker: {speaker}.",
         "audioTechNote": "The text below is a licence notice from Steinberg and is shown in English."
       },
       "sections": {
         "nav": "Jump to",
-        "church": "Church and language",
+        "language": "Language",
         "schedule": "Schedule",
-        "publish": "Publishing",
         "recording": "The recording",
         "recordingDesc": "How the recording itself should work: sound from before Start, stopping on silence, maximum length, splitting into several files and deleting old recordings.",
         "updates": "Updates and privacy",
         "updatesDesc": "You decide whether the app checks for new versions and whether it sends anonymous statistics.",
         "help": "Help and troubleshooting",
-        "helpDesc": "If something is not working: check this computer, get the error log, or move your setup to another computer.",
+        "helpDesc": "If something is not working: get the error log.",
         "about": "About",
         "aboutDesc": "Licenses and notices for the software SundayRec is built on."
-      }
-    },
-    "diagnose": {
-      "title": "Check this computer",
-      "desc": "Checks the sound source, permissions, recording engine and disk, and makes a report you can pass on.",
-      "run": "Start check",
-      "running": "Checking …",
-      "failed": "The check could not run: {err}",
-      "probeSkipped": "The sound test did not run: {why}",
-      "copy": "Copy full report",
-      "copied": "Report copied",
-      "copyFailed": "Could not copy the report",
-      "savedTo": "Saved to",
-      "devicesTitle": "All sound sources the app can see",
-      "noDevices": "No sound sources found",
-      "ipcTitle": "Parts of the app that did not respond this time ({n})",
-      "test": "Test recording (10 sec)",
-      "testRunning": "Recording a test …",
-      "testBlocked": "Not while a recording is running.",
-      "testOk": "The test recording went fine — {signal}.",
-      "testFail": "The test recording failed: {why}",
-      "r": {
-        "devices": "Sound sources found",
-        "selected": "Chosen sound source",
-        "mic": "Microphone access",
-        "engine": "Recording engine (ffmpeg)",
-        "probe": "Sound test"
-      },
-      "v": {
-        "notFound": "not found",
-        "defaultDevice": "Computer default",
-        "ffmpegOk": "Available",
-        "ffmpegMissing": "Not found",
-        "unknown": "Cannot be determined",
-        "probeSkipped": "Did not run",
-        "probeOk": "Got sound",
-        "probeFail": "Got no sound",
-        "auth": {
-          "authorized": "Granted",
-          "denied": "Denied",
-          "restricted": "Blocked by a system administrator",
-          "notDetermined": "Not asked yet",
-          "unknown": "Cannot be determined on this platform"
-        }
-      },
-      "testErr": {
-        "deviceNotFound": "could not find the sound source",
-        "permissionDenied": "microphone access denied",
-        "ffmpegError": "the recording engine failed",
-        "noAudio": "no sound in the recording"
-      },
-      "testSig": {
-        "silent": "completely silent",
-        "low": "weak signal",
-        "normal": "normal level"
-      },
-      "f": {
-        "ffmpeg01": {
-          "title": "The recording engine (ffmpeg) is missing",
-          "hint": "Reinstall SundayRec — the recording engine ships with the app."
-        },
-        "audio01": {
-          "title": "No sound source found",
-          "hint": "Check that the mixing desk or sound card is connected and its driver installed. On a shared PC: is the audio service running?"
-        },
-        "audio02": {
-          "title": "The chosen sound source was not found",
-          "hint": "Connect the sound source, or choose another under “Which sound source?” on the Record page."
-        },
-        "rate01": {
-          "title": "A fixed sample rate is selected",
-          "hint": "If the sound card runs a different rate, ffmpeg resamples and you can get stutter. Choose “Auto” again unless you have a concrete reason."
-        },
-        "video01": {
-          "title": "Video is on, but no camera was found",
-          "hint": "Connect the camera, or turn off “Include video” on the Record page."
-        },
-        "video02": {
-          "title": "The camera gave no picture",
-          "hint": "Check that the camera is connected and not in use by another program, and that the app has camera access."
-        },
-        "disk01": {
-          "title": "Little free space",
-          "hint": "Free up space or choose another save folder before a long recording."
-        },
-        "disk02": {
-          "title": "Cannot write to the save folder",
-          "hint": "Choose a folder you can write to under “Where are recordings saved?” on the Record page."
-        },
-        "perm01": {
-          "title": "Microphone access is denied",
-          "hint": "Grant access in System Settings → Privacy & Security → Microphone, and restart the app."
-        },
-        "perm02": {
-          "title": "Camera access is denied",
-          "hint": "Grant access in System Settings → Privacy & Security → Camera, and restart the app."
-        },
-        "engine01": {
-          "title": "The last recording ended with an error",
-          "hint": "The error code is in the line above. Make a test recording to see whether it works now."
-        },
-        "capture01": {
-          "title": "The last recording showed signs of stutter",
-          "hint": "Close other heavy programs, and check the cable and power to the sound card. Then make a new recording and see whether the numbers drop."
-        },
-        "capture02": {
-          "title": "The sound test got no sound",
-          "hint": "Check that the right sound source is chosen under “Which sound source?” on the Record page, that the cable is plugged in, and that no other program is using the microphone. Then run the check again."
-        },
-        "crash01": {
-          "title": "The app has crashed",
-          "hint": "Pass this report on — the crash files are what make the fault findable."
-        },
-        "task01": {
-          "title": "Background tasks had to be restarted",
-          "hint": "The app restarted them itself, so nothing stopped. If it repeats, bring this report — the names above say which part is unstable."
-        },
-        "log01": {
-          "title": "The error log is not active",
-          "hint": "That usually means the app folder could not be created. Restart the app; if it persists, check disk space and permissions."
-        },
-        "log02": {
-          "title": "Parts of the error log are missing",
-          "hint": "The error log is incomplete because the recording came first — that is the right way round. A slow disk is worth looking at before the next long recording."
-        },
-        "ok": {
-          "title": "No problems detected",
-          "hint": "You are ready to record."
-        },
-        "recLoss": {
-          "title": "The last recording is missing audio",
-          "hint": "This is serious: the recording lost audio along the way. Close other heavy programs, connect the sound card directly (not through a hub), and report it with this report — the numbers here are the evidence."
-        }
       }
     },
     "language": {
@@ -781,17 +594,7 @@
       "contentSpeakerPlaceholder": "Who spoke?",
       "contentDescription": "Description",
       "contentDescriptionPlaceholder": "Bible passage, theme or a line about the church",
-      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload.",
-      "publishTitle": "Publish on {channel}",
-      "publishTitleCustom": "Publish",
-      "publishOpen": "Open {channel}",
-      "publishOpenCustom": "Open the upload page",
-      "publishHint": "Drag the file onto the page that opens, then paste the title and description.",
-      "publishCopy": "Copy",
-      "publishCopied": "Copied",
-      "publishCopyFailed": "Could not copy. Select the text and copy it yourself.",
-      "publishNothing": "There is no valid https link under Settings → Publishing, so nothing was opened.",
-      "publishFailed": "Could not open the page. Open it in your browser yourself."
+      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload."
     },
     "span": {
       "hours": "{h} h",
@@ -808,9 +611,6 @@
       "missedDesc": "The computer was off. Automatic recording needs it on or asleep.",
       "missedWhy": "What can I do?",
       "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart.",
-      "emailRemovedTitle": "Email alerts have been removed",
-      "emailRemovedDesc": "SundayRec no longer sends email when something goes wrong. The computer tells you with an on-screen notification instead — it can’t be turned off.",
-      "emailRemovedOk": "Got it",
       "globalErrorTitle": "Something went wrong"
     }
   },
@@ -829,8 +629,7 @@
       "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
       "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
       "cameraDenied": "Camera access has not been granted.",
-      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress.",
-      "specialDeviceMissing": "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used."
+      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress."
     },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",
@@ -900,11 +699,10 @@
     "saveFailed": "Could not save the setting"
   },
   "error": {
-    "tryAgainHint": "If the problem persists, open Settings → Help and troubleshooting → Check this computer, or restart the app.",
+    "tryAgainHint": "If the problem persists, open Settings → Help and troubleshooting and get the error log, or restart the app.",
     "ipcFailed": "Something in the background did not respond, so this view may be incomplete.",
     "settingsLoadFailed": "Could not read the settings — showing defaults. Changes you make now may be lost.",
     "settingsLoadRetry": "Try again",
-    "settingsMigrationCorrupt": "The settings from the previous version could not be read — the app starts with defaults.",
     "recordingsFolderMissing": "The recordings folder doesn’t exist yet. It is created when the first recording starts. If it is on an external disk, check that the disk is connected."
   },
   "editor": {
@@ -1070,7 +868,7 @@
     "errorFfmpegMissing": "Internal error: the recording binary is missing — reinstall the app",
     "errorStuck": "Recording stopped — no audio from the sound source for 60 seconds",
     "errorStartTimeout": "The recording never got going — check that the microphone (and camera) are connected, and that SundayRec has access under System Settings → Privacy & Security",
-    "errorEngineExited": "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again.",
+    "errorEngineExited": "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and get the error log (Settings → Help and troubleshooting) if it happens again.",
     "errorVideoCapture": "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
     "errorCameraFormat": "The camera does not support the chosen frame rate or resolution — pick another video setting and try again.",
     "errorCameraPermission": "Camera access denied — open System Settings and give the app access to the camera",
@@ -1108,7 +906,7 @@
     "promptTitle": "Send anonymous usage statistics?",
     "promptDesc": "SundayRec can send anonymous error and usage statistics to SundaySuite to improve the app. Optional, and you can answer any time under Settings → Updates and privacy.",
     "rePromptTitle": "We are asking you again",
-    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
+    "rePromptDesc": "You have answered this before, but we are asking again to be sure your answer covers what is shared now: only anonymous counters and technical numbers about the recordings (whether audio dropped out, for how long, and what failed) — never audio, names, files or text. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
   },
   "tooltip": {
     "unsavedChanges": "Unsaved changes",

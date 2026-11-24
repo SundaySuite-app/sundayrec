@@ -29,7 +29,7 @@ export function questionText(id: DecisionId): string {
       return t("app.setup.q2");
     case "quality":
       return t("app.setup.q3");
-    case "church":
+    case "language":
       return t("app.setup.q4");
     case "notify":
       return t("app.setup.q5");
@@ -60,8 +60,8 @@ export function answerText(answer: Answer): string {
         format: answer.format,
         bitrate: answer.bitrate,
       });
-    case "church":
-      return answer.name;
+    case "language":
+      return tDyn("app.language", answer.language);
     case "onMachine":
       return t("app.setup.onMachine");
     case "notificationsOff":
@@ -96,10 +96,6 @@ export function detailText(detail: Detail | null): string | null {
       return tDyn("app.setup.qDesc", detail.format);
     case "qualityCustomDesc":
       return t("app.setup.qualityCustomDesc");
-    case "language":
-      return tf("app.setup.church.language", {
-        language: tDyn("app.language", detail.language),
-      });
     case "onMachineDesc":
       return t("app.setup.notify.onMachineDesc");
     case "onMachineUnverifiedDesc":

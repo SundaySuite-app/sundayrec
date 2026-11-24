@@ -1,5 +1,5 @@
 /**
- * Kjernen bak «4 — Hvilken kirke?»s SPRÅKVELGER (F1-R2 / R9).
+ * Kjernen bak «4 — Hvilket språk?»s SPRÅKVELGER (F1-R2 / R9).
  *
  * ## Løgnen dette retter
  *
@@ -7,7 +7,7 @@
  * `["no","en"]` gjennom redesignet. En profil migrert fra legacy-skallet kunne
  * ha `settings.language` satt til et av de fem PAUSEDE språkene —
  * `resolveStartupLocale` i `app/i18n/index.ts` valgte da et aktivt språk ved
- * oppstart, men skrev ALDRI verdien tilbake til basen. Så `ChurchPage`s
+ * oppstart, men skrev ALDRI verdien tilbake til basen. Så `LanguagePage`s
  * kontroll fikk en `value` — det lagrede språket, `"de"` for eksempel — som
  * ingen `<option>` hadde. En HTML `<select>` uten treff blant sine options
  * viser da bare den FØRSTE optionen, stille: en frivillig med en tysk profil så
@@ -20,7 +20,7 @@
  * (`tDyn('app.language', stored)` — alle sju finnes i begge katalogene, pinnet
  * i `app/i18n/i18n.test.ts`), så boksen viser sannheten i stedet for å late som
  * `stored` ikke fantes. Den er deaktivert fordi å velge den ville satt appen på
- * et språk det ikke finnes tekst for — `ChurchPage` legger selv til linja under
+ * et språk det ikke finnes tekst for — `LanguagePage` legger selv til linja under
  * som sier det, styrt av `isPausedLanguage`.
  *
  * ## ⚠️ Mekanismen er IKKE i bruk i dag (F2-S6)

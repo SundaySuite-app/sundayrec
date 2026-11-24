@@ -63,10 +63,6 @@ export const OLD_SUNDAY_MS = Date.parse("2026-07-26T11:00:00+02:00");
  *  ISO, the shape `scheduler://next` and `scheduler_status.next` both carry. */
 export const NEXT_SERVICE_ISO = "2026-08-30T11:00:00";
 
-/** A special recording far enough out that `specialRows`' «date >= today»
- *  filter (in LOCAL time) can never drop it. */
-export const SPECIAL_DATE = "2027-12-24";
-
 /** Boot a scene: fixed clock, event bridge, then the ordinary browser-tier
  *  boot with the scene's fixtures and the locale under the `language` key. */
 export async function bootScene(
@@ -182,22 +178,6 @@ export async function advanceClock(page: Page, minutes: number): Promise<void> {
   await page.clock.setFixedTime(
     new Date(ATLAS_NOW.getTime() + minutes * 60_000),
   );
-}
-
-/**
- * A clipboard that records instead of writing.
- *
- * Only needed so «Kopier full rapport» can be photographed with its toast: the
- * real `navigator.clipboard` is permission-gated and would reject, which paints
- * the failure toast instead of the receipt.
- */
-export async function stubClipboard(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: () => Promise.resolve() },
-    });
-  });
 }
 
 // ── The console guard ────────────────────────────────────────────────────────

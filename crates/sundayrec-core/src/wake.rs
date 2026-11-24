@@ -522,17 +522,17 @@ pub enum WakeIdleReason {
     /// machine waking at 10:50 on a Sunday for a recording it will refuse to
     /// make.
     AutoRecordOff,
-    /// The plan is armed, but nothing falls inside the horizon (no slots, no
-    /// specials, or everything upcoming is already inside the wake lead).
+    /// The plan is armed, but nothing falls inside the horizon (no slots, or
+    /// everything upcoming is already inside the wake lead).
     NothingUpcoming,
 }
 
 /// Which [`WakeIdleReason`], if any, explains an empty wake set.
 ///
 /// `auto_record_enabled` is the level-1 switch; `upcoming_count` is how many
-/// starts the horizon produced from the active slots plus the specials. The
-/// switch is checked only when the set is empty, because a disarmed weekly plan
-/// with a dated special still has something to wake for.
+/// starts the horizon produced from the active slots. The switch is checked
+/// only when the set is empty: with starts in the set there is nothing to
+/// excuse.
 pub fn wake_idle_reason(
     auto_record_enabled: bool,
     upcoming_count: usize,
@@ -631,7 +631,7 @@ pub struct WakeFailureEntry {
     pub scheduled_at: String,
     /// What kind of outcome this is.
     pub kind: WakeFailureKind,
-    /// Human-readable label (slot name, "Spesialopptak", "Test-wake").
+    /// Human-readable label (slot name, "Test-wake").
     pub label: String,
     /// Free-form reason (e.g. `no_resume`, `too_late`, `on_battery`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1494,8 +1494,7 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
 
     #[test]
     fn a_wake_set_with_something_in_it_needs_no_excuse() {
-        // Specials are not gated by the level-1 switch, so "switched off" with
-        // an upcoming concert is a perfectly ordinary armed set.
+        // A set with starts in it needs no excuse, whatever the switch says.
         assert_eq!(wake_idle_reason(true, 3), None);
         assert_eq!(wake_idle_reason(false, 1), None);
     }

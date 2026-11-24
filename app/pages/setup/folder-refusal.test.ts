@@ -51,7 +51,7 @@ let edits = 0;
  *  å lagre: lagringen sender bare det som er endret, og ingenting endret
  *  betyr ingen skriving (og dermed ingen avvisning å teste). */
 function withSave(save: () => Promise<unknown>): void {
-  patchSettings({ churchName: `kirke ${++edits}` });
+  patchSettings({ deviceName: `enhet ${++edits}` });
   (globalThis as unknown as { window: unknown }).window = {
     api: { saveSettings: save },
   };

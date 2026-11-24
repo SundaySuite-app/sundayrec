@@ -155,7 +155,7 @@ test.describe("kvalitet", () => {
   });
 });
 
-test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
+test.describe("språkvalget — språket til en migrert profil (R9)", () => {
   test("et lagret «de» starter appen på TYSK, og tysk er velgbart", async ({
     page,
   }) => {
@@ -175,12 +175,12 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
     });
 
     // Appen SELV står på tysk nå — ikke på nærmeste nabospråk.
-    await expect(page.getByTestId("setup-church")).toBeVisible();
-    await expect(page.getByTestId("setup-church-lede")).toHaveText(
-      "Der Name und die Sprache, die die App verwendet.",
+    await expect(page.getByTestId("setup-language")).toBeVisible();
+    await expect(page.getByTestId("setup-language-lede")).toHaveText(
+      "Die Sprache, die die App verwendet.",
     );
 
-    const select = page.getByTestId("church-language-control-input");
+    const select = page.getByTestId("language-control-input");
     await expect(select).toHaveValue("de");
 
     // Raden bærer det EKTE navnet — på tysk, siden det er appens språk — og er
@@ -194,7 +194,7 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
     }
 
     // Og ingen linje under boksen unnskylder noe: ingenting er pauset.
-    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
+    await expect(page.getByTestId("language-paused")).toHaveCount(0);
   });
 
   test("valgboksen tilbyr alle sju katalogene, ingen deaktivert", async ({
@@ -206,11 +206,11 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
       goto: "settings",
     });
 
-    const select = page.getByTestId("church-language-control-input");
+    const select = page.getByTestId("language-control-input");
     await expect(select).toHaveValue("no");
     await expect(select.locator("option")).toHaveCount(7);
     await expect(select.locator("option:disabled")).toHaveCount(0);
-    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
+    await expect(page.getByTestId("language-paused")).toHaveCount(0);
   });
 
   test("et språkbytte til polsk maler skjermen om, og lagres", async ({
@@ -225,10 +225,10 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
       goto: "settings",
     });
 
-    await page.getByTestId("church-language-control-input").selectOption("pl");
+    await page.getByTestId("language-control-input").selectOption("pl");
 
-    await expect(page.getByTestId("setup-church-lede")).toHaveText(
-      "Nazwa i język, których używa aplikacja.",
+    await expect(page.getByTestId("setup-language-lede")).toHaveText(
+      "Język, którego używa aplikacja.",
     );
     await expect
       .poll(async () => (await storedSettings(page)).language)

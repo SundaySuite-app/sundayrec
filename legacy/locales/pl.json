@@ -7,8 +7,7 @@
       "setup": "Ustawienia"
     },
     "rail": {
-      "label": "Miejsca w aplikacji",
-      "churchUnset": "Jeszcze nie skonfigurowano"
+      "label": "Miejsca w aplikacji"
     },
     "status": {
       "ready": "Wszystko gotowe",
@@ -97,7 +96,7 @@
       "q1": "Jakie źródło dźwięku?",
       "q2": "Gdzie zapisywać nagrania?",
       "q3": "Jaka jakość?",
-      "q4": "Jaki kościół?",
+      "q4": "Jaki język?",
       "q5": "Kto dostanie wiadomość, jeśli coś pójdzie nie tak?",
       "notSetUp": "Nie skonfigurowano",
       "onMachine": "Na komputerze",
@@ -159,15 +158,11 @@
       },
       "qualityCustom": "Własne · {format} {bitrate}",
       "qualityCustomDesc": "Ta kombinacja nie jest żadną z tych trzech. Wybierz kartę, aby ją zmienić.",
-      "church": {
-        "lede": "Nazwa i język, których używa aplikacja.",
-        "name": "Parafia lub kościół",
-        "nameDesc": "Wyświetlane na górze aplikacji.",
-        "placeholder": "Na przykład parafia Bryn",
-        "languageLabel": "Język w aplikacji",
-        "languageDesc": "Zmienia się od razu.",
-        "language": "Język: {language}",
-        "languagePaused": "Ten język jest tymczasowo niedostępny — na razie aplikacja wyświetla {language}."
+      "language": {
+        "lede": "Język, którego używa aplikacja.",
+        "label": "Język w aplikacji",
+        "desc": "Zmienia się od razu.",
+        "paused": "Ten język jest tymczasowo niedostępny — na razie aplikacja wyświetla {language}."
       },
       "notify": {
         "lede": "Komputer zawsze daje znać, gdy coś pójdzie nie tak — temu, kto przy nim stoi.",
@@ -333,49 +328,22 @@
         "logEmpty": "Dziennik błędów jest jeszcze pusty.",
         "logCopied": "Dziennik błędów skopiowany",
         "logCopyFailed": "Nie udało się skopiować dziennika błędów.",
-        "profile": "Przenieś ustawienia na inny komputer",
-        "profileDesc": "Zapisz ustawienia w pliku i wczytaj je na drugim komputerze. Hasła nigdy nie są dołączane.",
         "licenses": "Licencje",
         "licensesDesc": "Oprogramowanie innych autorów, na którym opiera się SundayRec, oraz ffmpeg (GPL) wraz z miejscem, gdzie jest kod źródłowy.",
         "licensesOpen": "Pokaż licencje",
         "licensesClose": "Zamknij",
         "licensesFailed": "Nie znaleziono tekstu licencji. Spróbuj zainstalować aplikację ponownie.",
         "licensesFrameTitle": "Licencje i informacje o oprogramowaniu osób trzecich",
-        "export": "Zapisz ustawienia",
-        "import": "Wczytaj ustawienia",
-        "importTitle": "Wczytać ustawienia?",
-        "importBody": "To zastąpi ustawienia na tym komputerze zawartością wybranego pliku. Źródło dźwięku, kamera, folder nagrań i „Uruchamiaj razem z komputerem” pozostaną takie, jakie są tutaj. Nagrania, biblioteka i hasła pozostaną nietknięte.",
-        "importConfirm": "Tak, wczytaj ustawienia",
-        "exported": "Ustawienia zostały zapisane.",
-        "exportFailed": "Nie udało się zapisać ustawień: {err}",
-        "imported": "Ustawienia zostały wczytane.",
-        "importFailed": "Nie udało się wczytać ustawień: {err}",
-        "importNotProfile": "Ten plik nie jest ustawieniami z SundayRec albo jest uszkodzony. Nic nie zostało zmienione.",
-        "importTooLarge": "Ten plik jest za duży, by być plikiem ustawień. Nic nie zostało zmienione.",
-        "schedTitle": "Więcej godzin i nagrania jednorazowe",
+        "schedTitle": "Więcej godzin",
         "schedDesc": "Cotygodniową godzinę ustawia się na stronie Nagrywanie, w karcie „Nagrywaj automatycznie”. Tutaj dodajesz kolejne.",
         "schedTimes": "Stałe godziny",
         "schedNone": "Jeszcze żadnych stałych godzin.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Dodaj stałą godzinę",
+        "schedAddSave": "Dodaj",
+        "wakeTestBlocked": "Nie da się, gdy trwa nagrywanie.",
         "schedRemove": "Usuń",
         "schedFirstIsSetup": "Pierwsza godzina to ta, którą widzisz w karcie „Nagrywaj automatycznie” na stronie Nagrywanie.",
-        "specialsTitle": "Nagrania jednorazowe",
-        "specialsDesc": "Jedna data — koncert, Wigilia.",
-        "specialsNone": "Nie zaplanowano nagrań jednorazowych.",
-        "specialDate": "Data",
-        "specialStart": "Początek",
-        "specialAdd": "Dodaj",
-        "specialRemove": "Usuń",
-        "specialDefaultName": "Nabożeństwo",
-        "specialRow": "{date} · {start}–{stop}",
-        "specialNeedsDate": "Najpierw wybierz datę.",
-        "specialPast": "Ta data już minęła — nagranie się nie rozpocznie.",
-        "specialDeviceSame": "Tak jak zwykłe nagranie",
-        "specialDevice": "Źródło dźwięku dla nagrania",
-        "specialDeviceHint": "Wybierz osobne źródło dźwięku, jeśli nagranie ma pochodzić z czegoś innego niż zwykle. Jeśli nie będzie podłączone w chwili startu, zostanie użyte zwykłe — i dostaniesz informację.",
-        "specialRowDevice": "{date} · {start}–{stop} · {device}",
-        "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (obecnie niepodłączone)",
         "wake": "Wybudzaj komputer z uśpienia",
         "wakeDesc": "Bez tego komputer musi być włączony, gdy nagrywanie ma się rozpocząć.",
         "autoDeleteConfirmBody": "Nagrania starsze niż to trafiają do kosza. Poniżej 30 dni może oznaczać, że nabożeństwo zniknie, zanim ktoś zdąży je pobrać.",
@@ -434,175 +402,20 @@
           "onBattery": "działał na baterii"
         },
         "audioTech": "O technologii dźwięku",
-        "diagnoseReportWhere": "Wyślij raport osobie, która Wam pomaga, albo na dev@sundaysuite.app.",
-        "publishDesc": "Po eksporcie aplikacja może otworzyć stronę, na którą przesyłacie pliki, z tytułem i opisem gotowymi do skopiowania. SundayRec sam niczego nie przesyła.",
-        "publishWhere": "Gdzie publikujecie?",
-        "publishChannelName": {
-          "custom": "Własna strona",
-          "none": "Brak"
-        },
-        "publishChannelDesc": {
-          "soundcloud": "Często także Wasz podcast",
-          "youtube": "Przesyłanie w YouTube Studio",
-          "spotify": "Podcast w Spotify for Creators",
-          "custom": "Na przykład WordPress lub serwis hostujący podcast",
-          "none": "Potwierdzenie pokazuje tylko plik"
-        },
-        "publishUrl": "Link do strony przesyłania",
-        "publishUrlDesc": "Musi zaczynać się od https://",
-        "publishUrlNotHttps": "Link musi zaczynać się od https://",
-        "publishUrlInvalid": "To nie wygląda na adres internetowy",
-        "publishTemplate": "Stały opis",
-        "publishTemplateDesc": "Wypełniany przy eksporcie, gdzie można go zmienić. {title}, {speaker}, {date} i {church} są zastępowane.",
-        "publishTemplatePlaceholder": "Kazanie z {church}, {date}. Mówca: {speaker}.",
         "audioTechNote": "Poniższy tekst to warunki licencji firmy Steinberg i jest po angielsku."
       },
       "sections": {
         "nav": "Przejdź do",
-        "church": "Parafia i język",
+        "language": "Język",
         "schedule": "Harmonogram",
-        "publish": "Publikowanie",
         "recording": "Nagranie",
         "recordingDesc": "Jak ma przebiegać samo nagranie: dźwięk sprzed Startu, zatrzymanie przy ciszy, maksymalna długość, dzielenie na kilka plików i usuwanie starych nagrań.",
         "updates": "Aktualizacje i prywatność",
         "updatesDesc": "Ty decydujesz, czy aplikacja szuka nowych wersji i czy wysyła anonimowe statystyki.",
         "help": "Pomoc i rozwiązywanie problemów",
-        "helpDesc": "Jeśli coś nie działa: sprawdź komputer, pobierz dziennik błędów albo przenieś ustawienia na inny komputer.",
+        "helpDesc": "Jeśli coś nie działa: pobierz dziennik błędów.",
         "about": "O programie",
         "aboutDesc": "Licencje i uwagi dotyczące oprogramowania, na którym zbudowano SundayRec."
-      }
-    },
-    "diagnose": {
-      "title": "Sprawdź komputer",
-      "desc": "Sprawdza źródło dźwięku, uprawnienia, silnik nagrywania i dysk oraz przygotowuje raport do przekazania dalej.",
-      "run": "Rozpocznij sprawdzanie",
-      "running": "Sprawdzanie …",
-      "failed": "Nie udało się przeprowadzić sprawdzenia: {err}",
-      "probeSkipped": "Próba dźwięku nie została wykonana: {why}",
-      "copy": "Skopiuj pełny raport",
-      "copied": "Raport skopiowany",
-      "copyFailed": "Nie udało się skopiować raportu",
-      "savedTo": "Zapisano w",
-      "devicesTitle": "Wszystkie źródła dźwięku widoczne dla aplikacji",
-      "noDevices": "Nie znaleziono źródeł dźwięku",
-      "ipcTitle": "Części aplikacji, które tym razem nie odpowiedziały ({n})",
-      "test": "Nagranie próbne (10 s)",
-      "testRunning": "Nagrywanie próbne …",
-      "testBlocked": "Nie da się, gdy trwa nagrywanie.",
-      "testOk": "Nagranie próbne się udało — {signal}.",
-      "testFail": "Nagranie próbne się nie powiodło: {why}",
-      "r": {
-        "devices": "Znalezione źródła dźwięku",
-        "selected": "Wybrane źródło dźwięku",
-        "mic": "Dostęp do mikrofonu",
-        "engine": "Silnik nagrywania (ffmpeg)",
-        "probe": "Próba dźwięku"
-      },
-      "v": {
-        "notFound": "nie znaleziono",
-        "defaultDevice": "Domyślne komputera",
-        "ffmpegOk": "Dostępny",
-        "ffmpegMissing": "Nie znaleziono",
-        "unknown": "Nie da się ustalić",
-        "probeSkipped": "Nie wykonano",
-        "probeOk": "Wykryto dźwięk",
-        "probeFail": "Nie wykryto dźwięku",
-        "auth": {
-          "authorized": "Udzielony",
-          "denied": "Odmówiony",
-          "restricted": "Zablokowany przez administratora systemu",
-          "notDetermined": "Jeszcze nie zapytano",
-          "unknown": "Nie da się ustalić na tej platformie"
-        }
-      },
-      "testErr": {
-        "deviceNotFound": "nie znaleziono źródła dźwięku",
-        "permissionDenied": "odmowa dostępu do mikrofonu",
-        "ffmpegError": "silnik nagrywania zawiódł",
-        "noAudio": "brak dźwięku w nagraniu"
-      },
-      "testSig": {
-        "silent": "całkowita cisza",
-        "low": "słaby sygnał",
-        "normal": "normalny poziom"
-      },
-      "f": {
-        "ffmpeg01": {
-          "title": "Brakuje silnika nagrywania (ffmpeg)",
-          "hint": "Zainstaluj SundayRec ponownie — silnik nagrywania jest częścią aplikacji."
-        },
-        "audio01": {
-          "title": "Nie znaleziono źródła dźwięku",
-          "hint": "Sprawdź, czy konsoleta lub karta dźwiękowa jest podłączona i ma zainstalowany sterownik. Na współdzielonym komputerze: czy działa usługa dźwięku?"
-        },
-        "audio02": {
-          "title": "Nie znaleziono wybranego źródła dźwięku",
-          "hint": "Podłącz źródło dźwięku albo wybierz inne w „Jakie źródło dźwięku?” na stronie Nagrywanie."
-        },
-        "rate01": {
-          "title": "Wybrano stałą częstotliwość próbkowania",
-          "hint": "Jeśli karta dźwiękowa pracuje z inną częstotliwością, ffmpeg przelicza i dźwięk może się zacinać. Wybierz znów „Auto”, chyba że masz konkretny powód."
-        },
-        "video01": {
-          "title": "Wideo jest włączone, ale nie znaleziono kamery",
-          "hint": "Podłącz kamerę albo wyłącz „Dołącz wideo” na stronie Nagrywanie."
-        },
-        "video02": {
-          "title": "Kamera nie dała obrazu",
-          "hint": "Sprawdź, czy kamera jest podłączona i nie jest używana przez inny program oraz czy aplikacja ma dostęp do kamery."
-        },
-        "disk01": {
-          "title": "Mało wolnego miejsca",
-          "hint": "Zwolnij miejsce albo wybierz inny folder zapisu przed długim nagraniem."
-        },
-        "disk02": {
-          "title": "Nie można zapisywać w folderze zapisu",
-          "hint": "Wybierz folder, do którego możesz zapisywać, w „Gdzie zapisywać nagrania?” na stronie Nagrywanie."
-        },
-        "perm01": {
-          "title": "Odmowa dostępu do mikrofonu",
-          "hint": "Udziel dostępu w Ustawieniach systemowych → Prywatność i ochrona → Mikrofon i uruchom aplikację ponownie."
-        },
-        "perm02": {
-          "title": "Odmowa dostępu do kamery",
-          "hint": "Udziel dostępu w Ustawieniach systemowych → Prywatność i ochrona → Kamera i uruchom aplikację ponownie."
-        },
-        "engine01": {
-          "title": "Poprzednie nagranie zakończyło się błędem",
-          "hint": "Kod błędu jest w wierszu powyżej. Zrób nagranie próbne, aby sprawdzić, czy teraz działa."
-        },
-        "capture01": {
-          "title": "Poprzednie nagranie miało oznaki zacinania",
-          "hint": "Zamknij inne ciężkie programy i sprawdź kabel oraz zasilanie karty dźwiękowej. Potem zrób nowe nagranie i zobacz, czy liczby spadają."
-        },
-        "capture02": {
-          "title": "Próba dźwięku nie wykryła dźwięku",
-          "hint": "Sprawdź, czy w „Jakie źródło dźwięku?” na stronie Nagrywanie wybrano właściwe źródło, czy kabel jest podłączony i czy żaden inny program nie używa mikrofonu. Potem uruchom sprawdzanie ponownie."
-        },
-        "crash01": {
-          "title": "Aplikacja uległa awarii",
-          "hint": "Przekaż ten raport dalej — pliki awarii są tym, co pozwala znaleźć błąd."
-        },
-        "task01": {
-          "title": "Zadania w tle musiały zostać uruchomione ponownie",
-          "hint": "Aplikacja sama je uruchomiła ponownie, więc nic się nie zatrzymało. Jeśli to się powtórzy, weź ten raport — nazwy powyżej mówią, która część jest niestabilna."
-        },
-        "log01": {
-          "title": "Dziennik błędów nie jest aktywny",
-          "hint": "Zwykle znaczy to, że nie udało się utworzyć folderu aplikacji. Uruchom aplikację ponownie; jeśli to się utrzyma, sprawdź miejsce na dysku i uprawnienia."
-        },
-        "log02": {
-          "title": "Brakuje części dziennika błędów",
-          "hint": "Dziennik błędów jest niepełny, bo nagrywanie miało pierwszeństwo — tak ma być. Wolny dysk warto sprawdzić przed następnym długim nagraniem."
-        },
-        "ok": {
-          "title": "Nie wykryto problemów",
-          "hint": "Możesz zacząć nagrywać."
-        },
-        "recLoss": {
-          "title": "W poprzednim nagraniu brakuje dźwięku",
-          "hint": "To poważna sprawa: nagranie straciło dźwięk w trakcie. Zamknij inne wymagające programy, podłącz kartę dźwiękową wprost do komputera (nie przez hub) i zgłoś to razem z tym raportem — liczby tutaj są dowodem."
-        }
       }
     },
     "language": {
@@ -785,17 +598,7 @@
       "contentSpeakerPlaceholder": "Kto mówił?",
       "contentDescription": "Opis",
       "contentDescriptionPlaceholder": "Fragment Biblii, temat lub zdanie o wspólnocie",
-      "contentHint": "Wszystko jest opcjonalne. Jeśli wpiszesz tytuł, plik otrzyma go jako nazwę – to właśnie proponuje SoundCloud i podobne serwisy przy przesyłaniu.",
-      "publishTitle": "Opublikuj w serwisie {channel}",
-      "publishTitleCustom": "Opublikuj",
-      "publishOpen": "Otwórz {channel}",
-      "publishOpenCustom": "Otwórz stronę przesyłania",
-      "publishHint": "Przeciągnij plik na stronę, która się otworzy, i wklej tytuł oraz opis.",
-      "publishCopy": "Kopiuj",
-      "publishCopied": "Skopiowano",
-      "publishCopyFailed": "Nie udało się skopiować. Zaznacz tekst i skopiuj go samodzielnie.",
-      "publishNothing": "W Ustawienia → Publikowanie nie ma prawidłowego linku https, więc nic nie zostało otwarte.",
-      "publishFailed": "Nie udało się otworzyć strony. Otwórz ją samodzielnie w przeglądarce."
+      "contentHint": "Wszystko jest opcjonalne. Jeśli wpiszesz tytuł, plik otrzyma go jako nazwę – to właśnie proponuje SoundCloud i podobne serwisy przy przesyłaniu."
     },
     "span": {
       "hours": "{h} godz.",
@@ -812,9 +615,6 @@
       "missedDesc": "Komputer był wyłączony. Automatyczne nagrywanie wymaga, żeby był włączony lub uśpiony.",
       "missedWhy": "Co mogę zrobić?",
       "missedHelp": "Zostaw komputer włączony albo pozwól mu spać — SundayRec sam wybudzi go dziesięć minut przed nagraniem. Jeśli jest całkiem wyłączony, nic go nie uruchomi. Sprawdź też, czy „Uruchamiaj razem z komputerem” jest włączone w karcie „Nagrywaj automatycznie” na stronie Nagrywanie, żeby aplikacja znów działała po ponownym uruchomieniu.",
-      "emailRemovedTitle": "Powiadomienia e-mail zostały usunięte",
-      "emailRemovedDesc": "SundayRec nie wysyła już e-maili, gdy coś pójdzie nie tak. Zamiast tego komputer daje znać powiadomieniem na ekranie — nie można go wyłączyć.",
-      "emailRemovedOk": "Rozumiem",
       "globalErrorTitle": "Coś poszło nie tak"
     }
   },
@@ -833,8 +633,7 @@
       "diskLow": "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie.",
       "micDenied": "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon.",
       "cameraDenied": "Nie przyznano dostępu do kamery.",
-      "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie.",
-      "specialDeviceMissing": "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe urządzenie audio."
+      "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie."
     },
     "preflightErrors": {
       "one": "{n} błąd do naprawienia przed nagraniem",
@@ -916,11 +715,10 @@
     "saveFailed": "Nie udało się zapisać ustawienia"
   },
   "error": {
-    "tryAgainHint": "Jeśli problem będzie się powtarzał, otwórz Ustawienia → Pomoc i rozwiązywanie problemów → Sprawdź komputer lub uruchom program ponownie.",
+    "tryAgainHint": "Jeśli problem będzie się powtarzał, otwórz Ustawienia → Pomoc i rozwiązywanie problemów i pobierz dziennik błędów lub uruchom program ponownie.",
     "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny.",
     "settingsLoadFailed": "Nie można odczytać ustawień — wyświetlane są ustawienia domyślne. Wprowadzone teraz zmiany mogą zostać utracone.",
     "settingsLoadRetry": "Spróbuj ponownie",
-    "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi.",
     "recordingsFolderMissing": "Folder nagrań jeszcze nie istnieje. Zostanie utworzony, gdy rozpocznie się pierwsze nagranie. Jeśli znajduje się na dysku zewnętrznym, sprawdź, czy dysk jest podłączony."
   },
   "editor": {
@@ -1086,7 +884,7 @@
     "errorFfmpegMissing": "Błąd wewnętrzny: brak komponentu nagrywającego — zainstaluj aplikację ponownie",
     "errorStuck": "Nagranie zatrzymane — przez 60 sekund nie było dźwięku z urządzenia",
     "errorStartTimeout": "Nagrywanie nie ruszyło na czas — sprawdź, czy mikrofon (i kamera) są podłączone i czy SundayRec ma dostęp w Ustawieniach systemowych → Prywatność i ochrona",
-    "errorEngineExited": "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy.",
+    "errorEngineExited": "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i pobierz dziennik błędów (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy.",
     "errorVideoCapture": "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo.",
     "errorCameraFormat": "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie.",
     "errorCameraPermission": "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery",
@@ -1124,7 +922,7 @@
     "promptTitle": "Wysyłać anonimowe statystyki użycia?",
     "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do SundaySuite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → Aktualizacje i prywatność.",
     "rePromptTitle": "Pytamy jeszcze raz",
-    "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
+    "rePromptDesc": "Odpowiadałeś już na to pytanie, ale pytamy ponownie, aby mieć pewność, że Twoja odpowiedź dotyczy tego, co jest udostępniane teraz: tylko anonimowe liczniki i dane techniczne o nagraniach (czy dźwięk wypadł, na jak długo i co się nie powiodło) — nigdy dźwięk, nazwy, pliki ani tekst. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
   },
   "tooltip": {
     "unsavedChanges": "Niezapisane zmiany",

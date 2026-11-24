@@ -246,7 +246,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
     expect("outputFolder" in legacy).toBe(false);
   });
 
-  it("carries album and date from the metadata — «Innhold»'s church name and service date", () => {
+  it("carries album and date from the metadata — «Innhold»'s album tag and service date", () => {
     const request = toEditorExportRequest(
       "audio",
       buildExportRequest({

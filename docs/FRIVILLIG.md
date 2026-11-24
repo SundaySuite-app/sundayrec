@@ -94,31 +94,18 @@ Lukker du hele appen mens den tar opp, fortsetter opptaket i bakgrunnen (se
 etter ikonet i menylinjen/systemstatusfeltet) — men ikke gjør det med vilje;
 la appen stå åpen til opptaket er stoppet og lagret.
 
-## Legge ut prekenen (SoundCloud o.l.)
+## Gi fila et navn (Eksport)
 
-SundayRec laster ikke opp noe selv, men gjør fila og teksten klar, så du
-bare drar fila inn på siden menigheten bruker.
+1. Åpne opptaket i **Bibliotek** med **«Rediger»**, sett start- og sluttpunkt,
+   og gå videre til **Eksport**.
+2. Under **Innhold** skriver du **tittel**, **taler** og eventuelt en
+   **beskrivelse**. Alt er valgfritt, men med tittel får fila navnet
+   `2026-09-27 Tittel.mp3`, som er det et opplastingsskjema foreslår som
+   tittel.
+3. Trykk **«Eksporter»**. Når kvitteringen kommer, trykker du **«Vis i
+   Finder»** (Windows: **«Vis i Utforsker»**) for å finne fila.
 
-1. Åpne opptaket i **Bibliotek** med **«Rediger»**. Vil dere bare ha prekenen, trykk
-   **«Behold bare prekenen»**. Det gir et kortere spor, og en gratiskonto på
-   SoundCloud har bare rundt **3 timer opplasting totalt**.
-2. Gå videre til **Eksport**. Under **Innhold** skriver du **tittel**,
-   **taler** og eventuelt en **beskrivelse**. Alt er valgfritt, men med
-   tittel får fila navnet `2026-09-27 Tittel.mp3`, som er det SoundCloud
-   foreslår som tittel. Har menigheten lagt inn en fast beskrivelse, står den
-   der allerede.
-3. Trykk **«Eksporter»**. Når kvitteringen kommer, står panelet
-   **«Legg ut på SoundCloud»** under den:
-   - **«Åpne SoundCloud»** åpner opplastingssiden i nettleseren.
-   - **«Vis i Finder»** (Windows: **«Vis i Utforsker»**) viser fila. Dra den
-     inn på siden.
-   - **«Kopier»** ved tittel og beskrivelse legger teksten på
-     utklippstavla, én om gangen. Lim den inn i feltene på siden.
-
-Hvilken side knappen åpner (SoundCloud, YouTube, Spotify for Creators eller
-en egen lenke), og den faste beskrivelsen, settes én gang under
-**Innstillinger → Legg ut**. Innloggingen på SoundCloud er
-menighetens egen, i nettleseren. Appen kjenner ikke passordet.
+SundayRec laster ikke opp noe selv — fila er det du tar med deg videre.
 
 ## Når noe ser feil ut
 
@@ -134,15 +121,12 @@ stående til noen har sett den — den forsvinner ikke av seg selv:
 
 Er du usikker på hva som er galt, eller vil sende oss et konkret bevis:
 
-1. Gå til tannhjulet (**Innstillinger**) → **Hjelp og feilsøking** →
-   **Sjekk maskinen** → trykk **«Start sjekk»**. Du får fem svar (lydkilder,
-   valgt lydkilde, mikrofontilgang, opptaksmotor, lydprøve) — et rødt kryss
-   viser hva som er galt.
-2. Trykk **«Kopier full rapport»**. Rapporten inneholder ingen lyd og ingen
+1. Gå til tannhjulet (**Innstillinger**) → **Hjelp og feilsøking**.
+2. Trykk **«Kopier»** på raden for loggen. Loggen inneholder ingen lyd og ingen
    passord — bare tekniske fakta om maskinen og appen.
 3. Send den til den som hjelper dere, eller i en e-post til
-   **dev@sundaysuite.app**. Rapporten alene forklarer sjelden alt — skriv
-   gjerne med hva dere opplevde også.
+   **dev@sundaysuite.app**. Loggen alene forklarer sjelden alt — skriv gjerne
+   med hva dere opplevde også.
 
 ## Hvem ringer du?
 

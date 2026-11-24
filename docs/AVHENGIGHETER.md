@@ -63,8 +63,8 @@ Vi er låst på 0.17.3 (`src-tauri/Cargo.toml`, for `I24` og ASIO-rettelsene).
 0.18.0 (2026-06) og 0.18.2 (2026-08) har det vi ellers måtte bygge selv:
 
 - **Xruns meldes fra lydsystemet** (CoreAudio, WASAPI-opptak): ekte tall for
-  hakk i opptaket, i stedet for det `soak/` og `test_recording/` utleder fra
-  stderr.
+  hakk i opptaket, i stedet for det den gamle soak-harnessen og testopptaket
+  utledet fra stderr (begge er fjernet).
 - **macOS: endret samplingsfrekvens midt i et opptak** gir
   `StreamInvalidated`. I dag fanges et frekvensbytte bare over en
   gjenkobling (`recorder/engine/supervisor.rs`). Med 0.18 ville det gå

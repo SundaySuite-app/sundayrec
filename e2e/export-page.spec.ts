@@ -470,7 +470,7 @@ test.describe("eksportering — innhold", () => {
     // `request` går rød.
     await boot(page, {
       fixtures: editorFixtures({ ...LIBRARY, ...CAPTURE_WRITES }),
-      settings: { ...SETTLED_SETTINGS, churchName: "Sentrumskirken" },
+      settings: SETTLED_SETTINGS,
       goto: "editor",
     });
     await page.evaluate(
@@ -512,8 +512,7 @@ test.describe("eksportering — innhold", () => {
     expect(request.title).toBe("Den gode hyrde");
     expect(request.speaker).toBe("Kari Nordmann");
     expect(request.description).toBe("Joh 10,1–10\nPreken fra høsttakkefesten");
-    // Menighetsnavnet blir `album`-taggen; datoen er ukjent her.
-    expect(request.album).toBe("Sentrumskirken");
+    // Datoen er ukjent her.
     expect(request.date).toBeNull();
 
     // …og innholdet ble lagt igjen ved OPPTAKET, i dets `.meta.json`.
@@ -582,31 +581,10 @@ test.describe("eksportering — innhold", () => {
     );
   });
 
-  test("på en helligdag foreslås dagens navn som tittel", async ({ page }) => {
-    await openExport(page, {
-      editor_church_day_name: fn(`(args) => {
-        (window.__E2E_DAY_ASKED__ ||= []).push(args.date);
-        return "1. påskedag";
-      }`),
-    });
-    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
-    await page.getByTestId("export-last-open").click();
-    await expect(page.getByTestId("export-title")).toHaveValue("1. påskedag");
-    // Spurt med opptakets egen dato, som `YYYY-MM-DD`.
-    const asked = await page.evaluate(
-      () =>
-        (window as unknown as { __E2E_DAY_ASKED__?: string[] })
-          .__E2E_DAY_ASKED__ ?? [],
-    );
-    expect(asked).toHaveLength(1);
-    expect(asked[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
   test("en vanlig søndag får ingen tittel, og fila heter som før", async ({
     page,
   }) => {
-    // `editor_church_day_name` svarer `null` (fiksturens standard): appen vet
-    // ikke hva prekenen het, og gjetter ikke.
+    // Appen vet ikke hva prekenen het, og gjetter ikke.
     await openExport(page);
     // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
     await page.getByTestId("export-last-open").click();

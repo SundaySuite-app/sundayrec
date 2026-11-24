@@ -31,7 +31,7 @@ export const FIRST_RUN_STEPS: readonly DecisionId[] = [
   "sound",
   "folder",
   "quality",
-  "church",
+  "language",
   "notify",
 ];
 

@@ -24,8 +24,6 @@
  * `ResizeObserver`-en `WaveformHost` uansett har, og av scroll/resize.
  */
 
-import { limitPulse, resetHaptics } from "@lib/pages/editor/haptics";
-
 import { addCut, commitCutEdges, setKeepWindow } from "./cuts";
 import { dragHandle, keepWindow } from "./editor-core";
 import { clampToFile, grabThreshold, secToX, xToSec } from "./geometry";
@@ -57,7 +55,6 @@ export function onCanvasPointerDown(event: PointerEvent): void {
   // Én fersk måling per interaksjon: et drag som starter fra et foreldet
   // rektangel søker til feil sekund, og det er ikke en kostnad verdt å spare.
   invalidateCanvasRect();
-  resetHaptics();
   const box = rect(canvas);
   const x = event.clientX - box.left;
   const y = event.clientY - box.top;
@@ -169,7 +166,6 @@ export function beginWindowHandleDrag(
   const target = event.currentTarget as HTMLElement | null;
   if (!target) return;
   invalidateCanvasRect();
-  resetHaptics();
   const box = rect(canvas);
   let window_ = keepWindow({ cuts: E.cuts, duration: E.duration });
   if (!window_) return;
@@ -178,7 +174,6 @@ export function beginWindowHandleDrag(
   const move = (e: PointerEvent): void => {
     const raw = xToSec(e.clientX - box.left, box.width);
     const next = dragHandle(window_ as Range, side, raw, E.duration);
-    if (next[side] !== raw) limitPulse();
     window_ = next;
     // Under draget skrives bare DRAG-speilet, ikke kuttlista: et kuttflett per
     // pekerhendelse ville lagt et øyeblikksbilde i angrestabelen 125 ganger
@@ -214,9 +209,6 @@ function startCutEdgeDrag(
       side === "start"
         ? Math.max(0, Math.min(cut.end - 0.1, raw))
         : Math.min(E.duration, Math.max(cut.start + 0.1, raw));
-    // Pinnet mot den andre kanten eller mot minstebredden: et hakk. Det
-    // betyr «du kommer ikke lenger».
-    if (clamped !== raw) limitPulse();
     cut[side] = clamped;
     syncCuts();
     scheduleDraw();

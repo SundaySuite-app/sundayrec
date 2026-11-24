@@ -83,8 +83,8 @@ speaker: string | null,
  */
 description: string | null, 
 /**
- * Optional church name (FFMETADATA `album`) — `settings.churchName`, so an
- * episode is filed under the congregation wherever the tags are read.
+ * Optional album tag (FFMETADATA `album`). The renderer sends none since F2
+ * (the church name it used to carry is gone).
  */
 album: string | null, 
 /**

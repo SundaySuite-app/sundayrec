@@ -160,25 +160,13 @@ describe("docs-truth", () => {
     expect(text).not.toMatch(/checklist[^.]*takes you to the control room/i);
   });
 
-  // «Legg ut» (2026-09): FRIVILLIG.md fikk en seksjon om å legge ut prekenen,
-  // og den hviler på to ting som begge kan bli usanne i stillhet. Den ene er
-  // løftet — appen laster fortsatt ikke opp noe selv — som den gamle «Viktig:
-  // sikkerhetskopi er IKKE en funksjon»-seksjonen også gir. Den andre er
-  // stien til innstillingen: «Innstillinger → Legg ut» er TO
-  // navn fra katalogen, og et omdøpt kort gjør en frivillig-veiledning feil
-  // uten at en eneste test merker det. Så stien leses av katalogen her.
-  it("FRIVILLIG.md: «Legg ut» laster ikke opp noe, og stien til innstillingen heter det katalogen kaller den", () => {
+  // Appen laster ikke opp noe: FRIVILLIG.md har løftet i to formuleringer, og
+  // den gamle «Legg ut»-seksjonen er borte med funksjonen (rent-bord F2). Løftet
+  // kan fortsatt bli usant i stillhet, så det pinnes.
+  it("FRIVILLIG.md: appen laster ikke opp noe", () => {
     const text = readDoc("docs/FRIVILLIG.md").replace(/\s+/g, " ");
-    expect(text).toContain("SundayRec laster ikke opp noe selv");
     expect(text).toContain("SundayRec laster ikke opp noe sted");
-    const no = JSON.parse(readDoc("legacy/locales/no.json")) as {
-      app: {
-        page: { setup: string };
-        setup: { sections: { publish: string } };
-      };
-    };
-    const path = [no.app.page.setup, no.app.setup.sections.publish].join(" → ");
-    expect(text).toContain(`**${path}**`);
+    expect(text).not.toContain("Legg ut på SoundCloud");
   });
 
   // A2, 2026-10: fetch-ffmpeg.mjs gikk til 9.0.1 i v0.21.0 (2026-09-28), men

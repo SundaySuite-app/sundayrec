@@ -1,42 +1,36 @@
 /**
- * «Flere tider og spesialopptak» — tidsplanens avanserte halvdel.
+ * «Flere tider» — tidsplanens avanserte halvdel.
  *
  * ## Hva som ble utelatt, og hvorfor
  *
- * Legacys Tidsplan-side er 23 kontroller: en månedskalender med kirkeårets
- * helligdager, en dagsdetalj som folder seg ut når du klikker en dato, et
- * slot-redigeringsskjema med sju dagbrikker, og et vekkings-diagnosekort med
- * strøm, standby, søvnkonfigurasjon, verifisering, feilhistorikk og en
- * 60-sekunders vekketest. Alt det er PORTET SOM LOGIKK der det finnes en ren
- * kjerne (`schedule-core.ts`, `specials-core.ts`), men IKKE som skjerm:
+ * Legacys Tidsplan-side er 23 kontroller: en månedskalender, en dagsdetalj som
+ * folder seg ut når du klikker en dato, et slot-redigeringsskjema med sju
+ * dagbrikker, og et vekkings-diagnosekort med strøm, standby, søvnkonfigurasjon,
+ * verifisering, feilhistorikk og en 60-sekunders vekketest. Alt det er PORTET
+ * SOM LOGIKK der det finnes en ren kjerne (`schedule-core.ts`, `slots-core.ts`),
+ * men IKKE som skjerm:
  *
  *   • **Månedskalenderen** — et rutenett er en fin måte å BLA i datoer på, og
- *     en dårlig måte å svare på «når er konserten?». Her er spesialopptak en
- *     liste med en dato-velger, og datovelgeren er nettleserens egen.
- *   • **Helligdagene fra kirkeåret** — de fylte kalenderen med forslag ingen
- *     hadde bedt om. `getChurchHolidays` er urørt i `legacy/shared/`.
+ *     den hører ikke hjemme i en ukentlig plan. (Spesialopptak og
+ *     helligdagene fra kirkeåret er helt ute, rent-bord F2.)
  *   • **Vekke-diagnostikken** — seks statuslinjer og et strøm-/standby-/
  *     søvnkonfigurasjonskort. Det som avgjør om det planlagte opptaket skjer
  *     er ÉN ting: kan maskinen vekkes, og koster det et administratorpassord?
- *     Det er én setning her (`wakeWord`), ikke et kort — de fire statuslinjene
- *     om strøm/standby/søvnkonfigurasjon er fortsatt ikke med. Testen OG
- *     feilhistorikken kom tilbake i F1-R3/W6 (`TestWakeRow` under), som én
- *     rad hver: «Test vekking om 2 min» + «Avbryt», og en logg med «Tøm» —
- *     nøyaktig riggverktøyet reachability-revisjonen selv sa ventet på en Mac
- *     der vekkingen faktisk feiler (`docs/APP-SHELL.md`).
+ *     Det er én setning her (`wakeWord`), ikke et kort. Testen OG
+ *     feilhistorikken er med som én rad hver (`TestWakeRow` under): «Test
+ *     vekking om 2 min» + «Avbryt», og en logg med «Tøm».
  *   • **Flere DAGER per fast tid** — `ScheduleSlot.days` er en liste, og
  *     legacys dagbrikker lar deg velge flere. Her er én rad én dag; en profil
  *     som allerede har flere vises med den første, og listen røres ikke.
  *
  * ## Rekkefølgen er lagringens, ikke visningens
  *
- * Begge listene slettes ved INDEKS, og spesialopptakene VISES sortert. Å bruke
- * visningsindeksen mot den lagrede listen sletter feil rad — det er
- * skjøtefeilens form, og derfor bærer hver rad sin lagrede indeks med seg fra
- * `specials-core.ts`.
+ * Listen slettes ved INDEKS. Å bruke en visningsindeks mot den lagrede listen
+ * sletter feil rad — det er skjøtefeilens form, og derfor bærer hver rad sin
+ * lagrede indeks med seg fra `slots-core.ts`.
  */
 
-import { useEffect, useId, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 
 import type { TestWakeResult } from "@legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "@legacy/bindings/WakeFailureEntry";
@@ -50,7 +44,6 @@ import {
   settings,
 } from "../../../state/settings";
 import { useReceipt } from "../../../settings/use-receipt";
-import { audioDevices, loadAudioDevices } from "../../../state/devices";
 import { refreshWakeAfterReschedule } from "../../../state/next-recording";
 import { isRecording } from "../../../state/recording";
 import { BoundToggle } from "../../../ui/Bound/Bound";
@@ -58,7 +51,6 @@ import { Button } from "../../../ui/Button/Button";
 import { Card } from "../../../ui/Card/Card";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { Select } from "../../../ui/Select/Select";
-import { TextField } from "../../../ui/TextField/TextField";
 import { toast } from "../../../ui/toast";
 import {
   DEFAULT_PLAN,
@@ -68,14 +60,8 @@ import {
 } from "../schedule-core";
 import styles from "../setup.module.css";
 import {
-  checkSpecial,
-  isoDate,
-  SAME_AS_USUAL,
   slotDay,
   slotRows,
-  specialDeviceFact,
-  specialDeviceOptions,
-  specialRows,
   testWakeWord,
   wakeArmWord,
   wakeWord,
@@ -83,16 +69,13 @@ import {
   type WakeArmResult,
   withoutIndex,
   withSlot,
-  withSpecial,
-  type SpecialDraft,
   type WakeFacts,
-} from "./specials-core";
+} from "./slots-core";
 
 export function ScheduleCard() {
   return (
     <Card anchor="schedule" testId="advanced-schedule">
       <WeeklyTimes />
-      <Specials />
       <WakeRow />
       <TestWakeRow />
     </Card>
@@ -226,238 +209,13 @@ function WeeklyTimes() {
               testId="adv-slot-add-save"
               onClick={() => void add()}
             >
-              {t("app.setup.advanced.specialAdd")}
+              {t("app.setup.advanced.schedAddSave")}
             </Button>
           </>
         )}
       </SettingRow>
     </>
   );
-}
-
-/** Standardvarigheten et nytt spesialopptak foreslår. Samme som en gudstjeneste. */
-const SPECIAL_DEFAULT_MINUTES = 90;
-
-function Specials() {
-  const s = settings.value;
-  const devices = audioDevices.value;
-  const today = isoDate(new Date());
-  const rows = specialRows(s.specialRecordings, today);
-  const [draft, setDraft] = useState<SpecialDraft>({
-    name: "",
-    date: "",
-    start: "19:00",
-    minutes: SPECIAL_DEFAULT_MINUTES,
-    deviceId: null,
-  });
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Enhetsvelgerens tilgjengelige navn. Raden heter «Legg til», og det første
-  // valget («Samme som vanlig opptak») sier ikke hva boksen ER — en
-  // skjermleser trenger «Lydenhet for opptaket».
-  const deviceLabelId = useId();
-
-  // Enhetsvelgeren bruker DEN SAMME lista som lydvelgeren (`list_audio_devices`
-  // via shimmen). Er den ikke lest ennå, leses den her — men aldri midt i et
-  // opptak: en enumerering kan åpne driverne opptaket står og bruker.
-  useEffect(() => {
-    if (audioDevices.peek() === null && !isRecording.peek()) {
-      void loadAudioDevices();
-    }
-  }, []);
-
-  async function add(): Promise<void> {
-    const issue = checkSpecial(draft, today);
-    if (issue) {
-      setError(
-        issue === "past"
-          ? t("app.setup.advanced.specialPast")
-          : t("app.setup.advanced.specialNeedsDate"),
-      );
-      return;
-    }
-    setError(null);
-    if (busy) return;
-    setBusy(true);
-    try {
-      const ok = await write(
-        {
-          specialRecordings: withSpecial(
-            s.specialRecordings,
-            draft,
-            t("app.setup.advanced.specialDefaultName"),
-          ),
-        },
-        { specialRecordings: s.specialRecordings },
-      );
-      if (ok) setDraft({ ...draft, name: "", date: "", deviceId: null });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(index: number): Promise<void> {
-    await write(
-      { specialRecordings: withoutIndex(s.specialRecordings, index) },
-      { specialRecordings: s.specialRecordings },
-    );
-  }
-
-  return (
-    <>
-      <SettingRow
-        label={t("app.setup.advanced.specialsTitle")}
-        description={t("app.setup.advanced.specialsDesc")}
-        testId="adv-specials"
-      >
-        <span data-testid="adv-specials-count" class={styles.hint}>
-          {rows.length === 0 ? t("app.setup.advanced.specialsNone") : ""}
-        </span>
-      </SettingRow>
-
-      {rows.map((row) => (
-        <SettingRow
-          key={`${row.index}-${row.value.date}`}
-          label={row.value.name}
-          description={specialRowText(row.value, devices)}
-          testId={`adv-special-${row.index}`}
-        >
-          <Button
-            variant="ghost"
-            testId={`adv-special-${row.index}-remove`}
-            onClick={() => void remove(row.index)}
-          >
-            {t("app.setup.advanced.specialRemove")}
-          </Button>
-        </SettingRow>
-      ))}
-
-      <SettingRow
-        label={t("app.setup.advanced.specialAdd")}
-        description={t("app.setup.advanced.specialDeviceHint")}
-        error={error}
-        stacked
-        testId="adv-special-add"
-      >
-        {(ids) => (
-          <>
-            <div class={styles.formLines}>
-              <div class={styles.formLine}>
-                <div class={styles.formGrow}>
-                  <TextField
-                    value={draft.name}
-                    placeholder={t("app.setup.advanced.specialDefaultName")}
-                    onInput={(next) => setDraft({ ...draft, name: next })}
-                    labelId={ids.labelId}
-                    testId="adv-special-add-name"
-                  />
-                </div>
-                <input
-                  type="date"
-                  value={draft.date}
-                  aria-label={t("app.setup.advanced.specialDate")}
-                  data-testid="adv-special-add-date"
-                  class={styles.time}
-                  onInput={(event) => {
-                    setError(null);
-                    setDraft({
-                      ...draft,
-                      date: (event.target as HTMLInputElement).value,
-                    });
-                  }}
-                />
-                <input
-                  type="time"
-                  value={draft.start}
-                  aria-label={t("app.setup.advanced.specialStart")}
-                  data-testid="adv-special-add-start"
-                  class={styles.time}
-                  onInput={(event) =>
-                    setDraft({
-                      ...draft,
-                      start: (event.target as HTMLInputElement).value,
-                    })
-                  }
-                />
-              </div>
-              <div class={styles.formLine}>
-                <Select
-                  value={String(draft.minutes)}
-                  options={DURATION_CHOICES.map((n) => ({
-                    value: String(n),
-                    label: tf("app.setup.auto.minutes", { n }),
-                  }))}
-                  onChange={(next) =>
-                    setDraft({ ...draft, minutes: Number(next) })
-                  }
-                  testId="adv-special-add-duration"
-                />
-                <div class={styles.formGrow}>
-                  {/* `hidden` og likevel navnet: en `aria-labelledby`-referanse
-                til et skjult element teller med i det tilgjengelige navnet. */}
-                  <span id={deviceLabelId} hidden>
-                    {t("app.setup.advanced.specialDevice")}
-                  </span>
-                  <Select
-                    value={draft.deviceId ?? SAME_AS_USUAL}
-                    options={[
-                      {
-                        value: SAME_AS_USUAL,
-                        label: t("app.setup.advanced.specialDeviceSame"),
-                      },
-                      ...specialDeviceOptions(devices, draft.deviceId),
-                    ]}
-                    onChange={(next) =>
-                      setDraft({
-                        ...draft,
-                        deviceId: next === SAME_AS_USUAL ? null : next,
-                      })
-                    }
-                    labelId={deviceLabelId}
-                    describedBy={ids.describedBy}
-                    testId="adv-special-add-device"
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  busy={busy}
-                  testId="adv-special-add-save"
-                  onClick={() => void add()}
-                >
-                  {t("app.setup.advanced.specialAdd")}
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-      </SettingRow>
-    </>
-  );
-}
-
-/**
- * Radens beskrivelse: dato og tid — og, når opptaket har sin EGEN lydenhet,
- * hvilken, og om den er koblet til nå. Uten egen enhet er setningen den samme
- * som før, fordi ingenting er annerledes.
- */
-function specialRowText(
-  special: {
-    date: string;
-    start: string;
-    stop: string;
-    deviceId: string | null;
-  },
-  devices: Parameters<typeof specialDeviceFact>[1],
-): string {
-  const when = { date: special.date, start: special.start, stop: special.stop };
-  const fact = specialDeviceFact(special.deviceId, devices);
-  if (fact === null) return tf("app.setup.advanced.specialRow", when);
-  const withDevice = { ...when, device: fact.name };
-  // «Ikke tilkoblet» bare når lista ER lest og enheten ikke står i den — en
-  // liste som ikke er lest ennå er ikke bevis for at den mangler.
-  return fact.present === false
-    ? tf("app.setup.advanced.specialRowDeviceMissing", withDevice)
-    : tf("app.setup.advanced.specialRowDevice", withDevice);
 }
 
 /**
@@ -740,7 +498,7 @@ function TestWakeRow() {
             variant="secondary"
             busy={testBusy}
             disabled={live}
-            disabledReason={t("app.diagnose.testBlocked")}
+            disabledReason={t("app.setup.advanced.wakeTestBlocked")}
             testId="adv-wake-test"
             onClick={() => void runTest()}
           >

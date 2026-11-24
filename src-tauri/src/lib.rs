@@ -32,7 +32,6 @@ pub mod commands;
 // `JoinHandle`. Now both leave a record.
 pub mod crash;
 pub mod db;
-pub mod diagnostics;
 // R1 non-destructive editor — ffmpeg-driven load/peaks/mastering/export
 // over the unit-tested `sundayrec_core::{editor,mastering}`. The
 // `editor` feature is in `default` (the Rediger screen ships); building with
@@ -71,13 +70,6 @@ pub mod recorder;
 pub mod save_folder;
 pub mod scheduler;
 pub mod settings;
-// E6.1 soak / long-run harness — the answer to "the product's workload is a
-// 60–180 minute unattended take and nothing automated exceeds 60 seconds".
-// Drives repeated captures (real device, or a device-free lavfi source through
-// the PRODUCTION capture argv), judges each with the shared verdict engine, and
-// samples RSS + open descriptors throughout. Everything long is `#[ignore]`d;
-// the nightly `.github/workflows/soak.yml` runs the lavfi variant.
-pub mod soak;
 // E3 opt-in telemetry — the persistence seam around the pure wire contract and
 // consent state machine in `sundayrec_core::telemetry`. Owns the random install
 // id, the consent row, the counter map and the durable outbox. Featureless, and
@@ -91,7 +83,6 @@ pub mod telemetry;
 // (the recorder supervisor, the low-disk poller) deliberately stay bare — see
 // the module docs for why restarting them would be WRONG.
 pub mod supervise;
-pub mod test_recording;
 // PU-2 menubar tray — `tray` feature, in `default` and both release builds
 // (install failure only logs a warning). The menu-model is in
 // `sundayrec_core`; this seam maps it to tauri menu/tray.
@@ -345,13 +336,6 @@ pub fn run() {
                     )
                 })?;
 
-            // E-mail alerts were removed. Clear what an upgraded install still
-            // carries — BEFORE anything below can save the settings, because the
-            // first save erases the only evidence (see `settings::email_cleanup`).
-            if let Err(e) = tauri::async_runtime::block_on(settings::email_cleanup::run(&pool)) {
-                tracing::warn!("settings: the e-mail clean-up failed: {e}");
-            }
-
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
             // must never shoot the primary's live capture) and before both the
@@ -453,7 +437,7 @@ pub fn run() {
             ));
 
             // Launch the scheduler supervisor now that the db pool + recorder
-            // engine are managed. It reads slots/specials from settings and
+            // engine are managed. It reads the weekly slots from settings and
             // fires start/stop/reminder/preflight on the wall clock.
             app.state::<scheduler::SchedulerEngine>()
                 .start(app.handle().clone());
@@ -526,12 +510,8 @@ pub fn run() {
             // forever is not a delete, it is a leak with a nice name.
             trash::sweep::spawn(app.handle().clone());
 
-            // E6.5 temp-litter sweep. Two leaks that nothing ever cleaned up:
-            //   - `$TMPDIR/sundayrec-bench|soak|probe/*` — the precision-capture
-            //     bench writes a WAV per run and removes it only on the happy
-            //     path; a panic, a kill or a `SUNDAYREC_BENCH_KEEP` run leaves
-            //     it, and a 60 s 96 kHz stereo capture is ~23 MB.
-            //   - `.__editor_tmp` / `.__editor_bak` beside recordings — swept
+            // E6.5 temp-litter sweep: `.__editor_tmp` / `.__editor_bak` beside
+            // recordings — swept
             //     only by an `editor_cleanup_temp_files` Tauri command with ZERO
             //     callers (deleted in V1/PR3; THIS sweep is the whole cleanup
             //     now), so a crashed export left a full-size copy of the
@@ -545,20 +525,13 @@ pub fn run() {
                 crash::watch_handle(
                     "startup::temp_sweep",
                     tauri::async_runtime::spawn(async move {
-                        let bench = tokio::task::spawn_blocking(soak::sweep_bench_temp)
-                            .await
-                            .unwrap_or(0);
                         let Some(db) = sweep_handle.try_state::<db::Db>() else {
                             return;
                         };
                         let engine = sweep_handle.state::<editor::ExportEngine>();
                         let edits = editor::startup_sweep(&db.pool, &engine).await;
-                        if bench + edits > 0 {
-                            tracing::info!(
-                                bench,
-                                edits,
-                                "startup: temp-litter sweep removed leftovers"
-                            );
+                        if edits > 0 {
+                            tracing::info!(edits, "startup: temp-litter sweep removed leftovers");
                         }
                     }),
                 );
@@ -625,7 +598,6 @@ pub fn run() {
             commands::audio::list_audio_devices,
             commands::audio::list_devices,
             commands::audio::get_camera_capabilities,
-            commands::audio::diagnose_audio,
             commands::camera_preview::camera_preview_start,
             commands::camera_preview::camera_preview_stop,
             commands::audio::start_vu,
@@ -642,8 +614,6 @@ pub fn run() {
             commands::recorder::preroll_stop,
             commands::recorder::preroll_status,
             commands::recorder::get_disk_space,
-            commands::recorder::run_test_recording,
-            commands::recorder::run_capture_bench,
             commands::db::recordings_list,
             commands::db::recordings_delete,
             commands::db::recording_update_note,
@@ -659,19 +629,13 @@ pub fn run() {
             // The recordings folder: Rust opens the folder dialog, vets the
             // folder and stores it; `settings_save` keeps whatever is stored.
             commands::settings::settings_pick_save_folder,
-            commands::settings::settings_import,
-            // The profile file: Rust opens the save/open dialog itself, so no
-            // path crosses from the webview (finding A1; commands/settings.rs).
-            commands::settings::settings_export_profile,
-            commands::settings::settings_import_profile,
             // The editor's intro/outro clips: a Rust dialog sets them, and
             // `settings_save` keeps whatever is stored (A2).
             commands::settings::settings_pick_editor_intro,
             commands::settings::settings_pick_editor_outro,
             commands::settings::settings_clear_editor_intro,
             commands::settings::settings_clear_editor_outro,
-            commands::diagnostics::run_preflight,
-            commands::diagnostics::run_diagnostics,
+            commands::preflight::run_preflight,
             // E2.3 — the log the operator can actually hand to support. Neither
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
@@ -685,9 +649,6 @@ pub fn run() {
             commands::recordings_open::recordings_open_folder,
             commands::recordings_open::recordings_reveal,
             commands::recordings_open::recordings_reveal_export,
-            // Trackpad haptics (macOS Force Touch; no-op elsewhere). The editor
-            // fires subtle, throttled taps on snap / limit / marker-crossing.
-            commands::haptics::haptic_perform,
             // R1 non-destructive editor (DTOs pure; ffmpeg runs gated by `editor`).
             commands::editor::editor_load_recording,
             commands::editor::editor_peaks,
@@ -713,19 +674,12 @@ pub fn run() {
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
-            commands::editor::editor_church_day_name,
-            // «Legg ut»: the receipt's button. No argument — the URL comes
-            // from the stored setting (see commands/publish.rs).
-            commands::publish::publish_open_upload_page,
             commands::editor::editor_prepare_listen,
             commands::editor::editor_listen_open,
             commands::editor::editor_listen_chain,
             commands::editor::editor_listen_transport,
             commands::editor::editor_listen_close,
             commands::editor::editor_master_cancel,
-            // The one-time "e-mail alerts were removed" banner.
-            commands::notice::notice_email_removed_pending,
-            commands::notice::notice_email_removed_dismiss,
             // OS notifications: does the OS show them, a test, its settings page.
             commands::notification::notification_permission,
             commands::notification::notification_request_permission,

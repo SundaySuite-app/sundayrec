@@ -64,7 +64,7 @@
  * svarte med, og den er fasiten.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 
 import type { RecordingEntry } from "@legacy/types";
 
@@ -93,7 +93,6 @@ import {
   cancelExport,
   cancelling,
   exportedBytes,
-  exportedContent,
   exportedFolder,
   exportedLoudness,
   exportedPath,
@@ -139,7 +138,6 @@ import {
   pickAndOpen,
   type OpenSource,
 } from "../../editor/loader";
-import { channelName } from "../../editor/publish-core";
 import {
   cuts,
   duration,
@@ -533,15 +531,12 @@ function Choices() {
 /**
  * «Innhold» — tittel, taler og beskrivelse. Alt valgfritt.
  *
- * Et tredje spørsmål på en side som med vilje har to, og det har en grunn:
- * `docs/APP-SHELL.md` holdt Innhold-fanen tilbake til den hadde en jobb, og
- * jobben er publiseringen. Tittelen blir filnavnet (`export_stem`), og det er
- * navnet SoundCloud og de andre foreslår som episodens tittel når fila dras
- * inn. Uten tittel er ingenting endret: fila heter `<navn>_redigert` som før.
+ * Tittelen blir filnavnet (`export_stem`), og det er navnet et
+ * opplastingsskjema foreslår som episodens tittel når fila dras inn. Uten
+ * tittel er ingenting endret: fila heter `<navn>_redigert` som før.
  *
- * Feltene er fylt fra opptakets `.meta.json` når de ble skrevet sist, eller —
- * på en helligdag — med dagens navn (`loadExportContent`). Ingenting lagres
- * før eksporten lykkes.
+ * Feltene er fylt fra opptakets `.meta.json` når de ble skrevet sist
+ * (`loadExportContent`). Ingenting lagres før eksporten lykkes.
  */
 function Content() {
   return (
@@ -692,14 +687,11 @@ function Receipt() {
     .join(DOT);
 
   return (
-    <>
-      <ReceiptCard
-        revealToken={exportedRevealToken.value}
-        name={name}
-        meta={meta}
-      />
-      <PublishPanel />
-    </>
+    <ReceiptCard
+      revealToken={exportedRevealToken.value}
+      name={name}
+      meta={meta}
+    />
   );
 }
 
@@ -762,144 +754,5 @@ function ReceiptCard({
         </Button>
       </div>
     </Card>
-  );
-}
-
-// ── «Legg ut» ───────────────────────────────────────────────────────────────
-
-/** Hva som gikk galt sist noe i panelet ble trykket, eller ingenting. */
-type PublishProblem = "copy" | "nothing" | "failed";
-
-/**
- * «Legg ut på SoundCloud» — kanalen menigheten valgte i Oppsett.
- *
- * SundayRec laster ikke opp noe (`docs/FRIVILLIG.md`). Panelet gjør det som
- * står rundt overleveringen: tittelen og beskrivelsen står klare med hver sin
- * «Kopier» — skjemaene har separate felter, og utklippstavla holder én ting om
- * gangen — og knappen åpner opplastingssiden i nettleseren. Fila dras inn fra
- * «Vis i Finder» over.
- *
- * Teksten er ØYEBLIKKSBILDET fra eksporten (`exportedContent`), ikke feltene:
- * panelet skal tilby det som faktisk står i fila.
- *
- * Adressen kommer ikke herfra. `publishOpenUploadPage` tar ingen argumenter;
- * bakenden leser den lagrede kanalen og prøver en egen lenke før den gir den
- * til operativsystemet. Svarer den `nothing`, var lenken ikke en https-adresse,
- * og panelet sier det i stedet for å late som noe skjedde.
- */
-function PublishPanel() {
-  const target = settings.value.publishTarget ?? "soundcloud";
-  const content = exportedContent.value;
-  const [copied, setCopied] = useState<"title" | "description" | null>(null);
-  const [problem, setProblem] = useState<PublishProblem | null>(null);
-
-  if (target === "none") return null;
-  const name = channelName(target);
-
-  async function copy(what: "title" | "description", text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setProblem(null);
-      setCopied(what);
-      setTimeout(() => setCopied((now) => (now === what ? null : now)), 2000);
-    } catch {
-      setCopied(null);
-      setProblem("copy");
-    }
-  }
-
-  async function open() {
-    const outcome = await window.api.publishOpenUploadPage();
-    setProblem(outcome === "opened" ? null : outcome);
-  }
-
-  return (
-    <Card
-      testId="export-publish"
-      title={
-        name
-          ? tf("app.export.publishTitle", { channel: name })
-          : t("app.export.publishTitleCustom")
-      }
-      description={t("app.export.publishHint")}
-    >
-      {content?.title ? (
-        <CopyRow
-          label={t("app.export.contentTitle")}
-          value={content.title}
-          copied={copied === "title"}
-          onCopy={() => void copy("title", content.title)}
-          testId="export-publish-copy-title"
-        />
-      ) : null}
-      {content?.description ? (
-        <CopyRow
-          label={t("app.export.contentDescription")}
-          value={content.description}
-          copied={copied === "description"}
-          onCopy={() => void copy("description", content.description)}
-          multiline
-          testId="export-publish-copy-description"
-        />
-      ) : null}
-      {problem ? (
-        <Banner
-          tone="warn"
-          testId="export-publish-problem"
-          title={
-            problem === "copy"
-              ? t("app.export.publishCopyFailed")
-              : problem === "nothing"
-                ? t("app.export.publishNothing")
-                : t("app.export.publishFailed")
-          }
-        />
-      ) : null}
-      <div class={styles.toolbar}>
-        <Button
-          variant="primary"
-          testId="export-publish-open"
-          onClick={() => void open()}
-        >
-          {name
-            ? tf("app.export.publishOpen", { channel: name })
-            : t("app.export.publishOpenCustom")}
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-/** Én tekst med en «Kopier» ved siden av. */
-function CopyRow({
-  label,
-  value,
-  copied,
-  onCopy,
-  multiline = false,
-  testId,
-}: {
-  label: string;
-  value: string;
-  copied: boolean;
-  onCopy: () => void;
-  multiline?: boolean;
-  testId: string;
-}) {
-  return (
-    <div data-testid={testId} class={styles.copyRow}>
-      <div class={styles.copyGrow}>
-        <span class={styles.fieldLabel}>{label}</span>
-        <div
-          data-testid={`${testId}-value`}
-          class={multiline ? styles.copyTextBlock : styles.copyText}
-        >
-          {value}
-        </div>
-      </div>
-      <Button variant="secondary" testId={`${testId}-copy`} onClick={onCopy}>
-        {copied ? t("app.export.publishCopied") : t("app.export.publishCopy")}
-      </Button>
-    </div>
   );
 }

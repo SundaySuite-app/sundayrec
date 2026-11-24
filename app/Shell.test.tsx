@@ -50,7 +50,6 @@ describe("Shell", () => {
     // REKKEFØLGEN i treet er den samme som rekkefølgen på skjermen — det er den
     // som bestemmer hva en skjermleser og en tabtast møter først.
     navigate("record");
-    patchSettings({ churchName: "Bryn menighet" });
     const html = render(<Shell />);
 
     const top = html.indexOf('data-testid="topbar"');
@@ -61,7 +60,6 @@ describe("Shell", () => {
     expect(bottom).toBeGreaterThan(main);
     // Skinnen finnes ikke lenger — verken som element eller som testid.
     expect(html).not.toContain('data-testid="rail"');
-    expect(html).not.toContain('data-testid="rail-church"');
 
     // ⚠️ MUTASJONSPRØVEN for dra-sonen: attributtet står på TOPPLINJENS rot og
     // ingen andre steder. Flyttes det (eller fjernes), er vinduet ikke lenger
@@ -78,10 +76,9 @@ describe("Shell", () => {
       /data-testid="bottombar"[^>]*data-tauri-drag-region/,
     );
 
-    // Topplinja: merket, produktnavnet og kirken. Ingen knapper.
+    // Topplinja: merket og produktnavnet. Ingen knapper, ingen kirke.
     expect(html).toContain('data-testid="app-logo"');
-    expect(html).toContain('data-testid="shell-church"');
-    expect(html).toContain("Bryn menighet");
+    expect(html).not.toContain('data-testid="shell-church"');
 
     // Bunnlinja: statuslinjen, de tre destinasjonene, versjonen og tannhjulet.
     const bar = html.slice(bottom);
@@ -96,19 +93,6 @@ describe("Shell", () => {
     ]) {
       expect(bar).toContain(`data-testid="${id}"`);
     }
-    patchSettings({ churchName: "" });
-  });
-
-  it("sier fra i topplinja når kirken ikke er satt opp", () => {
-    navigate("record");
-    patchSettings({ churchName: "" });
-    const html = render(<Shell />);
-    // Samme katalognøkkel som i skinnen — det er PLASSEN som flyttet, ikke
-    // setningen. Gult, fordi det er noe som må gjøres.
-    expect(html).toMatch(
-      /data-testid="shell-church"[^>]*class="[^"]*churchUnset/,
-    );
-    expect(html).toContain("Ikke satt opp ennå");
   });
 
   it("følger ruten, og språket", async () => {
@@ -380,7 +364,6 @@ describe("Shell", () => {
       deviceName: "Behringer X32",
       saveFolder: "/Users/x/SundayRec",
       format: "mp3",
-      churchName: "",
     });
     const html = render(<Shell />);
     // Kilden i venstrekolonnen, og de fem i stabelen til høyre. De to
@@ -410,19 +393,19 @@ describe("Shell", () => {
     patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
   });
 
-  it("INNSTILLINGER er kirkeprofilen og Avansert — ikke de fem spørsmålene", () => {
+  it("INNSTILLINGER er språkvalget og Avansert — ikke de fem spørsmålene", () => {
     // D2: de fem beslutningene redigeres der de brukes. Tannhjulet åpner det
     // som IKKE hører til en søndag, og det er hele skjermen.
     navigate("setup");
     const html = render(<Shell />);
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
-    expect(html).toContain('data-testid="setup-church"');
+    expect(html).toContain('data-testid="setup-language"');
     expect(html).toContain('data-testid="setup-advanced"');
     // Seksjonene med overskrift og innholdsliste har erstattet «Avansert»-
-    // leden; kirkeprofilens egen lede viser at rammen (ikke-innebygd) står.
+    // leden; språkvalgets egen lede viser at rammen (ikke-innebygd) står.
     expect(html).toContain('data-testid="setup-toc"');
     expect(html).toContain('data-testid="setup-sec-recording"');
-    expect(html).toContain('data-testid="setup-church-lede"');
+    expect(html).toContain('data-testid="setup-language-lede"');
     expect(html).not.toContain('data-testid="setup-row-sound"');
     navigate("record");
   });

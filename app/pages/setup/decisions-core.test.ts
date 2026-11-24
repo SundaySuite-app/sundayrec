@@ -4,7 +4,7 @@ import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 import {
   answeredCount,
   channelPairFor,
-  decideChurch,
+  decideLanguage,
   decideFolder,
   decideNotify,
   decideQuality,
@@ -233,21 +233,12 @@ describe("3 — Hvilken kvalitet?", () => {
   });
 });
 
-describe("4 — Hvilken kirke?", () => {
-  it("tomt navn ⇒ todo, men språket vises likevel", () => {
-    const d = decideChurch(withSettings({ churchName: "  " }));
-    expect(d.answered).toBe(false);
-    expect(d.answer).toEqual({ key: "notSetUp" });
-    expect(d.detail).toEqual({ key: "language", language: "no" });
-  });
-
-  it("navn ⇒ done", () => {
-    const d = decideChurch(
-      withSettings({ churchName: "Bryn menighet" }, { locale: "en" }),
-    );
+describe("4 — Hvilket språk?", () => {
+  it("er alltid besvart, og svaret er språket som RENDRES", () => {
+    const d = decideLanguage(withSettings({}, { locale: "en" }));
     expect(d.answered).toBe(true);
-    expect(d.answer).toEqual({ key: "church", name: "Bryn menighet" });
-    expect(d.detail).toEqual({ key: "language", language: "en" });
+    expect(d.answer).toEqual({ key: "language", language: "en" });
+    expect(d.detail).toBeNull();
   });
 
   it("språket er det som RENDRES, ikke det som står lagret", () => {
@@ -256,13 +247,10 @@ describe("4 — Hvilken kirke?", () => {
     // i praksis — men påstanden er om hvilken KILDE kortet leser, og den kan
     // skille lag igjen (en pause, en katalog som ikke lastet). Kortet skal si
     // det brukeren faktisk ser.
-    const d = decideChurch(
-      withSettings(
-        { churchName: "Bryn menighet", language: "de" },
-        { locale: "en" },
-      ),
+    const d = decideLanguage(
+      withSettings({ language: "de" }, { locale: "en" }),
     );
-    expect(d.detail).toEqual({ key: "language", language: "en" });
+    expect(d.answer).toEqual({ key: "language", language: "en" });
   });
 });
 
@@ -314,7 +302,7 @@ describe("5 — Hvem får beskjed?", () => {
 });
 
 describe("de fem sammen", () => {
-  it("en fabrikkfersk app har svart på nøyaktig TO — kvalitet og varsling", () => {
+  it("en fabrikkfersk app har svart på TRE — kvalitet, språk og varsling", () => {
     const all = decisionsFor(
       facts({
         devices: [],
@@ -326,10 +314,10 @@ describe("de fem sammen", () => {
       "sound",
       "folder",
       "quality",
-      "church",
+      "language",
       "notify",
     ]);
-    expect(answeredCount(all)).toBe(2);
+    expect(answeredCount(all)).toBe(3);
     expect(all.find((d) => d.id === "quality")?.answered).toBe(true);
     expect(all.find((d) => d.id === "notify")?.answered).toBe(true);
   });
@@ -341,7 +329,6 @@ describe("de fem sammen", () => {
           deviceId: "x32",
           deviceName: "Behringer X32",
           saveFolder: "/Users/f/Opptak",
-          churchName: "Bryn menighet",
         },
         {
           devices: [X32],

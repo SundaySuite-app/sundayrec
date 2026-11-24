@@ -87,7 +87,7 @@ import { ActionBar } from "../../ui/ActionBar/ActionBar";
 import { Button } from "../../ui/Button/Button";
 import { DecisionCard } from "../../ui/DecisionCard/DecisionCard";
 import { toast } from "../../ui/toast";
-import { ChurchPage } from "./ChurchPage";
+import { LanguagePage } from "./LanguagePage";
 import { answerText, detailText, questionText } from "./decision-text";
 import { decisionsFor, needsSetUp, type DecisionId } from "./decisions-core";
 import {
@@ -333,8 +333,8 @@ function DecisionScreen({ id }: { id: DecisionId }) {
       return <FolderPage />;
     case "quality":
       return <QualityPage />;
-    case "church":
-      return <ChurchPage />;
+    case "language":
+      return <LanguagePage />;
     case "notify":
       return <NotifyPage />;
   }

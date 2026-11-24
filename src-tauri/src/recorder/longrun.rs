@@ -1336,7 +1336,6 @@ mod tests {
         assert_eq!(
             missed_recordings(
                 std::slice::from_ref(&slot),
-                &[],
                 sweep_at,
                 &[],
                 &[],
@@ -1351,7 +1350,6 @@ mod tests {
         assert!(
             missed_recordings(
                 std::slice::from_ref(&slot),
-                &[],
                 sweep_at,
                 &[],
                 &covered,
@@ -1381,7 +1379,6 @@ mod tests {
         assert!(
             missed_recordings(
                 std::slice::from_ref(&slot),
-                &[],
                 sweep_at,
                 &history,
                 &[],

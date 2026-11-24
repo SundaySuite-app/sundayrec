@@ -7,23 +7,18 @@ import type { SampleRate } from "./SampleRate";
 /**
  * The wire-safe projection of the user's settings.
  *
- * [`crate::diagnostics::SettingsSummary`] is NOT reusable here: it carries
- * `device_name` and `save_folder` because a LOCAL report a person reads needs
- * them. This is a strictly narrower type for the strictly stricter context, and
- * the exclusions are the point:
+ * The full [`Settings`] is NOT reusable here: it carries `device_name` and
+ * `save_folder`, which a LOCAL screen needs. This is a strictly narrower type
+ * for the strictly stricter context, and the exclusions are the point:
  *
  *   - `deviceName` / `videoDeviceName` — a device name is chosen by the user
  *     and routinely contains a person's or a room's name ("Kari sin mikrofon").
  *   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
- *   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
- *     an install outright.
- *   - `slots` / `specialRecordings` — user-authored labels and a congregation's
- *     weekly rhythm. Only their COUNTS travel.
+ *   - `slots` — a congregation's weekly rhythm. Only their COUNT travels.
  *
  * What IS here is configuration shape: the choices that explain a quality
- * record. `filenamePattern` is included because it is a four-variant enum, not
- * free text — the `Church` variant says "this install names files after its
- * congregation", never what that congregation is called.
+ * record. `filenamePattern` is included because it is a three-variant enum, not
+ * free text.
  */
 export type WireSettings = { channels: ChannelMode, 
 /**
@@ -91,6 +86,7 @@ autoUpdate: boolean, launchAtLogin: boolean, wakeFromSleep: boolean,
  */
 slotCount: number, 
 /**
- * How many one-off special recordings are configured.
+ * WIRE-FROZEN since F2 (see `input_volume`): the special recordings left
+ * the app, so the constant is `0`.
  */
 specialCount: number, };

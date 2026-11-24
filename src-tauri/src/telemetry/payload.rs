@@ -2,7 +2,7 @@
 //!
 //! Everything reported here ALREADY EXISTS on the machine, written by earlier
 //! phases for the operator's own benefit: E2.1's crash ring, the recorder's
-//! telemetry history, the `wake_failure` table, the diagnose findings. This
+//! telemetry history, the `wake_failure` table. This
 //! module reads those, projects them through
 //! [`sundayrec_core::telemetry`]'s wire types (which is where the privacy
 //! guarantee lives) and assembles one [`TelemetryPayload`].
@@ -24,11 +24,10 @@
 //! ## Nothing here probes anything
 //!
 //! Building a payload must never run ffmpeg, open a device or touch the network.
-//! Diagnose FINDINGS are therefore not produced here — they are cached by
-//! `run_diagnostics` when the operator runs a diagnose themselves, and this
-//! module only drains that cache. A telemetry system that starts a capture probe
-//! to have something to report is a telemetry system that changes what it
-//! measures.
+//! A telemetry system that starts a capture probe to have something to report
+//! is a telemetry system that changes what it measures. (The payload's
+//! `findings` list stays on the wire, always empty: the diagnose page that
+//! produced findings is gone, and the Worker requires the key.)
 
 use std::path::Path;
 
@@ -36,8 +35,8 @@ use sqlx::SqlitePool;
 
 use sundayrec_core::selftest::RecordingTelemetry;
 use sundayrec_core::telemetry::{
-    CounterReport, FindingReport, NIL_INSTALL_ID, TelemetryPayload, crash_report, finding_report,
-    quality_report, sanitize_language, wake_failure_report,
+    CounterReport, NIL_INSTALL_ID, TelemetryPayload, crash_report, quality_report,
+    sanitize_language, wake_failure_report,
 };
 
 use crate::db::store;
@@ -45,15 +44,6 @@ use crate::error::AppResult;
 
 /// The `app_setting` key holding the per-source watermarks.
 pub const KEY_WATERMARKS: &str = "telemetry.watermarks";
-
-/// The `app_setting` key holding diagnose findings waiting to be reported. A
-/// LIST, not a snapshot: two diagnoses between drains are two data points.
-pub const KEY_PENDING_FINDINGS: &str = "telemetry.pendingFindings";
-
-/// How many finding rows are cached between drains. Well above the number of
-/// distinct `SR-*` codes, so a normal run is never truncated, and far below
-/// anything that could bloat the settings row if drains stop happening.
-pub const MAX_PENDING_FINDINGS: usize = 60;
 
 /// The newest already-reported record per source, in unix ms (UTC).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -89,39 +79,6 @@ pub async fn watermarks(pool: &SqlitePool) -> AppResult<Watermarks> {
 /// Persist the watermarks.
 pub async fn set_watermarks(pool: &SqlitePool, w: Watermarks) -> AppResult<()> {
     store::set_setting(pool, KEY_WATERMARKS, &serde_json::to_string(&w)?).await
-}
-
-/// Cache diagnose findings for the next drain. Called by `run_diagnostics`, and
-/// ONLY when consent is active — a diagnose run by someone who has not opted in
-/// leaves nothing behind.
-pub async fn record_findings(
-    pool: &SqlitePool,
-    findings: &[sundayrec_core::diagnostics::DiagnosticFinding],
-) -> AppResult<()> {
-    let mut pending = pending_findings(pool).await?;
-    pending.extend(findings.iter().filter_map(finding_report));
-    if pending.len() > MAX_PENDING_FINDINGS {
-        pending.drain(..pending.len() - MAX_PENDING_FINDINGS);
-    }
-    store::set_setting(
-        pool,
-        KEY_PENDING_FINDINGS,
-        &serde_json::to_string(&pending)?,
-    )
-    .await
-}
-
-/// The cached findings, oldest first. A malformed row reads as empty.
-pub async fn pending_findings(pool: &SqlitePool) -> AppResult<Vec<FindingReport>> {
-    let raw = store::get_setting(pool, KEY_PENDING_FINDINGS).await?;
-    Ok(raw
-        .and_then(|v| serde_json::from_str::<Vec<FindingReport>>(&v).ok())
-        .unwrap_or_default())
-}
-
-/// Drop the cached findings (after they have been queued).
-pub async fn clear_pending_findings(pool: &SqlitePool) -> AppResult<()> {
-    store::set_setting(pool, KEY_PENDING_FINDINGS, "[]").await
 }
 
 /// Everything a payload build needs that is not in the database.
@@ -216,9 +173,6 @@ pub async fn build(
         payload.wake_failures.push(wake_failure_report(&e));
     }
     payload.wake_failures.sort_by_key(|w| w.at);
-
-    // ── Diagnose findings (drained from the cache, never probed) ──────────────
-    payload.findings = pending_findings(pool).await?;
 
     payload.truncate_to_caps();
     Ok((payload, next))
@@ -455,60 +409,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn findings_are_drained_from_the_cache_not_probed() {
-        use sundayrec_core::diagnostics::{DiagnosticFinding, DiagnosticSeverity};
-        let (pool, dir) = temp_pool().await;
-        // A finding whose DETAIL names a device — the detail must not travel.
-        let finding = DiagnosticFinding {
-            code: "SR-AUDIO-02".into(),
-            severity: DiagnosticSeverity::Warning,
-            title: "Valgt lydenhet finnes ikke".into(),
-            detail: "«Kari sin Qu-5» ble ikke funnet".into(),
-            hint: "Velg enheten på nytt".into(),
-        };
-        record_findings(&pool, std::slice::from_ref(&finding))
-            .await
-            .unwrap();
-
-        let (p, _) = build(&pool, &ctx(dir.path(), vec![]), Watermarks::default(), None)
-            .await
-            .unwrap();
-        assert_eq!(p.findings.len(), 1);
-        assert_eq!(p.findings[0].code, "SR-AUDIO-02");
-        let text = serde_json::to_string(&p).unwrap();
-        assert!(!text.contains("Qu-5"), "{text}");
-        assert!(!text.contains("ble ikke funnet"), "{text}");
-
-        clear_pending_findings(&pool).await.unwrap();
-        let (after, _) = build(&pool, &ctx(dir.path(), vec![]), Watermarks::default(), None)
-            .await
-            .unwrap();
-        assert!(after.findings.is_empty());
-    }
-
-    #[tokio::test]
-    async fn the_finding_cache_is_bounded() {
-        use sundayrec_core::diagnostics::{DiagnosticFinding, DiagnosticSeverity};
-        let (pool, _d) = temp_pool().await;
-        let batch: Vec<DiagnosticFinding> = (0..10)
-            .map(|i| DiagnosticFinding {
-                code: format!("SR-TEST-{i:02}"),
-                severity: DiagnosticSeverity::Info,
-                title: String::new(),
-                detail: String::new(),
-                hint: String::new(),
-            })
-            .collect();
-        for _ in 0..20 {
-            record_findings(&pool, &batch).await.unwrap();
-        }
-        assert_eq!(
-            pending_findings(&pool).await.unwrap().len(),
-            MAX_PENDING_FINDINGS
-        );
-    }
-
-    #[tokio::test]
     async fn the_counter_snapshot_is_carried_through() {
         let (pool, dir) = temp_pool().await;
         let counters = vec![CounterReport {
@@ -556,9 +456,6 @@ mod tests {
         .unwrap();
         std::fs::create_dir_all(dir.path().join("crashes")).unwrap();
         std::fs::write(dir.path().join("crashes/crash-1.json"), b"{broken").unwrap();
-        store::set_setting(&pool, KEY_PENDING_FINDINGS, "nonsense")
-            .await
-            .unwrap();
 
         let (p, _) = build(&pool, &ctx(dir.path(), vec![]), Watermarks::default(), None)
             .await

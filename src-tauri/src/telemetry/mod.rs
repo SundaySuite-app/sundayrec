@@ -63,6 +63,9 @@ use crate::error::AppResult;
 /// The settings row the banded corrections were persisted under before F1 removed them.
 /// Only ever deleted now ([`purge_collected`]).
 const LEGACY_KEY_CORRECTIONS: &str = "telemetry.corrections";
+/// The settings row the cached diagnose findings sat in before F2 removed the
+/// diagnose page. Only ever deleted now ([`purge_collected`]).
+const LEGACY_KEY_PENDING_FINDINGS: &str = "telemetry.pendingFindings";
 
 pub mod config;
 pub mod counters;
@@ -185,12 +188,13 @@ pub async fn on_consent_revoked(pool: &SqlitePool) -> AppResult<()> {
 /// exactly what a zero watermark would have caused.
 async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> AppResult<()> {
     let dropped = queue_store::purge(pool).await?;
-    payload::clear_pending_findings(pool).await?;
     payload::set_watermarks(pool, reset_to).await?;
     counters::purge(pool).await?;
     // The banded-corrections row older builds persisted (the collection itself is
     // gone, F1). A revoke or a new install id still removes what is left of it.
     store::delete_setting(pool, LEGACY_KEY_CORRECTIONS).await?;
+    // Likewise the diagnose-findings cache (F2).
+    store::delete_setting(pool, LEGACY_KEY_PENDING_FINDINGS).await?;
     if dropped > 0 {
         tracing::info!("telemetry: purged {dropped} queued report(s)");
     }
@@ -259,7 +263,6 @@ pub async fn drain_in(
     }
     let queued = enqueue(pool, &built, ctx.now_ms).await?;
     payload::set_watermarks(pool, next).await?;
-    payload::clear_pending_findings(pool).await?;
     // Only now are the counts spent — and SUBTRACTED, so a click that landed
     // while the payload was being written is not lost.
     counters::consume(&ctx.counters);
@@ -947,16 +950,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revoking_empties_the_outbox_and_the_finding_cache() {
+    async fn revoking_empties_the_outbox_and_the_leftover_finding_cache() {
         let (pool, dir, _g) = temp_pool().await;
         grant_reporting_from(&pool, 120).await;
         write_crash(dir.path(), &minutes_ago(60), "en krasj");
         assert!(drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
         assert_eq!(queue_store::load_queue(&pool).await.unwrap().len(), 1);
+        store::set_setting(&pool, LEGACY_KEY_PENDING_FINDINGS, r#"[{"code":"SR-X"}]"#)
+            .await
+            .unwrap();
 
         consent_set(&pool, false).await.unwrap();
         assert!(queue_store::load_queue(&pool).await.unwrap().is_empty());
-        assert!(payload::pending_findings(&pool).await.unwrap().is_empty());
+        assert!(
+            store::get_setting(&pool, LEGACY_KEY_PENDING_FINDINGS)
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(
             payload::watermarks(&pool).await.unwrap(),
             payload::Watermarks::default()
@@ -1054,8 +1065,6 @@ mod tests {
             sundayrec_core::settings::Settings {
                 device_name: Some("Kari sin Qu-5".into()),
                 save_folder: Some("/Users/kari/Menigheten/Opptak".into()),
-                church_name: "Nordstrand menighet".into(),
-                responsible_person: "Kari Nordmann".into(),
                 ..Default::default()
             },
         )
@@ -1142,7 +1151,7 @@ mod tests {
         use sundayrec_core::telemetry::CounterName;
         let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
-        counters::count(CounterName::DiagnoseRun);
+        counters::count(CounterName::TrashMoved);
         assert_eq!(counters::snapshot().len(), 1);
 
         consent_set(&pool, false).await.unwrap();
@@ -1158,7 +1167,7 @@ mod tests {
         );
 
         // Counting after a revoke accumulates nothing at all.
-        counters::count(CounterName::DiagnoseRun);
+        counters::count(CounterName::TrashMoved);
         assert!(counters::snapshot().is_empty());
     }
 

@@ -7,8 +7,7 @@
       "setup": "Inställningar"
     },
     "rail": {
-      "label": "Platser i appen",
-      "churchUnset": "Inte inställt än"
+      "label": "Platser i appen"
     },
     "status": {
       "ready": "Allt är klart",
@@ -97,7 +96,7 @@
       "q1": "Vilken ljudkälla?",
       "q2": "Var sparas inspelningarna?",
       "q3": "Vilken kvalitet?",
-      "q4": "Vilken kyrka?",
+      "q4": "Vilket språk?",
       "q5": "Vem får besked om något går fel?",
       "notSetUp": "Inte inställt",
       "onMachine": "På datorn",
@@ -157,15 +156,11 @@
       },
       "qualityCustom": "Anpassad · {format} {bitrate}",
       "qualityCustomDesc": "Den här kombinationen är inte någon av de tre. Välj ett kort för att byta.",
-      "church": {
-        "lede": "Namnet och språket som appen använder.",
-        "name": "Församling eller kyrka",
-        "nameDesc": "Visas högst upp i appen.",
-        "placeholder": "Till exempel Bryn församling",
-        "languageLabel": "Språk i appen",
-        "languageDesc": "Byter direkt.",
-        "language": "Språk: {language}",
-        "languagePaused": "Det här språket är tillfälligt otillgängligt — appen visar {language} tills vidare."
+      "language": {
+        "lede": "Språket som appen använder.",
+        "label": "Språk i appen",
+        "desc": "Byter direkt.",
+        "paused": "Det här språket är tillfälligt otillgängligt — appen visar {language} tills vidare."
       },
       "notify": {
         "lede": "Datorn säger alltid till när något går fel — till den som står vid den.",
@@ -329,49 +324,22 @@
         "logEmpty": "Felloggen är tom än så länge.",
         "logCopied": "Felloggen kopierad",
         "logCopyFailed": "Kunde inte kopiera felloggen.",
-        "profile": "Flytta inställningarna till en annan dator",
-        "profileDesc": "Spara inställningarna i en fil och hämta dem på den andra datorn. Lösenord följer aldrig med.",
         "licenses": "Licenser",
         "licensesDesc": "Programvaran från andra som SundayRec bygger på, och ffmpeg (GPL) med var källkoden finns.",
         "licensesOpen": "Visa licenser",
         "licensesClose": "Stäng",
         "licensesFailed": "Licenstexten hittades inte. Försök installera appen igen.",
         "licensesFrameTitle": "Licenser och tredjepartsmeddelanden",
-        "export": "Spara inställningar",
-        "import": "Hämta inställningar",
-        "importTitle": "Hämta inställningar?",
-        "importBody": "Det här ersätter inställningarna på den här datorn med innehållet i filen du väljer. Ljudkälla, kamera, inspelningsmapp och ”Starta automatiskt med datorn” förblir som de är här. Inspelningar, biblioteket och lösenord rörs inte.",
-        "importConfirm": "Ja, hämta inställningarna",
-        "exported": "Inställningarna sparades.",
-        "exportFailed": "Kunde inte spara inställningarna: {err}",
-        "imported": "Inställningarna hämtades.",
-        "importFailed": "Kunde inte hämta inställningarna: {err}",
-        "importNotProfile": "Filen är inte en uppsättning inställningar från SundayRec, eller så är den skadad. Ingenting ändrades.",
-        "importTooLarge": "Filen är för stor för att vara en uppsättning inställningar. Ingenting ändrades.",
-        "schedTitle": "Fler tider och enstaka inspelningar",
+        "schedTitle": "Fler tider",
         "schedDesc": "Den veckovisa tiden ställs in på sidan Inspelning, i kortet ”Spela in automatiskt”. Här lägger du till fler.",
         "schedTimes": "Fasta tider",
         "schedNone": "Inga fasta tider än.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Lägg till en fast tid",
+        "schedAddSave": "Lägg till",
+        "wakeTestBlocked": "Går inte medan en inspelning pågår.",
         "schedRemove": "Ta bort",
         "schedFirstIsSetup": "Den första tiden är den du ser i kortet ”Spela in automatiskt” på sidan Inspelning.",
-        "specialsTitle": "Enstaka inspelningar",
-        "specialsDesc": "Ett enskilt datum — en konsert, en julafton.",
-        "specialsNone": "Inga enstaka inspelningar planerade.",
-        "specialDate": "Datum",
-        "specialStart": "Startar",
-        "specialAdd": "Lägg till",
-        "specialRemove": "Ta bort",
-        "specialDefaultName": "Gudstjänst",
-        "specialRow": "{date} · {start}–{stop}",
-        "specialNeedsDate": "Välj ett datum först.",
-        "specialPast": "Datumet har passerat — ingen inspelning kommer att starta.",
-        "specialDeviceSame": "Samma som den vanliga inspelningen",
-        "specialDevice": "Ljudkälla för inspelningen",
-        "specialDeviceHint": "Välj en egen ljudkälla om inspelningen ska komma från något annat än vanligt. Är den inte ansluten när inspelningen startar används den vanliga — och du får besked.",
-        "specialRowDevice": "{date} · {start}–{stop} · {device}",
-        "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (inte ansluten nu)",
         "wake": "Väck datorn ur viloläge",
         "wakeDesc": "Utan det här måste datorn vara på när inspelningen ska starta.",
         "autoDeleteConfirmBody": "Inspelningar som är äldre än så flyttas till papperskorgen. Under 30 dagar kan betyda att en gudstjänst är borta innan någon har hunnit ladda ner den.",
@@ -430,175 +398,20 @@
           "onBattery": "gick på batteri"
         },
         "audioTech": "Om ljudtekniken",
-        "diagnoseReportWhere": "Skicka rapporten till den som hjälper er, eller till dev@sundaysuite.app.",
-        "publishDesc": "Efter en export kan appen öppna sidan ni laddar upp på, med titel och beskrivning redo att kopieras. SundayRec laddar inte upp något själv.",
-        "publishWhere": "Var lägger ni upp?",
-        "publishChannelName": {
-          "custom": "Egen sida",
-          "none": "Ingen"
-        },
-        "publishChannelDesc": {
-          "soundcloud": "Ofta också er podd",
-          "youtube": "Uppladdning i YouTube Studio",
-          "spotify": "Podcast i Spotify for Creators",
-          "custom": "Till exempel WordPress eller er podcastvärd",
-          "none": "Kvittot visar bara filen"
-        },
-        "publishUrl": "Länk till uppladdningssidan",
-        "publishUrlDesc": "Måste börja med https://",
-        "publishUrlNotHttps": "Länken måste börja med https://",
-        "publishUrlInvalid": "Det här ser inte ut som en webbadress",
-        "publishTemplate": "Fast beskrivning",
-        "publishTemplateDesc": "Fylls i vid export, där den kan ändras. {title}, {speaker}, {date} och {church} byts ut.",
-        "publishTemplatePlaceholder": "Predikan från {church}, {date}. Talare: {speaker}.",
         "audioTechNote": "Texten nedan är licensvillkor från Steinberg och står på engelska."
       },
       "sections": {
         "nav": "Hoppa till",
-        "church": "Kyrka och språk",
+        "language": "Språk",
         "schedule": "Schema",
-        "publish": "Publicering",
         "recording": "Inspelningen",
         "recordingDesc": "Hur själva inspelningen ska fungera: ljud från före Start, stopp vid tystnad, maxlängd, delning i flera filer och radering av gamla inspelningar.",
         "updates": "Uppdateringar och integritet",
         "updatesDesc": "Du bestämmer om appen letar efter nya versioner och om den skickar anonym statistik.",
         "help": "Hjälp och felsökning",
-        "helpDesc": "Om något inte fungerar: kontrollera datorn, hämta felloggen eller flytta inställningarna till en annan dator.",
+        "helpDesc": "Om något inte fungerar: hämta felloggen.",
         "about": "Om",
         "aboutDesc": "Licenser och meddelanden för den programvara SundayRec bygger på."
-      }
-    },
-    "diagnose": {
-      "title": "Kontrollera datorn",
-      "desc": "Kontrollerar ljudkälla, behörigheter, inspelningsmotor och disk och gör en rapport du kan skicka vidare.",
-      "run": "Starta kontroll",
-      "running": "Kontrollerar …",
-      "failed": "Kontrollen kunde inte köras: {err}",
-      "probeSkipped": "Ljudprovet kördes inte: {why}",
-      "copy": "Kopiera hela rapporten",
-      "copied": "Rapporten är kopierad",
-      "copyFailed": "Kunde inte kopiera rapporten",
-      "savedTo": "Sparad till",
-      "devicesTitle": "Alla ljudkällor appen ser",
-      "noDevices": "Inga ljudkällor hittades",
-      "ipcTitle": "Delar av appen som inte svarade den här gången ({n})",
-      "test": "Provinspelning (10 sek)",
-      "testRunning": "Spelar in ett prov …",
-      "testBlocked": "Går inte medan en inspelning pågår.",
-      "testOk": "Provinspelningen gick bra — {signal}.",
-      "testFail": "Provinspelningen misslyckades: {why}",
-      "r": {
-        "devices": "Hittade ljudkällor",
-        "selected": "Vald ljudkälla",
-        "mic": "Mikrofonåtkomst",
-        "engine": "Inspelningsmotor (ffmpeg)",
-        "probe": "Ljudprovet"
-      },
-      "v": {
-        "notFound": "hittades inte",
-        "defaultDevice": "Datorns standard",
-        "ffmpegOk": "Tillgänglig",
-        "ffmpegMissing": "Hittades inte",
-        "unknown": "Kan inte avgöras",
-        "probeSkipped": "Kördes inte",
-        "probeOk": "Fick ljud",
-        "probeFail": "Fick inget ljud",
-        "auth": {
-          "authorized": "Beviljad",
-          "denied": "Nekad",
-          "restricted": "Spärrad av systemadministratör",
-          "notDetermined": "Inte efterfrågad än",
-          "unknown": "Kan inte avgöras på den här plattformen"
-        }
-      },
-      "testErr": {
-        "deviceNotFound": "hittade inte ljudkällan",
-        "permissionDenied": "mikrofonåtkomst nekad",
-        "ffmpegError": "inspelningsmotorn misslyckades",
-        "noAudio": "inget ljud i inspelningen"
-      },
-      "testSig": {
-        "silent": "helt tyst",
-        "low": "svag signal",
-        "normal": "normal nivå"
-      },
-      "f": {
-        "ffmpeg01": {
-          "title": "Inspelningsmotorn (ffmpeg) saknas",
-          "hint": "Installera om SundayRec — inspelningsmotorn följer med appen."
-        },
-        "audio01": {
-          "title": "Ingen ljudkälla hittades",
-          "hint": "Kontrollera att mixerbordet eller ljudkortet är anslutet och att drivrutinen är installerad. På en delad dator: körs ljudtjänsten?"
-        },
-        "audio02": {
-          "title": "Den valda ljudkällan hittades inte",
-          "hint": "Anslut ljudkällan, eller välj en annan under ”Vilken ljudkälla?” på sidan Inspelning."
-        },
-        "rate01": {
-          "title": "En fast samplingsfrekvens är vald",
-          "hint": "Kör ljudkortet en annan frekvens räknar ffmpeg om, och du kan få hackningar. Välj ”Auto” igen om du inte har en konkret anledning."
-        },
-        "video01": {
-          "title": "Video är på, men ingen kamera hittades",
-          "hint": "Anslut kameran, eller stäng av ”Ta med video” på sidan Inspelning."
-        },
-        "video02": {
-          "title": "Kameran gav ingen bild",
-          "hint": "Kontrollera att kameran är ansluten och inte används av ett annat program, och att appen har kameraåtkomst."
-        },
-        "disk01": {
-          "title": "Lite ledigt utrymme",
-          "hint": "Frigör utrymme eller välj en annan lagringsmapp före en lång inspelning."
-        },
-        "disk02": {
-          "title": "Kan inte skriva till lagringsmappen",
-          "hint": "Välj en mapp du får skriva till under ”Var sparas inspelningarna?” på sidan Inspelning."
-        },
-        "perm01": {
-          "title": "Mikrofonåtkomst är nekad",
-          "hint": "Ge åtkomst i Systeminställningar → Integritet och säkerhet → Mikrofon, och starta om appen."
-        },
-        "perm02": {
-          "title": "Kameraåtkomst är nekad",
-          "hint": "Ge åtkomst i Systeminställningar → Integritet och säkerhet → Kamera, och starta om appen."
-        },
-        "engine01": {
-          "title": "Den förra inspelningen slutade med ett fel",
-          "hint": "Felkoden står på raden ovanför. Gör en provinspelning för att se om det fungerar nu."
-        },
-        "capture01": {
-          "title": "Den förra inspelningen visade tecken på hackningar",
-          "hint": "Stäng andra tunga program och kontrollera kabel och ström till ljudkortet. Gör sedan en ny inspelning och se om talen minskar."
-        },
-        "capture02": {
-          "title": "Ljudprovet fick inget ljud",
-          "hint": "Kontrollera att rätt ljudkälla är vald under ”Vilken ljudkälla?” på sidan Inspelning, att kabeln sitter i och att inget annat program använder mikrofonen. Starta kontrollen igen efteråt."
-        },
-        "crash01": {
-          "title": "Appen har kraschat",
-          "hint": "Skicka den här rapporten vidare — kraschfilerna är det som gör felet möjligt att hitta."
-        },
-        "task01": {
-          "title": "Bakgrundsuppgifter fick startas om",
-          "hint": "Appen startade dem igen själv, så ingenting stannade. Upprepas det, ta med den här rapporten — namnen ovanför säger vilken del som är instabil."
-        },
-        "log01": {
-          "title": "Felloggen är inte aktiv",
-          "hint": "Som regel betyder det att appmappen inte kunde skapas. Starta om appen; kvarstår det, kontrollera diskutrymme och behörigheter."
-        },
-        "log02": {
-          "title": "Delar av felloggen saknas",
-          "hint": "Felloggen är ofullständig eftersom inspelningen prioriterades — det är rätt väg. En långsam disk är värd att titta på före nästa långa inspelning."
-        },
-        "ok": {
-          "title": "Inga problem upptäckta",
-          "hint": "Du är redo att spela in."
-        },
-        "recLoss": {
-          "title": "Den förra inspelningen saknar ljud",
-          "hint": "Det här är allvarligt: inspelningen tappade ljud under tiden. Stäng andra tunga program, anslut ljudkortet direkt i datorn (inte via en hubb), och säg ifrån med den här rapporten — siffrorna här är beviset."
-        }
       }
     },
     "language": {
@@ -781,17 +594,7 @@
       "contentSpeakerPlaceholder": "Vem talade?",
       "contentDescription": "Beskrivning",
       "contentDescriptionPlaceholder": "Bibeltext, tema eller en rad om församlingen",
-      "contentHint": "Allt är valfritt. Skriver du en titel får filen den som namn – det är det SoundCloud och liknande föreslår när du laddar upp.",
-      "publishTitle": "Lägg upp på {channel}",
-      "publishTitleCustom": "Lägg upp",
-      "publishOpen": "Öppna {channel}",
-      "publishOpenCustom": "Öppna uppladdningssidan",
-      "publishHint": "Dra filen till sidan som öppnas och klistra in titel och beskrivning.",
-      "publishCopy": "Kopiera",
-      "publishCopied": "Kopierad",
-      "publishCopyFailed": "Kunde inte kopiera. Markera texten och kopiera den själv.",
-      "publishNothing": "Det finns ingen giltig https-länk under Inställningar → Publicering, så inget öppnades.",
-      "publishFailed": "Kunde inte öppna sidan. Öppna den själv i webbläsaren."
+      "contentHint": "Allt är valfritt. Skriver du en titel får filen den som namn – det är det SoundCloud och liknande föreslår när du laddar upp."
     },
     "span": {
       "hours": "{h} tim",
@@ -808,9 +611,6 @@
       "missedDesc": "Datorn var avstängd. Automatisk inspelning kräver att den är på eller i viloläge.",
       "missedWhy": "Vad kan jag göra?",
       "missedHelp": "Låt datorn stå på, eller låt den sova — SundayRec väcker den själv tio minuter före inspelningen. Är den helt avstängd finns det ingenting som kan starta den. Kolla också att ”Starta automatiskt med datorn” är på i kortet ”Spela in automatiskt” på sidan Inspelning, så att appen är i gång igen efter en omstart.",
-      "emailRemovedTitle": "E-postaviseringar har tagits bort",
-      "emailRemovedDesc": "SundayRec skickar inte längre e-post när något går fel. Datorn säger till med en avisering på skärmen i stället — den kan inte stängas av.",
-      "emailRemovedOk": "Uppfattat",
       "globalErrorTitle": "Något gick fel"
     }
   },
@@ -829,8 +629,7 @@
       "diskLow": "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning.",
       "micDenied": "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon.",
       "cameraDenied": "Kameraåtkomst har inte getts.",
-      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning.",
-      "specialDeviceMissing": "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts den inte före start, används den vanliga ljudenheten."
+      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning."
     },
     "preflightErrors": {
       "one": "{n} fel måste åtgärdas före inspelningen",
@@ -900,11 +699,10 @@
     "saveFailed": "Kunde inte spara inställningen"
   },
   "error": {
-    "tryAgainHint": "Om problemet kvarstår, öppna Inställningar → Hjälp och felsökning → Kontrollera datorn, eller starta om programmet.",
+    "tryAgainHint": "Om problemet kvarstår, öppna Inställningar → Hjälp och felsökning och hämta felloggen, eller starta om programmet.",
     "ipcFailed": "Något i bakgrunden svarade inte, så den här vyn kan vara ofullständig.",
     "settingsLoadFailed": "Kunde inte läsa inställningarna — visar standardinställningar. Ändringar du gör nu kan gå förlorade.",
     "settingsLoadRetry": "Försök igen",
-    "settingsMigrationCorrupt": "Inställningarna från föregående version kunde inte läsas — appen startar med standardinställningar.",
     "recordingsFolderMissing": "Inspelningsmappen finns inte än. Den skapas när den första inspelningen startar. Ligger den på en extern disk, kontrollera att disken är ansluten."
   },
   "editor": {
@@ -1070,7 +868,7 @@
     "errorFfmpegMissing": "Internt fel: inspelningskomponent saknas — installera om appen",
     "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder",
     "errorStartTimeout": "Inspelningen kom inte i gång i tid — kontrollera att mikrofonen (och kameran) är ansluten, och att SundayRec har åtkomst under Systeminställningar → Integritet och säkerhet",
-    "errorEngineExited": "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas.",
+    "errorEngineExited": "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och hämta felloggen (Inställningar → Hjälp och felsökning) om det upprepas.",
     "errorVideoCapture": "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen.",
     "errorCameraFormat": "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen.",
     "errorCameraPermission": "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran",
@@ -1108,7 +906,7 @@
     "promptTitle": "Skicka anonym användningsstatistik?",
     "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till SundaySuite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → Uppdateringar och integritet.",
     "rePromptTitle": "Vi frågar dig igen",
-    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
+    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen för att vara säkra på att ditt svar gäller det som delas nu: bara anonyma räknare och tekniska siffror om inspelningarna (om ljud föll ur, hur länge och vad som misslyckades) — aldrig ljud, namn, filer eller text. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
   },
   "tooltip": {
     "unsavedChanges": "Osparade ändringar",

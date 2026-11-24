@@ -312,7 +312,7 @@ const LIBRARY: Array<{
   {
     name: "BoundTextField",
     markup: () =>
-      render(<BoundTextField testId="probe" setting="churchName" label="L" />),
+      render(<BoundTextField testId="probe" setting="deviceName" label="L" />),
     derived: ["probe-control-input"],
   },
   {

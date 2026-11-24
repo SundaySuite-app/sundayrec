@@ -90,7 +90,6 @@ use crate::recorder::native_capture::preroll::{
     NativePrerollEngine, PrerollClip, PrerollStatus, preroll_settings_from,
 };
 use crate::settings;
-use crate::test_recording::{TestRecordingResult, run_test_recording as run_test};
 
 /// Everything the renderer may say about a manual start — and, on purpose,
 /// nothing that names a place on disk.
@@ -755,67 +754,6 @@ pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<Disk
     })
 }
 
-/// Run a ~10 s test capture for the configured mic and report size + measured
-/// signal level. The capture goes through the native engine with the SAME
-/// channel mode, input-channel picks and sample rate as a recording (M1R #7), so
-/// the level is the level of the channels that would actually be recorded.
-/// HARDWARE-UNVERIFIED (needs a real mic); the option mapping and classifiers
-/// are gate-tested.
-///
-/// The microphone must be free: the VU meter is released, and a running
-/// pre-roll buffer is released too and re-armed afterwards (a second opener
-/// would fail on an exclusive ASIO device, and starve the buffer's clip).
-#[tauri::command]
-pub async fn run_test_recording(
-    app: AppHandle,
-    db: State<'_, Db>,
-    vu: State<'_, crate::audio::vu::VuEngine>,
-    preroll: State<'_, NativePrerollEngine>,
-    engine: State<'_, RecorderEngine>,
-) -> AppResult<TestRecordingResult> {
-    refuse_while_recording(engine.current_state())?;
-    // Release the channel-grid/VU stream before opening the device for real.
-    vu.stop();
-    let s = settings::load(&db.pool).await.unwrap_or_default();
-    // The pre-roll buffer is the device's owner (and the VU emitter) while it
-    // runs: let go and WAIT for the release, then hand it back after the test.
-    let preroll_was_running = preroll.is_active();
-    if preroll_was_running {
-        preroll.stop_and_release().await;
-    }
-    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingSelftest);
-    let result = run_test(&s).await;
-    if preroll_was_running && let Some(ps) = preroll_settings_from(&s) {
-        preroll.start(app, ps);
-    }
-    result
-}
-
-/// Precision capture bench (the zero-loss proof tool): run the REAL native
-/// capture stack for `secs` seconds against the configured mic + sample-rate settings and
-/// return the full Pass/Warn/Fail report with expected/measured seconds.
-#[tauri::command]
-pub async fn run_capture_bench(
-    db: State<'_, Db>,
-    vu: State<'_, crate::audio::vu::VuEngine>,
-    engine: State<'_, RecorderEngine>,
-    secs: u32,
-) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
-    refuse_while_recording(engine.current_state())?;
-    // Release the channel-grid/VU stream before the bench opens the device.
-    vu.stop();
-    let s = settings::load(&db.pool).await.unwrap_or_default();
-    let device = s.device_name.clone().unwrap_or_default();
-    let rate = s.resolved_sample_rate();
-    // The SAME host selection as a real recording, so the bench always proves
-    // the shipping path (the native engine is the only one).
-    let host = crate::recorder::engine::capture_host(
-        cfg!(windows),
-        crate::audio::asio::is_asio_device(&device),
-    );
-    crate::test_recording::run_native_capture_bench(host, &device, rate, secs).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,14 +1285,12 @@ mod tests {
     // straight back to `start_recording`). And for every illegitimate one, a
     // path the renderer supplies goes nowhere.
 
-    use sundayrec_core::schedule::SpecialRecording;
     use sundayrec_core::settings::{
         DeviceChannels, FileFormat, FilenamePattern, SampleRate, Settings,
     };
 
     /// The frozen clock most cases plan at, so two plans name the same file.
-    /// A Sunday the church calendar has no name for (so the `church` pattern
-    /// falls back to «gudstjeneste»).
+    /// An ordinary Sunday.
     const GOLDEN_SUNDAY: &str = "2026-06-07 11:00";
 
     fn at(when: &str) -> chrono::NaiveDateTime {
@@ -1372,13 +1308,6 @@ mod tests {
             device_id: Some("MacBook Pro-mikrofon".into()),
             device_name: Some("MacBook Pro-mikrofon".into()),
             ..Settings::default()
-        }
-    }
-
-    fn profile_church(save: &std::path::Path) -> Settings {
-        Settings {
-            filename_pattern: FilenamePattern::Church,
-            ..profile_mac(save)
         }
     }
 
@@ -1452,24 +1381,6 @@ mod tests {
         }
     }
 
-    /// #303: a special recording with a sound card of its own. A MANUAL start
-    /// is not that special — it records from the global device, as before.
-    fn profile_special_device(save: &std::path::Path) -> Settings {
-        Settings {
-            device_id: Some("Behringer X32".into()),
-            device_name: Some("Behringer X32".into()),
-            special_recordings: vec![SpecialRecording {
-                id: Some("konf".into()),
-                date: "2026-06-07".into(),
-                name: "Konfirmasjon".into(),
-                start: "11:00".into(),
-                stop: "12:30".into(),
-                device_id: Some("asio::Focusrite USB ASIO".into()),
-            }],
-            ..profile_mac(save)
-        }
-    }
-
     type Profile = fn(&std::path::Path) -> Settings;
 
     /// One representative manual start: a profile, the three request values,
@@ -1529,19 +1440,6 @@ mod tests {
             None,
             Some(false),
         ),
-        case("kirkeaar-navn", profile_church, None, None, Some(false)),
-        // …and on a day the church calendar DOES name: the liturgical branch
-        // of `build_filename`, with a Norwegian character in the result.
-        GoldenCase {
-            now: "2026-03-29 11:00",
-            ..case(
-                "kirkeaar-palmesondag",
-                profile_church,
-                None,
-                None,
-                Some(false),
-            )
-        },
         case("qu5-flerkanal", profile_qu5, None, Some(120), Some(false)),
         case("asio-focusrite", profile_asio, None, None, Some(false)),
         case(
@@ -1572,13 +1470,6 @@ mod tests {
             None,
             None,
             None,
-        ),
-        case(
-            "spesial-med-eget-lydkort",
-            profile_special_device,
-            None,
-            None,
-            Some(false),
         ),
         GoldenCase {
             collides: true,
@@ -1626,14 +1517,6 @@ mod tests {
             r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3"}"#,
         ),
         (
-            "kirkeaar-navn",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3"}"#,
-        ),
-        (
-            "kirkeaar-palmesondag",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/palmesøndag_2026-03-29.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3"}"#,
-        ),
-        (
             "qu5-flerkanal",
             r#"{"audio_device_name":"Allen & Heath Qu-5","video_device_name":null,"output_path":"<save>/2026-06-07_1100.wav","stop_on_silence":true,"silence_threshold_db":-45,"silence_timeout_minutes":10,"channel_mode":"stereo","input_channel_l":4,"input_channel_r":5,"sample_rate":48000,"bitrate_kbps":256,"split_minutes":30,"manual_max_minutes":120,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"wav"}"#,
         ),
@@ -1660,10 +1543,6 @@ mod tests {
         (
             "video-innstillingen-avgjoer",
             r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":"FaceTime HD-kamera","output_path":"<save>/2026-06-07.mp4","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac"}"#,
-        ),
-        (
-            "spesial-med-eget-lydkort",
-            r#"{"audio_device_name":"Behringer X32","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3"}"#,
         ),
         (
             "kollisjon-samme-dag",

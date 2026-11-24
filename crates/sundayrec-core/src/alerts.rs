@@ -49,10 +49,6 @@
 //!   the language, so a volunteer who switches from Norwegian to English is
 //!   told about the same missed Sunday a second time — the exact bug
 //!   `notify::MissedSlot`'s two time fields exist to prevent.
-//! - **Holiday names** ([`crate::church_calendar`]) and the SR-code reserve in
-//!   [`crate::diagnostics`]. Data and a documented backlog item respectively;
-//!   both are allowlisted in the `check-rust-norwegian.mjs` ratchet with the
-//!   reason spelled out there.
 
 use crate::lang::Lang;
 
@@ -102,11 +98,6 @@ pub enum AlertText {
     PreflightCameraDenied,
     /// Preflight body: the save folder is inside a OneDrive-synced tree (F2-W9).
     PreflightSaveFolderSynced,
-    /// Preflight body: a ONE-OFF recording's own audio device is not connected
-    /// — `PreflightDeviceMissing` for the device the special chose rather than
-    /// the one in settings, named, because that is the one to go and find.
-    /// `{device}`
-    PreflightSpecialDeviceMissing,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -123,9 +114,6 @@ pub enum AlertText {
     ScheduledPrepareFailed,
     /// The late-start net's recovery attempt failed too. `{detail}`
     ScheduledLateStartFailed,
-    /// A special recording's own audio device was not available at its start,
-    /// so it is recording on the usual (global) device instead. `{device}`
-    ScheduledSpecialDeviceFallback,
     /// The pre-service reminder. `{min}`
     Reminder,
     /// Exactly one scheduled occurrence was never recorded. `{label}` `{at}`
@@ -134,8 +122,6 @@ pub enum AlertText {
     MissedMany,
     /// What a missed weekly slot is called in the sentence. `{start}` `{stop}`
     MissedWeeklyLabel,
-    /// What a missed special recording without a name is called.
-    MissedSpecialLabel,
 
     // ── Recorder (terminal failures that reach the native notification) ────
     /// The reconnect policy gave up.
@@ -220,7 +206,6 @@ impl AlertText {
         AlertText::PreflightMicDenied,
         AlertText::PreflightCameraDenied,
         AlertText::PreflightSaveFolderSynced,
-        AlertText::PreflightSpecialDeviceMissing,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -228,12 +213,10 @@ impl AlertText {
         AlertText::ScheduledStartTimeout,
         AlertText::ScheduledPrepareFailed,
         AlertText::ScheduledLateStartFailed,
-        AlertText::ScheduledSpecialDeviceFallback,
         AlertText::Reminder,
         AlertText::MissedOne,
         AlertText::MissedMany,
         AlertText::MissedWeeklyLabel,
-        AlertText::MissedSpecialLabel,
         AlertText::RecordingNotRecovered,
         AlertText::RecordingStartTimeout,
         AlertText::RecordingStartTimeoutMic,
@@ -307,8 +290,6 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
-            AlertText::ScheduledSpecialDeviceFallback
-            | AlertText::PreflightSpecialDeviceMissing => &["device"],
             AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
@@ -686,75 +667,6 @@ impl AlertText {
                 "Le démarrage tardif de l'enregistrement programmé a échoué : {detail}"
             }
 
-            // ── PreflightSpecialDeviceMissing ───────────────────────────────
-            // Half an hour before a one-off recording on its own device. Says
-            // what will happen if nobody acts, in the same words the start's
-            // fallback notice uses.
-            (A::PreflightSpecialDeviceMissing, L::No) => {
-                "Lydkilden «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden."
-            }
-            (A::PreflightSpecialDeviceMissing, L::En) => {
-                "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used."
-            }
-            (A::PreflightSpecialDeviceMissing, L::De) => {
-                "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
-                 Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
-                 verwendet."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Sv) => {
-                "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts \
-                 den inte före start, används den vanliga ljudenheten."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Da) => {
-                "Lydenheden »{device}« til enkeltoptagelsen er ikke tilsluttet. Bliver den ikke \
-                 tilsluttet før start, bruges den sædvanlige lydenhed."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Pl) => {
-                "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. \
-                 Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe \
-                 urządzenie audio."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Fr) => {
-                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'est pas \
-                 connecté. S'il n'est pas connecté avant le début, le périphérique audio \
-                 habituel sera utilisé."
-            }
-
-            // ── ScheduledSpecialDeviceFallback ──────────────────────────────
-            // The recording DID start — on the usual device. The sentence says
-            // both halves, so nobody goes looking for a lost recording, and
-            // names the device that was not there, so somebody can go and find
-            // it before the next one. The one-off terms match the renderer's
-            // `app.setup.advanced.specialsTitle` in each language.
-            (A::ScheduledSpecialDeviceFallback, L::No) => {
-                "Lydkilden «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
-                 bruker den vanlige lydkilden i stedet."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::En) => {
-                "The sound source \"{device}\" for the one-off recording was not available — \
-                 recording from the usual sound source instead."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::De) => {
-                "Das Audiogerät „{device}“ für die einmalige Aufnahme war nicht verfügbar — \
-                 die Aufnahme verwendet stattdessen das übliche Audiogerät."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Sv) => {
-                "Ljudenheten ”{device}” för den enstaka inspelningen var inte tillgänglig — \
-                 inspelningen använder den vanliga ljudenheten i stället."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Da) => {
-                "Lydenheden »{device}« til enkeltoptagelsen var ikke tilgængelig — \
-                 optagelsen bruger den sædvanlige lydenhed i stedet."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Pl) => {
-                "Urządzenie audio „{device}” dla nagrania jednorazowego było niedostępne — \
-                 nagranie korzysta zamiast tego ze zwykłego urządzenia audio."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Fr) => {
-                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'était pas \
-                 disponible — l'enregistrement utilise le périphérique audio habituel."
-            }
-
             // ── Reminder ────────────────────────────────────────────────────
             // Byte-for-byte the Electron `REMINDER_LABELS` map these were ported
             // from (via `scheduler::reminder_body`, which this replaced): a
@@ -811,15 +723,6 @@ impl AlertText {
             (A::MissedWeeklyLabel, L::Da) => "Ugentlig optagelse ({start}–{stop})",
             (A::MissedWeeklyLabel, L::Pl) => "Cotygodniowe nagranie ({start}–{stop})",
             (A::MissedWeeklyLabel, L::Fr) => "Enregistrement hebdomadaire ({start}–{stop})",
-            // ── MissedSpecialLabel ──────────────────────────────────────────
-            // The renderer's own word for these (`specialsTitle`), singular.
-            (A::MissedSpecialLabel, L::No) => "Spesialopptak",
-            (A::MissedSpecialLabel, L::En) => "One-off recording",
-            (A::MissedSpecialLabel, L::De) => "Einmalige Aufnahme",
-            (A::MissedSpecialLabel, L::Sv) => "Engångsinspelning",
-            (A::MissedSpecialLabel, L::Da) => "Enkeltoptagelse",
-            (A::MissedSpecialLabel, L::Pl) => "Nagranie jednorazowe",
-            (A::MissedSpecialLabel, L::Fr) => "Enregistrement ponctuel",
             // ── RecordingNotRecovered ───────────────────────────────────────
             (A::RecordingNotRecovered, L::No) => "Opptaket kunne ikke gjenopprettes",
             (A::RecordingNotRecovered, L::En) => "The recording could not be recovered",
@@ -1044,25 +947,25 @@ impl AlertText {
             }
             // ── RecordingEngineExited ────────────────────────────────────────
             (A::RecordingEngineExited, L::No) => {
-                "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og bruk «Sjekk maskinen» (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg."
+                "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og hent feilloggen (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg."
             }
             (A::RecordingEngineExited, L::En) => {
-                "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again."
+                "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and get the error log (Settings → Help and troubleshooting) if it happens again."
             }
             (A::RecordingEngineExited, L::De) => {
-                "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und nutzen Sie „Computer prüfen“ (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt."
+                "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und holen Sie das Fehlerprotokoll (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt."
             }
             (A::RecordingEngineExited, L::Sv) => {
-                "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas."
+                "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och hämta felloggen (Inställningar → Hjälp och felsökning) om det upprepas."
             }
             (A::RecordingEngineExited, L::Da) => {
-                "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig."
+                "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og hent fejllogen (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig."
             }
             (A::RecordingEngineExited, L::Pl) => {
-                "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy."
+                "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i pobierz dziennik błędów (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy."
             }
             (A::RecordingEngineExited, L::Fr) => {
-                "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète."
+                "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et récupérez le journal d’erreurs (Réglages → Aide et dépannage) si cela se répète."
             }
             // ── RecordingVideoCapture ────────────────────────────────────────
             (A::RecordingVideoCapture, L::No) => {
@@ -1395,16 +1298,13 @@ impl AlertText {
 /// What a missed occurrence is called in the notification, in `lang`.
 ///
 /// The CANONICAL label ([`crate::schedule::MissedRecording::label`]) stays
-/// Norwegian because it is a key; this is the words. A named special recording
-/// keeps the name a person typed — it is theirs, not ours to translate.
+/// Norwegian because it is a key; this is the words.
 pub fn missed_label(kind: &crate::schedule::MissedKind, lang: Lang) -> String {
     use crate::schedule::MissedKind;
     match kind {
         MissedKind::Weekly { start, stop } => {
             AlertText::MissedWeeklyLabel.fill(lang, &[("start", start), ("stop", stop)])
         }
-        MissedKind::Special { name: Some(name) } => name.clone(),
-        MissedKind::Special { name: None } => AlertText::MissedSpecialLabel.text(lang),
     }
 }
 
@@ -1438,7 +1338,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            52,
+            49,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1655,7 +1555,7 @@ mod tests {
         // Norwegian notifications are byte-identical to before: the words for a
         // Norwegian volunteer ARE the canonical label. Another language gets
         // its own words, and the key underneath does not move.
-        use crate::schedule::{MissedKind, ScheduleSlot, missed_recordings};
+        use crate::schedule::{ScheduleSlot, missed_recordings};
         use chrono::NaiveDateTime;
         let slot = ScheduleSlot {
             days: vec![6],
@@ -1666,7 +1566,6 @@ mod tests {
         let now = NaiveDateTime::parse_from_str("2026-06-07 15:00", "%Y-%m-%d %H:%M").unwrap();
         let missed = missed_recordings(
             std::slice::from_ref(&slot),
-            &[],
             now,
             &[],
             &[],
@@ -1677,21 +1576,6 @@ mod tests {
         assert_eq!(
             missed_label(&missed[0].kind, Lang::En),
             "Weekly recording (11:00–13:00)"
-        );
-        assert_eq!(
-            missed_label(&MissedKind::Special { name: None }, Lang::No),
-            "Spesialopptak",
-            "the unnamed special's Norwegian word is its canonical label too"
-        );
-        assert_eq!(
-            missed_label(
-                &MissedKind::Special {
-                    name: Some("Bryllup Kari og Ola".into())
-                },
-                Lang::Fr
-            ),
-            "Bryllup Kari og Ola",
-            "a name somebody typed is not ours to translate"
         );
     }
 
@@ -1716,34 +1600,6 @@ mod tests {
         // …and the slot LABEL is deliberately not translated — see the module
         // header: it is hashed into the durable `notify_seen` key.
         assert!(s.contains("Ukentlig opptak (11:00–13:00)"));
-    }
-
-    #[test]
-    fn the_special_device_fallback_names_the_missing_device_in_every_language() {
-        // The operator needs WHICH device to go and find — a sentence that lost
-        // the name in translation is "something was not available", which
-        // nobody can act on before the next one-off recording.
-        for &lang in Lang::ALL {
-            let s =
-                AlertText::ScheduledSpecialDeviceFallback.fill(lang, &[("device", "Rode NT-USB")]);
-            assert!(s.contains("Rode NT-USB"), "{lang:?}: {s}");
-        }
-        assert_eq!(
-            AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Rode NT-USB")]),
-            "Lydkilden «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
-             bruker den vanlige lydkilden i stedet."
-        );
-    }
-
-    #[test]
-    fn the_special_device_preflight_names_the_device_not_the_settings() {
-        for &lang in Lang::ALL {
-            let s = AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", "Zoom H6")]);
-            assert!(s.contains("Zoom H6"), "{lang:?}: {s}");
-            assert_ne!(s, AlertText::PreflightDeviceMissing.text(lang));
-        }
-        let no = AlertText::PreflightSpecialDeviceMissing.fill(Lang::No, &[("device", "Zoom H6")]);
-        assert!(!no.contains("innstillingene"), "{no}");
     }
 
     #[test]

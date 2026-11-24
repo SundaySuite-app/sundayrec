@@ -1,14 +1,7 @@
 /**
- * 4 — Hvilken kirke?
+ * 4 — Hvilket språk?
  *
- * Navnet og språket. To felter, og begge sier sant om hva de gjør.
- *
- * ## Den døde påstanden som ikke ble med
- *
- * Dagens kirkeprofil-kort sier at navnet «brukes i filnavn, varslings-e-poster
- * og podcast-RSS». To tredeler av den setningen er usann: `churchName` brukes
- * IKKE i filnavn (`opts.rs` sender `church_name: None`), og podkast-RSS ble
- * fjernet i #139. Her står bare det som faktisk skjer.
+ * Ett felt, og det sier sant om hva det gjør.
  *
  * ## Språket er en innstilling, ikke en omstart
  *
@@ -28,26 +21,25 @@
  * migrert med `language: "de"` satte da kontrollens `value` til noe INGEN
  * option hadde — og en `<select>` uten treff blant sine egne options viser
  * stille den FØRSTE optionen, uansett hva som faktisk står lagret. Se
- * `church-core.ts`s `languageOptions`: den legger til en ekstra, DEAKTIVERT
+ * `language-core.ts`s `languageOptions`: den legger til en ekstra, DEAKTIVERT
  * rad med det ekte navnet når det lagrede språket ikke er aktivt, og linja
  * under boksen (`isPausedLanguage`) sier hvorfor den ikke kan velges.
  *
  * ⚠️ Med alle sju aktive er `paused` alltid `false`, så raden og linja rendres
- * ikke i dag. De står fordi en pause kan skje igjen — se `church-core.ts`s
+ * ikke i dag. De står fordi en pause kan skje igjen — se `language-core.ts`s
  * filhode, som forklarer hvorfor mekanismen fortsatt er dekket av tester.
  */
 
 import { locale, setLocale, t, tDyn, tf, type Locale } from "../../i18n";
 import { useSetting } from "../../settings/use-setting";
 import { Card } from "../../ui/Card/Card";
-import { BoundTextField } from "../../ui/Bound/Bound";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Select } from "../../ui/Select/Select";
-import { isPausedLanguage, languageOptions } from "./church-core";
+import { isPausedLanguage, languageOptions } from "./language-core";
 import { SubPage } from "./SubPage";
 import styles from "./setup.module.css";
 
-export function ChurchPage() {
+export function LanguagePage() {
   // Språket er en vanlig innstilling med vanlig kvittering — men BYTTET skjer
   // i `after`, altså først når skrivningen faktisk landet. Å flippe katalogen
   // før det ville gitt en app på engelsk og en base på norsk hvis lagringen
@@ -67,21 +59,14 @@ export function ChurchPage() {
   const paused = isPausedLanguage(selected);
 
   return (
-    <SubPage lede={t("app.setup.church.lede")} testId="setup-church">
-      <Card testId="church-card">
-        <BoundTextField
-          setting="churchName"
-          label={t("app.setup.church.name")}
-          description={t("app.setup.church.nameDesc")}
-          placeholder={t("app.setup.church.placeholder")}
-          testId="church-name"
-        />
+    <SubPage lede={t("app.setup.language.lede")} testId="setup-language">
+      <Card testId="language-card">
         <SettingRow
-          label={t("app.setup.church.languageLabel")}
-          description={t("app.setup.church.languageDesc")}
+          label={t("app.setup.language.label")}
+          description={t("app.setup.language.desc")}
           receipt={language.receipt}
           error={language.error}
-          testId="church-language"
+          testId="language-row"
         >
           {(ids) => (
             <Select
@@ -91,13 +76,13 @@ export function ChurchPage() {
               disabled={language.busy}
               labelId={ids.labelId}
               describedBy={ids.describedBy}
-              testId="church-language-control-input"
+              testId="language-control-input"
             />
           )}
         </SettingRow>
         {paused ? (
-          <p data-testid="church-language-paused" class={styles.hint}>
-            {tf("app.setup.church.languagePaused", {
+          <p data-testid="language-paused" class={styles.hint}>
+            {tf("app.setup.language.paused", {
               language: tDyn("app.language", locale.value),
             })}
           </p>

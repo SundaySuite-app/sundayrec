@@ -10,17 +10,10 @@ describe("createTrayDispatcher", () => {
       stopRecording: () => calls.push("stop"),
       openRecordingsFolder: () => calls.push("folder"),
       runPreflight: () => calls.push("preflight"),
-      runDiagnostics: () => calls.push("diagnostics"),
     });
 
     for (const id of TRAY_ACTION_IDS) expect(dispatch(id)).toBe(true);
-    expect(calls).toEqual([
-      "start",
-      "stop",
-      "folder",
-      "preflight",
-      "diagnostics",
-    ]);
+    expect(calls).toEqual(["start", "stop", "folder", "preflight"]);
   });
 
   it("covers exactly the ids the tray emits to the renderer", () => {
@@ -29,7 +22,6 @@ describe("createTrayDispatcher", () => {
     // Rust and must NOT be claimed here, or a menu click would fire twice.
     expect([...TRAY_ACTION_IDS].sort()).toEqual([
       "open-recordings-folder",
-      "run-diagnostics",
       "run-preflight",
       "start-recording",
       "stop-recording",

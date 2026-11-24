@@ -53,7 +53,6 @@ import {
   type MasterPreviewParams,
 } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
-import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
   createIpcFailureState,
   recentFailures,
@@ -91,9 +90,8 @@ import { parseGoto } from "./goto-core";
 // console, and the only honest thing to do with a navigation is decline it
 // loudly. `app/main.tsx` calls `setShimNotifier` as its second act — before
 // anything can invoke — so in the shipped app these are unreachable. They exist
-// for the window between this module evaluating (which arms the one-shot
-// settings migration) and that call, and for a browser boot with no host at
-// all; a default that threw, or one that reached for a `document` that has no
+// for the window between this module evaluating and that call, and for a
+// browser boot with no host at all; a default that threw, or one that reached for a `document` that has no
 // toast root, would turn that window into a crash.
 //
 // `t` is real, because i18n is not a surface: it is the catalogue, and the
@@ -414,12 +412,9 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 
 // ── Settings (R4: sqlite is the ONE store) ──────────────────────────────────
 //
-// `settings_get`/`settings_save` carry the FULL settings object in the unified
-// (Rust-named) vocabulary — the localStorage blob, the curated
-// `backendRecordingSettings` bridge and its 400 lines of "this field too was
-// silently re-defaulted" archaeology all died here. What remains renderer-side:
-// the one-shot migration below, a loud fallback for a broken store, and the
-// launch-at-login OS sync.
+// `settings_get`/`settings_save` carry the settings object in the unified
+// (Rust-named) vocabulary. What is renderer-side: a loud fallback for a broken
+// store, and the launch-at-login OS sync.
 
 // Dev/verification hook (inert in normal use): `?goto=<page>` skips first-run
 // onboarding and navigates to the named page after boot, so each screen can be
@@ -432,29 +427,9 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 // navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = parseGoto(location.search);
 
-// The one-shot localStorage → sqlite migration. Storage side effects live in
-// `migrate-legacy-settings.ts` (the only module allowed near the legacy key —
-// see settings-store-pin.test.ts); `invoke` is injected so the calls ride the
-// fixture seam. `getSettings` awaits this, so the first `settings_get` always
-// sees the imported values.
-const settingsMigration = migrateLegacySettingsOnce({
-  invoke,
-  onCorruptBlob: () => {
-    if (!isTauri()) return;
-    const n = notifier.current();
-    n.toast(
-      "error",
-      n.t(
-        "error.settingsMigrationCorrupt",
-        "Innstillingene fra forrige versjon kunne ikke leses — appen starter med standardinnstillinger.",
-      ),
-    );
-  },
-});
-
 /**
- * `settings_get`, with the two renderer-side responsibilities that remain:
- * wait for the one-shot migration, and make a FAILED read loud. The fallback
+ * `settings_get`, with the one renderer-side responsibility that remains: make
+ * a FAILED read loud. The fallback
  * is `SETTINGS_DEFAULTS` so the UI still renders, but never silently — a
  * broken settings store rendered as "everything is default" is exactly the
  * kind of quiet lie E2.4 exists to end.
@@ -478,11 +453,9 @@ const settingsMigration = migrateLegacySettingsOnce({
  * says nothing itself.
  *
  * That is a narrowing of ONE path, not of the shim's failure toasts in
- * general: `call()`'s E2.4 toast for other commands is untouched, and so is
- * the corrupt-migration toast above (that one has no banner behind it).
+ * general: `call()`'s E2.4 toast for other commands is untouched.
  */
 async function loadSettingsFromBackend(): Promise<Settings> {
-  await settingsMigration;
   let s: Settings;
   try {
     s = await invoke<Settings>("settings_get");
@@ -667,21 +640,6 @@ const api: Record<string, unknown> = {
     void syncLaunchAtLogin(s);
     return true;
   },
-  // ── Settings profile (F1.3, wired in R4; the dialog moved to Rust in A1) ─
-  // Export/import the whole (validated) settings object as a JSON file.
-  // NEITHER TAKES A PATH: each command opens the native save/open dialog in
-  // Rust and touches only the file that dialog answered, so a webview cannot
-  // point the write somewhere the operator never chose
-  // (src-tauri/src/commands/settings.rs). The dialog's filter names are
-  // Rust's too, in the stored UI language. WRITES both — rejections travel
-  // (R3-B) so the card can say what actually went wrong; a cancelled dialog is
-  // an answer, not a rejection.
-  /** `true` = written, `false` = the operator cancelled the save dialog. */
-  settingsExportProfile: async () => invoke<boolean>("settings_export_profile"),
-  /** The stored (merged + validated) settings after the import, or `null`
-   *  when the operator cancelled the open dialog. */
-  settingsImportProfile: async () =>
-    invoke<Settings | null>("settings_import_profile"),
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -944,17 +902,6 @@ const api: Record<string, unknown> = {
   revealExport: async (exportToken: string) =>
     quietAction("recordings_reveal_export", { exportToken }),
 
-  // ── One-time notices ──────────────────────────────────────────────────
-  //
-  // «E-postvarsler er fjernet». The backend marks it pending at startup for a
-  // volunteer who had e-mail alerts on (`settings::email_cleanup`). A failed
-  // read is `false`: a banner that fails to appear costs nothing, a banner
-  // that could not be dismissed would stand forever.
-  noticeEmailRemovedPending: async () =>
-    call<boolean>("notice_email_removed_pending", undefined, false),
-  noticeEmailRemovedDismiss: async () =>
-    call<void>("notice_email_removed_dismiss", undefined, undefined),
-
   // ── OS notifications ────────────────────────────────────────────────────
   //
   // A failed read is "unknown", not "granted": a card that turns green because
@@ -1114,21 +1061,6 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
-  // «Legg ut»: open the church's chosen upload page. No argument on purpose —
-  // the backend reads the stored channel and vets any custom link, so no URL
-  // ever crosses from the webview to the OS opener. Three answers, because the
-  // receipt says three different things: opened, nothing to open (channel
-  // off, or a link that did not pass), or the OS refused.
-  publishOpenUploadPage: async (): Promise<"opened" | "nothing" | "failed"> => {
-    try {
-      return (await invoke<boolean>("publish_open_upload_page"))
-        ? "opened"
-        : "nothing";
-    } catch (e) {
-      console.warn("[api-shim] publish_open_upload_page failed", e);
-      return "failed";
-    }
-  },
   logsReveal: async () => {
     try {
       await invoke("logs_reveal");
@@ -1246,67 +1178,12 @@ const api: Record<string, unknown> = {
       },
     ),
 
-  // ── Diagnose (V1/PR2) ───────────────────────────────────────────────────
-  //
-  // The three doors fase B closed when the Diagnose modal went. The commands
-  // and their Rust tests never moved; only the surface did, and V1 built it
-  // back as a row on Avansert (`pages/setup/advanced/DiagnoseRow.tsx`).
-  //
-  // ⚠️ These do NOT go through `call()`. Its fallback is the right answer for a
-  // list that can be empty — an empty recordings list is a true statement about
-  // a machine with no recordings — but a FABRICATED diagnostics report is not:
-  // "no findings" is precisely the sentence a volunteer would read as "nothing
-  // is wrong". A rejected invoke has to reach the row so it can say the
-  // diagnosis did not run. Same reasoning for the test recording: inventing an
-  // `ok: false` would name a cause the backend never gave.
-  //
-  // The IPC failure ring is unaffected — it is fed by every OTHER command's
-  // `call()`, and it is that pattern the report renders.
-  runDiagnostics: async () =>
-    invoke<import("../../legacy/bindings/DiagnosticsReport").DiagnosticsReport>(
-      "run_diagnostics",
-    ),
-  // The purpose-built audio probe: one enumeration → the input names the panel
-  // actually asks about. `call()` here (unlike the two above) because an empty
-  // name list IS the answer the rows want — "0 devices found" with a cross is
-  // the truth when the enumeration fails, and it is said in the row.
-  diagnoseAudio: async () =>
-    call<import("../../legacy/bindings/AudioDiagnostics").AudioDiagnostics>(
-      "diagnose_audio",
-      undefined,
-      { dshow: [], wasapi: [], wasapiAvailable: false },
-    ),
-  // ⚠️ NO argument, deliberately. The V1 plan wrote this door as
-  // `runTestRecording(deviceName)` — that is the Electron-era shape. The Tauri
-  // command takes `db` + `vu` only and reads `settings.device_name` ITSELF
-  // (`src-tauri/src/commands/recorder.rs`), so a `deviceName` parameter here
-  // would be a lie the type system would then enforce: a caller could pass a
-  // device and the test would be run against a different one. The row therefore
-  // tests THE CONFIGURED SOURCE, and says so.
-  //
-  // The command also calls `vu.stop()` before opening the device — macOS gives
-  // one client at a time — which is why the row restarts the meter afterwards.
-  runTestRecording: async () =>
-    invoke<
-      import("../../legacy/bindings/TestRecordingResult").TestRecordingResult
-    >("run_test_recording"),
-
   // Whether the OS login item is REALLY registered. The System tab used to show
   // the stored boolean, which drifts the moment a user removes the login item
   // by hand (or a migration/reinstall drops it) — a checkbox claiming scheduled
   // recordings survive a reboot when they don't.
   getLaunchAtLogin: async () =>
     call<boolean>("get_launch_at_login", undefined, false),
-  // Trackpad haptics (macOS Force Touch). Infallible by contract on the Rust
-  // side; swallow anything here so a haptic can never surface as a UI error.
-  hapticPerform: async (pattern: string) => {
-    try {
-      await invoke("haptic_perform", { pattern });
-    } catch {
-      /* a missing haptic engine is not a problem worth reporting */
-    }
-  },
-
   // ── Audio / video devices ───────────────────────────────────────────────
   // The unified, backend-tagged input list: ASIO devices first (Windows, when a
   // driver is present), then the host's CoreAudio/WASAPI devices, with the
@@ -1574,8 +1451,6 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  editorChurchDayName: async (date: string) =>
-    call<string | null>("editor_church_day_name", { date }, null),
   // «Innhold» lives in the recording's `.meta.json` — the sidecar kind the
   // Electron editor kept title/speaker/description in, and one that already
   // travels with the recording through the papirkurv.
@@ -1749,7 +1624,6 @@ const api: Record<string, unknown> = {
 // the store now, so there is nothing to push at boot, only to read.)
 void (async () => {
   try {
-    await settingsMigration;
     const s = await invoke<Settings>("settings_get");
     void syncLaunchAtLogin(s);
   } catch {

@@ -14,20 +14,13 @@
 // not declaring it: the type would promise a function that is `undefined` at
 // run time.
 //
-// ⚠️ THREE of the 45 are back: `runDiagnostics`, `diagnoseAudio` and
-// `runTestRecording` (V1/PR2). Their door closed because the Diagnose modal had
-// no home in the three-destination navigation — not because the diagnosis had
-// stopped being worth having, which is what a rig tester reading §5b off disk
-// with a JSON viewer proved. The screen is a row on Avansert now
-// (`app/pages/setup/advanced/DiagnoseRow.tsx`).
-//
-// ⚠️ FOUR MORE are back: `wakeTest`, `wakeCancelTest`, `wakeFailureHistory`,
+// ⚠️ FOUR of the 45 are back: `wakeTest`, `wakeCancelTest`, `wakeFailureHistory`,
 // `wakeClearFailureHistory` (F1-R3/W6) — the interactive quarter of the
 // `wake*` set this file's own header used to cite as an EXAMPLE of a closed
 // door. `wakeFixSleep` and `wakeGetSleepConfig` are NOT among them and stay
 // closed: nothing in the new shell reads the sleep-config diagnostics they
-// backed. The four that came back are a row on Avansert too — «Test
-// vekking», same file as the diagnostics screen above — because the
+// backed. The four that came back are a row on Avansert — «Test
+// vekking» — because the
 // reachability audit's own reason for leaving them dark (`docs/APP-SHELL.md`
 // §«Og de 20 som står igjen»: "rig tools waiting for a Mac where the wake
 // actually fails") describes a gap this row exists to close, not a feature
@@ -83,15 +76,6 @@ declare global {
     api: {
       getSettings: () => Promise<Settings>;
       saveSettings: (s: Partial<Settings>) => Promise<boolean>;
-      /** Write the whole (validated) settings object to a JSON file the
-       *  operator picks in a save dialog RUST opens — no path crosses from
-       *  here. `true` = written, `false` = cancelled. Rejects on failure — the
-       *  profile card shows the reason. */
-      settingsExportProfile: () => Promise<boolean>;
-      /** Import a settings JSON file the operator picks in an open dialog
-       *  RUST opens (merge-over-defaults + validate) and return the stored
-       *  result, or `null` when cancelled. Rejects on failure. */
-      settingsImportProfile: () => Promise<Settings | null>;
       getNextRecording: () => Promise<{ date: string } | null>;
       getHistory: () => Promise<unknown[]>;
       /** Drop one history row by its id. Rejects when the delete failed. */
@@ -181,11 +165,6 @@ declare global {
        *  named by the token its `editor_export` result carried
        *  (`revealToken`). FALSE as above. */
       revealExport: (exportToken: string) => Promise<boolean>;
-      /** Whether the one-time «E-postvarsler er fjernet» banner should show.
-       *  `false` on an IPC failure. */
-      noticeEmailRemovedPending: () => Promise<boolean>;
-      /** The banner was read: never show it again. */
-      noticeEmailRemovedDismiss: () => Promise<void>;
       /** Whether the OS shows SundayRec's notifications. `"unknown"` when the
        *  platform cannot tell (macOS today) and on an IPC failure. */
       notificationPermission: () => Promise<
@@ -219,31 +198,8 @@ declare global {
         version: string | null;
         path: string;
       }>;
-      // ── Diagnose (V1/PR2) ──────────────────────────────────────────────
-      // NOT optional: the shim installs all three unconditionally, and the row
-      // that calls them is mounted unconditionally. `?` here would only buy a
-      // `?.` at the call site that could never be false.
-      /** The whole-system report: markdown, the coded findings, where it was
-       *  saved, and the tri-state capture/video probe results. REJECTS on a
-       *  backend failure rather than answering with an empty report — see the
-       *  shim block for why a fabricated "no findings" is the wrong lie. */
-      runDiagnostics: () => Promise<
-        import("../../legacy/bindings/DiagnosticsReport").DiagnosticsReport
-      >;
-      /** The audio-input name list the panel's device rows are built from. */
-      diagnoseAudio: () => Promise<
-        import("../../legacy/bindings/AudioDiagnostics").AudioDiagnostics
-      >;
-      /** A ~10 s capture against THE CONFIGURED device (the command reads the
-       *  setting itself — no parameter), reporting size + measured signal.
-       *  Stops the VU engine backend-side; the caller restarts it. */
-      runTestRecording: () => Promise<
-        import("../../legacy/bindings/TestRecordingResult").TestRecordingResult
-      >;
       /** Whether the OS login item is really registered (not the stored boolean). */
       getLaunchAtLogin?: () => Promise<boolean>;
-      /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */
-      hapticPerform?: (pattern: string) => Promise<void>;
       /** F2-I18N-R2: de to listene er KODER, ikke setninger — bindingene er
        *  fasiten, og typen her peker på dem så en ny kode i Rust ikke kan bli
        *  en `string` skallet aldri oversetter. */
@@ -331,9 +287,6 @@ declare global {
       /** B3b: what «Tale» did to the recording — codes (`hum`, `noise`,
        *  `reverb`, `clicks`), never prose. Null outside the Tauri shell. */
       editorTaleSaid: (sourceToken: string) => Promise<EditorTaleSaid | null>;
-      /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
-       *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
-      editorChurchDayName: (date: string) => Promise<string | null>;
       /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
        *  with `parseSavedContent`. Null when there is none. The sidecar
        *  commands name the recording by its File token, never its path (A3). */
@@ -405,10 +358,6 @@ declare global {
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */
-      /** «Legg ut»: open the upload page for the stored channel. `nothing` =
-       *  the channel is off or the custom link did not pass; `failed` = the
-       *  OS would not open it. Never rejects. */
-      publishOpenUploadPage: () => Promise<"opened" | "nothing" | "failed">;
       logsReveal: () => Promise<boolean>;
       /** The tail of the live log file, clamped server-side to 512 KB
        *  regardless of `maxBytes`. Empty string means nothing logged yet. */

@@ -2,13 +2,7 @@
 import type { DiagnosticSeverity } from "./DiagnosticSeverity";
 
 /**
- * One diagnose finding, projected onto the wire: the STABLE code and its
- * severity, and nothing else.
- *
- * [`DiagnosticFinding::detail`] is deliberately absent. It is where the useful
- * specifics live — and where a device name ("Fant ikke «Qu-5»"), a free-GB
- * figure for a named volume, or a save folder ends up. The code alone is enough
- * to count how often each situation occurs across installs, which is the only
- * question aggregate telemetry can honestly answer.
+ * One support-code finding, projected onto the wire: the STABLE code and its
+ * severity, and nothing else — never a device name or a folder.
  */
 export type FindingReport = { code: string, severity: DiagnosticSeverity, };

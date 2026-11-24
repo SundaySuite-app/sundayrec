@@ -64,9 +64,9 @@ export function UpdateRow() {
     message?.key === "updateFailed" || message?.key === "updateRestartFailed";
 
   return (
-    // F1-P1: releasenotatet folder seg ut UNDER selve raden, som DiagnoseRow's
-    // resultat gjør (samme grunn: et avsnitt hører ikke i `.control`-cellen,
-    // som er én høyrejustert linje — se `UpdateRow.module.css`).
+    // F1-P1: releasenotatet folder seg ut UNDER selve raden (et avsnitt hører
+    // ikke i `.control`-cellen, som er én høyrejustert linje — se
+    // `UpdateRow.module.css`).
     <div data-testid="adv-update-wrap">
       <SettingRow
         label={t("app.setup.advanced.update")}

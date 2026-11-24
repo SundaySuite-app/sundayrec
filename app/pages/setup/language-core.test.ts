@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTIVE_LOCALES, ALL_LOCALES, type Locale } from "../../i18n";
-import { isPausedLanguage, languageOptions } from "./church-core";
+import { isPausedLanguage, languageOptions } from "./language-core";
 
 /**
  * En pause, spilt av med vilje.
@@ -11,7 +11,7 @@ import { isPausedLanguage, languageOptions } from "./church-core";
  * som kode. Så testene under sender en KORTERE aktiv liste der påstanden
  * handler om pausen, og den ekte lista der påstanden handler om appen slik den
  * er nå. Standardargumentet er det som binder de to sammen: kallstedet i
- * `ChurchPage` sender ett argument.
+ * `LanguagePage` sender ett argument.
  */
 const PAUSE: readonly Locale[] = ["no", "en"];
 const PAUSED_UNDER_PAUSE = ALL_LOCALES.filter((code) => !PAUSE.includes(code));

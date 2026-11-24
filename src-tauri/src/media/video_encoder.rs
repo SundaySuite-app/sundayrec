@@ -17,7 +17,6 @@
 //!   bruker `libx264`, og det lagrede valget nullstilles. Ellers ville en koder
 //!   som består prøven men feiler under last blitt valgt igjen ved hvert
 //!   opptak; neste oppstart prøver på nytt.
-//! - [`diagnose`] — diagnosen kjører prøven på nytt og oppdaterer valget.
 //!
 //! Lagringen er `video-encoder.json` i appens datamappe
 //! ([`crate::appdata::dir`] — Local AppData på Windows, altså per maskin og
@@ -34,10 +33,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::video_encoder::{
-    SessionPlan, VideoEncoder, VideoEncoderSummary, conclude, next_probe, plan_session, probe_args,
-    resolve_encoder, start_encoder,
+    VideoEncoder, conclude, next_probe, probe_args, start_encoder,
 };
 use tauri::{AppHandle, Manager};
 
@@ -147,17 +144,6 @@ async fn probe_one(encoder: VideoEncoder) -> bool {
     }
 }
 
-/// Gå gjennom prøverekkefølgen for `platform`, koder for koder.
-async fn run_probe(platform: Platform) -> sundayrec_core::video_encoder::EncoderSelection {
-    let mut tried: Vec<(VideoEncoder, bool)> = Vec::new();
-    while let Some(encoder) = next_probe(platform, &tried) {
-        let ok = probe_one(encoder).await;
-        tracing::info!(encoder = encoder.h264_name(), ok, "video encoder probe");
-        tried.push((encoder, ok));
-    }
-    conclude(tried)
-}
-
 /// Avgjør koderen for et VIDEOopptak som er i ferd med å starte. Kalles av
 /// `RecorderEngine::start` etter at kameraet er funnet. Ingen prøve her: den
 /// kan ta 32 s og planleggeren gir hele `engine.start` 30 s. Lagret valg brukes;
@@ -180,8 +166,7 @@ pub async fn prepare_session(app: &AppHandle) {
     set_active(Some(encoder));
 }
 
-/// Tilbakestilles når bakgrunnsprøven (eller diagnosens) er ferdig, så to
-/// prøver aldri kjører samtidig.
+/// Satt mens bakgrunnsprøven kjører.
 static PROBING: AtomicBool = AtomicBool::new(false);
 
 struct ProbeGuard;
@@ -295,45 +280,6 @@ pub fn note_encoder_fallback(app: &AppHandle, refused: VideoEncoder) -> bool {
         forget_stored(&path);
     }
     true
-}
-
-/// Diagnosens svar. Kjører prøven på nytt (og oppdaterer det lagrede valget) med
-/// mindre et opptak pågår — da er GPU-en og CPU-en opptakets, og rapporten
-/// nøyer seg med å si hva som er i bruk.
-pub async fn diagnose(app: &AppHandle, recording_active: bool) -> VideoEncoderSummary {
-    let platform = crate::util::detect_platform();
-    let hw = sundayrec_core::capture::RECORDING_HW_ACCEL;
-    let codec = sundayrec_core::capture::RECORDING_VIDEO_CODEC;
-    let path = store_path(app);
-    let stored = path.as_deref().and_then(read_stored);
-    let can_probe =
-        !recording_active && matches!(plan_session(platform, hw, None), SessionPlan::Probe);
-    // Holdes til prøven er ferdig, så den ikke kolliderer med bakgrunnsprøven.
-    let probe_guard = if can_probe {
-        ProbeGuard::acquire()
-    } else {
-        None
-    };
-    if probe_guard.is_some() {
-        let selection = run_probe(platform).await;
-        if let Some(path) = &path {
-            write_stored(path, selection.chosen).await;
-        }
-        // Diagnosen er en uttrykkelig handling: den opphever ro-perioden etter en
-        // feil og setter valget den nettopp fant.
-        DEMOTED.store(false, Ordering::Relaxed);
-        set_active(Some(selection.chosen));
-        return VideoEncoderSummary::from_selection(&selection);
-    }
-    let in_use = match plan_session(platform, hw, stored.as_deref()) {
-        SessionPlan::Use(e) => e,
-        SessionPlan::Probe => VideoEncoder::Software,
-    };
-    let chosen = resolve_encoder(platform, hw, codec, active().or(Some(in_use)));
-    VideoEncoderSummary {
-        chosen: chosen.h264_name().to_string(),
-        probes: Vec::new(),
-    }
 }
 
 #[cfg(test)]

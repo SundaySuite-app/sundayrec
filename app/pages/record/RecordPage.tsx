@@ -126,11 +126,6 @@ import {
   refreshDiskSpace,
 } from "../../state/disk";
 import {
-  dismissEmailRemovedNotice,
-  emailRemovedNotice,
-  loadEmailRemovedNotice,
-} from "../../state/email-removed";
-import {
   notificationPermission,
   refreshNotificationPermission,
 } from "../../state/notification-permission";
@@ -205,8 +200,6 @@ export function RecordPage() {
     void refreshDiskSpace();
     // Én gang per oppstart, ikke per besøk — se `state/preflight.ts`.
     void runSilentPreflightOnce();
-    // Likeså engangsbeskjeden om at e-postvarslene er fjernet.
-    void loadEmailRemovedNotice();
     // Viser OS-et varslene? Kortet «Hvem får beskjed?» følger svaret.
     void refreshNotificationPermission();
   }, []);
@@ -896,11 +889,6 @@ function NextAutoCard() {
           time: parts.time,
         })}
       </div>
-      {next.label ? (
-        <div data-testid="record-next-auto-label" class={styles.muted}>
-          {next.label}
-        </div>
-      ) : null}
       {wake ? (
         <div data-testid="record-next-auto-wake" class={styles.muted}>
           {wake}
@@ -986,8 +974,7 @@ function LastRecordingCard() {
  * flyttet fokus, så skjermleseren sa aldri at noe nytt kom.
  *
  * Så når `finished` går fra `null` til et opptak, ruller siden kortet til
- * midten og gir det fokus — akkurat som `DiagnoseRow` gjør for sin egen
- * resultatboks. `tabIndex` settes IMPERATIVT på DOM-noden og ikke som en prop
+ * midten og gir det fokus. `tabIndex` settes IMPERATIVT på DOM-noden og ikke som en prop
  * på `Card` (som ikke videresender den): kortet skal være fokuserbart bare i
  * det øyeblikket det dukker opp, ikke stå i tabrekkefølgen for alltid.
  * `preventScroll` på selve `focus()`-kallet fordi rullingen allerede er gjort
@@ -1236,24 +1223,6 @@ function RecordBanners() {
               }
             >
               {t("app.banner.missedWhy")}
-            </Button>
-          }
-        />
-      ) : null}
-
-      {emailRemovedNotice.value ? (
-        <Banner
-          tone="warn"
-          testId="banner-email-removed"
-          title={t("app.banner.emailRemovedTitle")}
-          detail={t("app.banner.emailRemovedDesc")}
-          actions={
-            <Button
-              variant="secondary"
-              testId="banner-email-removed-ok"
-              onClick={() => void dismissEmailRemovedNotice()}
-            >
-              {t("app.banner.emailRemovedOk")}
             </Button>
           }
         />

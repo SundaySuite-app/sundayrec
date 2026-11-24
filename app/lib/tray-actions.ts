@@ -31,8 +31,7 @@ export type TrayActionId =
   | "start-recording"
   | "stop-recording"
   | "open-recordings-folder"
-  | "run-preflight"
-  | "run-diagnostics";
+  | "run-preflight";
 
 /** What the shell must be able to do for each id. Every handler is optional so a
  *  caller can wire a subset (tests, or a page that only cares about one). */
@@ -41,7 +40,6 @@ export interface TrayActionHandlers {
   stopRecording?: () => void;
   openRecordingsFolder?: () => void;
   runPreflight?: () => void;
-  runDiagnostics?: () => void;
 }
 
 /** Which handler each id resolves to. One table, so the mapping is data rather
@@ -51,7 +49,6 @@ const ROUTES: Record<TrayActionId, keyof TrayActionHandlers> = {
   "stop-recording": "stopRecording",
   "open-recordings-folder": "openRecordingsFolder",
   "run-preflight": "runPreflight",
-  "run-diagnostics": "runDiagnostics",
 };
 
 /** The ids this renderer knows about — exported so a test can assert the table

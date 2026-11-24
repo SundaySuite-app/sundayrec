@@ -232,7 +232,6 @@ const ACTION_PAGE: Record<TrayActionId, Page> = {
   "stop-recording": "record",
   "open-recordings-folder": "edit",
   "run-preflight": "record",
-  "run-diagnostics": "setup",
 };
 
 /** Ta imot handlingen (og tøm den). Kalles av flaten som utfører den. */
@@ -258,7 +257,6 @@ const trayHandlers: TrayActionHandlers = {
   stopRecording: () => arm("stop-recording"),
   openRecordingsFolder: () => arm("open-recordings-folder"),
   runPreflight: () => arm("run-preflight"),
-  runDiagnostics: () => arm("run-diagnostics"),
 };
 
 /**

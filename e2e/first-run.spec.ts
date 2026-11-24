@@ -176,7 +176,6 @@ test.describe("første gang", () => {
         deviceId: "x32",
         deviceName: "Behringer X32",
         saveFolder: null,
-        churchName: "Bryn menighet",
       },
     });
 
@@ -197,7 +196,7 @@ test.describe("første gang", () => {
     );
     // …and the answered ones are done, so «gul» means something. «Hvem får
     // beskjed?» er alltid besvart: feil varsles på maskinen uansett.
-    await expect(page.getByTestId("first-run-row-church")).toHaveAttribute(
+    await expect(page.getByTestId("first-run-row-language")).toHaveAttribute(
       "data-status",
       "done",
     );
@@ -402,9 +401,9 @@ test.describe("første gang", () => {
       settings: { onboardingDone: false },
     });
     await reachChecklist(page);
-    await page.getByTestId("first-run-row-church-action").click();
-    await expect(page.getByTestId("setup-church")).toBeVisible();
-    await expect(page.getByTestId("setup-church-lede")).toHaveCount(0);
+    await page.getByTestId("first-run-row-language-action").click();
+    await expect(page.getByTestId("setup-language")).toBeVisible();
+    await expect(page.getByTestId("setup-language-lede")).toHaveCount(0);
 
     // Ut av sekvensen, til INNSTILLINGER — der chippen også står.
     await page.getByTestId("nav-setup").click();
@@ -413,7 +412,7 @@ test.describe("første gang", () => {
       "setup",
     );
     await expect(page.getByTestId("first-run-resume")).toBeVisible();
-    await expect(page.getByTestId("setup-church-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-language-lede")).toBeVisible();
   });
 
   test("«Åpne SundayRec» avslutter første gang, og den kommer ikke tilbake", async ({

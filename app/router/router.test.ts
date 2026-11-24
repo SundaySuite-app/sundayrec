@@ -203,7 +203,6 @@ describe("tray actions", () => {
       ["stop-recording", "record"],
       ["open-recordings-folder", "edit"],
       ["run-preflight", "record"],
-      ["run-diagnostics", "setup"],
     ] as const) {
       expect(handleTrayAction(action)).toBe(true);
       expect(pendingAction.value).toBe(action);

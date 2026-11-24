@@ -44,7 +44,6 @@ pub enum TrayAction {
     StopRecording,
     OpenRecordingsFolder,
     RunPreflight,
-    RunDiagnostics,
     Quit,
 }
 
@@ -171,16 +170,11 @@ pub fn tooltip(state: &TrayState, lang: Lang) -> String {
 }
 
 /// Build the ordered tray menu for `state` + `lang`. Order + clickability:
-///   status → [next-recording info] → open → start/stop → open-folder →
-///   diagnostics → quit.
+///   status → [next-recording info] → open → start/stop → open-folder → quit.
 ///
-/// The tray is a quick background-menu, so it carries ONE system action. The
-/// status row already answers "is the system OK?" at a glance; when it isn't,
-/// "Diagnoser system…" opens the full report. (Electron's menu also surfaced a
-/// quick "check system now" preflight here, but next to the status row + the
-/// diagnostics item it read as a confusing near-duplicate, so the tray drops it
-/// — the in-app preflight button still exists. `RunPreflight` stays as an action
-/// for that path.)
+/// The tray is a quick background-menu with no system-check item: the status
+/// row already answers "is the system OK?" at a glance. (The in-app preflight
+/// card still exists; `RunPreflight` stays as an action for that path.)
 pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     let mut items = Vec::new();
 
@@ -237,11 +231,6 @@ pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     items.push(TrayItem::item(
         open_folder_label(lang),
         TrayAction::OpenRecordingsFolder,
-        true,
-    ));
-    items.push(TrayItem::item(
-        diagnose_label(lang),
-        TrayAction::RunDiagnostics,
         true,
     ));
 
@@ -339,17 +328,6 @@ fn quit_label(l: Lang) -> &'static str {
         Lang::Da => "Afslut",
         Lang::Pl => "Wyjdź",
         Lang::Fr => "Quitter",
-    }
-}
-fn diagnose_label(l: Lang) -> &'static str {
-    match l {
-        Lang::No => "Sjekk maskinen…",
-        Lang::En => "Check this computer…",
-        Lang::De => "Computer prüfen…",
-        Lang::Sv => "Kontrollera datorn…",
-        Lang::Da => "Tjek computeren…",
-        Lang::Pl => "Sprawdź komputer…",
-        Lang::Fr => "Vérifier l’ordinateur…",
     }
 }
 fn open_folder_label(l: Lang) -> &'static str {
@@ -472,15 +450,11 @@ mod tests {
     }
 
     #[test]
-    fn tray_exposes_one_system_action_diagnostics_not_preflight() {
-        // The status row + diagnostics cover "is the system OK?"; the old quick
-        // preflight item was a confusing near-duplicate, so the tray drops it.
+    fn the_tray_carries_no_system_check_item() {
+        // The status row answers "is the system OK?"; the tray has neither a
+        // diagnose nor a preflight item (the in-app preflight card remains).
         let acts = actions(&build_menu(&TrayState::default(), Lang::No));
-        assert!(acts.contains(&TrayAction::RunDiagnostics));
-        assert!(
-            !acts.contains(&TrayAction::RunPreflight),
-            "tray must not show both 'check system' and 'diagnose system'"
-        );
+        assert!(!acts.contains(&TrayAction::RunPreflight));
     }
 
     #[test]
