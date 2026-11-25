@@ -331,6 +331,9 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["source_missing", "errFileNotFound"],
   ["source_refused", "errSourceRefused"],
   ["export_clip_unusable", "errExportClipUnusable"],
+  // Jingle-dialogen (`settings_pick_editor_intro`/`_outro`) svarer med disse.
+  ["clip_refused", "errClipRefused"],
+  ["clip_missing", "errClipMissing"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

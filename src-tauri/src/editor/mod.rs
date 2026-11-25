@@ -2523,8 +2523,9 @@ where
     //     the real 90-minute file, see docs/LYDMOTOR.md). The plan is ONE linear gain to the
     //     preset's target plus, only where the peaks need it, a true-peak limiter; the limiter's
     //     cost in loudness is corrected by dry runs over the parked copy. Pass 2 then feeds the
-    //     encoder from that copy. Intro/outro are deliberately absent from the measured signal:
-    //     they are concatenated after the level is set, so a jingle cannot skew the target.
+    //     encoder from that copy. Intro/outro are deliberately absent from the measured signal,
+    //     so a jingle cannot skew the sermon's target: each is levelled on its own to the same
+    //     target (step 4a) and concatenated after.
     // B2b: ffmpeg gets no `-af`. Whenever there is anything to do to the tone or the level, the
     // audio is decoded + cut by ffmpeg, run through the Rust chain, and (with a preset)
     // levelled, all in the staged PCM the encoder is then fed from.
@@ -2602,6 +2603,36 @@ where
     let has_intro = intro.is_some();
     let has_outro = outro.is_some();
     let main_input_idx = if has_intro { 1 } else { 0 };
+    // 4a. With «Podkastklar lyd» the jingles are levelled by the SAME preset as the sermon
+    //     (own measure, own gain, own true-peak limiter) and parked as raw PCM, so the
+    //     finished file's intro, sermon and outro all sit at the preset's target. Without a
+    //     preset they go in exactly as they are on disk.
+    let (intro_master, outro_master) = match preset.as_ref() {
+        Some(p) => {
+            let mut masters = [None, None];
+            for (slot, clip) in masters.iter_mut().zip([intro, outro]) {
+                if let Some(clip) = clip {
+                    bail_if_cancelled(engine)?;
+                    *slot = Some(pcm::master_clip(engine, clip, p, timeout_ms).await?);
+                }
+            }
+            let [a, b] = masters;
+            (a, b)
+        }
+        None => (None, None),
+    };
+    // The ffmpeg input a jingle is read from: its own file, or its levelled PCM.
+    let clip_input = |clip: &str, master: &Option<pcm::MasteredClip>| -> Vec<String> {
+        match master {
+            Some(m) => {
+                let mut a = sundayrec_core::pcm_stream::input_args(m.fmt);
+                a.pop(); // `pipe:0`
+                a.push(m.path().to_string_lossy().into_owned());
+                a
+            }
+            None => vec!["-i".into(), clip.to_string()],
+        }
+    };
 
     // 4b. Title/speaker/description → tags, and chapters → FFMETADATA. Since
     //     v0.15 nothing in the app produces chapters (the transcript-driven
@@ -2685,7 +2716,7 @@ where
     let build_args = |use_hw: bool| -> Vec<String> {
         let mut args: Vec<String> = vec!["-nostdin".into(), "-hide_banner".into()];
         if let Some(p) = intro {
-            args.extend(["-i".into(), p.to_string()]);
+            args.extend(clip_input(p, &intro_master));
         }
         match pcm_in {
             // The audio of an AUDIO export is the programme's PCM on stdin, already cut (and
@@ -2718,7 +2749,7 @@ where
             args.extend(sundayrec_core::pcm_stream::input_args(fmt));
         }
         if let Some(p) = outro {
-            args.extend(["-i".into(), p.to_string()]);
+            args.extend(clip_input(p, &outro_master));
         }
         if let Some(p) = &meta_path {
             args.extend(["-i".into(), p.clone()]);
@@ -2796,11 +2827,15 @@ where
     //    kept media plus any jingles concatenated around it (they lengthen the
     //    output, so leaving them out would make the bar stall near 100 %).
     let mut total_sec = kept_duration;
-    for clip in [intro, outro].into_iter().flatten() {
+    for (clip, master) in [(intro, &intro_master), (outro, &outro_master)] {
+        let Some(clip) = clip else { continue };
         bail_if_cancelled(engine)?;
-        total_sec += crate::media::ffmpeg::probe_duration_secs(clip)
-            .await
-            .unwrap_or(0.0);
+        total_sec += match master {
+            Some(m) => m.seconds(),
+            None => crate::media::ffmpeg::probe_duration_secs(clip)
+                .await
+                .unwrap_or(0.0),
+        };
     }
     // With a processed programme the measure pass already spent the first half of
     // the bar; without one the render owns all of it.
@@ -6744,8 +6779,8 @@ mod tests {
         }
 
         /// B1b: the level is set on the SERMON. A jingle louder than the sermon is
-        /// concatenated after the level is set, so it cannot pull the measure (and the
-        /// gain) towards itself.
+        /// levelled on its own and concatenated after, so it cannot pull the measure (and
+        /// the gain) of the sermon towards itself.
         #[test]
         fn a_mastered_export_levels_the_sermon_not_the_jingles_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
@@ -6786,6 +6821,102 @@ mod tests {
             assert!(
                 (7.5..8.5).contains(&dur),
                 "intro + 6 s sermon + outro should be ~8 s, got {dur}"
+            );
+        }
+
+        /// A speech-like source: a 220 Hz tone with a 4 Hz syllable tremolo, `secs` long, at
+        /// the given linear `volume` (the tone is mono, 44.1 kHz — unlike the stereo 48 kHz
+        /// sermon, so the pin to the source's format is exercised too).
+        fn lavfi_speechlike(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            secs: f64,
+            volume: f64,
+            rate: u32,
+        ) -> String {
+            let src = dir.join(name);
+            let out = std::process::Command::new(ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=220:sample_rate={rate}:duration={secs}"),
+                    "-af",
+                    &format!("tremolo=f=4:d=0.6,volume={volume}"),
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the speech-like source");
+            assert!(
+                out.status.success(),
+                "speech-like generation failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            src.to_string_lossy().into_owned()
+        }
+
+        /// The jingles are levelled by the SAME preset as the sermon: a loud 2 s intro and a
+        /// quiet 2 s outro around a 6 s speech-like body, «Podkastklar lyd» on. The duration
+        /// is the sum of the parts, and the FINISHED FILE measures at the preset's target
+        /// with the true peak under the cap, not just the sermon in the middle.
+        #[test]
+        fn a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_speechlike(&ffmpeg, dir.path(), "body.wav", 6.0, 0.35, 48_000);
+            let intro = lavfi_speechlike(&ffmpeg, dir.path(), "intro.wav", 2.0, 1.0, 44_100);
+            let outro = lavfi_speechlike(&ffmpeg, dir.path(), "outro.wav", 2.0, 0.12, 44_100);
+            let mut case = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 6.0);
+            case.podcast_audio = true;
+            case.inputs.intro = Some(intro);
+            case.inputs.outro = Some(outro);
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &case);
+            let out = result.expect("a podcast export with jingles should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            let preset = sundayrec_core::mastering::podcast_preset();
+            let whole = measure_ebu_r128(&ffmpeg, path, None);
+            let intro_leg = measure_integrated_lufs(&ffmpeg, path, Some((0.0, 2.0)));
+            let sermon_leg = measure_integrated_lufs(&ffmpeg, path, Some((2.0, 6.0)));
+            let outro_leg = measure_integrated_lufs(&ffmpeg, path, Some((8.0, 2.0)));
+            let dur: f64 = probe_report(&ffprobe, path)
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            eprintln!(
+                "JINGLE MEASURE: duration {dur:.3} s, whole {:.2} LUFS, intro {intro_leg:.2}, \
+                 sermon {sermon_leg:.2}, outro {outro_leg:.2}, true peak {:.2} dBTP",
+                whole.input_i, whole.input_tp
+            );
+            assert!(
+                (9.8..10.3).contains(&dur),
+                "2 + 6 + 2 s expected, got {dur}"
+            );
+            assert!(
+                (whole.input_i - preset.target_lufs).abs() <= 0.7,
+                "the finished file measures {:.2} LUFS against {:.2}",
+                whole.input_i,
+                preset.target_lufs
+            );
+            for (leg, lufs) in [("intro", intro_leg), ("outro", outro_leg)] {
+                assert!(
+                    (lufs - preset.target_lufs).abs() <= 1.5,
+                    "the {leg} sits at {lufs:.2} LUFS, the preset's target is {:.2}",
+                    preset.target_lufs
+                );
+            }
+            assert!(
+                whole.input_tp <= preset.true_peak_db + 0.3,
+                "true peak {:.2} dBTP is over the cap {:.2}",
+                whole.input_tp,
+                preset.true_peak_db
             );
         }
 

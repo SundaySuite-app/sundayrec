@@ -1085,6 +1085,33 @@ export const SCENES: Scene[] = [
     full: true,
   },
   {
+    id: "eksport--jingler",
+    page: "Eksport",
+    state:
+      "Eksportarket med intro og outro valgt — filnavn og «Fjern» på hver rad",
+    recipe:
+      "innstillingene har `editorIntroPath` og `editorOutroPath`; åpne opptaket, så klikk `editor-export-open`",
+    boot: {
+      fixtures: editorScene({
+        recordings_list: [recordingRow({ file_path: FILE })],
+      }),
+      settings: {
+        ...CHOSEN,
+        editorIntroPath: "/Users/frivillig/Musikk/Velkommen.wav",
+        editorOutroPath: "/Users/frivillig/Musikk/Utgang.mp3",
+      },
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
+      await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+        "Velkommen.wav",
+      );
+    },
+    full: true,
+  },
+  {
     id: "eksport--kjorer",
     page: "Eksport",
     state: "Eksporten kjører — 40 %, med avbryt",

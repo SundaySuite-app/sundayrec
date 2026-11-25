@@ -73,4 +73,16 @@ mod tests {
         every.dedup();
         assert_eq!(every.len(), before, "an extension is listed twice");
     }
+
+    /// The jingle pickers (`settings_pick_editor_intro`/`_outro`) filter by `AUDIO_EXT`:
+    /// the formats a church actually has its jingle in must be in it.
+    #[test]
+    fn the_jingle_picker_accepts_the_common_audio_formats() {
+        for ext in ["wav", "flac", "mp3", "m4a", "aac", "ogg", "aiff", "aif"] {
+            assert!(
+                AUDIO_EXT.contains(&ext),
+                "{ext} is not pickable as a jingle"
+            );
+        }
+    }
 }

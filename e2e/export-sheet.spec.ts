@@ -5,6 +5,7 @@ import {
   BOOT_FIXTURES,
   fn,
   recordingRow,
+  SETTINGS_DB_KEY,
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
@@ -582,5 +583,200 @@ test.describe("eksportering — innhold", () => {
         ),
       )
       .toContain("meta");
+  });
+
+  // INTRO OG OUTRO. Filen velges i et vindu RUST åpner; siden ser bare navnet
+  // og sender en bryter, aldri en sti. «Lagret» er Rusts innstillingsrad —
+  // her den samme localStorage-raden som resten av harnessen bruker.
+  const JINGLE_FIXTURES = (): Fixtures => {
+    const pick = (command: string, field: string, file: string) =>
+      fn(`(args) => {
+        (window.__E2E_PICKS__ ||= []).push({ command: ${JSON.stringify(command)}, args: args ?? null });
+        const db = JSON.parse(window.localStorage.getItem(${JSON.stringify(SETTINGS_DB_KEY)}) || "{}");
+        db[${JSON.stringify(field)}] = ${JSON.stringify(file)};
+        window.localStorage.setItem(${JSON.stringify(SETTINGS_DB_KEY)}, JSON.stringify(db));
+        return db;
+      }`);
+    const clear = (field: string) =>
+      fn(`() => {
+        const db = JSON.parse(window.localStorage.getItem(${JSON.stringify(SETTINGS_DB_KEY)}) || "{}");
+        db[${JSON.stringify(field)}] = null;
+        window.localStorage.setItem(${JSON.stringify(SETTINGS_DB_KEY)}, JSON.stringify(db));
+        return db;
+      }`);
+    return {
+      settings_pick_editor_intro: pick(
+        "settings_pick_editor_intro",
+        "editorIntroPath",
+        "/Users/test/Musikk/Velkommen.wav",
+      ),
+      settings_pick_editor_outro: pick(
+        "settings_pick_editor_outro",
+        "editorOutroPath",
+        "/Users/test/Musikk/Utgang.mp3",
+      ),
+      settings_clear_editor_intro: clear("editorIntroPath"),
+      settings_clear_editor_outro: clear("editorOutroPath"),
+    };
+  };
+
+  test("intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti", async ({
+    page,
+  }) => {
+    await openThenExport(page, JINGLE_FIXTURES());
+    const intro = page.getByTestId("export-jingle-intro-name");
+    const outro = page.getByTestId("export-jingle-outro-name");
+    await expect(intro).toHaveText("Ingen");
+    await expect(outro).toHaveText("Ingen");
+    await expect(page.getByTestId("export-jingle-intro-remove")).toHaveCount(0);
+
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(intro).toHaveText("Velkommen.wav");
+    await page.getByTestId("export-jingle-outro-pick").click();
+    await expect(outro).toHaveText("Utgang.mp3");
+    // Velgeren får INGENTING fra siden å styre etter.
+    const picks = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_PICKS__: { args: unknown }[] })
+          .__E2E_PICKS__,
+    );
+    expect(picks.map((p) => p.args)).toEqual([null, null]);
+    // Knappene sier hvilken rad de hører til.
+    await expect(page.getByTestId("export-jingle-outro-pick")).toHaveAttribute(
+      "aria-label",
+      "Velg lydfil for Outro",
+    );
+    await expect(
+      page.getByTestId("export-jingle-intro-remove"),
+    ).toHaveAttribute("aria-label", "Fjern Intro");
+
+    // Fjern outroen; introen blir stående.
+    await page.getByTestId("export-jingle-outro-remove").click();
+    await expect(outro).toHaveText("Ingen");
+    await expect(intro).toHaveText("Velkommen.wav");
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.useIntro).toBe(true);
+    expect(sent.useOutro).toBe(false);
+    expect(JSON.stringify(sent)).not.toContain("Velkommen");
+    expect(Object.keys(sent).some((k) => /path/i.test(k))).toBe(false);
+  });
+
+  test("intro og outro huskes til neste gang: etter en omlasting står de der", async ({
+    page,
+  }) => {
+    await openThenExport(page, JINGLE_FIXTURES());
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+
+    await page.reload();
+    await page.waitForFunction(
+      () =>
+        typeof (window as unknown as Record<string, unknown>).showPage ===
+        "function",
+    );
+    await page.evaluate(
+      (f) =>
+        (
+          window as unknown as { openEditorWithRecording: (id: string) => void }
+        ).openEditorWithRecording(f),
+      RECORDING_ID,
+    );
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+    await page.getByTestId("editor-export-open").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+    await expect(page.getByTestId("export-jingle-outro-name")).toHaveText(
+      "Ingen",
+    );
+  });
+
+  test("et avbrutt jingle-valg endrer ingenting", async ({ page }) => {
+    await openThenExport(page, {
+      settings_pick_editor_intro: null,
+    });
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Ingen",
+    );
+    await expect(page.getByTestId("editor-export-error")).toHaveCount(0);
+  });
+
+  test("en fil Rust avviser blir en setning, og forrige valg står", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      settings_pick_editor_intro: fn(`() => {
+        throw { code: "validation", message: "validation: clip_refused: that file cannot be used as an intro or outro" };
+      }`),
+    });
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(page.getByTestId("editor-export-error")).toContainText(
+      "kan ikke brukes som intro eller outro",
+    );
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Ingen",
+    );
+  });
+
+  test("en jingle som er borte når eksporten starter, sier det med egne ord", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      editor_export: fn(`() => {
+        throw { code: "validation", message: "validation: export_clip_unusable: the saved intro or outro clip cannot be used" };
+      }`),
+    });
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-export-error")).toContainText(
+      "Intro- eller outro-lyden finnes ikke lenger",
+    );
+  });
+
+  test("med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      ...JINGLE_FIXTURES(),
+      editor_load_recording: {
+        durationSec: DURATION,
+        hasVideo: true,
+        hasAudio: true,
+        channels: 2,
+        sampleFmt: "s16",
+        sampleRate: 48_000,
+      },
+    });
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+    await page.getByTestId("editor-video-toggle").click();
+    await expect(page.getByTestId("export-jingles-video-note")).toBeVisible();
+    await expect(page.getByTestId("export-jingle-intro-pick")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.useIntro).toBe(false);
+    expect(sent.useOutro).toBe(false);
   });
 });

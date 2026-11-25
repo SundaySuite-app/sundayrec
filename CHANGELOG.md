@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Intro og outro i eksportvinduet.** Under «Podkastklar lyd» kan du velge en lydfil som
+  legges først og en som legges sist i eksporten (wav, flac, mp3, m4a, ogg eller aiff). Hver
+  rad viser filnavnet, med «Velg lydfil …» og «Fjern», og valget huskes til neste gang.
+  Med «Podkastklar lyd» på får intro og outro samme lydstyrke som talen, så hele fila
+  holder seg på −16 LUFS. Er en valgt fil borte når du eksporterer, starter ikke eksporten,
+  og du får beskjed om det. Med «Ta med video» på legges ikke intro og outro til.
 - **Plan er en ukevisning.** Mandag til søndag som kolonner, tid nedover, og hvert faste
   opptak som en blokk. Dra i en tom flate for å legge til en tid, dra blokken for å flytte
   den (også til en annen dag), og dra i kanten for å endre start eller slutt, alt i

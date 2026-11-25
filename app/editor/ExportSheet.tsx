@@ -91,7 +91,9 @@ import {
   exportTitle,
   includeVideo,
   isVideoExport,
+  clearJingle,
   pickExportFolder,
+  pickJingle,
   runExport,
   sourceHasVideo,
   exportExtension,
@@ -109,6 +111,12 @@ import {
   type ExportFormat,
 } from "./export-core";
 import { closeFile } from "./loader";
+import {
+  JINGLE_SLOTS,
+  jingleField,
+  jingleName,
+  type JingleSlot,
+} from "./jingles-core";
 import {
   cuts,
   duration,
@@ -330,6 +338,8 @@ function Choices() {
         </div>
       </Card>
 
+      <Jingles video={video} />
+
       {sourceHasVideo() ? (
         <Card testId="editor-video-card">
           <div class={styles.autoRow}>
@@ -374,6 +384,85 @@ function Choices() {
           {t("editor.save")}
         </Button>
       </ActionBar>
+    </div>
+  );
+}
+
+/**
+ * «Intro og outro» — to valgfrie lydfiler som legges før og etter opptaket.
+ *
+ * Filen velges i et vindu RUST åpner (`settings_pick_editor_intro`/`_outro`),
+ * og valget lagres i innstillingene, så det står der neste eksport også. Siden
+ * viser bare filnavnet; ingen sti går fra siden til Rust. Med «Podkastklar
+ * lyd» på får jinglene samme lydstyrke som talen. Med video er raden dempet
+ * og sier hvorfor: motoren legger dem rundt lydsporet, ikke bildet.
+ */
+function Jingles({ video }: { video: boolean }) {
+  return (
+    <div data-testid="export-jingles" class={styles.content}>
+      <span id="export-jingles-label" class={styles.label}>
+        {t("app.editor.jingles")}
+      </span>
+      <p id="export-jingles-desc" class={styles.hint}>
+        {t("app.editor.jinglesDesc")}
+      </p>
+      <div
+        role="group"
+        aria-labelledby="export-jingles-label"
+        class={styles.content}
+      >
+        {JINGLE_SLOTS.map((slot) => (
+          <JingleRow key={slot} slot={slot} video={video} />
+        ))}
+      </div>
+      {video ? (
+        <p data-testid="export-jingles-video-note" class={styles.hint}>
+          {t("app.editor.jingleVideoNote")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function JingleRow({ slot, video }: { slot: JingleSlot; video: boolean }) {
+  const name = jingleName(settings.value[jingleField(slot)]);
+  const which =
+    slot === "intro"
+      ? t("app.editor.jingleIntro")
+      : t("app.editor.jingleOutro");
+  const reason = video ? t("app.editor.jingleVideoNote") : undefined;
+  return (
+    <div class={styles.autoRow} data-testid={`export-jingle-${slot}`}>
+      <div class={styles.autoGrow}>
+        <b class={styles.autoTitle}>{which}</b>
+        <div
+          class={styles.hint}
+          data-testid={`export-jingle-${slot}-name`}
+          data-chosen={name ? "true" : "false"}
+        >
+          {name ?? t("app.editor.jingleNone")}
+        </div>
+      </div>
+      <Button
+        variant="secondary"
+        testId={`export-jingle-${slot}-pick`}
+        disabled={video}
+        disabledReason={reason}
+        ariaLabel={tf("app.editor.jinglePickLabel", { which })}
+        onClick={() => void pickJingle(slot)}
+      >
+        {t("app.editor.jinglePick")}
+      </Button>
+      {name ? (
+        <Button
+          variant="ghost"
+          testId={`export-jingle-${slot}-remove`}
+          ariaLabel={tf("app.editor.jingleRemoveLabel", { which })}
+          onClick={() => void clearJingle(slot)}
+        >
+          {t("app.editor.jingleRemove")}
+        </Button>
+      ) : null}
     </div>
   );
 }

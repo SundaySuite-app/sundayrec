@@ -1200,6 +1200,42 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
    - The OS folder window itself (parented over the app, «Ny mappe», the
      folder it answers) needs the real app. // GUI-UNVERIFIED
+     5f. **Intro and outro jingles.** In the export sheet, under «Podkastklar
+     lyd», press **«Velg lydfil …»** on **Intro** and choose a short audio file
+     (wav, flac, mp3, m4a, ogg or aiff); do the same on **Outro**. Export the
+     recording as MP3 with **«Podkastklar lyd» on**, then open the file in a
+     player. Quit and reopen the app, open a recording and the export sheet.
+   - **Expected:** each row shows the file NAME (never a path) and a **«Fjern»**;
+     the file starts with the intro, ends with the outro, and the total is the
+     sum of the three. Intro, speech and outro sound equally loud (the whole
+     file measures about −16 LUFS, no clipping). The two rows are still filled
+     after the restart; **«Fjern»** puts the row back on «Ingen» and the next
+     export has no jingle there.
+   - **Expected:** with **«Ta med video (MP4)»** on, both «Velg lydfil …» buttons
+     are dimmed with the reason (jingles are not added to a video export) and
+     the export carries none. Turn the toggle off and they work again.
+   - **Expected:** delete or move a chosen jingle file, then press **Eksporter**:
+     the export does not start; the page says «Intro- eller outro-lyden finnes
+     ikke lenger …». Press **«Fjern»** (or choose the file again) and export
+     works. (We refuse rather than silently export without it.)
+   - The page holds a name and a switch, never a path; Rust opens the window and
+     reads the saved clip again when the export starts:
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_clip_pick_changes_nothing
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
+   - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::the_jingle_picker_accepts_the_common_audio_formats
+   - Jingles get the podcast level too (measured: whole file −16.00 LUFS, intro, speech and outro each −16.0):
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_mastered_export_levels_the_sermon_not_the_jingles_or_skips
+   - The sheet: choose, remove, remembered, refused, missing, video:
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro huskes til neste gang: etter en omlasting står de der
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::en fil Rust avviser blir en setning, og forrige valg står
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::en jingle som er borte når eksporten starter, sier det med egne ord
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes
+   - VERIFIED-BY: app/editor/jingles-core.test.ts::video får aldri jingler, selv med begge valgt
+   - The OS file window itself needs the real app. // GUI-UNVERIFIED
      5f. **The recording is the app's own door (A2, second half).** Open a
      recording four ways: **«Åpne fil …»** (library and the error screen),
      **«Rediger»** on a library row, **«Rediger»** on the finished-recording card,

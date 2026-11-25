@@ -257,13 +257,14 @@ declare global {
        *  drop and minted the token (`editor://file-dropped`). */
       onFileDropped: (fn: (dropped: DroppedRecording) => void) => () => void;
       /** Pick/clear the editor's intro and outro clips: Rust's own dialog, and
-       *  the stored settings back (`null` = cancelled). Nothing in the pages
-       *  uses them yet — the export page dropped its intro/outro rows in D3 — and
-       *  `settings_save` no longer takes the clips from the page, so these are
-       *  the way back when a page needs them. */
+       *  the stored settings back (`settings: null` = cancelled). The export
+       *  sheet's «Intro» and «Outro» rows use them; `settings_save` takes no
+       *  clip from the page. A refusal is `{ ok: false, error }`. */
       settingsPickEditorClip: (
         which: "intro" | "outro",
-      ) => Promise<Settings | null>;
+      ) => Promise<
+        { ok: true; settings: Settings | null } | { ok: false; error: string }
+      >;
       settingsClearEditorClip: (which: "intro" | "outro") => Promise<Settings>;
       editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */

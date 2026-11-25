@@ -1395,16 +1395,23 @@ const api: Record<string, unknown> = {
     };
   },
   // The editor's intro/outro clips — Rust's own dialog, and the stored settings
-  // back (`null` = cancelled). No page uses them yet: the D3 export page has no
-  // intro/outro rows, and `settings_save` keeps whatever clip is stored (A2).
-  settingsPickEditorClip: async (which: "intro" | "outro") =>
-    call<Settings | null>(
+  // back (`settings: null` = cancelled). Used by the export sheet's «Intro» and
+  // «Outro» rows; `settings_save` keeps whatever clip is stored (A2). Never
+  // throws: a refusal travels as `{ ok: false, error }` so the sheet can say
+  // which rule (`clip_refused`, `clip_missing`).
+  settingsPickEditorClip: async (which: "intro" | "outro") => {
+    const command =
       which === "intro"
         ? "settings_pick_editor_intro"
-        : "settings_pick_editor_outro",
-      undefined,
-      null,
-    ),
+        : "settings_pick_editor_outro";
+    try {
+      const settings = await invoke<Settings | null>(command);
+      return { ok: true, settings: settings ?? null };
+    } catch (e) {
+      console.warn(`[api-shim] ${command} failed`, e);
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
   settingsClearEditorClip: (which: "intro" | "outro") =>
     invoke<Settings>(
       which === "intro"

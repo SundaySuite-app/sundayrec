@@ -47,7 +47,7 @@ import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness
 import type { ChosenPlace } from "@legacy/bindings/ChosenPlace";
 
 import { isRecording } from "../state/recording";
-import { settings } from "../state/settings";
+import { patchSettings, settings } from "../state/settings";
 import {
   bitrateKbps,
   exportErrorKey,
@@ -60,6 +60,7 @@ import {
   type ExportFormat,
 } from "./export-core";
 import { DEFAULT_EXPORT_FORMAT } from "./export-core";
+import { jingleFlags, jinglePatch, type JingleSlot } from "./jingles-core";
 import { clearDirty, E, mediaInfo } from "./model";
 import { clearDraft } from "./cuts";
 import { podcastAudio } from "./sound";
@@ -289,6 +290,42 @@ export async function pickExportFolder(): Promise<void> {
   exportFailed.value = false;
 }
 
+/**
+ * «Velg lydfil …» for intro eller outro: Rust åpner filvelgeren, sjekker fila
+ * og lagrer den i innstillingene — siden sender ingenting og får tilbake de
+ * lagrede innstillingene. Avbrutt = ingenting endret. En avvisning blir
+ * banneret over valgene, og det forrige valget står (samme form som
+ * `pickExportFolder`).
+ */
+export async function pickJingle(slot: JingleSlot): Promise<void> {
+  const answer = await window.api.settingsPickEditorClip(slot);
+  if (!answer.ok) {
+    exportWasCancelled.value = false;
+    exportErrorText.value = exportErrorKey(answer.error);
+    exportFailed.value = true;
+    console.warn("[export] jingle-valget ble avvist:", answer.error);
+    return;
+  }
+  if (!answer.settings) return;
+  patchSettings(jinglePatch(answer.settings));
+  exportErrorText.value = null;
+  exportWasCancelled.value = false;
+  exportFailed.value = false;
+}
+
+/** «Fjern»: Rust glemmer klippet, og eksporten går uten det til et nytt velges. */
+export async function clearJingle(slot: JingleSlot): Promise<void> {
+  try {
+    const stored = await window.api.settingsClearEditorClip(slot);
+    patchSettings(jinglePatch(stored));
+  } catch (err) {
+    console.warn("[export] kunne ikke fjerne jingelen:", err);
+    exportWasCancelled.value = false;
+    exportErrorText.value = null;
+    exportFailed.value = true;
+  }
+}
+
 /** Legg kvitteringen bort og kom tilbake til valgene, med dem stående. */
 export function exportAgain(): void {
   exportedPath.value = null;
@@ -418,6 +455,9 @@ export async function runExport(
       date: localIsoDate(E.startedAtMs),
     },
     ...sound,
+    // Intro og outro er innstillinger Rust leser selv: her sier vi bare JA eller
+    // NEI (og alltid nei for video — motoren legger dem rundt lydsporet).
+    ...jingleFlags(video, settings.value),
   });
 
   // Estimatoren eies av JOBBEN og ikke av stripa: en bar som forsvinner og
