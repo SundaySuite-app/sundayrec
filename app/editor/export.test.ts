@@ -17,7 +17,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isRecording } from "../state/recording";
 import {
-  cancelExport,
   currentDescription,
   editDescription,
   exportDescription,
@@ -28,7 +27,6 @@ import {
   exportErrorText,
   exportFailed,
   exporting,
-  exportPhase,
   exportSpeaker,
   exportTitle,
   exportWasCancelled,
@@ -38,9 +36,7 @@ import {
   resetExport,
   runExport,
 } from "./export";
-import { EXPORT_PHASE_PREPARING } from "./export-core";
 import { dirty, E, resetFileState } from "./model";
-import { soundProfile } from "./sound";
 
 /** Lappene til de to opptakene testene bytter mellom. Sidevognene (A3) navngir
  *  opptaket med lappen, aldri stien. */
@@ -100,15 +96,11 @@ beforeEach(() => {
   E.sourceToken = TOKEN_A;
   E.duration = 3600;
   E.cuts = [];
-  // "none" holder testen unna `ensureSoundAnalysis()` — en annen await, med
-  // sin egen vakt (se export.ts), men ikke den denne fila tester.
-  soundProfile.value = "none";
 });
 
 afterEach(() => {
   resetExport();
   resetFileState();
-  soundProfile.value = "none";
   dirty.value = false;
   isRecording.value = false;
   delete (globalThis as unknown as { window?: unknown }).window;
@@ -282,142 +274,55 @@ describe("runExport — generasjonsvakten", () => {
     expect(exportErrorText.value).toBe("errCancelled");
     expect(exportFailed.value).toBe(false);
   });
-
-  // Den ANDRE awaiten — kanalanalysen, ikke selve eksportkallet. Samme vakt,
-  // sjekket der også: se filhodet i export.ts.
-  it("et filbytte MENS kanalanalysen henger starter aldri selve eksporten", async () => {
-    const analysis = deferred<{ diagnosis?: unknown }>();
-    let exportCalls = 0;
-    (globalThis as unknown as { window: unknown }).window = {
-      api: {
-        editorAutoProcess: () => analysis.promise,
-        editorExportFile: () => {
-          exportCalls += 1;
-          return Promise.resolve({ ok: true, outputPath: "/uventet.mp3" });
-        },
-        editorDeleteCutsDraft: () => Promise.resolve(),
-      },
-    };
-    // "speech" (ikke "none") — ellers hopper `runExport` rett over analysen.
-    soundProfile.value = "speech";
-
-    const run = runExport(120, 1_000_000);
-    switchToFileB();
-    analysis.resolve({});
-    await run;
-
-    // Vakten fanget den FØRSTE awaiten — eksportkallet ble aldri gjort.
-    expect(exportCalls).toBe(0);
-    expect(exporting.value).toBe(false);
-    expect(exportedPath.value).toBeNull();
-  });
 });
 
 /**
  * F2-A-B: ÉN eksport om gangen, og bare når det er lov å eksportere.
  *
- * Granskningens F2-2 og F2-11. Den første prøven er den viktigste, og den er
- * bygget på nøyaktig den samme utsatte-analyse-formen som prøven over: en
- * hengende `editorAutoProcess` er dobbeltklikkets vindu, ikke en oppfinnelse
- * for testen.
+ * Granskningens F2-2 og F2-11. Vinduet der et andre klikk kunne slippe gjennom var før F3 en
+ * kanalanalyse; nå er det selve `editor_export`-kallet, som også kan ta minutter.
  */
 describe("runExport — én om gangen", () => {
-  /** `window.api` med en analyse testen selv holder igjen, og en teller på
-   *  eksportkallene. */
-  function heldAnalysis(): {
-    resolve: (v: { diagnosis?: unknown }) => void;
+  /** `window.api` med et eksportkall testen selv holder igjen, og tellere. */
+  function heldExport(): {
+    resolve: (v: { ok: boolean; outputPath?: string }) => void;
     calls: () => number;
-    cancels: () => number;
   } {
-    const analysis = deferred<{ diagnosis?: unknown }>();
+    const held = deferred<{ ok: boolean; outputPath?: string }>();
     let exportCalls = 0;
-    let cancels = 0;
     (globalThis as unknown as { window: unknown }).window = {
       api: {
-        editorAutoProcess: () => analysis.promise,
         editorExportFile: () => {
           exportCalls += 1;
-          return Promise.resolve({ ok: true, outputPath: "/ut.mp3" });
+          return held.promise;
         },
-        editorCancelExport: () => {
-          cancels += 1;
-          return Promise.resolve(false);
-        },
+        editorCancelExport: () => Promise.resolve(false),
         editorDeleteCutsDraft: () => Promise.resolve(),
       },
     };
-    // "speech" (ikke "none") — ellers hopper `runExport` rett over analysen,
-    // og da finnes ikke vinduet denne fila handler om.
-    soundProfile.value = "speech";
-    return {
-      resolve: analysis.resolve,
-      calls: () => exportCalls,
-      cancels: () => cancels,
-    };
+    return { resolve: held.resolve, calls: () => exportCalls };
   }
 
-  // MUTASJONSPRØVEN: flytt `exporting.value = true` tilbake til ETTER
-  // `await ensureSoundAnalysis()` — der den sto — og denne blir rød med
+  // MUTASJONSPRØVEN: ta `exporting.value`-vakten ut av `runExport`, og denne blir rød med
   // `exportCalls === 2`. Det er dobbelteksporten, ordrett.
-  it("et andre klikk MENS kanalanalysen henger gir ÉN eksport, ikke to", async () => {
-    const api = heldAnalysis();
+  it("et andre klikk MENS eksporten går gir ÉN eksport, ikke to", async () => {
+    const api = heldExport();
 
     const first = runExport(120, 1_000_000);
-    // Vinduet er ekte: `astats` over en 90 minutters gudstjeneste tar 30–60 s,
-    // og knappen sto uberørt hele veien.
     expect(exporting.value).toBe(true);
     const second = runExport(120, 1_000_000);
 
-    api.resolve({});
+    api.resolve({ ok: true, outputPath: "/ut.mp3" });
     await Promise.all([first, second]);
 
     expect(api.calls()).toBe(1);
-  });
-
-  it("forberedelsesfasen har sin egen tekst, så baren ikke later som den koder", async () => {
-    const api = heldAnalysis();
-    const run = runExport(120, 1_000_000);
-
-    // FØR analysen svarer finnes det ingen ffmpeg å melde prosent for.
-    expect(exportPhase.value).toBe(EXPORT_PHASE_PREPARING);
-
-    api.resolve({});
-    await run;
-    // Etterpå er fasen bakendens igjen — `null` til den sier noe selv.
-    expect(exportPhase.value).toBeNull();
-  });
-
-  // Prisen for å sette `exporting` tidlig: Avbryt-knappen er synlig i 30–60 s
-  // FØR bakenden vet at det finnes en eksport. Uten dette svarte
-  // `editor_cancel_export` et sant «nei, ingenting kjørte» og eksporten gikk
-  // videre — en avbryting som SÅ ut til å virke.
-  it("Avbryt i forberedelsesfasen stopper kjøringen, selv om bakenden ikke har noe å drepe", async () => {
-    const api = heldAnalysis();
-    const run = runExport(120, 1_000_000);
-
-    await cancelExport();
-    // Kvitteringen er ordrett den bakenden ville gitt for en ekte avbryting.
-    expect(exporting.value).toBe(false);
-    expect(exportWasCancelled.value).toBe(true);
-    expect(exportErrorText.value).toBe("errCancelled");
-    expect(exportFailed.value).toBe(false);
-    // …og bakenden ble spurt uansett: en eksport skallet TROR er i
-    // forberedelse, men som bakenden har spawnet, skal ikke overleve.
-    expect(api.cancels()).toBe(1);
-
-    api.resolve({});
-    await run;
-
-    // Det avgjørende: analysen kom tilbake, og ingen eksport ble sendt.
-    expect(api.calls()).toBe(0);
-    expect(exportedPath.value).toBeNull();
   });
 
   // F2-11. Begge er full-fil ffmpeg-arbeid over den samme CPU-en
   // capture-tråden trenger; et stall der er tapte samples i gudstjenesten som
   // tas opp NÅ (målt 2026-07-31: 15–56 %).
   it("eksport UNDER opptak sendes aldri, og sier hvorfor", async () => {
-    const api = heldAnalysis();
+    const api = heldExport();
     isRecording.value = true;
 
     await runExport(120, 1_000_000);

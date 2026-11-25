@@ -424,19 +424,19 @@ test.describe("treffflater", () => {
       "ready",
     );
     await page.getByTestId("editor-steps-row-sound").click();
-    await expect(page.getByTestId("editor-auto-toggle")).toBeVisible();
+    await expect(page.getByTestId("editor-podcast-toggle")).toBeVisible();
 
     const toggles = await measure(page, 'button[role="switch"]');
-    expect(toggles.map((t) => t.id)).toContain("editor-auto-toggle");
+    expect(toggles.map((t) => t.id)).toContain("editor-podcast-toggle");
     for (const t of toggles) {
       expect(t.hitH, `editor/${t.id}: treffhøyde`).toBeGreaterThanOrEqual(
         TOGGLE_FLOOR - PROBE_STEP,
       );
       expect(t.boxH, `editor/${t.id}: boksen står stille`).toBe(22);
     }
-    // F1-UX1/W2: to — «Lukk» øverst og mikserens «Åpne miksepanelet».
+    // F1-UX1/W2: én — «Lukk» øverst (mikserens «Åpne miksepanelet» er borte siden F3).
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    expect(ghosts.length).toBe(2);
+    expect(ghosts.length).toBe(1);
     for (const g of ghosts) {
       expect(g.hitH, `editor/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
         GHOST_FLOOR - PROBE_STEP,

@@ -1,5 +1,5 @@
 /**
- * «Resultat: 28 min 10 s (av 1 t 2 min)» og «Tale» — de to fakta som beskriver
+ * «Resultat: 28 min 10 s (av 1 t 2 min)» og «Podkastklar lyd» — de to fakta som beskriver
  * det man er i ferd med å lage.
  *
  * De sto som en lokal `Summary` i `EditorPage.tsx` mens EKSPORTER var steg 3
@@ -12,10 +12,10 @@
  * det, og da er det brukeren som oppdager forskjellen.
  */
 
-import { tDyn, tf } from "../i18n";
+import { t, tf } from "../i18n";
 import { exactSpan, keptSeconds } from "./editor-core";
 import { cuts, duration } from "./model";
-import { soundProfile } from "./sound";
+import { podcastAudio } from "./sound";
 import { spanLabel } from "./span";
 
 /** «Resultat: X (av Y)» — hva som blir igjen etter kuttene. */
@@ -27,7 +27,9 @@ export function resultLine(): string {
   });
 }
 
-/** Navnet på lydprofilen eksporten kommer til å bruke. */
+/** Hva eksporten gjør med lyden: «Podkastklar lyd», eller «Uten lydbehandling». */
 export function profileLabel(): string {
-  return tDyn("app.editor.profile", soundProfile.value);
+  return podcastAudio.value
+    ? t("app.editor.podcastAudio")
+    : t("app.editor.podcastOff");
 }

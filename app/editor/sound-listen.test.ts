@@ -1,29 +1,22 @@
 /**
  * «Etter»-lyttingen sender det eksporten sender (M2R #3), nå til avspillingsmotoren (B5b).
  *
- * Funnet: med mikseren på spilte «Etter» likevel `speech-clear` med «Tale»-rensing,
- * mens eksporten bar mikserkjeden og ingen preset. Og kanalreparasjonen og kuttene
- * nådde aldri forhåndslyttingen. Her leses det lyttingen faktisk sender
- * (`window.api.editorListenChain`) mot det eksporten ville sendt for det samme valget.
+ * Her leses det lyttingen faktisk sender (`window.api.editorListenChain`) mot det eksporten
+ * ville sendt for det samme valget: bryteren «Podkastklar lyd», kuttene og lengden.
  *
- * MUTASJONSPRØVEN: la `listenRequest` lese `specFor(profile).masterPreset` uten å
- * se på `useMixer` (slik det var), og «mikser på»-testen blir rød.
+ * MUTASJONSPRØVEN: la `listenRequest` ignorere `podcastAudio` og «av»-testen blir rød.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { E, resetFileState } from "./model";
 import {
-  channelRepair,
   listenRequest,
   listenSide,
   listenStart,
-  mixer,
-  mixerProcessing,
+  podcastAudio,
   resetSound,
-  soundProfile,
   toggleListen,
-  useMixer,
 } from "./sound";
 import { soundExportFields } from "./sound-profiles";
 import { fakeListen, type FakeListen } from "./test-support/fake-listen-api";
@@ -41,14 +34,6 @@ beforeEach(() => {
     setTimeout: () => 0,
     api: {
       ...engine.api,
-      // Kanalanalysen: venstre kanal er død.
-      editorAutoProcess: () =>
-        Promise.resolve({
-          diagnosis: {
-            code: "dead_left",
-            recommended: { mode: "duplicateRight", leftDb: 0, rightDb: 0 },
-          },
-        }),
       editorTaleSaid: () => Promise.resolve(null),
     },
   };
@@ -69,47 +54,21 @@ afterEach(() => {
 });
 
 describe("«Etter» sender det eksporten sender", () => {
-  it("mikseren på: mikserkjeden og INGEN preset, som eksporten", async () => {
-    soundProfile.value = "speech";
-    useMixer.value = true;
-    mixer.value = { ...mixer.value, denoiseEnabled: true };
+  it("på: oppskriften, kuttene og lengden, som eksporten", async () => {
+    podcastAudio.value = true;
 
     await toggleListen();
 
     expect(engine.chains()).toHaveLength(1);
     const sent = engine.chains()[0];
-    const exported = soundExportFields({
-      profile: "speech",
-      useMixer: true,
-      processing: mixerProcessing(),
-      repair: channelRepair.value,
-    });
-    expect(sent.presetId).toBeUndefined();
-    expect(exported.masterPreset).toBeUndefined();
-    expect(sent.processing).toEqual(exported.processing);
-    expect(sent.processing).toMatchObject({ denoiseEnabled: true });
-  });
-
-  it("uten mikser: profilens preset, kanalreparasjonen, kuttene og lengden", async () => {
-    soundProfile.value = "speech";
-    useMixer.value = false;
-
-    await toggleListen();
-
-    const sent = engine.chains()[0];
-    expect(sent.presetId).toBe("speech-clear");
-    expect(sent.processing).toBeUndefined();
-    expect(sent.channelRepair).toEqual({
-      mode: "duplicateRight",
-      leftDb: 0,
-      rightDb: 0,
-    });
+    expect(sent.podcastAudio).toBe(soundExportFields(true).podcastAudio);
+    expect(sent.podcastAudio).toBe(true);
     expect(sent.cutRegions).toEqual([{ start: 10, end: 20 }]);
     expect(sent.fullLengthSec).toBe(3600);
   });
 
   it("økta åpnes med kuttene og stedet man begynner, og ingen gjengivelse bestilles", async () => {
-    soundProfile.value = "speech";
+    podcastAudio.value = true;
     await toggleListen();
 
     const open = engine.log.find((c) => c.cmd === "open");
@@ -129,22 +88,16 @@ describe("«Etter» sender det eksporten sender", () => {
     ).toBeUndefined();
   });
 
-  it("samme valg settes ikke inn to ganger, men en endret mikser gjør det", async () => {
-    soundProfile.value = "speech";
-    useMixer.value = true;
+  it("samme valg settes ikke inn to ganger", async () => {
+    podcastAudio.value = true;
     await toggleListen(); // spiller
     await toggleListen(); // pause
     await toggleListen(); // spiller igjen: kjeden er allerede inne
     expect(engine.chains()).toHaveLength(1);
-
-    await toggleListen(); // pause
-    mixer.value = { ...mixer.value, gateEnabled: true };
-    await toggleListen();
-    expect(engine.chains()).toHaveLength(2);
   });
 
-  it("«Ingen» gir ingenting å høre", () => {
-    soundProfile.value = "none";
+  it("av gir ingenting å høre", () => {
+    podcastAudio.value = false;
     expect(listenRequest(0)).toBeNull();
   });
 });

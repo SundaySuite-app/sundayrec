@@ -27,7 +27,7 @@ use sundayrec_core::editor::{
     ConcatFormat, CutRegion, audio_export_filter_complex, build_keeps, codec_args,
 };
 use sundayrec_core::loudness::plan_gain;
-use sundayrec_core::mastering::get_preset_by_id;
+use sundayrec_core::mastering::podcast_preset;
 use sundayrec_core::pcm_stream::{PcmFormat, measure, render, settle};
 
 /// A child process whose stdout we read; killed and reaped on drop.
@@ -79,7 +79,7 @@ fn main() {
         eprintln!("usage: export_pcm_bench <file> <duration_s> <preset> disk|rerun");
         std::process::exit(2);
     }
-    let (file, preset_id, variant) = (args[0].clone(), args[2].clone(), args[3].clone());
+    let (file, _preset_id, variant) = (args[0].clone(), args[2].clone(), args[3].clone());
     let duration: f64 = args[1].parse().expect("duration");
     let format = flag(&args, "--format").unwrap_or_else(|| "mp3".into());
     let cut = flag(&args, "--cut").unwrap_or_else(|| "60:120".into());
@@ -93,7 +93,7 @@ fn main() {
         "rerun" => false,
         v => panic!("variant {v}"),
     };
-    let preset = get_preset_by_id(&preset_id).expect("preset");
+    let preset = podcast_preset();
     let keeps = build_keeps(&cuts, duration);
     let kept: f64 = keeps.iter().map(|k| k.end - k.start).sum();
     let fmt = PcmFormat {

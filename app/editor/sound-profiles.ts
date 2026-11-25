@@ -1,147 +1,32 @@
 /**
- * Tre navn, og tallene som ligger under dem.
+ * Lyd-steget har ÉN oppskrift (F3): «Podkastklar lyd» — `speech-clear` (−16 LUFS, sann topp
+ * under taket) med Tales rensing foran — eller ingenting. Bryteren er hele valget.
  *
- * Atlasets §3c teller FEM steder mix/master kan skje i dagens app — Normaliser,
- * mastring-panelet, eksportmodalens mastring, ett-klikks lydforbedring og den
- * avanserte mikseren — med to helt ulike utfall (en NY fil ved siden av
- * originalen, eller behandling i eksporten) og ingenting i UI-et som forklarer
- * forskjellen. Canvasens sett 4 gjør det om til ÉN bryter og TRE ord, og denne
- * fila er stedet de tre ordene blir til konkrete verdier.
+ * Før F3 het denne fila tabellen over tre profiler («Tale», «Tale og musikk», «Ingen») og
+ * hvilket mastring-preset hver av dem sendte. De andre presettene, mikseren og
+ * kanalreparasjonen er fjernet; det som er igjen her er de to rene tingene lyd-steget
+ * trenger: hva eksporten og lyttingen sender, og utsnittet lyttingen spiller.
  *
- * Den er ren og node-testet med vilje: den er en TABELL noen har lest gjennom,
- * ikke betingelser spredt utover en eksportfunksjon. Eieren skal kunne peke på
- * en linje her og si «nei, Tale skal være −19, ikke −16».
- *
- * ## Hvorfor mastring-presettet ALENE, og ingen stemmekjede
- *
- * Den nærliggende mappingen — `editor_auto_process` sin stemmekjede PLUSS et
- * mastring-preset — er nøyaktig den bakenden advarer mot, med ord:
- *
- *   > It deliberately does NOT recommend a mastering preset. Stacking one on
- *   > top of the vocal chain ran the material through two highpasses, two
- *   > compressors and two EQ curves — the classic over-processed «one-click»
- *   > result (pumping, thin low end).
- *   — `src-tauri/src/editor/mod.rs`, `auto_process`
- *
- * Og et mastring-preset ER en stemmekjede: `speech-clear` er
- * `highpass=f=80` + tre EQ-bånd + `acompressor`, og DERETTER nivåsteget
- * (én forsterkning) mot −16 LUFS (`crates/sundayrec-core/src/mastering.rs`). Én kjede, én
- * kompressor, ett høypass — og et utgivelsesnivå, som er halve løftet i
- * «jevner ut nivået».
- *
- * Så: profilen er ett mastring-preset. Stemmekjeden finnes fortsatt, bak
- * «Avansert: åpne mikseren», og der ERSTATTER den profilen i stedet for å
- * legge seg oppå den.
- *
- * ## Kanalreparasjonen er ikke en smakssak
- *
- * Det ENE `editor_auto_process` gjør som presettet ikke gjør er å oppdage at
- * venstre kanal er stille eller at kanalene er ulike i styrke. Det er en
- * REPARASJON, ikke en farge: uten den eksporteres en halvstum fil, og det er
- * den vanligste ekte katastrofen i et menighetsopptak. Den rir derfor med på
- * begge profilene, og på mikseren — mikseren har ingen kanalkontroll.
- *
- * «Ingen» får den ikke: «Eksporter lyden slik den ble tatt opp» er et løfte,
- * og en stille kanal som plutselig høres er ikke det.
+ * Ren og node-testet med vilje: en tabell noen har lest gjennom, ikke betingelser spredt
+ * utover en eksportfunksjon.
  */
 
-import type { ExportChannelRepair } from "@lib/pages/editor/export-params";
+/** Bryteren «Podkastklar lyd» skrur den på som standard. */
+export const DEFAULT_PODCAST_AUDIO = true;
 
-/** De tre ordene. `none` er også det bryteren AV betyr. */
-export type SoundProfile = "speech" | "mixed" | "none";
-
-/** Rekkefølgen kortene står i. «Tale» er anbefalt og først. */
-export const SOUND_PROFILES: readonly SoundProfile[] = [
-  "speech",
-  "mixed",
-  "none",
-];
-
-/** Profilen en frivillig får uten å velge noe. */
-export const DEFAULT_SOUND_PROFILE: SoundProfile = "speech";
-
-/**
- * «Tale» → `speech-clear`, «Tale — tydelig (anbefalt)».
- *
- * −16 LUFS / LRA 8 / true peak −1 dBTP. Kjeden foran nivåsteget er
- * `highpass=f=80`, −1,5 dB @ 200 Hz, +2 dB @ 3 kHz, −2 dB @ 7 kHz og en
- * kompressor på −18 dB / 2,5:1. Det er standardmålet for tale og podkast, og
- * det er presettet legacys mastring-panel selv forhåndsvelger.
- */
-export const SPEECH_MASTER_PRESET = "speech-clear";
-
-/**
- * «Tale og musikk» → `music-speech`, «Musikk + tale».
- *
- * Samme −16 LUFS, men LRA 11 i stedet for 8: lovsang som er ment å svinge fra
- * stille til sterkt skal FÅ svinge. Kjeden er mildere med vilje —
- * `highpass=f=50` (orgel og bass overlever) og en kompressor på −22 dB / 2:1.
- */
-export const MIXED_MASTER_PRESET = "music-speech";
-
-/** Hva en profil faktisk sender med eksporten. */
-export interface SoundProfileSpec {
-  /** Mastring-preset-id fra `sundayrec_core::mastering::master_presets()`. */
-  masterPreset: string | undefined;
-  /** Skal kanalreparasjonen fra `editor_auto_process` bli med? */
-  channelRepair: boolean;
-}
-
-const SPECS: Record<SoundProfile, SoundProfileSpec> = {
-  speech: { masterPreset: SPEECH_MASTER_PRESET, channelRepair: true },
-  mixed: { masterPreset: MIXED_MASTER_PRESET, channelRepair: true },
-  none: { masterPreset: undefined, channelRepair: false },
-};
-
-export function specFor(profile: SoundProfile): SoundProfileSpec {
-  return SPECS[profile];
-}
-
-/** Feltene en eksport arver fra lyd-steget. */
+/** Feltene en eksport (og en lytting) arver fra lyd-steget. */
 export interface SoundExportFields {
-  masterPreset?: string;
-  vocalChainPreset?: string;
-  processing?: unknown;
-  channelRepair?: ExportChannelRepair;
-}
-
-export interface SoundState {
-  profile: SoundProfile;
-  /** Er den avanserte mikseren i bruk? Da ERSTATTER den profilen. */
-  useMixer: boolean;
-  /** Mikserens fulle `EditorProcessing`, når den er i bruk. */
-  processing?: unknown;
-  /** Reparasjonen `editor_auto_process` anbefalte, eller `null`. */
-  repair: ExportChannelRepair | null;
+  /** Bakenden kjører `speech-clear`-oppskriften. Fraværende = filen slik den ble tatt opp. */
+  podcastAudio?: true;
 }
 
 /**
- * Lyd-steget → eksportnyttelastens lydfelter.
- *
- * Tre utfall, og ikke fire:
- *
- *   «Ingen»      → ingenting. Fila kommer ut slik den gikk inn.
- *   mikser på    → `processing`, og INGEN `masterPreset`. Den som har åpnet
- *                  mikseren har tatt over kjeden; å legge et preset under den
- *                  ville vært det doble høypasset igjen, bare med et annet
- *                  navn på døra.
- *   ellers       → profilens `masterPreset`.
- *
- * `vocalChainPreset` sendes ALDRI. Den finnes i nyttelasten fordi bakenden tar
- * imot den, men ingen vei gjennom dette skallet setter den: mikseren sender
- * hele kjeden eksplisitt, og profilen sender et mastring-preset. To måter å si
- * det samme på er to måter å bli uenige på.
+ * Lyd-steget → lydfeltene i nyttelasten. To utfall: på gir `podcastAudio`, av gir ingenting
+ * og fila kommer ut slik den gikk inn. Gamle verdier (presetnavn, mikser) finnes ikke lenger
+ * og leses aldri.
  */
-export function soundExportFields(state: SoundState): SoundExportFields {
-  if (state.profile === "none") return {};
-  const repair = state.repair ?? undefined;
-  if (state.useMixer) {
-    return { processing: state.processing, channelRepair: repair };
-  }
-  return {
-    masterPreset: specFor(state.profile).masterPreset,
-    channelRepair: repair,
-  };
+export function soundExportFields(podcastAudio: boolean): SoundExportFields {
+  return podcastAudio ? { podcastAudio: true } : {};
 }
 
 /**
@@ -172,48 +57,15 @@ export function listenStartSec(
 }
 
 /**
- * Kanaldiagnosens kode → SUFFIKSET under `editor.` som forklarer den.
- *
- * De åtte tekstene finnes i alle sju språk (`editor.chanBalanced` …
- * `editor.chanUnusableRight`), og de sier akkurat det en frivillig trenger å
- * vite: «Venstre kanal er stille (sjekk kabel)».
- *
- * `unusable_*` er ikke det samme som `dead_*`, og har derfor sin egen setning:
- * kanalen er ikke stille, den er for langt nede til at volum kan redde den
- * (mer enn 12 dB), så den gode kanalen kopieres til begge. «Er stille» ville
- * sendt en frivillig for å lete etter en kabel som ikke er trukket ut.
- *
- * Suffikset og ikke hele nøkkelen, fordi flaten slår det opp med
- * `tDyn("editor", suffix)`: prefikset må være en literal
- * `check-i18n-keys.mjs` kan slå opp. En ukjent kode gir `null`, og da står det
- * ingenting — ikke en råkode på skjermen.
- */
-const CHANNEL_CODE_KEYS: Record<string, string> = {
-  balanced: "chanBalanced",
-  imbalance: "chanImbalance",
-  dead_left: "chanDeadLeft",
-  dead_right: "chanDeadRight",
-  unusable_left: "chanUnusableLeft",
-  unusable_right: "chanUnusableRight",
-  both_dead: "chanBothDead",
-  mono: "chanMono",
-};
-
-export function channelCodeKey(code: string | undefined): string | null {
-  if (!code) return null;
-  return CHANNEL_CODE_KEYS[code] ?? null;
-}
-
-/**
- * B3b — tre ord til den frivillige: hva «Tale» gjorde med akkurat dette opptaket.
+ * B3b — tre ord til den frivillige: hva «Podkastklar lyd» gjorde med akkurat dette opptaket.
  *
  * Bakenden (`editor_tale_said`) svarer med stabile koder i kjedens rekkefølge,
  * aldri prosa. Her blir de til nøkler under `app.editor.said`:
  *
  *   `hum` `noise` `reverb` `clicks` → én linje hver («Vi fjernet brum fra strømnettet»)
  *   ingenting gjort                 → `clean` («Opptaket var rent.»)
- *   analysen feilet, eller en annen profil enn «Tale» → ingenting. Å si «rent» om
- *   en fil vi ikke fikk lest er en løgn, og «Tale og musikk» renser ikke av seg selv.
+ *   analysen feilet, eller bryteren er av → ingenting. Å si «rent» om en fil vi ikke fikk
+ *   lest er en løgn.
  *
  * En ukjent kode (en ny trigger i en nyere bakende) hoppes over, så skjermen
  * aldri maler en råkode.
@@ -221,11 +73,10 @@ export function channelCodeKey(code: string | undefined): string | null {
 const SAID_CODES = ["hum", "noise", "reverb", "clicks"] as const;
 
 export function taleSaidKeys(
-  profile: SoundProfile,
-  usesMixer: boolean,
+  podcastAudio: boolean,
   said: { analysed: boolean; said: readonly string[] } | null,
 ): string[] {
-  if (profile !== "speech" || usesMixer || !said?.analysed) return [];
+  if (!podcastAudio || !said?.analysed) return [];
   const known = SAID_CODES.filter((c) => said.said.includes(c));
   return known.length > 0 ? known : ["clean"];
 }

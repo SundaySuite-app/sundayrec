@@ -42,7 +42,7 @@
 //!   - [`editor`]       — non-destructive cut/trim/region planning + export-arg math (PU-7 editor)
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
 //!   - [`playback`]     — the playback engine's pure half (B5a): the cut plan, constant-power joins, and the reader that turns kept segments into one programme
-//!   - [`chain`]        — the vocal chain and the mastering presets as a list of filmcraft effects, built from the same preset tables (B2a)
+//!   - [`chain`]        — the podcast recipe and «Tale»'s clean-up as a list of filmcraft effects (B2a)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 

@@ -5,10 +5,8 @@
     "app_info",
     "camera_preview_start",
     "camera_preview_stop",
-    "editor_auto_process",
     "editor_cancel_export",
     "editor_delete_sidecar",
-    "editor_diagnose_channels",
     "editor_export",
     "editor_listen_chain",
     "editor_listen_close",
@@ -16,7 +14,6 @@
     "editor_listen_transport",
     "editor_load_recording",
     "editor_master_cancel",
-    "editor_master_presets",
     "editor_open_known",
     "editor_open_recording",
     "editor_peaks",
@@ -94,9 +91,7 @@
     "wake_verify"
   ],
   "unreachable": [
-    "editor_diagnose_channels",
     "editor_master_cancel",
-    "editor_master_presets",
     "recording_update_note",
     "scheduler_check_missed",
     "telemetry_count",

@@ -1060,32 +1060,23 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      waveform (the canvas paint itself is still // GUI-UNVERIFIED); removed rows
      disappear. Undo/redo say so honestly when there is nothing to undo.
    - VERIFIED-BY: e2e/editor.spec.ts::a cut row shows its range and the ✕ really removes it
-4. Press **«Neste: Lyd»** — step 2. Choose **«Automatisk lydforbedring»**:
-   **Tale** (the recommended default), **Tale og musikk**, or **Ingen**.
-   - **Expected:** three cards with a REASON each («For preken og liturgi.
-     Anbefalt.» / «Når lovsang skal være med.» / «Eksporter lyden slik den ble
-     tatt opp.»), not five presets named after loudness targets. The three
-     words map to real numbers in `sound-profiles.ts`; the mapping table is in
-     `docs/APP-SHELL.md` §P4b.
+4. Press **«Neste: Lyd»** — step 2. There is ONE switch, **«Podkastklar lyd»**
+   (on by default): the fixed podcast recipe (clearer voice, even levels, −16 LUFS
+   with the true peak held under −1 dBTP). Off = the sound as it was recorded.
+   - **Expected:** one switch and one sentence, no profile cards and no mixer
+     («Tale og musikk», «Ingen» and «Avansert: åpne mikseren» are gone since F3).
+     The recipe is `speech-clear` in `sundayrec_core::mastering::podcast_preset()`.
    - Press **«Lytt»** and A/B **Før** / **Etter**.
    - **Expected:** a 20-second sample taken **from the middle of what is kept** (not from the
      first 20 seconds of the file, which is often an empty room) renders and
      plays. It is a real render through the real chain — and it writes to a
      temp file, never next to the original.
-   - **Expected (B3b):** with **Tale** chosen, a calm list under the cards says
+   - **Expected (B3b):** with the switch on, a calm list under it says
      in plain words what was done to THIS recording («Vi fjernet brum fra
      strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet ekkoet i rommet»,
      «Vi fjernet klikk og knitring»), or «Opptaket var rent.» when nothing was.
-     Nothing shows for **Tale og musikk**, **Ingen**, with the mixer on, or
-     when the file could not be read.
+     Nothing shows with the switch off, or when the file could not be read.
    - VERIFIED-BY: e2e/editor.spec.ts::lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting
-   - **«Avansert: åpne mikseren»** opens the full chain (low cut, denoise,
-     dereverb, gate, compressor, de-esser, limiter, output level, three EQ
-     bands).
-   - **Expected:** the mixer says it **REPLACES** the profile («Mikseren
-     erstatter «Tale». Ingen mastring legges oppå — du styrer hele kjeden.»).
-     A mixer that layered on top of a preset would be two things fighting over
-     the same gain.
 5. Press **«Neste: Eksporter»**. There is no step 3 — the button NAVIGATES to
    the **Eksportering** destination, and the file stays open. Pick a **format**
    and leave the destination alone, then export.

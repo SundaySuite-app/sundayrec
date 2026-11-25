@@ -656,9 +656,6 @@ pub fn run() {
             // picker it opens, a history row's id, or a drop on the window.
             commands::editor::editor_open_recording,
             commands::editor::editor_open_known,
-            commands::editor::editor_master_presets,
-            commands::editor::editor_diagnose_channels,
-            commands::editor::editor_auto_process,
             commands::editor::editor_tale_said,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,

@@ -2242,6 +2242,10 @@ bakenden, og med `asset://`-avspilling som faktisk kan gå. Kommandoen er
 
 # P4b — Rediger, stegene «Lyd» og «Eksporter»
 
+> **Historisk fra F3 (rent-bord):** de tre profilene, mikseren og kanalreparasjonen under er
+> fjernet. Lyd-steget har én bryter, «Podkastklar lyd» (`speech-clear`), og `sound-profiles.ts`
+> bærer bare det bryteren sender og lytteutsnittet.
+
 P4a bygde steg 1 og lot stegstripa stå med ett steg i. P4b bygger de to andre,
 og med dem blir eiervalget fra canvasens sett 4 til kode: **mix/master finnes
 ÉN gang.**

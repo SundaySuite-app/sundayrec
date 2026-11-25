@@ -18,6 +18,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   Electron-appen, bannerboksen om fjernede e-postvarsler, og trykkflate-pulsene i
   redigeringen. «Sjekk maskinen» er også fjernet fra menylinjen. Gamle verdier i
   innstillingene leses og ignoreres uten feilmelding.
+- **Én fast lydoppskrift: «Podkastklar lyd».** Lyd-steget i redigeringen har nå én bryter,
+  på som standard: tydeligere stemme, jevnere lyd og riktig volum for podkast (−16 LUFS,
+  uten at toppene går over taket). Av betyr lyden slik den ble tatt opp. De andre
+  profilene («Tale og musikk»), den avanserte mikseren og kanalreparasjonen er borte.
+  Gamle valg leses og ignoreres uten feilmelding.
 - **Filnavnet «kirkeår» er borte.** Et lagret filnavnmønster «church» leses som dato,
   som er standarden.
 - **Personvernteksten sier nå bare det som faktisk samles inn:** krasj, kvalitetsdata om

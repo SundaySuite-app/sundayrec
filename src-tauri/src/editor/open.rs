@@ -7,9 +7,8 @@
 //!
 //! 1. [`opened`] is the one door. It looks the recording up in [`OPEN_BOOK`] (path, size and
 //!    mtime), and a caller that arrives while the read is under way waits for it instead of
-//!    starting a second one. Three consumers come here today: the waveform ([`super::peaks`]),
-//!    the channel diagnosis and one-click vocal chain
-//!    ([`super::diagnose_channels`], [`super::auto_process`]) and «Tale» ([`super::tale_clean_for`],
+//!    starting a second one. Three consumers come here today: the waveform ([`super::peaks`])
+//!    and «Tale» ([`super::tale_clean_for`],
 //!    behind the sound step's sentence, the preview and the export).
 //! 2. [`read_once`] is the read: ffmpeg decodes (no `-af`, no resampling there) to raw f32 on
 //!    stdout; one thread cuts the pipe into one-second blocks, and two more take every block:
@@ -30,8 +29,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use sundayrec_core::levels::ChannelLevels;
-use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16, SourceLevels};
+use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16};
 use sundayrec_core::pcm_stream::{for_each_block, output_args};
 use sundayrec_core::tale::SpeechAnalysis;
 use tokio::sync::watch;
@@ -50,21 +48,9 @@ const BLOCKS_IN_FLIGHT: usize = 4;
 pub(super) struct Opened {
     /// Max-abs per 10 ms of the 8 kHz mono mix.
     pub(super) peaks: Vec<f32>,
-    /// Peak, RMS and noise floor of channel 1 and 2.
-    pub(super) levels: SourceLevels,
     /// «Tale»'s measurements; [`SpeechAnalysis::decide`] turns them into what the profile takes
     /// along.
     pub(super) analysis: SpeechAnalysis,
-}
-
-impl Opened {
-    /// The channel levels, or the error the diagnosis has always given for a stream that held
-    /// nothing.
-    pub(super) fn channel_levels(&self) -> AppResult<ChannelLevels> {
-        self.levels
-            .levels
-            .ok_or_else(|| AppError::Recording("channel analysis produced no levels".into()))
-    }
 }
 
 /// Recordings already read, and the reads under way (the dedupe is [`super::Book`]'s).
@@ -96,12 +82,6 @@ fn forget_flight(key: &str, tx: &Arc<watch::Sender<f32>>) {
 
 fn key_of(path: &str) -> Option<String> {
     tale_cache_key(path).map(|k| format!("{k:?}"))
-}
-
-/// The recording's read, if one is kept or under way. Starts nothing.
-#[cfg(test)]
-pub(super) fn peek(path: &str) -> Option<Arc<Opened>> {
-    OPEN_BOOK.cached(&key_of(path)?)
 }
 
 /// The read of `path`: from [`OPEN_BOOK`], from the read already running, or by starting it.
@@ -252,7 +232,6 @@ async fn read_once(
 
     Ok(Arc::new(Opened {
         peaks: read.read16.peaks,
-        levels: read.levels,
         analysis,
     }))
 }

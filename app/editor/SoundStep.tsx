@@ -1,50 +1,22 @@
 /**
- * REDIGER, steg 2 — LYD. Canvasens artboard 4.2.
+ * REDIGER, steg 2 — LYD.
  *
- * Atlasets §3c er tabellen dette steget erstatter: fem inngangsdører til
- * mix/master, tre forskjellige flater, to helt ulike utfall, og ingenting i
- * UI-et som sier hvilken som gjelder. Her er det én bryter, tre ord og en
- * lytteknapp.
+ * Én bryter: «Podkastklar lyd». På (standard) gir den ÉN fast oppskrift — tydeligere stemme,
+ * jevnere lyd og −16 LUFS med sann topp under taket — av gir fila slik den ble tatt opp.
+ * Under bryteren: en linje om hva som ble gjort med akkurat dette opptaket, og en
+ * lytteknapp med «Før» og «Etter».
  *
- * ## De fire tingene som IKKE finnes her, og som fantes før
- *
- *   **«Normaliser lydnivå»** (−1 dBFS via `editor_probe_peak`) — et løfte som
- *   uansett ble overstyrt av mastringen: bakenden hopper over `volume=`-
- *   filteret så snart et preset er aktivt, fordi presetets nivåsteg setter nivået. En
- *   bryter som gjør noe bare når en annen bryter er av er ikke en bryter.
- *
- *   **Mastring-panelet** som skriver `<navn>_mastert.<ext>` ved siden av
- *   originalen og IKKE påvirker eksporten. To filer i mappen, og den ene er
- *   ikke den man deler.
- *
- *   **«Mastering (utgivelsesnivå)»** med `−19 / −16 / −14 LUFS` — tallene
- *   ligger her, men bak navnene. `sound-profiles.ts` er tabellen.
- *
- *   **«Kanalreparasjon»-velgeren** med sine fem moduser. Reparasjonen skjer
- *   fortsatt; den er bare ikke et spørsmål lenger — analysen ser at venstre
- *   kanal er stille, og sier det i én setning i stedet for å be om et valg.
- *
- * ## Bryteren og «Ingen» er den SAMME sannheten
- *
- * Canvasen tegner begge deler, og det er ikke dobbelt opp: bryteren er
- * inngangen for den som bare vil at det skal virke, kortene er for den som vil
- * vite hva som skjer. Under dem er det ett felt (`soundProfile`), og bryteren
- * husker hvilket kort som var valgt sist — «av, så på» skal ikke flytte noen
- * fra «Tale og musikk» til «Tale».
+ * Før F3 var det her tre profiler, en avansert mikser og en kanalreparasjon. De er borte:
+ * oppskriften er den samme for alle opptak, og tallene står i `sound-profiles.ts`.
  */
 
 import { useEffect } from "preact/hooks";
 
 import { t, tDyn, tf } from "../i18n";
-import { Button } from "../ui/Button/Button";
 import { Card } from "../ui/Card/Card";
-import { RadioCards, type RadioOption } from "../ui/RadioCards/RadioCards";
 import { Toggle } from "../ui/Toggle/Toggle";
 import { timecode } from "./editor-core";
-import { MixerPanel } from "./MixerPanel";
 import {
-  analyzingSound,
-  channelCode,
   ensureSoundAnalysis,
   listenAt,
   listenError,
@@ -53,31 +25,27 @@ import {
   listenPlaying,
   listenSide,
   listenStart,
-  mixerOpen,
+  podcastAudio,
   refreshListenStart,
-  setAutoEnhance,
   setListenSide,
-  setSoundProfile,
-  soundProfile,
+  setPodcastAudio,
   soundVisited,
   stopListen,
   taleSaid,
   toggleListen,
-  useMixer,
   watchListenPrepare,
 } from "./sound";
-import { channelCodeKey, SOUND_PROFILES, taleSaidKeys } from "./sound-profiles";
+import { taleSaidKeys } from "./sound-profiles";
 import styles from "./editor.module.css";
 import { PLAY_KEYS_ARIA, playShortcutHint } from "./shortcut-labels";
 
 export function SoundStep() {
-  const profile = soundProfile.value;
-  const on = profile !== "none";
+  const on = podcastAudio.value;
 
   useEffect(() => {
     soundVisited.value = true;
     refreshListenStart();
-    // Kanalanalysen er memoisert per fil, så den koster ingenting ved en
+    // «Tale»-analysen er memoisert per fil, så den koster ingenting ved en
     // retur hit. Den startes HER og ikke ved filåpning: der konkurrerer
     // topputtrekket og segmentanalysen allerede om den samme fila.
     void ensureSoundAnalysis();
@@ -92,91 +60,40 @@ export function SoundStep() {
     };
   }, []);
 
-  const options: RadioOption[] = SOUND_PROFILES.map((id) => ({
-    value: id,
-    title: tDyn("app.editor.profile", id),
-    description: tDyn("app.editor.profileDesc", id),
-    recommended: id === "speech",
-  }));
-
   return (
-    <div data-testid="editor-sound" data-profile={profile} class={styles.step}>
-      <Card testId="editor-auto-card">
+    <div
+      data-testid="editor-sound"
+      data-podcast={on ? "on" : "off"}
+      class={styles.step}
+    >
+      <Card testId="editor-podcast-card">
         <div class={styles.autoRow}>
           <div class={styles.autoGrow}>
-            <b id="editor-auto-label" class={styles.autoTitle}>
-              {t("app.editor.autoSound")}
+            <b id="editor-podcast-label" class={styles.autoTitle}>
+              {t("app.editor.podcastAudio")}
             </b>
-            <div id="editor-auto-desc" class={styles.hint}>
-              {t("app.editor.autoSoundDesc")}
+            <div id="editor-podcast-desc" class={styles.hint}>
+              {t("app.editor.podcastAudioDesc")}
             </div>
           </div>
           <Toggle
-            testId="editor-auto-toggle"
+            testId="editor-podcast-toggle"
             checked={on}
-            labelId="editor-auto-label"
-            describedBy="editor-auto-desc"
-            onChange={setAutoEnhance}
+            labelId="editor-podcast-label"
+            describedBy="editor-podcast-desc"
+            onChange={setPodcastAudio}
           />
         </div>
       </Card>
 
-      <RadioCards
-        testId="editor-profile"
-        value={profile}
-        options={options}
-        // Av betyr «Ingen», og da er de tre kortene en beskrivelse av et valg
-        // som ikke er i spill. De står, dempet, i stedet for å forsvinne — en
-        // skjerm som skifter høyde når man trykker på en bryter er en skjerm
-        // man mister plassen sin i.
-        disabled={!on}
-        onChange={(next) => setSoundProfile(next as typeof profile)}
-      />
-
-      <ChannelNote />
       <TaleSaid />
       {on ? <ListenCard /> : null}
-
-      <div class={styles.toolbar}>
-        <Button
-          variant="ghost"
-          testId="editor-mixer-open"
-          onClick={() => (mixerOpen.value = !mixerOpen.value)}
-        >
-          {mixerOpen.value
-            ? t("app.editor.hideMixer")
-            : t("app.editor.advancedMixer")}
-        </Button>
-      </div>
-      {mixerOpen.value ? <MixerPanel /> : null}
     </div>
   );
 }
 
 /**
- * Den ene ærlige setningen om kanalene.
- *
- * Vises bare når analysen har svart og koden er en vi har ord for. Tekstene er
- * legacys egne (`editor.chanDeadLeft` og de fem andre) og finnes derfor i alle
- * sju språk fra før — og de sier akkurat det en frivillig kan gjøre noe med:
- * «Venstre kanal er stille (sjekk kabel)».
- */
-function ChannelNote() {
-  if (analyzingSound.value) return null;
-  // `tDyn` og ikke `t()` med en variabel: prefikset er en literal gaten kan slå
-  // opp, og suffikset er halvdelen ingen gate kan kjenne — så et bom KASTER i
-  // DEV i stedet for å male en tom linje som ser ut som «her står det ingenting».
-  const suffix = channelCodeKey(channelCode.value ?? undefined);
-  if (!suffix) return null;
-  return (
-    <p data-testid="editor-channel-note" class={styles.hint}>
-      {tDyn("editor", suffix)}
-    </p>
-  );
-}
-
-/**
- * Tre ord om hva «Tale» gjorde med akkurat dette opptaket (B3b).
+ * Tre ord om hva «Podkastklar lyd» gjorde med akkurat dette opptaket (B3b).
  *
  * Én linje per ting: «Vi fjernet brum fra strømnettet». Ble ingenting gjort, står
  * den rolige «Opptaket var rent.» — og ikke noe som helst før analysen har svart,
@@ -184,7 +101,7 @@ function ChannelNote() {
  * linje og har ingen fagord: «brum», «ekko», «klikk», ikke «dehum» eller «RT60».
  */
 function TaleSaid() {
-  const keys = taleSaidKeys(soundProfile.value, useMixer.value, taleSaid.value);
+  const keys = taleSaidKeys(podcastAudio.value, taleSaid.value);
   if (keys.length === 0) return null;
   return (
     <ul data-testid="editor-tale-said" class={styles.saidList}>
@@ -201,9 +118,9 @@ function TaleSaid() {
  * «Lytt: Før | Etter», fra midten av det som beholdes.
  *
  * Lyttingen spilles av avspillingsmotoren (B5b), ikke av et `<audio>`-element: Rust spiller
- * opptaket med kuttene på lydkortet og har både originalen («Før») og lyden gjennom profilens
+ * opptaket med kuttene på lydkortet og har både originalen («Før») og lyden gjennom oppskriftens
  * kjede («Etter») klare. Å trykke «Før» eller «Etter» er derfor et bytte, ikke en gjengivelse
- * — og det går også mens det spiller. Bytter man profil eller mikser underveis, kommer den nye
+ * — og det går også mens det spiller. Slår man bryteren av og på underveis, kommer den nye
  * lyden inn av seg selv, uten klikk.
  *
  * «Etter» er en EKTE gjengivelse gjennom det samme presettet og den samme kjeden eksporten

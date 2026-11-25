@@ -935,7 +935,7 @@ export const SCENES: Scene[] = [
   {
     id: "redigering--lyd",
     page: "Bibliotek og redigering",
-    state: "Steget «Lyd» — profilene og hva de gjør",
+    state: "Steget «Lyd» — bryteren «Podkastklar lyd»",
     recipe: "åpne, så klikk `editor-steps-row-sound`",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
@@ -943,26 +943,6 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("editor-handle-start")).toBeVisible();
       await page.getByTestId("editor-steps-row-sound").click();
       await expect(page.getByTestId("editor-sound")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "redigering--mikser",
-    page: "Bibliotek og redigering",
-    state: "Mikseren åpen — de sju trinnene bak profilen",
-    recipe: "steget «Lyd», så `editor-mixer-open` + `editor-mixer-toggle`",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
-    act: async (page) => {
-      await openEditor(page);
-      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
-      await page.getByTestId("editor-steps-row-sound").click();
-      await page.getByTestId("editor-mixer-open").click();
-      await expect(page.getByTestId("editor-mixer-stages")).toBeVisible();
-      await page.getByTestId("editor-mixer-toggle").click();
-      await expect(page.getByTestId("editor-mixer-toggle")).toHaveAttribute(
-        "aria-checked",
-        "true",
-      );
     },
     full: true,
   },

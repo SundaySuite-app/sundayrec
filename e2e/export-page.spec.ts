@@ -289,7 +289,7 @@ test.describe("eksportering", () => {
     const sub = page.getByTestId("export-sub");
     await expect(sub).toContainText("Kveldsmøte");
     await expect(sub).toContainText(`av ${Math.round(DURATION / 60)} min 0 s`);
-    await expect(sub).toContainText("Tale");
+    await expect(sub).toContainText("Podkastklar lyd");
   });
 
   test("eksport → kvittering → «Til biblioteket» lander på REDIGERING med lista", async ({

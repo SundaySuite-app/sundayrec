@@ -25,24 +25,6 @@ export const VIDEO_FORMAT = "mp4";
 /** Kodeken video-eksporten bruker. H.264 er den universelle. */
 export const VIDEO_CODEC = "h264";
 
-/**
- * Fasen FØR bakenden har hørt om eksporten i det hele tatt.
- *
- * De to andre fasekodene (`measuring`, `encoding`) er BAKENDENS, festet mot
- * Rust-siden av `export_phase_codes_match_the_renderer_literals`. Denne er
- * skallets egen, og den finnes fordi F2-2s vindu er ekte: `runExport` venter på
- * kanalanalysen — en full `astats`-passering, 30–60 s på en 90-minutters
- * gudstjeneste — FØR det finnes en ffmpeg å melde prosent for. Fram til F2-A-B
- * var det vinduet en knapp som så uberørt ut, og et andre klikk der var hele
- * dobbelteksporten.
- *
- * Den bor i det samme signalet som bakendens koder, ikke i et eget: flaten
- * spør «hva gjør eksporten nå», og det er ETT spørsmål med tre svar. Prisen er
- * at koden må være en Rust ALDRI sender — derav «preparing», som ingen av
- * ffmpeg-passeringene heter.
- */
-export const EXPORT_PHASE_PREPARING = "preparing";
-
 /** Bitraten mp3 får når `settings.bitrate` er tom eller tull. Legacys eget
  *  tall, og det `QualityPage` skriver for «God». */
 export const FALLBACK_BITRATE_KBPS = 256;
@@ -331,10 +313,6 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["file_not_found", "errFileNotFound"],
   ["disk_full", "errDiskFull"],
   ["invalid_duration", "errCutData"],
-  // Reparasjonen leser høyre inngangskanal på en fil som ikke har en. ffmpeg
-  // avviser den IKKE — den gjengir 6 dB ned uten et ord — så sømmen stopper
-  // eksporten, og da må det stå hvorfor.
-  ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
   ["export_already_running", "errExportAlreadyRunning"],
   // Bakendens opptaksvakt (audit 2026-10): skjermen sjekker `isRecording` bare

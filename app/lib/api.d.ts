@@ -41,7 +41,6 @@ import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
-import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
 import type { EditorTaleSaid } from "../../legacy/bindings/EditorTaleSaid";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
@@ -275,15 +274,6 @@ declare global {
       editorPickOutputFolder: () => Promise<
         { ok: true; folder: ChosenPlace | null } | { ok: false; error: string }
       >;
-      // Typed against the GENERATED `EditorAutoProcess` binding (nesting
-      // `EditorChannelDiagnosis`) — the hand-typed twin this replaced had
-      // silently DROPPED `imbalanceDb`/`peakLeftDb`/`peakRightDb` from the
-      // declared type (the backend always sent them; nothing here could read
-      // them). A Rust rename now fails `npm run typecheck`. (Extra finding —
-      // see the PR description.)
-      editorAutoProcess: (
-        sourceToken: string,
-      ) => Promise<EditorAutoProcess | null>;
       /** B3b: what «Tale» did to the recording — codes (`hum`, `noise`,
        *  `reverb`, `clicks`), never prose. Null outside the Tauri shell. */
       editorTaleSaid: (sourceToken: string) => Promise<EditorTaleSaid | null>;

@@ -8,7 +8,6 @@ import {
   type Fixtures,
 } from "./harness";
 import {
-  AUTO_PROCESS_DEAD_LEFT,
   DURATION,
   editorFixtures,
   EXPORT_HELD,
@@ -657,21 +656,21 @@ test.describe("editor", () => {
     ).toEqual(before);
   });
 
-  test("«Tale» er standarden, og den sender tale-presettet med eksporten", async ({
+  test("«Podkastklar lyd» er standarden, og den sender oppskriften med eksporten", async ({
     page,
   }) => {
-    // MUTASJONSPRØVEN for `sound-profiles.ts`: bytt `SPEECH_MASTER_PRESET` og
-    // denne går rød på `masterPreset`.
+    // MUTASJONSPRØVEN for `sound-profiles.ts`: la `soundExportFields(true)` returnere `{}` og
+    // denne går rød på `podcastAudio`.
     await openEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    await expect(page.getByTestId("editor-auto-toggle")).toHaveAttribute(
+    await expect(page.getByTestId("editor-podcast-toggle")).toHaveAttribute(
       "aria-checked",
       "true",
     );
     await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "speech",
+      "data-podcast",
+      "on",
     );
 
     await goToExport(page);
@@ -680,7 +679,7 @@ test.describe("editor", () => {
 
     expect(await exportPayloads(page)).toHaveLength(1);
     expect((await exportPayloads(page))[0]).toMatchObject({
-      masterPreset: "speech-clear",
+      podcastAudio: true,
       format: "mp3",
       // `null` = «Samme mappe som opptaket», som bakenden løser opp til
       // kildens egen mappe. ALLTID med — aldri undefined, aldri en sti (A2),
@@ -688,112 +687,29 @@ test.describe("editor", () => {
       outputFolderToken: null,
       bitrate: 256,
     });
-    // Ingen stemmekjede, og ingen mikser: profilen er ETT preset. To kjeder
-    // over det samme materialet er det dobbelte høypasset bakenden advarer mot.
-    expect((await exportPayloads(page))[0].vocalChainPreset).toBeNull();
-    expect((await exportPayloads(page))[0].processing).toBeNull();
+    // Ingen preset, ingen stemmekjede, ingen mikser: de finnes ikke lenger i nyttelasten.
+    const sent = (await exportPayloads(page))[0];
+    expect("masterPreset" in sent).toBe(false);
+    expect("processing" in sent).toBe(false);
+    expect("channelRepair" in sent).toBe(false);
   });
 
-  test("«Tale og musikk» bytter presettet, «Ingen» sender ingen behandling", async ({
-    page,
-  }) => {
+  test("bryteren AV sender ingen behandling", async ({ page }) => {
     await openEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    await page.getByTestId("editor-profile-row-mixed").click();
-    await goToExport(page);
-    await page.getByTestId("editor-export-go").click();
-    await expect(page.getByTestId("editor-exported")).toBeVisible();
-    expect((await exportPayloads(page))[0]).toMatchObject({
-      masterPreset: "music-speech",
-    });
-
-    // Tilbake til valgene, og til steg 2 for å bytte til «Ingen». Steget bor
-    // på REDIGERING nå, så veien går innom skinnen — og fila står åpen hele
-    // veien, som er det som gjør at valgene fortsatt er der.
-    await page.getByTestId("editor-exported-again").click();
-    await page.getByTestId("nav-edit").click();
-    await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-auto-toggle").click();
+    await page.getByTestId("editor-podcast-toggle").click();
     await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "none",
+      "data-podcast",
+      "off",
     );
-    // Bryteren AV er det samme som «Ingen» — ett felt, to måter å si det på.
+    // Uten oppskrift er det ingenting å høre «Etter» på.
     await expect(page.getByTestId("editor-listen")).toHaveCount(0);
 
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
-    const last = (await exportPayloads(page))[1];
-    expect(last.masterPreset).toBeNull();
-    expect(last.vocalChainPreset).toBeNull();
-    expect(last.processing).toBeNull();
-    expect(last.channelRepair).toBeNull();
-  });
-
-  test("bryteren husker hvilket kort som var valgt", async ({ page }) => {
-    await openEditor(page);
-    await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-profile-row-mixed").click();
-
-    await page.getByTestId("editor-auto-toggle").click();
-    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "none",
-    );
-    await page.getByTestId("editor-auto-toggle").click();
-    // Ikke «Tale»: «av, så på» skal ikke flytte noen bort fra valget sitt.
-    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "mixed",
-    );
-  });
-
-  test("mikseren overstyrer profilen — én kjede, ikke to", async ({ page }) => {
-    // Legacy lot `processing` OG `masterPreset` stå i den samme nyttelasten, og
-    // resultatet var to høypass, to kompressorer og to EQ-kurver over det samme
-    // materialet. Går denne rød fordi `masterPreset` er tilbake, er det
-    // nøyaktig den feilen som er tilbake.
-    await openEditor(page);
-    await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-mixer-open").click();
-    await page.getByTestId("editor-mixer-toggle").click();
-
-    // Alle tjue kontrollene er der, og de er ekte — en slår av høypasset.
-    await page.getByTestId("editor-mx-hpf-on").click();
-
-    await goToExport(page);
-    await page.getByTestId("editor-export-go").click();
-    await expect(page.getByTestId("editor-exported")).toBeVisible();
-
-    const sent = (await exportPayloads(page))[0];
-    expect(sent.masterPreset).toBeNull();
-    expect(sent.processing).toMatchObject({
-      highpassEnabled: false,
-      // Resten av kjeden er `VocalChain::default()`, importert fra legacys
-      // mikser — det ene stedet de tallene finnes i TypeScript.
-      compEnabled: true,
-      compThresholdDb: -18,
-    });
-  });
-
-  test("en stille kanal repareres uten å bli et spørsmål", async ({ page }) => {
-    // Den vanligste ekte katastrofen i et menighetsopptak. Legacy hadde en
-    // femvalgs «Kanalreparasjon»-velger for den; her ser analysen det, sier det
-    // i én setning, og reparasjonen blir med på eksporten.
-    await openEditor(page, { editor_auto_process: AUTO_PROCESS_DEAD_LEFT });
-    await page.getByTestId("editor-steps-row-sound").click();
-    await expect(page.getByTestId("editor-channel-note")).toContainText(
-      "Ingen lyd på venstre side",
-    );
-
-    await goToExport(page);
-    await page.getByTestId("editor-export-go").click();
-    await expect(page.getByTestId("editor-exported")).toBeVisible();
-    expect((await exportPayloads(page))[0].channelRepair).toMatchObject({
-      mode: "duplicateRight",
-    });
+    expect((await exportPayloads(page))[0].podcastAudio).toBe(false);
   });
 
   test("lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting", async ({
@@ -812,7 +728,7 @@ test.describe("editor", () => {
     );
     await expect(page.getByTestId("editor-tale-said-noise")).toHaveCount(0);
 
-    await page.getByTestId("editor-auto-toggle").click();
+    await page.getByTestId("editor-podcast-toggle").click();
     await expect(page.getByTestId("editor-tale-said")).toHaveCount(0);
   });
 
@@ -853,9 +769,9 @@ test.describe("editor", () => {
     });
     expect(calls.find((c) => c.cmd === "chain")?.request).toMatchObject({
       sourceToken: OPENED.token,
-      // Det SAMME presettet eksporten kommer til å bruke — ellers er «Etter»
+      // Den SAMME oppskriften eksporten kommer til å bruke — ellers er «Etter»
       // en lyd fila aldri får.
-      presetId: "speech-clear",
+      podcastAudio: true,
     });
     await expect(page.getByTestId("editor-listen-play")).toHaveAttribute(
       "aria-label",

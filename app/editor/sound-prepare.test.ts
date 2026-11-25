@@ -19,11 +19,9 @@ import {
   listenPreparing,
   listenSide,
   listenStart,
-  mixer,
+  podcastAudio,
   resetSound,
-  soundProfile,
   toggleListen,
-  useMixer,
   watchListenPrepare,
 } from "./sound";
 import { fakeListen, type FakeListen } from "./test-support/fake-listen-api";
@@ -56,7 +54,6 @@ beforeEach(() => {
     clearTimeout: (id: number) => clearTimeout(id),
     api: {
       ...engine.api,
-      editorAutoProcess: () => Promise.resolve({ diagnosis: null }),
       editorTaleSaid: () => Promise.resolve(null),
       prepareListen: (_token: string, listen: Req) => {
         prepareCalls.push(listen);
@@ -71,8 +68,7 @@ beforeEach(() => {
   E.cuts = [{ start: 10, end: 20 }] as typeof E.cuts;
   listenSide.value = "after";
   listenStart.value = 1800;
-  soundProfile.value = "speech";
-  useMixer.value = false;
+  podcastAudio.value = true;
 });
 
 afterEach(() => {
@@ -92,32 +88,33 @@ describe("lyttingen gjøres klar i bakgrunnen", () => {
 
     expect(prepareCalls).toHaveLength(1);
     expect(prepareCalls[0]).toMatchObject({
-      presetId: "speech-clear",
+      podcastAudio: true,
       cutRegions: [{ start: 10, end: 20 }],
       fullLengthSec: 3600,
     });
   });
 
   it("hurtige endringer gir ÉN forberedelse, etter ventetiden", async () => {
+    const { cuts } = await import("./model");
     stop = watchListenPrepare();
     await settle();
     expect(prepareCalls).toHaveLength(1);
 
-    useMixer.value = true;
+    const setCuts = (start: number) => {
+      E.cuts = [{ start, end: start + 10 }] as typeof E.cuts;
+      cuts.value = E.cuts.slice();
+    };
+    setCuts(30);
     await settle(PREPARE_DEBOUNCE_MS / 4);
-    mixer.value = { ...mixer.value, denoiseEnabled: true };
+    setCuts(40);
     await settle(PREPARE_DEBOUNCE_MS / 4);
-    mixer.value = { ...mixer.value, gateEnabled: true };
+    setCuts(50);
     await settle(PREPARE_DEBOUNCE_MS - 1);
     expect(prepareCalls).toHaveLength(1); // ennå ikke: ventetiden gjelder siste endring
 
     await settle(1);
     expect(prepareCalls).toHaveLength(2);
-    expect(prepareCalls[1].processing).toMatchObject({
-      denoiseEnabled: true,
-      gateEnabled: true,
-    });
-    expect(prepareCalls[1].presetId).toBeUndefined();
+    expect(prepareCalls[1].cutRegions).toEqual([{ start: 50, end: 60 }]);
   });
 
   it("nye kutt gir ny forberedelse", async () => {
@@ -139,7 +136,8 @@ describe("lyttingen gjøres klar i bakgrunnen", () => {
     await settle(PREPARE_DEBOUNCE_MS * 2);
     expect(prepareCalls).toHaveLength(0);
 
-    useMixer.value = true; // en endring under opptaket
+    podcastAudio.value = false; // en endring under opptaket
+    podcastAudio.value = true;
     await settle(PREPARE_DEBOUNCE_MS * 2);
     expect(prepareCalls).toHaveLength(0);
 
@@ -154,14 +152,13 @@ describe("lyttingen gjøres klar i bakgrunnen", () => {
     await settle();
     // Et annet utsnitt og en ny planlegging av samme program: samme måling.
     listenStart.value = 2400;
-    soundProfile.value = "speech";
-    useMixer.value = false;
+    podcastAudio.value = true;
     await settle(PREPARE_DEBOUNCE_MS * 2);
     expect(prepareCalls).toHaveLength(1);
   });
 
-  it("«Ingen» har ikke noe å gjøre klart", async () => {
-    soundProfile.value = "none";
+  it("av har ikke noe å gjøre klart", async () => {
+    podcastAudio.value = false;
     stop = watchListenPrepare();
     await settle(PREPARE_DEBOUNCE_MS * 2);
     expect(prepareCalls).toHaveLength(0);

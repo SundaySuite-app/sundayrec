@@ -392,7 +392,7 @@ fn to_db(linear: f64) -> f64 {
     }
 }
 
-/// What the channel meter found, as the diagnosis and the one-click vocal chain read it.
+/// What the channel meter found, as «Tale»'s click detection reads it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SourceLevels {
     /// Peak and RMS of channel 1 and 2. `None` for a stream with no samples at all.

@@ -123,7 +123,6 @@ import {
   bitrateKbps,
   estimatedBytes,
   EXPORT_FORMATS,
-  EXPORT_PHASE_PREPARING,
   exportKbps,
   folderLabel,
   folderOf,
@@ -155,17 +154,10 @@ import { DOT } from "@lib/ui/dot";
 import styles from "./export.module.css";
 
 /**
- * Fasen som pågår → teksten som forklarer den.
- *
- * To av kodene er bakendens, festet mot Rust-siden av
- * `export_phase_codes_match_the_renderer_literals`. Den tredje er skallets egen
- * (`EXPORT_PHASE_PREPARING`) og dekker vinduet FØR bakenden hører om eksporten:
- * kanalanalysen er en full passering over opptaket, 30–60 s på en gudstjeneste.
- * Fram til F2-A-B sto skjemaet uberørt i hele det vinduet, og et andre klikk
- * der var hele dobbelteksporten — teksten her er halve fiksen.
+ * Fasen som pågår → teksten som forklarer den. Begge kodene er bakendens, festet mot
+ * Rust-siden av `export_phase_codes_match_the_renderer_literals`.
  */
 function phaseText(phase: string | null): string {
-  if (phase === EXPORT_PHASE_PREPARING) return t("editor.exportPhasePreparing");
   return phase === "measuring"
     ? t("editor.exportPhaseMeasuring")
     : t("editor.exportExporting");

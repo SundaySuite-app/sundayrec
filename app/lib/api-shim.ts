@@ -1421,10 +1421,7 @@ const api: Record<string, unknown> = {
       request: toEditorExportRequest("audio", o),
     });
   },
-  // One-click "best result": diagnose + recommended preset bundle.
-  editorAutoProcess: async (sourceToken: string) =>
-    call("editor_auto_process", { sourceToken }, null),
-  // B3b: hva «Tale» gjorde med opptaket (koder, ikke tekst).
+  // B3b: hva «Podkastklar lyd» gjorde med opptaket (koder, ikke tekst).
   editorTaleSaid: async (sourceToken: string) =>
     call("editor_tale_said", { sourceToken }, null),
   // Kill the in-flight export's ffmpeg. Returns whether one was running; the

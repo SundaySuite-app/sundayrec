@@ -96,7 +96,6 @@ det, er en scene som ikke står stille.
 | `redigering--klipp` | Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag | `openEditorWithRecording` på det fikstursydde opptaket | [`no/redigering--klipp.png`](no/redigering--klipp.png) | [`en/redigering--klipp.png`](en/redigering--klipp.png) | [`no/redigering--klipp--full.png`](no/redigering--klipp--full.png) · [`en/redigering--klipp--full.png`](en/redigering--klipp--full.png) · [`no/redigering--klipp--1000x760.png`](no/redigering--klipp--1000x760.png) |
 | `redigering--kuttliste` | Kuttlista — det som blir borte, som rader man kan angre | åpne, så klikk `editor-keep-sermon` | [`no/redigering--kuttliste.png`](no/redigering--kuttliste.png) | [`en/redigering--kuttliste.png`](en/redigering--kuttliste.png) | [`no/redigering--kuttliste--full.png`](no/redigering--kuttliste--full.png) · [`en/redigering--kuttliste--full.png`](en/redigering--kuttliste--full.png) |
 | `redigering--lyd` | Steget «Lyd» — profilene og hva de gjør | åpne, så klikk `editor-steps-row-sound` | [`no/redigering--lyd.png`](no/redigering--lyd.png) | [`en/redigering--lyd.png`](en/redigering--lyd.png) | [`no/redigering--lyd--full.png`](no/redigering--lyd--full.png) · [`en/redigering--lyd--full.png`](en/redigering--lyd--full.png) |
-| `redigering--mikser` | Mikseren åpen — de sju trinnene bak profilen | steget «Lyd», så `editor-mixer-open` + `editor-mixer-toggle` | [`no/redigering--mikser.png`](no/redigering--mikser.png) | [`en/redigering--mikser.png`](en/redigering--mikser.png) | [`no/redigering--mikser--full.png`](no/redigering--mikser--full.png) · [`en/redigering--mikser--full.png`](en/redigering--mikser--full.png) |
 | `redigering--laster` | Arbeidsflaten laster — «Analyserer …» | `editor_load_recording` som aldri svarer | [`no/redigering--laster.png`](no/redigering--laster.png) | [`en/redigering--laster.png`](en/redigering--laster.png) | — |
 | `redigering--feil` | Arbeidsflaten kunne ikke åpne fila | BÅDE `editor_load_recording: null` OG `editor_peaks: null` — toppene er en ANDRE kilde til varighet | [`no/redigering--feil.png`](no/redigering--feil.png) | [`en/redigering--feil.png`](en/redigering--feil.png) | — |
 
@@ -169,7 +168,6 @@ en ekte Windows-PC (1180×760, og ned til 1000×760) bekrefte:
 - [ ] «Vis i Finder» heter «Vis i Utforsker» på Windows, og knappen åpner mappen med fila valgt.
 - [ ] Opptak-kortene stiller hele spørsmål («Hvilken lydkilde?», «Hvor lagres opptakene?», «Hvilken kvalitet?», «Ta med video», «Ta opp automatisk», «Hvem får beskjed hvis noe går galt?»).
 - [ ] Første gang, steg 1–6: det er tydelig at man trykker «Bruk denne lydkilden» og så «Neste».
-- [ ] Lydjusteringen (mikseren) leses uten lydbakgrunn: hverdagsord i tittelen, fagordet under.
 - [ ] Innstillinger: innholdslista øverst hopper til riktig seksjon, og «Tidsplan → Spesialopptak» står tett fra venstre.
 - [ ] Teksten leses naturlig på de fem språkene som ikke er fotografert (sv, da, de, fr, pl) — av noen som snakker dem.
 

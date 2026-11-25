@@ -9,7 +9,6 @@ import {
   EXPORT_PHASE_MEASURING,
   type ExportRequestInput,
 } from "./export-params";
-import { defaultProcessing } from "./mixer";
 import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
 
 const base: ExportRequestInput = {
@@ -111,33 +110,23 @@ describe("buildExportRequest", () => {
   it('omits empty optional strings so the backend sees null, not ""', () => {
     const params = buildExportRequest({
       ...base,
-      masterPreset: "",
-      vocalChainPreset: "",
+      podcastAudio: false,
       useIntro: false,
       useOutro: false,
     });
-    expect(params.masterPreset).toBeUndefined();
-    expect(params.vocalChainPreset).toBeUndefined();
+    expect(params.podcastAudio).toBeUndefined();
     expect(params.useIntro).toBeUndefined();
     expect(params.useOutro).toBeUndefined();
   });
 
-  it("carries the enhancement settings and jingles when set", () => {
-    const channelRepair = { mode: "duplicateLeft", leftDb: 0, rightDb: 0 };
-    const processing = { highpass: { enabled: true } };
+  it("carries the podcast switch and jingles when set", () => {
     const params = buildExportRequest({
       ...base,
-      masterPreset: "speech-clear",
-      vocalChainPreset: "voice-podcast",
-      channelRepair,
-      processing,
+      podcastAudio: true,
       useIntro: true,
       useOutro: true,
     });
-    expect(params.masterPreset).toBe("speech-clear");
-    expect(params.vocalChainPreset).toBe("voice-podcast");
-    expect(params.channelRepair).toEqual(channelRepair);
-    expect(params.processing).toEqual(processing);
+    expect(params.podcastAudio).toBe(true);
     // The jingles are two switches: the clips themselves are in the saved
     // settings, and no path to one is on the wire.
     expect(params.useIntro).toBe(true);
@@ -179,7 +168,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       outputFolderToken: null,
       bitrate: 256,
       bitDepth: 16,
-      masterPreset: null,
+      podcastAudio: false,
       useIntro: false,
       useOutro: false,
       gainDb: null,
@@ -188,9 +177,6 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       description: null,
       album: null,
       date: null,
-      vocalChainPreset: null,
-      processing: null,
-      channelRepair: null,
       videoCodec: null,
     } satisfies EditorExportRequest);
   });
@@ -213,7 +199,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       outputFolderToken: null,
       bitrate: null,
       bitDepth: null,
-      masterPreset: null,
+      podcastAudio: false,
       useIntro: false,
       useOutro: false,
       gainDb: null,
@@ -222,9 +208,6 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       description: null,
       album: null,
       date: null,
-      vocalChainPreset: null,
-      processing: null,
-      channelRepair: null,
       videoCodec: "h265",
     } satisfies EditorExportRequest);
   });
@@ -280,41 +263,25 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
     expect(request.videoCodec).toBeNull();
   });
 
-  it("nests processing.channelRepair as null — a repair always rides the TOP-LEVEL field, which EditorExportRequest's own doc comment says overrides processing's own", () => {
-    const channelRepairValue = {
-      mode: "duplicateRight",
-      leftDb: 0,
-      rightDb: 0,
-    };
-    const processingValue = defaultProcessing();
-    const request = toEditorExportRequest(
+  it("sends the podcast switch as a plain boolean, and old preset fields are not carried", () => {
+    const on = toEditorExportRequest(
       "audio",
-      buildExportRequest({
-        ...base,
-        processing: processingValue,
-        channelRepair: channelRepairValue,
-      }),
+      buildExportRequest({ ...base, podcastAudio: true }),
     );
-    expect(request.channelRepair).toEqual(channelRepairValue);
-    expect(request.processing).toEqual({
-      ...processingValue,
-      channelRepair: null,
+    expect(on.podcastAudio).toBe(true);
+    const off = toEditorExportRequest("audio", buildExportRequest(base));
+    expect(off.podcastAudio).toBe(false);
+    // An old-shaped param object with preset/mixer fields: they do not reach the wire.
+    const old = toEditorExportRequest("audio", {
+      ...buildExportRequest(base),
+      masterPreset: "music-speech",
+      processing: { gateEnabled: true },
+      channelRepair: { mode: "swapLr" },
     });
-  });
-
-  it("turns empty optional strings into null end-to-end, not an empty-string DTO field", () => {
-    const request = toEditorExportRequest(
-      "audio",
-      buildExportRequest({
-        ...base,
-        masterPreset: "",
-        vocalChainPreset: "",
-      }),
-    );
-    expect(request.masterPreset).toBeNull();
-    expect(request.vocalChainPreset).toBeNull();
-    expect(request.useIntro).toBe(false);
-    expect(request.useOutro).toBe(false);
+    expect(old.podcastAudio).toBe(false);
+    expect("masterPreset" in old).toBe(false);
+    expect("processing" in old).toBe(false);
+    expect("channelRepair" in old).toBe(false);
   });
 });
 
@@ -363,34 +330,29 @@ describe("jinglesSupportedForFile", () => {
 });
 
 describe("exportLevelSummary", () => {
-  it("says mastering owns the level whenever a preset is active", () => {
-    // The backend SKIPS the normalize `volume=` filter under a mastering preset
-    // (the preset's level step sets the delivery level), so the modal must not promise a gain
-    // the export never applies — even when one was computed.
-    expect(exportLevelSummary("speech-clear", 4.2)).toEqual({
-      kind: "masterOwnsLevel",
-    });
-    expect(exportLevelSummary("music-speech", 0)).toEqual({
-      kind: "masterOwnsLevel",
-    });
+  it("says the podcast recipe owns the level whenever it is on", () => {
+    // The backend SKIPS the normalize `volume=` filter under the recipe (its level step sets
+    // the delivery level), so the modal must not promise a gain the export never applies —
+    // even when one was computed.
+    expect(exportLevelSummary(true, 4.2)).toEqual({ kind: "masterOwnsLevel" });
+    expect(exportLevelSummary(true, 0)).toEqual({ kind: "masterOwnsLevel" });
   });
 
-  it("reports the normalize gain when no preset is active", () => {
-    expect(exportLevelSummary("", 4.2)).toEqual({
+  it("reports the normalize gain when it is off", () => {
+    expect(exportLevelSummary(false, 4.2)).toEqual({
       kind: "normalized",
       gainDb: 4.2,
     });
-    expect(exportLevelSummary(undefined, -1.5)).toEqual({
+    expect(exportLevelSummary(false, -1.5)).toEqual({
       kind: "normalized",
       gainDb: -1.5,
     });
   });
 
   it("hides the row when there is nothing to say", () => {
-    expect(exportLevelSummary("", 0)).toEqual({ kind: "hidden" });
-    expect(exportLevelSummary(undefined, 0)).toEqual({ kind: "hidden" });
+    expect(exportLevelSummary(false, 0)).toEqual({ kind: "hidden" });
     // A NaN gain (a failed peak probe) is "nothing to say", not "+NaN dB".
-    expect(exportLevelSummary("", Number.NaN)).toEqual({ kind: "hidden" });
+    expect(exportLevelSummary(false, Number.NaN)).toEqual({ kind: "hidden" });
   });
 });
 

@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 use sundayrec_core::loudness::{
     GainStage, MAX_REFINEMENTS, Meter, SETTLED_LU, apply_to_target, measure_planar, plan_gain,
 };
-use sundayrec_core::mastering::master_presets;
+use sundayrec_core::mastering::podcast_preset;
 
 const TARGET_TOL_LU: f64 = 0.5;
 const CEILING_DBTP: f64 = -1.0;
@@ -291,7 +291,8 @@ fn synthetic_programmes_hit_target_and_ceiling() {
             "{name}: input I ours {} ffmpeg {ff_i}",
             m.integrated_lufs
         );
-        for preset in master_presets() {
+        {
+            let preset = podcast_preset();
             let plan = plan_gain(&m, &preset);
             let mut out = chans.clone();
             let done = apply_to_target(&m, &plan, sr, &mut out);
@@ -399,7 +400,8 @@ fn real_recordings_hit_target_and_ceiling() {
             m.integrated_lufs,
             m.true_peak_dbtp
         );
-        for preset in master_presets() {
+        {
+            let preset = podcast_preset();
             let mut plan = plan_gain(&m, &preset);
             let mut refinements = 0;
             // Pass 2 (and 3.. while the limiter ate loudness): decode again, apply chunk by chunk,

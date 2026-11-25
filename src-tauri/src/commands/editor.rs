@@ -58,9 +58,9 @@ use super::chosen_paths::{self, ChosenError, ChosenKind, ChosenPaths, ChosenPlac
 use super::media_filters::{AUDIO_EXT, VIDEO_EXT, media_filter_names};
 use crate::db::{Db, store};
 use crate::editor::{
-    self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest, EditorMediaInfo,
-    EditorPeaks, EditorSidecar, ExportEngine, ExportFolder, MasterEngine, ResolvedExport,
+    self, EditorDecodeProgress, EditorExportProgress, EditorExportRequest, EditorExportResult,
+    EditorMasterPreviewRequest, EditorMediaInfo, EditorPeaks, EditorSidecar, ExportEngine,
+    ExportFolder, MasterEngine, ResolvedExport,
 };
 use crate::error::{AppError, AppResult};
 use crate::settings;
@@ -427,44 +427,6 @@ pub async fn editor_peaks(
 ) -> AppResult<EditorPeaks> {
     let source = resolve_source(&chosen, &source_token).await?;
     editor::peaks(&source, decode_progress(app, "editor://peaks-progress")).await
-}
-
-/// The built-in mastering presets for the editor's preset dropdown. Pure core
-/// (no ffmpeg / feature gate), so the panel is never empty.
-#[tauri::command]
-pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPreset>> {
-    Ok(editor::master_presets())
-}
-
-/// Analyse a recording's stereo channel balance and recommend a repair
-/// (swap / duplicate the good channel / per-channel makeup). HARDWARE-UNVERIFIED.
-///
-/// ⚠️ **BLIR STÅENDE selv om den er unåbar** (V1/PR3, der de fire søsken-probene
-/// gikk). Denne er ikke en dublett — den er den halvferdige enden av en flate
-/// som ER påbegynt: `app/editor/sound-profiles.ts` mapper allerede motorens
-/// kanalkoder (`dead_left`/`dead_right`/…) til i18n-nøkler som finnes oversatt i
-/// alle sju språkfilene (`editor.chanDeadLeft` og de fem andre), og
-/// `SoundStep.tsx` er stedet de skal vises. Det som mangler er kallet. Å slette
-/// motoren nå ville gjort de oversatte nøklene til søppel og betalt for
-/// halvparten av jobben to ganger.
-#[tauri::command]
-pub async fn editor_diagnose_channels(
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-) -> AppResult<EditorChannelDiagnosis> {
-    let source = resolve_source(&chosen, &source_token).await?;
-    editor::diagnose_channels(&source).await
-}
-
-/// One-click "auto-improve": diagnose channels + recommend the full best-result
-/// processing setup (channel repair + podcast vocal chain + clear mastering).
-#[tauri::command]
-pub async fn editor_auto_process(
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-) -> AppResult<EditorAutoProcess> {
-    let source = resolve_source(&chosen, &source_token).await?;
-    editor::auto_process(&source).await
 }
 
 /// B3b: what «Tale» did to this recording (hum, noise, reverb, clicks), as codes. Reads the

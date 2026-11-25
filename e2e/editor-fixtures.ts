@@ -1,7 +1,6 @@
 import { BOOT_FIXTURES, fn, type Fixtures } from "./harness";
 import type { EditorMediaInfo } from "../legacy/bindings/EditorMediaInfo";
 import type { EditorExportResult } from "../legacy/bindings/EditorExportResult";
-import type { EditorAutoProcess } from "../legacy/bindings/EditorAutoProcess";
 import type { OpenedRecording } from "../legacy/bindings/OpenedRecording";
 
 // The editor's fixtured recording — ONE recipe, read by both shells.
@@ -69,17 +68,12 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       (window.__E2E_DELETED_SIDECARS__ ||= []).push(args.sidecar);
       return true;
     }`),
-    editor_master_presets: [],
     // (V1/PR3 tok `editor_probe_streams`, `editor_probe_peak` og
     // `editor_cleanup_temp_files` ut herfra: kommandoene finnes ikke lenger,
     // og en fixture for en kommando ingen kaller er en stubb som later som
     // den styrer noe. V1-halen tok `editor_detect_chapters` — samme sort, død
     // siden R2 — og med den er hele denne klassen ute av e2e/: et sveip mot
     // kommando-registeret fant ingen flere.)
-    // The channel analysis behind the sound step's profiles. Balanced by
-    // default — a fixture that "found" a dead channel in every spec would put a
-    // repair into every export payload and hide the ones that mean something.
-    editor_auto_process: AUTO_PROCESS,
     editor_prepare_listen: fn(`(args) => {
       (window.__E2E_PREPARES__ ||= []).push(args.request);
       return true;
@@ -176,33 +170,3 @@ export const EXPORT_HELD = fn(`(args) => {
       err ? reject(new Error(err)) : resolve(${JSON.stringify(EXPORT_RESULT)});
   });
 }`);
-
-/** The channel diagnosis `editor_auto_process` answers with, typed as the
- *  GENERATED `EditorAutoProcess` binding (nesting `EditorChannelDiagnosis` +
- *  `EditorChannelRepair`) — a Rust rename of
- *  any of these fields must fail `npm run typecheck`. `balanced` + `mode:
- *  "none"` = nothing to repair, which is the ordinary recording. */
-export const AUTO_PROCESS = {
-  diagnosis: {
-    code: "balanced",
-    imbalanceDb: 0.2,
-    peakLeftDb: -3.1,
-    peakRightDb: -3.3,
-    recommended: { mode: "none", leftDb: 0, rightDb: 0 },
-  },
-  vocalChainPreset: "voice-podcast",
-  masterPreset: "",
-  summary: "Automatisk lydforbedring: kanalbalanse OK, podkast-stemme.",
-} satisfies EditorAutoProcess;
-
-/** A recording whose left channel is dead — the one case where the repair
- *  MUST ride along, or the export is half silent. */
-export const AUTO_PROCESS_DEAD_LEFT = {
-  ...AUTO_PROCESS,
-  diagnosis: {
-    ...AUTO_PROCESS.diagnosis,
-    code: "dead_left",
-    peakLeftDb: -70,
-    recommended: { mode: "duplicateRight", leftDb: 0, rightDb: 0 },
-  },
-} satisfies EditorAutoProcess;
