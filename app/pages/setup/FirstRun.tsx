@@ -161,7 +161,7 @@ export function firstRunHeading(active: boolean): string | undefined {
 export function resumeFirstRun(): void {
   firstRunIndex.value = firstRunResumeIndex(firstRunReturn.value);
   firstRunReturn.value = null;
-  navigate("setup", { firstRun: true });
+  navigate("settings", { firstRun: true });
 }
 
 /**

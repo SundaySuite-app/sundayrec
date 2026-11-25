@@ -1,37 +1,24 @@
 /**
- * Skallets rot — de to linjene, og det destinasjonene faktisk kan si i dag.
+ * Skallets rot — de to linjene, og de fire sidene (F5).
  *
- * ## Hva som er ekte her, og hva som ikke er det
+ *   TA OPP        `app/pages/record/`: den store knappen, kilden og nivået,
+ *                 kameraet og linja om neste planlagte opptak.
+ *   OPPTAK        `app/pages/library/` + `app/editor/`: lista er landingen, et
+ *                 opptak åpner editoren på samme side, og eksporten er et ark
+ *                 inne i editoren. Papirkurven er en fane.
+ *   PLAN          `app/pages/plan/`: den ukentlige tidsplanen.
+ *   INNSTILLINGER `app/pages/settings/`: lyd, kamera, mappe, varsler, språk,
+ *                 oppdatering, personvern og om.
  *
- * Skallet, statuslinjen, navigasjonen og fokusflyttingen er FERDIG: det er
- * S1b sitt (og D3 sin form: topplinje + bunnlinje, se `ui/PageShell/`). Sidene er ikke bygget ennå — de er fase P — så hver destinasjon
- * viser den delen av seg selv som allerede er sann.
+ * Skallet, statuslinjen, navigasjonen og fokusflyttingen er det PageShell og
+ * denne fila eier; sidene eier resten.
  *
- * Og BARE den delen. Ingenting her sier «kommer senere», og ingen knapp
- * finnes uten at den gjør noe. En død knapp lærer en frivillig at knappene i
- * denne appen ikke er til å stole på, og den lærdommen overlever lenge etter
- * at knappen er koblet.
- *
- * Derfor leser hver plassholder ekte tilstand i stedet for å påstå noe:
- *
- *   OPPTAK      ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
- *               stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
- *   REDIGERING  ER bygget (P3 + P4a): lista, søket, slett-med-angre og
- *               papirkurven (`app/pages/library/`), og arbeidsflaten når en fil
- *               er åpen (`app/editor/`).
- *   EKSPORTERING ER bygget (P4b, egen destinasjon fra D3): valgene, kjøringen
- *               og kvitteringen — og, uten en åpen fil, det sist redigerte
- *               opptaket med én knapp. Se `app/pages/export/`.
- *   OPPSETT     ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
- *               nå, de fem skjermene «Endre» åpner, de to tilleggene og
- *               Avansert. Se `app/pages/setup/`.
- *
- * ## REDIGERING har to visninger, og BRYTEREN er `loadState`
+ * ## OPPTAK har to visninger, og BRYTEREN er `loadState`
  *
  * Papirkurven er en fane (`route.tab`); ellers avgjør lastetilstanden: `idle`
- * ⇒ biblioteket, alt annet ⇒ arbeidsflaten. `loadState` og ikke `hasFile`,
+ * ⇒ lista, alt annet ⇒ editoren. `loadState` og ikke `hasFile`,
  * fordi `openFile` setter den SYNKRONT før første `await` — `filePath` fylles
- * også synkront, men lastingen har tre tilstander biblioteket ikke kan vise
+ * også synkront, men lastingen har tre tilstander lista ikke kan vise
  * («laster», «kunne ikke åpnes»), og en bryter som bare visste om det var en
  * sti ville sendt en feilet åpning tilbake til lista uten å si hvorfor.
  *
@@ -93,19 +80,14 @@ import { activeStep, loadState } from "./editor/model";
 import { seekBy, seekToEdge, togglePlay } from "./editor/playback";
 import { toggleListen } from "./editor/sound";
 import { locale, resolveStartupLocale, setLocale, t, tDyn, tf } from "./i18n";
-import {
-  DropZone,
-  libraryHeading,
-  LibraryPage,
-  TRASH_TAB,
-} from "./pages/library/LibraryPage";
+import { DropZone, LibraryPage, TRASH_TAB } from "./pages/library/LibraryPage";
 import { TrashPage } from "./pages/library/TrashPage";
-import { ExportPage } from "./pages/export/ExportPage";
 import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
-import { SetupPage } from "./pages/setup/SetupPage";
+import { PlanPage } from "./pages/plan/PlanPage";
+import { SettingsPage } from "./pages/settings/SettingsPage";
 import {
   consumePendingAction,
   navigate,
@@ -140,16 +122,15 @@ export function Shell({ probe }: ShellProps) {
 
   return (
     /*
-      OPPTAK, EKSPORTERING og INNSTILLINGER heter det destinasjonen heter — alle
-      er ÉN skjerm, og et eget navn på en av dem ville vært en overskrift som
-      lover en underside. REDIGERING har fortsatt to andre ting å hete
-      (Papirkurv, og datoen på opptaket som er åpent), og første gang er fem
-      spørsmål med hvert sitt.
+      TA OPP, PLAN og INNSTILLINGER heter det destinasjonen heter — alle er ÉN
+      skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
+      underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
+      opptaket som er åpent), og første gang er fem spørsmål med hvert sitt.
     */
     <PageShell
       heading={
         firstRunHeading(firstRun) ??
-        (current.page === "edit" ? editHeading(current.tab) : undefined)
+        (current.page === "recordings" ? editHeading(current.tab) : undefined)
       }
     >
       {/*
@@ -178,12 +159,12 @@ export function Shell({ probe }: ShellProps) {
         <FirstRun />
       ) : current.page === "record" ? (
         <RecordPage />
-      ) : current.page === "edit" ? (
-        <EditSurface tab={current.tab} />
-      ) : current.page === "export" ? (
-        <ExportPage />
+      ) : current.page === "recordings" ? (
+        <RecordingsSurface tab={current.tab} />
+      ) : current.page === "plan" ? (
+        <PlanPage />
       ) : (
-        <SetupPage />
+        <SettingsPage />
       )}
     </PageShell>
   );
@@ -199,17 +180,17 @@ async function retryHydrate(): Promise<void> {
   await hydrateSettings();
   if (hydrateError.peek()) return;
   await setLocale(resolveStartupLocale(settings.peek().language));
-  if (!settings.peek().onboardingDone) navigate("setup", { firstRun: true });
+  if (!settings.peek().onboardingDone) navigate("settings", { firstRun: true });
 }
 
 /**
- * REDIGERING: papirkurven, arbeidsflaten eller biblioteket — i den rekkefølgen.
+ * OPPTAK: papirkurven, editoren eller lista — i den rekkefølgen.
  *
  * Slippsonen ligger rundt de to SISTE. Papirkurven er utenfor med vilje: å
  * slippe et opptak på papirkurven ville sett ut som en handling, og den ene
  * handlingen det ligner på er den vi ikke gjør.
  */
-function EditSurface({ tab }: { tab: string | undefined }) {
+function RecordingsSurface({ tab }: { tab: string | undefined }) {
   if (tab === TRASH_TAB) return <TrashPage />;
   return (
     <DropZone>
@@ -218,10 +199,11 @@ function EditSurface({ tab }: { tab: string | undefined }) {
   );
 }
 
-/** Overskriften REDIGERING skal ha: papirkurvens, opptakets dato, eller
- *  destinasjonens eget navn (utelatt ⇒ «Redigering» fra katalogen). */
+/** Overskriften OPPTAK skal ha: opptakets dato når et er åpent, ellers
+ *  destinasjonens eget navn (utelatt ⇒ «Opptak» fra katalogen) — også i
+ *  papirkurven, der fanene sier hvor man er. */
 function editHeading(tab: string | undefined): string | undefined {
-  if (tab === TRASH_TAB) return libraryHeading(tab);
+  if (tab === TRASH_TAB) return undefined;
   return loadState.value === "idle" ? undefined : editorHeading();
 }
 
@@ -250,7 +232,7 @@ export function Overlays() {
  *
  * Handlingen trenger ingen side — den åpner en mappe og er ferdig — så den
  * plukkes opp i skallet, som alltid er montert. Ruteren har allerede navigert
- * til REDIGERING, slik at man også SER opptakene man nettopp ba om å få se.
+ * til OPPTAK, slik at man også SER opptakene man nettopp ba om å få se.
  *
  * Bare denne ene id-en tas imot her; de andre blir stående til flaten sin, og
  * derfor `peek` på signalet før det tømmes.
@@ -309,13 +291,15 @@ function useGlobalShortcuts(): void {
     function onKeyDown(event: KeyboardEvent): void {
       const r = route.peek();
       const editorLoaded =
-        r.page === "edit" &&
+        r.page === "recordings" &&
         r.tab !== TRASH_TAB &&
         loadState.peek() === "ready";
       // Redigering har to visninger (se filhodet); søket finnes bare i den
       // ene — biblioteklisten, ikke arbeidsflaten og ikke papirkurven.
       const libraryVisible =
-        r.page === "edit" && r.tab !== TRASH_TAB && loadState.peek() === "idle";
+        r.page === "recordings" &&
+        r.tab !== TRASH_TAB &&
+        loadState.peek() === "idle";
       const page: ShortcutPage =
         r.page === "record"
           ? "record"

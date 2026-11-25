@@ -1,5 +1,5 @@
 /*
- * OPPTAK — kontrollrommet.
+ * TA OPP — den store knappen, kilden og kameraet.
  *
  * To kolonner over 1100 px: venstre er det LEVENDE (kilde, måler, Start, og
  * under den de to opptakskortene) og står sticky; høyre er klargjøringen
@@ -71,12 +71,6 @@
   align-content: start;
 }
 
-/* Kortstabelen: fem rader som skal leses som én liste. */
-.stack {
-  display: grid;
-  gap: var(--gap-stack);
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -104,49 +98,6 @@
 .muted {
   color: var(--ink-2);
   font-size: var(--fs-sm);
-}
-
-/*
- * Kilde-kortet. Det er ikke en `ControlCard` — de to gule tilstandene er
- * advarsler med nødutganger, ikke kompaktrader — så pulsen bor her i tillegg
- * til i `ui/ControlCard/ControlCard.module.css`. To definisjoner er prisen for
- * at kortet får være den formen tilstanden krever; holdes de i takt, gjør de
- * det ved å si det samme.
- */
-.sound {
-  display: block;
-  border-radius: var(--r);
-}
-
-/* Kroppen kortet folder ut — skillelinjen sier at den hører til raden over og
-   ikke er et nytt kort. Attributtselektoren er trygg her: den er bundet til
-   `.sound`, som CSS-modulen har hashet. */
-.sound [data-testid="control-sound-body"] {
-  margin-top: var(--sp-2);
-  border-top: 1px solid var(--line);
-  padding-top: var(--sp-2);
-}
-
-.pulse {
-  animation: sound-pulse 2s ease-out 1;
-}
-
-@keyframes sound-pulse {
-  0% {
-    box-shadow: 0 0 0 0 var(--gold-soft);
-  }
-  40% {
-    box-shadow: 0 0 0 6px var(--gold-soft);
-  }
-  100% {
-    box-shadow: 0 0 0 0 var(--gold-soft);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pulse {
-    animation: none;
-  }
 }
 
 /*

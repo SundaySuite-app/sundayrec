@@ -1,10 +1,10 @@
 {
   "app": {
     "page": {
-      "record": "Opptak",
-      "edit": "Bibliotek",
-      "export": "Eksport",
-      "setup": "Innstillinger"
+      "record": "Ta opp",
+      "recordings": "Opptak",
+      "plan": "Plan",
+      "settings": "Innstillinger"
     },
     "rail": {
       "label": "Steder i appen"
@@ -57,12 +57,12 @@
       "trashCount": "Papirkurv ({n})",
       "trashLede": "Opptak her slettes for godt etter {n} dager.",
       "trashEmptyDesc": "Opptak du sletter havner her først.",
-      "back": "Tilbake til biblioteket",
       "restore": "Legg tilbake",
       "deleteNow": "Slett for godt",
       "deleteSoon": "Slettes ved neste opprydding",
       "deleteTomorrow": "Slettes i morgen",
-      "deleteInDays": "Slettes om {n} dager"
+      "deleteInDays": "Slettes om {n} dager",
+      "tabsAria": "Opptak og papirkurv"
     },
     "record": {
       "noSource": "Du har ikke valgt lydkilde",
@@ -78,7 +78,6 @@
       "useBuiltIn": "Bruk maskinens mikrofon",
       "nextAuto": "Neste automatiske opptak",
       "nextAutoWhen": "{day} {time}",
-      "last": "Siste opptak",
       "close": "Lukk",
       "camera": {
         "searching": "Leter etter kameraer…",
@@ -90,7 +89,9 @@
         "starting": "Starter kamera…",
         "denied": "Kameratilgang nektet — sjekk Systeminnstillinger",
         "noResponse": "Kamera svarte ikke — er det i bruk av et annet program?"
-      }
+      },
+      "openPlan": "Plan",
+      "nextNone": "Ingen planlagte opptak ennå."
     },
     "setup": {
       "q1": "Hvilken lydkilde?",
@@ -329,8 +330,7 @@
         "licensesClose": "Lukk",
         "licensesFailed": "Fant ikke lisensteksten. Prøv å installere appen på nytt.",
         "licensesFrameTitle": "Lisenser og tredjepartsmerknader",
-        "schedTitle": "Flere tider",
-        "schedDesc": "Den ukentlige tiden settes på Opptak-siden, i kortet «Ta opp automatisk». Her legger du til flere.",
+        "schedDesc": "Her legger du til flere faste tider, og styrer om maskinen vekkes fra dvale.",
         "schedTimes": "Faste tider",
         "schedNone": "Ingen faste tider ennå.",
         "schedRow": "{day} {start}–{stop}",
@@ -338,7 +338,7 @@
         "schedAddSave": "Legg til",
         "wakeTestBlocked": "Går ikke mens et opptak pågår.",
         "schedRemove": "Fjern",
-        "schedFirstIsSetup": "Den første tiden er den du ser i kortet «Ta opp automatisk» på Opptak-siden.",
+        "schedFirstIsSetup": "Den første tiden er den du ser i kortet «Ta opp automatisk» øverst.",
         "wake": "Vekk maskinen fra dvale",
         "wakeDesc": "Uten dette må maskinen stå på når opptaket skal starte.",
         "autoDeleteConfirmBody": "Opptak eldre enn dette flyttes til papirkurven. Under 30 dager kan bety at en gudstjeneste er borte før noen har rukket å laste den ned.",
@@ -402,15 +402,20 @@
       "sections": {
         "nav": "Hopp til",
         "language": "Språk",
-        "schedule": "Tidsplan",
-        "recording": "Opptaket",
+        "schedule": "Flere tider",
+        "recording": "Opptaksvalg",
         "recordingDesc": "Hvordan selve opptaket skal gå: lyd fra før Start, stopp ved stillhet, maks lengde, deling i flere filer og sletting av gamle opptak.",
-        "updates": "Oppdateringer og personvern",
-        "updatesDesc": "Du bestemmer om appen ser etter nye versjoner, og om den sender anonym statistikk.",
-        "help": "Hjelp og feilsøking",
-        "helpDesc": "Hvis noe ikke virker: hent feilloggen.",
-        "about": "Om",
-        "aboutDesc": "Lisenser og merknader for programvaren SundayRec er bygget på."
+        "updates": "Oppdatering",
+        "updatesDesc": "Du bestemmer om appen ser etter nye versjoner.",
+        "about": "Om og logg",
+        "aboutDesc": "Lisenser og merknader for programvaren SundayRec er bygget på.",
+        "sound": "Lyd og kanaler",
+        "camera": "Kamera",
+        "cameraDesc": "Ta med bilde fra et kamera sammen med lyden.",
+        "folder": "Lagringsmappe",
+        "notify": "Varsler",
+        "privacy": "Personvern",
+        "privacyDesc": "Du bestemmer om appen sender anonym statistikk."
       }
     },
     "language": {
@@ -488,7 +493,6 @@
       "keySpace": "mellomrom",
       "stepSound": "Lyd",
       "nextSound": "Neste: Lyd",
-      "nextExport": "Neste: Eksporter",
       "profile": {},
       "profileDesc": {},
       "listen": "Lytt",
@@ -525,19 +529,15 @@
       "levelCapped": "Lydstyrke: litt lavere enn ønsket (sterke topper i lyden)",
       "exported": "Eksportert",
       "exportAgain": "Eksporter i annet format",
-      "toLibrary": "Til biblioteket",
+      "toLibrary": "Opptak",
       "exportFailed": "Eksporten stoppet. Prøv igjen.",
       "mxHelp": {},
       "podcastAudio": "Podkastklar lyd",
       "podcastAudioDesc": "Tydeligere stemme, jevnere lyd og riktig volum for podkast. Originalen røres ikke.",
-      "podcastOff": "Uten lydbehandling"
+      "podcastOff": "Uten lydbehandling",
+      "exportOpen": "Eksporter"
     },
     "export": {
-      "lastEdited": "Sist redigert",
-      "prepare": "Gjør klar",
-      "pickTitle": "Eller velg et annet opptak",
-      "emptyDesc": "Ta opp noe først, eller åpne en fil fra maskinen.",
-      "use": "Velg",
       "content": "Innhold",
       "contentTitle": "Tittel",
       "contentTitlePlaceholder": "For eksempel «Den gode hyrde»",
@@ -545,7 +545,9 @@
       "contentSpeakerPlaceholder": "Hvem talte?",
       "contentDescription": "Beskrivelse",
       "contentDescriptionPlaceholder": "Bibeltekst, tema eller en linje om menigheten",
-      "contentHint": "Alt er valgfritt. Skriver du en tittel, får fila den som navn — det er det SoundCloud og lignende foreslår når du laster opp."
+      "contentHint": "Alt er valgfritt. Skriver du en tittel, får fila den som navn — det er det SoundCloud og lignende foreslår når du laster opp.",
+      "title": "Eksporter",
+      "close": "Lukk"
     },
     "span": {
       "hours": "{h} t",
@@ -563,6 +565,9 @@
       "missedWhy": "Hva kan jeg gjøre?",
       "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart.",
       "globalErrorTitle": "Noe gikk galt"
+    },
+    "plan": {
+      "lede": "Sett opp når SundayRec skal starte opptak av seg selv. Maskinen vekkes og tar opp uten at noen trykker."
     }
   },
   "nav": {

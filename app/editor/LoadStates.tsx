@@ -2,10 +2,9 @@
  * «Analyserer …» og «Kunne ikke åpne» — de to tilstandene en åpning kan stå i,
  * på begge sidene som venter på den.
  *
- * De bodde i `EditorPage.tsx` fram til D3, fordi REDIGERING var det eneste
- * stedet en fil ble åpnet. Etter D3 er EKSPORTERING en egen destinasjon som
- * åpner filer selv («Gjør klar» på sist-redigert-kortet), og den venter på
- * nøyaktig det samme: samme faser, samme fremdriftskanal, samme feil.
+ * De bodde i `EditorPage.tsx` og er skilt ut så lastefasene har ett hjem: samme
+ * faser, samme fremdriftskanal, samme feil, uansett hvem som åpner fila (lista,
+ * kvitteringen etter et opptak, en sluppet fil).
  *
  * En kopi ville vært to steder som sier hver sin ting om den samme lastingen —
  * og den ene av dem ville sluttet å nevne fasen første gang noen la til en.
@@ -84,7 +83,7 @@ export function LoadFailed() {
               <Button
                 variant="secondary"
                 testId="editor-load-error-trash"
-                onClick={() => navigate("edit", { tab: "trash" })}
+                onClick={() => navigate("recordings", { tab: "trash" })}
               >
                 {t("app.editor.loadNotFoundTrash")}
               </Button>

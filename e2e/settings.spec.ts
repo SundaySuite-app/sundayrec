@@ -34,9 +34,8 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      // D2: kamera-kortet bor i kontrollrommet på OPPTAK. Ren re-pek —
-      // kontrollen og hver assertion er de samme.
-      goto: "home",
+      // F5: kamerabryteren bor under Kamera i Innstillinger.
+      goto: "settings",
     });
 
     const toggle = page.getByTestId("setup-camera-toggle");
@@ -59,10 +58,13 @@ test.describe("settings", () => {
 
     // 3. Navigate away and back — destinasjonen forlates og kommer tilbake,
     //    og kontrollen kobles på nytt fra innstillingene.
-    await page.getByTestId("nav-edit").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
-    await page.getByTestId("nav-record").click();
-    await expect(page.getByTestId("record-start")).toBeVisible();
+    await page.getByTestId("nav-recordings").click();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
+    await page.getByTestId("nav-settings").click();
+    await expect(page.getByTestId("setup-camera")).toBeVisible();
 
     await expect(page.getByTestId("setup-camera-toggle")).toHaveAttribute(
       "aria-checked",
@@ -113,7 +115,7 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      goto: "home",
+      goto: "settings",
     });
     await page.getByTestId("setup-camera-toggle").click();
     await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
@@ -133,26 +135,22 @@ test.describe("settings", () => {
   test("settings:<tab> deep-links land on the right panel", async ({
     page,
   }) => {
-    // `?goto=settings:<tab>` er det hvert skjermbilde-pass og et titalls andre
-    // spec hviler på, så den får sin egen spiker — inkludert aliasveien, der en
-    // pensjonert fane-id fra 7→5-foldingen fortsatt må lande et sted som finnes.
-    //
-    // D2: «panelet» er et KORT i kontrollrommet nå. Dyplenken folder det ut, så
-    // skjermen bak er den samme — og destinasjonen er OPPTAK, ikke Oppsett.
+    // `?goto=settings:<anker>` er det hvert skjermbilde-pass og et titalls
+    // andre spec hviler på, så den får sin egen spiker. På Innstillinger er
+    // «fanen» et anker: siden ruller til seksjonen den navngir.
     for (const [param, anchor, testId] of [
-      ["settings:audio", "sound", "setup-sound"],
-      // Etter #139 inneholder Deling-fanen BARE «Varsler» — spørsmål 5.
-      ["settings:sharing", "notify", "setup-notify"],
-      ["settings:files", "folder", "setup-folder"],
-      // Pensjonert id fra før 7→5-foldingen; TAB_ALIASES sender den videre.
-      ["settings:notifications", "notify", "setup-notify"],
+      ["settings:sound", "sound", "setup-sound"],
+      ["settings:notify", "notify", "setup-notify"],
+      ["settings:folder", "folder", "setup-folder"],
+      // Den fullt kvalifiserte skrivemåten betyr det samme som den bare.
+      ["settings:settings-camera", "camera", "setup-camera"],
     ] as const) {
       await boot(page, {
         fixtures: BOOT_FIXTURES,
         settings: SETTLED_SETTINGS,
         goto: param,
       });
-      await expect(page.getByTestId("nav-record")).toHaveAttribute(
+      await expect(page.getByTestId("nav-settings")).toHaveAttribute(
         "aria-current",
         "page",
       );
@@ -163,12 +161,11 @@ test.describe("settings", () => {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
 
-    // `settings:general` er den gamle System-fanen, og den er hele
-    // Innstillinger-flaten nå: språkvalget og Avansert, uten en fane-akse.
+    // Uten anker: hele Innstillinger-flaten, uten en fane-akse.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
     await expect(page.getByTestId("setup-language")).toBeVisible();

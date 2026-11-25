@@ -1,37 +1,29 @@
 /**
- * Ruteren — fire sider, og én tabell som oversetter alt det gamle til dem.
+ * Ruteren — fire sider: TA OPP, OPPTAK, PLAN og INNSTILLINGER.
  *
- * ## Fire jobber, fire sider
+ * ## F5: fire sider, ikke fire jobber i DaVinci-rekkefølge
  *
- * Legacy-skallet har fem sider (`home`, `schedule`, `search`, `settings`,
- * `editor`) og fem faner inne i innstillinger. «Frivilligen først» foldet det
- * til tre: TA OPP, OPPTAKENE og OPPSETT. En frivillig som aldri har sett appen
- * skal ikke måtte vite hvilken av fem sider «filnavn» bor på.
+ * Rent bord beskar appen til kjernen: ta opp, finn opptaket igjen og klipp det,
+ * eksporter, og la en ukeplan starte opptak av seg selv. Sidene følger det:
  *
- * ## D3: BIBLIOTEK heter REDIGERING, og EKSPORTERING er sin egen side
+ *   `record`     TA OPP — den store knappen, kilden og nivået, kameraet og linja
+ *                «neste planlagte opptak».
+ *   `recordings` OPPTAK — lista er landingsvisningen; et opptak åpner editoren
+ *                på SAMME side (pil tilbake), eksporten er et ark inne i
+ *                editoren. Papirkurven er en fane (`tab: "trash"`).
+ *   `plan`       PLAN — den ukentlige tidsplanen. F6 bytter flaten mot en
+ *                grafisk ukevisning; slot-logikken (`slots-core`,
+ *                `schedule-core`) er skilt fra visningen.
+ *   `settings`   INNSTILLINGER — lyd og kanaler, kamera, lagringsmappe, varsler,
+ *                språk, oppdatering, personvern, om og logg.
  *
- * Eieren ba om tre destinasjoner i DaVinci-rekkefølge: Opptak · Redigering ·
- * Eksportering. Biblioteket forsvant ikke — det ER Redigering-sidens
- * standardvisning, fordi å finne opptaket igjen og å redigere det er det samme
- * ærendet. Klipp hentes også fra ANDRE opptakere, så destinasjonen kan ikke
- * hete «Bibliotek»: en ekstern fil man drar inn har aldri vært i biblioteket.
+ * Den frittstående eksportsiden og `?goto=`-aliasene fra de eldre sidene er
+ * borte. Det som er igjen er ÉN regel: en ukjent side lander på TA OPP, og sier
+ * fra i konsollen i stedet for å vise en tom flate.
  *
- * Sideid-en `library` er derfor et ALIAS nå, ikke en side. Den var aldri en
- * `?goto=`-id ute i verden (legacy sa `search`), men den har stått i
- * `navigate("library")`-kall og i skjermbildepassene, og en id som stille
- * lander på TA OPP er verre enn en som lander riktig.
- *
- * ## Hvorfor aliastabellene ikke bare er teknisk gjeld
- *
- * `?goto=settings:audio` står i et titalls e2e-spec, i skjermbilde-passene, i
- * tray-menyen og i lenker vi ikke har funnet. Legacy har allerede en slik
- * tabell (`ui/navigate.ts`), og kommentaren over den sier hvorfor den skal
- * BEHOLDES: den er billigere enn å jakte hvert kallsted hver gang
- * informasjonsarkitekturen flytter seg, og en dyplenke som stille åpner feil
- * fane er verre enn en som feiler høylytt.
- *
- * Så: hver gamle id fortsetter å lande riktig, og en ukjent id sier fra i
- * konsollen i stedet for å vise en tom side.
+ * `?goto=<side>:<fane>` leses fortsatt (e2e og skjermbildepassene bruker den):
+ * en fane skrevet som `settings-sound` eller bare `sound` betyr det samme, og
+ * på INNSTILLINGER og PLAN er «fanen» et anker som siden ruller til.
  */
 
 import { signal } from "@preact/signals";
@@ -43,7 +35,7 @@ import {
 } from "@lib/tray-actions";
 
 /** De fire sidene. */
-export type Page = "record" | "edit" | "export" | "setup";
+export type Page = "record" | "recordings" | "plan" | "settings";
 
 export interface Route {
   page: Page;
@@ -64,91 +56,10 @@ export interface Route {
 export const route = signal<Route>({ page: "record" });
 
 /** Sidene, som et sett, så en ukjent id kan kjennes igjen som ukjent. */
-const PAGES: readonly Page[] = ["record", "edit", "export", "setup"];
+const PAGES: readonly Page[] = ["record", "recordings", "plan", "settings"];
 
-/**
- * Gamle SIDE-id-er → nye sider.
- *
- * `search` er Historikk (det er ingen `history`-side — se e2e/history.spec.ts),
- * og den hører hjemme sammen med opptakene — som etter D3 er REDIGERING.
- * `settings` er Innstillinger.
- *
- * `library` står her av samme grunn som de andre: den var skallets egen sideid
- * fram til D3, og den lever videre i skjermbildepass og i lenker vi ikke har
- * funnet. Tabellen utvides, den krympes aldri.
- *
- * `schedule` er OPPTAK etter D2: tidsplanen er et kort i kontrollrommet, ikke
- * et sted under innstillinger. Raden er redundant så lenge `TAB_ALIASES` har
- * `schedule` (den vinner), men en tabell som sier noe annet enn den som
- * gjelder er en felle for den neste som leser dem side om side.
- */
-export const PAGE_ALIASES: Record<string, Page> = {
-  home: "record",
-  search: "edit",
-  editor: "edit",
-  library: "edit",
-  settings: "setup",
-  schedule: "record",
-};
-
-/** Hvor en gammel FANE (eller en gammel side med en naturlig fane) lander. */
-export interface TabTarget {
-  page: Page;
-  tab?: string;
-  anchor?: string;
-}
-
-/**
- * Gamle fane-id-er → ny side + fane.
- *
- * Nøklene er de fullt kvalifiserte id-ene `parseGoto` produserer
- * (`settings:audio` → `settings-audio`), pluss de to SIDENE som har en
- * selvsagt plass i den nye arkitekturen (`editor`, `schedule`) — de kommer inn
- * uten fane og ville ellers landet på siden sin standardfane og mistet
- * poenget med lenken.
- *
- * ⚠️ `editor` har ingen `tab` lenger. Fram til D3 var Rediger en FANE inne i
- * BIBLIOTEK (`{ page: "library", tab: "edit" }`); nå er Redigering selve
- * destinasjonen, og hvilken av dens to visninger som står avgjøres av om det
- * er en fil åpen — ikke av ruten. Se `app/Shell.tsx`.
- *
- * ## Navnene er ekte nå (P1a) — og etter D2 peker de på OPPTAK
- *
- * S1a satte plassholdere her fordi informasjonsarkitekturen ennå ikke fantes.
- * P1a pekte dem på Oppsett-undersidene. D2 flyttet de fem beslutningene inn i
- * kontrollrommet på OPPTAK — de redigeres der de brukes — så hver gammel
- * fane-id er nå et ANKER på opptakssiden i stedet for en fane under Oppsett:
- *
- *   `settings-audio`         → `record#sound`, kilde-kortet (folder seg ut til
- *                              hele «Hvilken lyd?»-skjermen)
- *   `settings-files`         → `record#folder` («Hvor skal opptakene?»)
- *   `settings-sharing`       → `record#notify`. Etter #139 inneholder den gamle
- *   `settings-publish`         Deling-fanen BARE seksjonen «Varsler» — fanenavnet
- *   `settings-notifications`   og innholdet henger ikke lenger sammen, og de
- *                              tre gamle id-ene beskriver alle det samme nå.
- *   `settings-video`         → `record#camera`, tillegget «Ta med kamera»
- *   `schedule`               → `record#auto`, tillegget «Ta opp automatisk»
- *
- * `settings-general` er den ENESTE som fortsatt lander på `setup`: den gamle
- * System-fanen er Innstillinger-flaten (kirkeprofil + Avansert), og den er alt
- * tannhjulet åpner. Ingen fane — flaten er én, og en `tab` her ville vært et
- * navn på en akse som ikke finnes lenger.
- *
- * ⚠️ Ankeret er en KONTRAKT, ikke bare et rullemål: `RecordPage` folder ut
- * kortet ankeret navngir. Se `app/pages/record/control-core.ts`
- * (`isControlId`) — tabellen her og kortlista der må navngi de samme seks.
- */
-export const TAB_ALIASES: Record<string, TabTarget> = {
-  "settings-audio": { page: "record", anchor: "sound" },
-  "settings-video": { page: "record", anchor: "camera" },
-  "settings-files": { page: "record", anchor: "folder" },
-  "settings-sharing": { page: "record", anchor: "notify" },
-  "settings-general": { page: "setup" },
-  "settings-publish": { page: "record", anchor: "notify" },
-  "settings-notifications": { page: "record", anchor: "notify" },
-  editor: { page: "edit" },
-  schedule: { page: "record", anchor: "auto" },
-};
+/** Sider der en `tab` fra `?goto=` er et rullemål (et anker), ikke en fane. */
+const ANCHOR_PAGES: readonly Page[] = ["plan", "settings"];
 
 /** Samme form som legacy `navigateTo`s opsjoner, så et kallsted kan flyttes
  *  fra det ene skallet til det andre uten å skrives om. */
@@ -161,26 +72,25 @@ export interface NavigateOpts {
 
 /** Regn ut ruten uten å sette den — ren, og derfor tabelltestbar. */
 export function resolveRoute(page: string, opts: NavigateOpts = {}): Route {
-  const byTab = opts.tab ? TAB_ALIASES[opts.tab] : undefined;
-  const byPage = TAB_ALIASES[page];
-  const aliased = PAGE_ALIASES[page];
   const known = PAGES.includes(page as Page) ? (page as Page) : undefined;
-  const target = byTab?.page ?? byPage?.page ?? aliased ?? known;
 
-  if (!target) {
+  if (!known) {
     // Høylytt, ikke stille: en tom side er den ene tilbakemeldingen som ikke
     // sier noe. Advarsel og ikke feil — en dårlig dyplenke skal ikke telle som
     // en krasj i e2e-nivået.
     console.warn(`[router] ukjent side «${page}» — viser TA OPP`);
   }
+  const target: Page = known ?? "record";
 
-  // En fane som ikke er en gammel id sendes videre som den er: det er allerede
-  // et navn i det nye navnerommet.
-  const tab =
-    byTab?.tab ?? (opts.tab && !byTab ? opts.tab : undefined) ?? byPage?.tab;
-  const anchor = opts.anchor ?? byTab?.anchor ?? byPage?.anchor;
+  // `?goto=settings:settings-sound` og `?goto=settings:sound` er det samme.
+  const bare = opts.tab?.startsWith(`${target}-`)
+    ? opts.tab.slice(target.length + 1)
+    : opts.tab;
+  const asAnchor = known !== undefined && ANCHOR_PAGES.includes(known);
+  const tab = asAnchor ? undefined : bare;
+  const anchor = opts.anchor ?? (asAnchor ? bare : undefined);
 
-  const next: Route = { page: target ?? "record" };
+  const next: Route = { page: target };
   if (opts.firstRun) next.firstRun = true;
   if (tab) next.tab = tab;
   if (anchor) {
@@ -226,12 +136,13 @@ export function installGlobalNavigation(
  */
 export const pendingAction = signal<TrayActionId | null>(null);
 
-/** Hvor hver handling hører hjemme. S1b kobler selve utførelsen. */
+/** Hvor hver handling hører hjemme. «Sjekk oppsettet» er et spørsmål om
+ *  LYDEN, og hørselstesten bor under Lyd og kanaler i INNSTILLINGER. */
 const ACTION_PAGE: Record<TrayActionId, Page> = {
   "start-recording": "record",
   "stop-recording": "record",
-  "open-recordings-folder": "edit",
-  "run-preflight": "record",
+  "open-recordings-folder": "recordings",
+  "run-preflight": "settings",
 };
 
 /** Ta imot handlingen (og tøm den). Kalles av flaten som utfører den. */
@@ -242,6 +153,12 @@ export function consumePendingAction(): TrayActionId | null {
 }
 
 function arm(action: TrayActionId): void {
+  // «Sjekk oppsettet» har ingen handling å vente på: å lande på lydkortet er
+  // hele svaret.
+  if (action === "run-preflight") {
+    navigate(ACTION_PAGE[action], { anchor: "sound" });
+    return;
+  }
   pendingAction.value = action;
   navigate(ACTION_PAGE[action]);
 }

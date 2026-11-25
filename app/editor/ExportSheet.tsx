@@ -1,60 +1,35 @@
 /**
- * EKSPORTERING — jobb nr. 4 av fire. Canvasens artboards 4.3 og 4.4.
+ * EKSPORT — arket som åpnes fra «Eksporter» inne i editoren (F5).
  *
- * ## Hvorfor dette er en DESTINASJON og ikke et steg lenger
+ * ## Hvorfor et ark og ikke en side
  *
- * Fram til D3 var eksporten steg 3 i Rediger. Eieren ba om tre flater i
- * DaVinci-rekkefølge — Opptak · Redigering · Eksportering — fordi mastering og
- * miksing skal kunne bo her på sikt, og et steg inne i et annet steg er ikke et
- * sted noe kan vokse.
+ * Eksporten var en egen destinasjon (D3) med en tom tilstand som foreslo «sist
+ * redigerte opptak». Rent bord: eksport er det siste man gjør med et opptak man
+ * allerede har åpent, så den bor INNE i editoren, som et ark over den. Den
+ * frittstående siden og rutene dit er borte, og med dem «Idle»-visningen med
+ * forslag og filvelger — editoren har alltid en fil.
  *
- * Fila følger med av seg selv: signalene under (`app/editor/export.ts`,
- * `app/editor/model.ts`) bor på MODULNIVÅ og er prop-frie, så en eksport som
- * går overlever at man ser på biblioteket i mellomtiden. Det er også den ene
- * tingen som må være sann for at den nye plasseringen skal være riktig, og
- * `e2e/export-page.spec.ts` beviser det utenfra.
+ * Signalene under (`app/editor/export.ts`, `app/editor/model.ts`) bor på
+ * MODULNIVÅ og er prop-frie: en eksport som går overlever at arket lukkes, og
+ * kvitteringen står klar neste gang det åpnes.
  *
- * ## Uten en åpen fil er dette ikke en tom side
+ * ## Innholdet
  *
- * Eiervalg 3 i D3: eksportering skal ALLTID være ett klikk unna. Så `idle`
- * viser det sist redigerte opptaket (`lastEdited`, øktvarig, skrevet av
- * lasteren når en åpning når `ready`) med én primærknapp — «Gjør klar» åpner
- * fila, siden blir stående, og lastetilstanden vises her.
- *
- * Er det ingenting sist redigert, faller kortet tilbake på det SISTE OPPTAKET
- * og sier at det er dét det er. Det er ikke det samme svaret på det samme
- * spørsmålet: `recordings_list` bærer ingen redigert-status
- * (`app/state/recordings.ts`), og et «sist redigert» som egentlig var «sist
- * tatt opp» ville vært appen som gjetter og later som den vet.
- *
- * Atlasets §3d er de ti radene dette erstatter: eksporttype, videoformat,
- * videokodek, format, bitrate, «Bithybde» *(skrivefeil for «Bitdybde», sendt i
- * begge språk)*, destinasjon, behandling, intro & outro, lydforbedring —
- * ni klikk hvis alt velges. Her er det to spørsmål: **hvilket format**, og
- * **hvor** — pluss et valgfritt «Innhold» (tittel, taler, beskrivelse), som
- * kom med publiseringen; se `Content`.
+ * Tre tilstander, i rekkefølgen de OPPSTÅR i — kvittering vinner over kjøring
+ * vinner over valgene: **format**, **innhold** (tittel, taler, beskrivelse),
+ * **hvor**, og bryteren «Podkastklar lyd» (samme signal som Lyd-steget). Med
+ * video: «Ta med video».
  *
  * ## Det som følger av noe annet, spør vi ikke om
  *
- *   **Bitrate** følger kvalitetsvalget i Oppsett (`settings.bitrate`, som
- *   `QualityPage` skriver: 256 for «God»). Den som har svart på «hvilken
- *   kvalitet?» én gang har svart.
- *   **Bitdybde** finnes ikke: WAV eksporteres i 16 bit, og de som trenger 24
- *   trenger ikke denne appen.
- *   **Videokodek** er H.264 — den universelle. H.265 halverer fila og kan ikke
- *   spilles av alle, og det er ikke en avveining en frivillig skal ta på vei
- *   ut av en gudstjeneste.
- *   **Behandlingen** står i steg 2 og gjentas ikke her. Legacys «Volum styres
- *   av mastring»-linje fantes fordi normaliseringen og mastringen kunne love
- *   hver sin ting; her er det bare én.
+ *   **Bitrate** følger kvalitetsvalget i Innstillinger (`settings.bitrate`).
+ *   **Bitdybde** finnes ikke: WAV eksporteres i 16 bit.
+ *   **Videokodek** er H.264 — den universelle.
  *
  * ## «Ta med video» finnes bare når det ER video
  *
- * `editor_load_recording` sier `hasVideo` allerede — samme probing som
- * varigheten. En videofil man eksporterer UTEN bryteren gir en ren lydfil, som
- * er hva de fleste vil ha med en gudstjeneste-mp4. Med bryteren på er
- * containeren mp4, og da er de tre lydformatene ikke et valg lenger: de står
- * dempet med grunnen, i stedet for å forsvinne under fingeren.
+ * Uten bryteren gir en videofil en ren lydfil. Med bryteren på er containeren
+ * mp4, og da er de tre lydformatene ikke et valg: de står dempet med grunnen.
  *
  * ## Originalen røres ikke
  *
@@ -62,33 +37,35 @@
  * (`<navn>_redigert.<ext>`, `_2` hvis den er opptatt). Linja over knappen er
  * en FORUTSIGELSE av det navnet; kvitteringen viser stien bakenden faktisk
  * svarte med, og den er fasiten.
+ *
+ * ## Arket er `inert` bak seg
+ *
+ * Et `role="dialog"` med `aria-modal` i skallets eget tre (ikke
+ * `DialogHost`, som er bekreftelseskøen): editoren bak settes `inert` av
+ * `EditorPage`, Escape lukker, og fokus flyttes til arket når det åpnes og
+ * tilbake til «Eksporter» når det lukkes. Arket kan lukkes midt i en kjøring:
+ * eksporten går videre, knappen i editoren sier det, og arket åpnes på
+ * fremdriften igjen.
  */
 
-import { useEffect } from "preact/hooks";
+import { signal } from "@preact/signals";
+import { useEffect, useRef } from "preact/hooks";
 
-import type { RecordingEntry } from "@legacy/types";
-
-import { exactSpan, keptSeconds } from "../../editor/editor-core";
-import { Loading, LoadFailed } from "../../editor/LoadStates";
-import { profileLabel, resultLine } from "../../editor/summary";
-import { locale, t, tDyn, tf } from "../../i18n";
-import { navigate } from "../../router/router";
-import {
-  lastRecording,
-  loadRecordingCount,
-  recordings,
-} from "../../state/recordings";
-import { Banner } from "../../ui/Banner/Banner";
-import { ActionBar } from "../../ui/ActionBar/ActionBar";
-import { Button } from "../../ui/Button/Button";
-import { Card } from "../../ui/Card/Card";
-import { EmptyState } from "../../ui/EmptyState/EmptyState";
-import { ProgressBar } from "../../ui/ProgressBar/ProgressBar";
-import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
-import { revealExport, revealLabel } from "../../ui/reveal";
-import { TextArea } from "../../ui/TextArea/TextArea";
-import { TextField } from "../../ui/TextField/TextField";
-import { Toggle } from "../../ui/Toggle/Toggle";
+import { exactSpan, keptSeconds } from "./editor-core";
+import { profileLabel, resultLine } from "./summary";
+import { t, tDyn, tf } from "../i18n";
+import { Banner } from "../ui/Banner/Banner";
+import { activeDialog } from "../ui/dialog";
+import { ActionBar } from "../ui/ActionBar/ActionBar";
+import { Button } from "../ui/Button/Button";
+import { Card } from "../ui/Card/Card";
+import { ProgressBar } from "../ui/ProgressBar/ProgressBar";
+import { RadioCards, type RadioOption } from "../ui/RadioCards/RadioCards";
+import { revealExport, revealLabel } from "../ui/reveal";
+import { TextArea } from "../ui/TextArea/TextArea";
+import { TextField } from "../ui/TextField/TextField";
+import { Toggle } from "../ui/Toggle/Toggle";
+import { podcastAudio, setPodcastAudio } from "./sound";
 import {
   cancelExport,
   cancelling,
@@ -118,7 +95,7 @@ import {
   runExport,
   sourceHasVideo,
   exportExtension,
-} from "../../editor/export";
+} from "./export";
 import {
   bitrateKbps,
   estimatedBytes,
@@ -130,28 +107,21 @@ import {
   megabytes,
   predictedOutputName,
   type ExportFormat,
-} from "../../editor/export-core";
-import {
-  closeFile,
-  openFile,
-  pickAndOpen,
-  type OpenSource,
-} from "../../editor/loader";
+} from "./export-core";
+import { closeFile } from "./loader";
 import {
   cuts,
   duration,
   E,
   fileName,
-  lastEdited,
   loadState,
   mediaInfo,
   startedAtMs,
-} from "../../editor/model";
-import { settings } from "../../state/settings";
-import { spanLabel } from "../../editor/span";
-import { dateTimeTitle } from "@lib/ui/date-title";
+} from "./model";
+import { settings } from "../state/settings";
+import { spanLabel } from "./span";
 import { DOT } from "@lib/ui/dot";
-import styles from "./export.module.css";
+import styles from "./export-sheet.module.css";
 
 /**
  * Fasen som pågår → teksten som forklarer den. Begge kodene er bakendens, festet mot
@@ -163,55 +133,92 @@ function phaseText(phase: string | null): string {
     : t("editor.exportExporting");
 }
 
-export function ExportPage() {
-  const state = loadState.value;
+/** Er arket åpent? Modulsignal, som resten av eksporttilstanden. */
+export const exportSheetOpen = signal(false);
+
+export function openExportSheet(): void {
+  exportSheetOpen.value = true;
+}
+
+export function closeExportSheet(): void {
+  exportSheetOpen.value = false;
+}
+
+export function ExportSheet() {
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    sheetRef.current?.focus();
+    return () => {
+      // Etter at gjengivelsen er ferdig: editoren er fortsatt `inert` mens
+      // arket rives, og en inert knapp tar ikke imot fokus.
+      setTimeout(() => {
+        document
+          .querySelector<HTMLElement>('[data-testid="editor-export-open"]')
+          ?.focus();
+      }, 0);
+    };
+  }, []);
+
+  // Escape på vinduet og ikke på arket: når «Eksporter» (som hadde fokus) byttes
+  // ut med fremdriften, står fokus på `<body>`, og en lytter på arket ville
+  // aldri sett tasten. En åpen bekreftelsesdialog eier Escape selv.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key !== "Escape" || activeDialog.peek() !== null) return;
+      closeExportSheet();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
-    <div data-testid="export-page" data-state={state} class={styles.page}>
-      {state === "ready" ? (
-        <Ready />
-      ) : state === "loading" ? (
-        <Loading />
-      ) : state === "error" ? (
-        <LoadFailed />
-      ) : (
-        <Idle />
-      )}
+    <div
+      class={styles.backdrop}
+      data-testid="export-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) closeExportSheet();
+      }}
+    >
+      <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-sheet-title"
+        tabIndex={-1}
+        data-testid="export-page"
+        data-state={loadState.value}
+        class={styles.sheet}
+      >
+        <div class={styles.sheetHead}>
+          <h2 id="export-sheet-title" class={styles.sheetTitle}>
+            {t("app.export.title")}
+          </h2>
+          <Button
+            variant="ghost"
+            testId="export-close"
+            onClick={closeExportSheet}
+          >
+            {t("app.export.close")}
+          </Button>
+        </div>
+        <Head />
+        {exportedPath.value ? (
+          <Receipt />
+        ) : exporting.value ? (
+          <Running />
+        ) : (
+          <Choices />
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * Med en fil åpen: topplinja, og den ene av tre tilstander eksporten er i.
- *
- * Rekkefølgen er ikke tilfeldig. En kvittering vinner over en kjøring vinner
- * over valgene, fordi det er den rekkefølgen de OPPSTÅR i — og fordi et
- * sidebytte midt i en eksport skal komme tilbake til det som gjelder, ikke til
- * skjemaet man fylte ut for to minutter siden.
- */
-function Ready() {
-  return (
-    <>
-      <Head />
-      {exportedPath.value ? (
-        <Receipt />
-      ) : exporting.value ? (
-        <Running />
-      ) : (
-        <Choices />
-      )}
-    </>
-  );
-}
-
-/**
- * Topplinja: hvilken fil, og hva som blir laget av den.
- *
- * Slank med vilje. REDIGERING har filnavn og varighet i sin egen topplinje;
- * her er spørsmålet «hva er det egentlig jeg eksporterer», og svaret på det er
- * to fakta: hvor mye som blir igjen, og hvilken behandling som følger med.
- * Begge kommer fra `app/editor/summary.ts`, som steg 2 leser fra det samme
- * stedet.
+ * Topplinja: hvilken fil, og hva som blir laget av den — to fakta: hvor mye
+ * som blir igjen, og hvilken behandling som følger med. Begge kommer fra
+ * `app/editor/summary.ts`, som editoren selv leser fra det samme stedet.
  */
 function Head() {
   return (
@@ -219,175 +226,6 @@ function Head() {
       {[fileName.value, resultLine(), profileLabel()].filter(Boolean).join(DOT)}
     </p>
   );
-}
-
-// ── Uten en åpen fil ────────────────────────────────────────────────────────
-
-/**
- * «Sist redigert», en velger, og «Åpne fil…».
- *
- * Eiervalg 3 i D3: fra denne siden skal en eksport ALLTID være ett klikk unna.
- * Tre veier, i den rekkefølgen de er sannsynlige — den ene man nettopp
- * redigerte, en av de andre man har tatt opp, eller en fil fra et annet sted.
- *
- * ⚠️ Ingen av kortene påstår at noe ER redigert. `recordings_list` bærer ingen
- * slik status, og sidevognen ved siden av opptaket ville vært en gjetning: et
- * kutt-utkast betyr at noen begynte, ikke at noe ble gjort. Så kortet sier
- * enten «Sist redigert» (fordi vi SÅ det skje i denne økta) eller «Siste
- * opptak» (fordi det er alt vi vet).
- */
-/** En rad i historikken som åpningskilde: raden navngis, databasen vet fila.
- *  Uten id er det ingen fil å åpne — «Kunne ikke åpne opptaket» (A2). */
-function rowSource(row: RecordingEntry): OpenSource {
-  return row.id
-    ? { kind: "known", recordingId: row.id, name: row.filename }
-    : { kind: "refused", error: "source_unknown" };
-}
-
-function Idle() {
-  const edited = lastEdited.value;
-  const last = lastRecording.value;
-  const rows = recordings.value;
-
-  // Lista leses når siden åpnes: et opptak som ble tatt mens man sto på OPPTAK
-  // skal være her når man går hit.
-  useEffect(() => {
-    void loadRecordingCount();
-  }, []);
-
-  const suggestion: {
-    path: string;
-    name: string | undefined;
-    atMs: number | null;
-    label: string;
-    source: OpenSource;
-  } | null = edited
-    ? {
-        path: edited.path,
-        name: edited.fileName,
-        atMs: edited.startedAtMs,
-        label: t("app.export.lastEdited"),
-        // Samme lapp som sist: den lever til appen lukkes (A2).
-        source: { kind: "opened", opened: edited.opened },
-      }
-    : last?.path
-      ? {
-          path: last.path,
-          name: last.filename,
-          atMs: last.startedAt ?? last.timestamp ?? null,
-          label: t("app.record.last"),
-          source: rowSource(last),
-        }
-      : null;
-
-  // Alt annet enn den ene som allerede står øverst. En liste som tilbyr det
-  // kortet over den tilbyr er to knapper for den samme handlingen.
-  const others = (rows ?? []).filter(
-    (row) => row.path && row.path !== suggestion?.path,
-  );
-
-  return (
-    <div class={styles.idle}>
-      {suggestion ? (
-        <div class={styles.recent}>
-          <span class={styles.label}>{suggestion.label}</span>
-          <div data-testid="export-last" class={styles.recentRow}>
-            <div class={styles.recentGrow}>
-              <div class={styles.value}>
-                {suggestion.atMs === null
-                  ? suggestion.name
-                  : dateTimeTitle(suggestion.atMs, locale.value)}
-              </div>
-              <div class={styles.recentName}>{suggestion.name}</div>
-            </div>
-            <Button
-              variant="primary"
-              testId="export-last-open"
-              onClick={() =>
-                void openFile(suggestion.source, {
-                  startedAtMs: suggestion.atMs,
-                })
-              }
-            >
-              {t("app.export.prepare")}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {others.length > 0 ? (
-        <div class={styles.recent}>
-          <span class={styles.label}>{t("app.export.pickTitle")}</span>
-          <div data-testid="export-pick" class={styles.list}>
-            {others.map((row) => (
-              <div
-                key={row.path}
-                data-testid="export-pick-row"
-                data-path={row.path ?? undefined}
-                class={styles.recentRow}
-              >
-                <div class={styles.recentGrow}>
-                  <div class={styles.value}>
-                    {rowWhen(row.startedAt ?? row.timestamp ?? null) ||
-                      row.filename}
-                  </div>
-                  <div class={styles.recentName}>{row.filename}</div>
-                </div>
-                <Button
-                  variant="secondary"
-                  testId="export-pick-use"
-                  onClick={() =>
-                    void openFile(rowSource(row), {
-                      startedAtMs: row.startedAt ?? row.timestamp ?? null,
-                    })
-                  }
-                >
-                  {t("app.export.use")}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Ikke lest ennå ⇒ ingen påstand i noen retning. Er det FAKTISK
-          ingenting, sier siden det — og tilbyr den ene veien som finnes
-          uansett: en fil fra et annet sted. */}
-      {suggestion === null && rows !== null && others.length === 0 ? (
-        <EmptyState
-          testId="export-empty"
-          title={t("app.page.export")}
-          description={t("app.export.emptyDesc")}
-          action={
-            <Button
-              variant="primary"
-              testId="export-open"
-              onClick={() => void pickAndOpen()}
-            >
-              {t("editor.openFile")}
-            </Button>
-          }
-        />
-      ) : (
-        <div class={styles.toolbar}>
-          <Button
-            variant="secondary"
-            testId="export-open"
-            onClick={() => void pickAndOpen()}
-          >
-            {t("editor.openFile")}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Datoen for en rad, eller tom streng når raden ikke har en. Samme tittel
- *  («Søndag 2. august 2026 · 11:00») raden har i Bibliotek, fordi det er den
- *  frivillige kjenner opptaket sitt på — se `@lib/ui/date-title`. */
-function rowWhen(atMs: number | null): string {
-  return atMs === null ? "" : dateTimeTitle(atMs, locale.value);
 }
 
 // ── Valgene ─────────────────────────────────────────────────────────────────
@@ -471,6 +309,26 @@ function Choices() {
           else void pickExportFolder();
         }}
       />
+
+      <Card testId="export-podcast-card">
+        <div class={styles.autoRow}>
+          <div class={styles.autoGrow}>
+            <b id="export-podcast-label" class={styles.autoTitle}>
+              {t("app.editor.podcastAudio")}
+            </b>
+            <div id="export-podcast-desc" class={styles.hint}>
+              {t("app.editor.podcastAudioDesc")}
+            </div>
+          </div>
+          <Toggle
+            testId="export-podcast-toggle"
+            checked={podcastAudio.value}
+            labelId="export-podcast-label"
+            describedBy="export-podcast-desc"
+            onChange={setPodcastAudio}
+          />
+        </div>
+      </Card>
 
       {sourceHasVideo() ? (
         <Card testId="editor-video-card">
@@ -725,12 +583,7 @@ function ReceiptCard({
         >
           {t("app.editor.exportAgain")}
         </Button>
-        {/*
-          Herfra er «Til biblioteket» en EKTE navigering: eksporteringen er en
-          annen destinasjon enn redigeringen etter D3, så å lukke fila uten å
-          flytte seg ville latt brukeren stå igjen på en side som nettopp
-          mistet det den handlet om.
-        */}
+        {/* «Til opptakene» lukker fila; lista står på samme side. */}
         <Button
           variant="ghost"
           testId="editor-exported-library"
@@ -738,7 +591,7 @@ function ReceiptCard({
             // Navigeringen henger på svaret: `closeFile` kan si nei (en eksport
             // som pågår, F2-3), og da skal vi bli stående der vi er.
             void closeFile().then((closed) => {
-              if (closed) navigate("edit");
+              if (closed) closeExportSheet();
             });
           }}
         >

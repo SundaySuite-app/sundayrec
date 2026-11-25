@@ -1,0 +1,142 @@
+/*
+ * EKSPORT — arket over editoren (F5). Canvasens artboards 4.3 og 4.4.
+ *
+ * Ingen fargeliteraler: `app/styles/tokens.css` er ordboka, og
+ * `scripts/check-app-css-tokens.mjs` avviser alt annet.
+ *
+ * ⚠️ Formene her er de samme som editoren bruker, og de er GJENTATT og ikke
+ * delt: `.step` er «ett steg i en rekke» der, og «hele arket» her, og et delt
+ * navn ville bundet to flater som skal kunne bevege seg fra hverandre.
+ */
+
+/* Over siden, under opptaksoverlegget og bekreftelsesdialogene. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-header);
+  background: var(--scrim);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+}
+
+.sheet {
+  /* ActionBar er sticky mot `<main>`s bunnpadding; arket har ingen. */
+  --pad-page-b: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  width: min(var(--measure), 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: var(--sp-6) var(--sp-7);
+  box-shadow: var(--shadow-dialog);
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+.sheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.sheetTitle {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* ── Topplinja ─────────────────────────────────────────────────────────── */
+
+.sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-md);
+  margin: 0;
+}
+
+/* ── Valgene, kjøringen og kvitteringen ────────────────────────────────── */
+
+/* `flex: 1 0 auto` av samme grunn som `.page` over. */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  flex: 1 0 auto;
+}
+
+.label {
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+}
+
+.value {
+  font-size: var(--fs-val);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+/* Tittel + forklaring til venstre, kontrollen til høyre. Formen SettingRow
+   har, uten lagringsmodellen: her lagres ingenting før eksporten. */
+.autoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.autoGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.autoTitle {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* «Innhold»: tre felter under hverandre, etikett over felt. Ingen kort
+   rundt — det er et spørsmål på siden, som format og mappe, ikke en innstilling. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.fieldLabel {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--ink-2);
+}

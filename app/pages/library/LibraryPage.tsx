@@ -1,14 +1,14 @@
 /**
- * BIBLIOTEKET — REDIGERING-destinasjonens standardvisning: finn opptaket igjen.
+ * Lista over opptak — OPPTAK-sidens landingsvisning: finn opptaket igjen.
  *
- * ## D3: siden heter Redigering, lista heter fortsatt biblioteket
+ * ## F5: siden heter Opptak, lista er landingen
  *
- * Eieren ba om tre destinasjoner i DaVinci-rekkefølge, og den midterste heter
- * REDIGERING fordi klipp også hentes fra ANDRE opptakere — en ekstern fil man
- * drar inn har aldri vært i biblioteket, og «Bibliotek» ville vært et navn som
- * utelukket halvparten av det man gjør der.
+ * Et klikk på et opptak åpner editoren på SAMME side (pila tilbake lukker fila
+ * og lista står der igjen); papirkurven er en fane ved siden av. Klipp hentes
+ * også fra ANDRE opptakere — en ekstern fil man drar inn har aldri vært i
+ * biblioteket, så «Åpne fil …» står alltid.
  *
- * Lista er derfor ikke en side lenger, den er den ene av destinasjonens to
+ Lista er derfor ikke en side lenger, den er den ene av destinasjonens to
  * visninger: `Shell` viser den til `loadState` forlater `idle`, og
  * arbeidsflaten når en fil er på gang. Det er også hele grunnen til at
  * editorens gamle tomtilstand er borte: en skjerm som sa «dra et opptak hit»
@@ -73,7 +73,6 @@ import { formatLufs } from "../../audio/lufs";
 import { confirmDiscard } from "../../editor/discard";
 import { openInEditor } from "../../editor/entry";
 import { openFile, pickAndOpen } from "../../editor/loader";
-import { forgetMovedPath as forgetLastEdited } from "../../editor/model";
 import { locale, t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
 import { currentOs } from "../../state/platform-core";
@@ -85,6 +84,7 @@ import { Button } from "../../ui/Button/Button";
 import { Chip } from "../../ui/Chip/Chip";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { reveal, revealLabel } from "../../ui/reveal";
+import { Tabs } from "../../ui/Tabs/Tabs";
 import { TextField } from "../../ui/TextField/TextField";
 import { toast } from "../../ui/toast";
 import { spanOfSeconds } from "../record/record-core";
@@ -139,14 +139,43 @@ const UNDO_MS = 9000;
  */
 export const TRASH_TAB = "trash";
 
-/** Overskriften BIBLIOTEK skal ha for denne fanen. Utelatt = destinasjonens
- *  eget navn, «Bibliotek». */
-export function libraryHeading(tab: string | undefined): string | undefined {
-  return tab === TRASH_TAB ? t("trash.title") : undefined;
+/**
+ * «Opptak · Papirkurv» — fanene øverst på OPPTAK-siden (F5).
+ *
+ * Papirkurven er et filter inne i Opptak, ikke en egen dør: «Papirkurv» står
+ * ALLTID, også med tom kurv (atlasets funn 9 — legacy skjulte lenken når
+ * kurven var tom, og en frivillig som slettet noe i går fant ingen dør hvis
+ * sveipen hadde vært innom). Antallet står i fanen når det er lest og ikke
+ * null: et tall vi ikke har er ikke null.
+ */
+export function RecordingsTabs({ value }: { value: "all" | "trash" }) {
+  const inTrash = trashCount.value;
+  return (
+    <Tabs
+      label={t("app.library.tabsAria")}
+      testId="recordings-tabs"
+      value={value}
+      onChange={(id) =>
+        id === "trash"
+          ? navigate("recordings", { tab: TRASH_TAB })
+          : navigate("recordings")
+      }
+      items={[
+        { id: "all", label: t("app.page.recordings") },
+        {
+          id: "trash",
+          label:
+            inTrash === null || inTrash === 0
+              ? t("trash.title")
+              : tf("app.library.trashCount", { n: inTrash }),
+        },
+      ]}
+    />
+  );
 }
 
 /**
- * Slippsonen rundt REDIGERING-destinasjonens innhold.
+ * Slippsonen rundt OPPTAK-sidens innhold (lista og editoren).
  *
  * Tauri fanger OS-drag selv, og api-shimmen sender dem tilbake inn i DOM-en som
  * syntetiske `dragover`/`drop` mot `document.elementFromPoint(…)`, med
@@ -288,6 +317,7 @@ export function LibraryPage() {
 
   return (
     <div class={styles.page}>
+      <RecordingsTabs value="all" />
       <div class={styles.head}>
         {rows && rows.length > 0 ? (
           <p data-testid="library-sub" class={styles.sub}>
@@ -519,17 +549,9 @@ function rowTitle(row: LibraryRow): string {
 
 // ── Bunnlinja ───────────────────────────────────────────────────────────────
 
-/**
- * To setninger, og den ene av dem er hele funn 9 i atlaset.
- *
- * «Papirkurv» står ALLTID. Legacy skjuler lenken når kurven er tom, og lukker
- * samtidig visningen hvis den står åpen — så en frivillig som slettet noe i går
- * og leter etter det i dag finner ingen dør hvis sveipen har vært innom i
- * mellomtiden. Den scenen er ikke engang fotograferbar i atlaset.
- */
+/** Bunnlinja: hvor lenge opptak ligger før de slettes automatisk. */
 function Foot() {
   const days = autoDeleteLine(settings.value.autoDeleteDays);
-  const inTrash = trashCount.value;
 
   return (
     <div class={styles.foot}>
@@ -544,24 +566,11 @@ function Foot() {
         <Button
           variant="ghost"
           testId="library-autodelete-change"
-          onClick={() => navigate("setup", { anchor: "autodelete" })}
+          onClick={() => navigate("settings", { anchor: "autodelete" })}
         >
           {t("app.setup.change")}
         </Button>
       </span>
-      <Button
-        variant="ghost"
-        testId="library-trash-open"
-        onClick={() => navigate("edit", { tab: "trash" })}
-      >
-        {inTrash === null
-          ? // Ikke lest ennå: si «Papirkurv», ikke «(0)». Et tall vi ikke har
-            // er ikke null.
-            t("trash.title")
-          : inTrash === 0
-            ? t("trash.alreadyEmpty")
-            : tf("app.library.trashCount", { n: inTrash })}
-      </Button>
     </div>
   );
 }
@@ -582,7 +591,6 @@ function Foot() {
  */
 function forgetWhatIsNowTrashed(): void {
   const inTrash = [...trashedPaths([...(trashEntries.value ?? [])])];
-  forgetLastEdited(inTrash);
   forgetFinishedRecording(inTrash);
 }
 

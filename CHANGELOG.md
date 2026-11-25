@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Fire sider: Ta opp, Opptak, Plan og Innstillinger.** Ta opp har bare den store
+  knappen, kilden og nivået, kameraet og linja om neste planlagte opptak. Opptak er lista
+  over opptakene; et klikk åpner redigeringen på samme side (pila tilbake går til lista),
+  «Eksporter» åpner eksporten som et ark i redigeringen, og papirkurven er en fane. Plan
+  har den ukentlige tiden og flere faste tider. Lyd og kanaler, kamera, lagringsmappe,
+  varsler, språk, oppdatering, personvern og logg ligger samlet under Innstillinger.
+  Eksportsiden og «Sist redigert»-kortet er borte.
 - **Redigeringen er enklere.** SundayRec leter ikke lenger etter prekenen og foreslår ikke
   hvor den er. Du ser bølgeformen med to håndtak, flytter dem dit det du vil beholde
   begynner og slutter, og klipper bort resten. Kuttverktøyene står alltid fremme.

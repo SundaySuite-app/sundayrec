@@ -49,7 +49,7 @@ test.describe("appen uten Direkte", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS },
-      goto: "settings:sharing",
+      goto: "settings:notify",
     });
 
     // 1. Ingen Direkte i navigasjonen — og ikke noe femte punkt i det hele tatt.
@@ -58,9 +58,9 @@ test.describe("appen uten Direkte", () => {
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 
-    // 2. Spørsmål 5 rendrer — utfoldet i kortet dyplenken navnga — med
-    //    varselet på maskinen, men UTEN stream-destinasjons-kortet og
-    //    kvalitetsvelgeren.
+    // 2. Varsler-seksjonen rendrer — dyplenken navnga den — med varselet på
+    //    maskinen, men UTEN stream-destinasjons-kortet og
+    //    oppløsningsvelgeren.
     await expect(page.getByTestId("setup-notify")).toBeVisible();
     await expect(page.getByTestId("notify-card")).toBeVisible();
     await expect(page.getByTestId("notify-os")).toBeVisible();
@@ -72,7 +72,6 @@ test.describe("appen uten Direkte", () => {
     // 3. Opptaksoverlegget er en montering og ikke et skjult element: det
     //    finnes ikke når ingenting tas opp.
     await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
-    await expect(page.getByTestId("record-start")).toBeVisible();
 
     // 4. Ren konsoll: ingen modul står igjen og roper etter et fjernet API.
     expect(consoleErrors).toEqual([]);

@@ -120,8 +120,15 @@ async function openHistory(
   // `?goto=search` — the old page id for Historikk — still lands somewhere
   // real: the router maps it to BIBLIOTEK. A dozen specs and every screenshot
   // pass write that URL.
-  await boot(page, { fixtures, settings: SETTLED_SETTINGS, goto: "search" });
-  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+  await boot(page, {
+    fixtures,
+    settings: SETTLED_SETTINGS,
+    goto: "recordings",
+  });
+  await expect(page.getByTestId("main")).toHaveAttribute(
+    "data-page",
+    "recordings",
+  );
 }
 
 /** The file names currently in the list, top to bottom. */

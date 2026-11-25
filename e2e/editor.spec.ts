@@ -53,7 +53,7 @@ async function openEditor(page: Page, over: Fixtures = {}) {
   await boot(page, {
     fixtures: editorFixtures(over),
     settings: SETTLED_SETTINGS,
-    goto: "editor",
+    goto: "recordings",
   });
   await page.evaluate(
     (f) =>
@@ -97,20 +97,24 @@ async function keepMiddle(page: Page) {
 }
 
 /**
- * Gå til EKSPORTERING med fila åpen.
+ * Åpne eksportarket med fila åpen.
  *
- * Etter D3 er det en DESTINASJON og ikke et steg: veien dit er skinnen (eller
- * «Neste: Eksporter» nederst på steg 2, som `stegene har en vei videre …`
- * dekker). Fila følger med av seg selv — signalene bak eksporten bor på
- * modulnivå, og det er hele grunnen til at flyttingen var mulig.
+ * Etter F5 er eksporten et ARK inne i editoren: «Eksporter» nederst åpner det,
+ * og fila blir stående åpen bak det. Signalene bak eksporten bor på modulnivå,
+ * så en kjøring overlever at arket lukkes.
  */
 async function goToExport(page: Page) {
-  await page.getByTestId("nav-export").click();
-  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "export");
+  await page.getByTestId("editor-export-open").click();
   await expect(page.getByTestId("export-page")).toHaveAttribute(
     "data-state",
     "ready",
   );
+}
+
+/** Lukk eksportarket igjen (Escape), og la editoren stå. */
+async function closeExportSheet(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("export-page")).toHaveCount(0);
 }
 
 test.describe("editor", () => {
@@ -283,13 +287,16 @@ test.describe("editor", () => {
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     });
 
     await page.getByTestId("library-row-edit").first().click();
     // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
     // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
@@ -334,7 +341,7 @@ test.describe("editor", () => {
         editor_load_recording: SLOW_LOAD,
       }),
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     });
     await expect(page.getByTestId("library-row")).toHaveCount(1);
 
@@ -400,7 +407,7 @@ test.describe("editor", () => {
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     });
 
     await emit(page, "recording-finished", {
@@ -413,7 +420,10 @@ test.describe("editor", () => {
     await page.getByTestId("record-done-edit").click();
     // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
     // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
@@ -443,7 +453,10 @@ test.describe("editor", () => {
     // stedet man allerede var, med fokusflytting og rulling som følge.
     await page.getByTestId("editor-close").click();
     await page.locator('[data-dialog-button="ok"]').click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("editor")).toHaveCount(0);
     // Fiksturens bibliotek er tomt, så det er tomtilstanden som står — men den
     // står, og det er poenget: siden byttet visning uten å bytte rute.
@@ -640,10 +653,9 @@ test.describe("editor", () => {
     await goToExport(page);
     await expect(page.getByTestId("editor-export")).toBeVisible();
 
-    // Tilbake til REDIGERING: fila står fortsatt åpen (biblioteket vises
-    // ikke), og steg 1 tegner bølgeformen fra toppene som allerede lå i
-    // modellen.
-    await page.getByTestId("nav-edit").click();
+    // Lukk arket: fila står fortsatt åpen (lista vises ikke), og steg 1 tegner
+    // bølgeformen fra toppene som allerede lå i modellen.
+    await closeExportSheet(page);
     await expect(page.getByTestId("library-row")).toHaveCount(0);
     await page.getByTestId("editor-steps-row-cut").click();
     await expect(page.getByTestId("editor-canvas")).toBeVisible();
@@ -1068,10 +1080,9 @@ test.describe("editor", () => {
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
 
-    // Tilbake til REDIGERING med eksporten i gang — den overlever et
-    // sidebytte, og det er nettopp derfor knappen her kan nås midt i en
-    // kjøring.
-    await page.getByTestId("nav-edit").click();
+    // Lukk arket med eksporten i gang — den overlever, og det er nettopp derfor
+    // pila tilbake kan nås midt i en kjøring.
+    await closeExportSheet(page);
     await expect(page.getByTestId("editor")).toBeVisible();
     await page.getByTestId("editor-close").click();
 
@@ -1150,7 +1161,10 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     await page.getByTestId("editor-exported-library").click();
 
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("library-empty")).toBeVisible();
     await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
   });
@@ -1159,12 +1173,13 @@ test.describe("editor", () => {
     await openEditor(page);
     await page.getByTestId("editor-next").click();
     await expect(page.getByTestId("editor-sound")).toBeVisible();
-    // Den siste «Neste» forlater SIDEN: eksporteringen er en destinasjon etter
-    // D3, og knappen navigerer dit med fila åpen.
-    await page.getByTestId("editor-next").click();
+    // «Neste» finnes bare på Klipp-steget; «Eksporter» står på begge og åpner
+    // arket over editoren — ingen navigering.
+    await expect(page.getByTestId("editor-next")).toHaveCount(0);
+    await page.getByTestId("editor-export-open").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "export",
+      "recordings",
     );
     await expect(page.getByTestId("editor-export")).toBeVisible();
   });

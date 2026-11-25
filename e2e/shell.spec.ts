@@ -54,43 +54,38 @@ const CHOSEN_FIXTURES = {
 };
 
 test.describe("skallet", () => {
-  test("de tre destinasjonene og tannhjulet bytter rute, og fokus følger med", async ({
-    page,
-  }) => {
+  test("de fire sidene bytter rute, og fokus følger med", async ({ page }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
 
-    await page.getByTestId("nav-edit").click();
-    // D3: destinasjonen heter REDIGERING. Biblioteket er dens standardvisning
-    // — klipp hentes også fra andre opptakere, så «Bibliotek» ville vært et
-    // navn som utelukket halvparten av det man gjør der.
-    await expect(page.getByTestId("app-heading")).toHaveText("Bibliotek");
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await page.getByTestId("nav-recordings").click();
+    // Lista er landingsvisningen: opptak hentes også fra andre opptakere, og
+    // et klikk på et opptak åpner editoren på samme side.
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     // Fokus på overskriften. Uten det blir en tastaturbruker stående i
     // bunnlinja og må tabbe gjennom hele navigasjonen på nytt for hver side.
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
-    await page.getByTestId("nav-export").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Eksport");
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "export",
-    );
+    await page.getByTestId("nav-plan").click();
+    await expect(page.getByTestId("app-heading")).toHaveText("Plan");
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
-    // D2: tannhjulet nederst, ikke en tredje destinasjon. Ruten, testid-en og
-    // `aria-current` er de samme — det er navnet og plasseringen som flyttet.
-    await page.getByTestId("nav-setup").click();
+    await page.getByTestId("nav-settings").click();
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("app-heading")).toBeFocused();
-    await expect(page.getByTestId("nav-setup")).toHaveAttribute(
+    await expect(page.getByTestId("nav-settings")).toHaveAttribute(
       "aria-current",
       "page",
     );
 
     await page.getByTestId("nav-record").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
-    // Og den valgte destinasjonen sier at den er det.
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
+    // Og den valgte siden sier at den er det.
     await expect(page.getByTestId("nav-record")).toHaveAttribute(
       "aria-current",
       "page",
@@ -161,53 +156,51 @@ test.describe("skallet", () => {
     );
   });
 
-  test("bunnlinja: status til venstre, de tre sentrert, versjon og tannhjul til høyre", async ({
+  test("bunnlinja: status til venstre, de fire sentrert, versjonen til høyre", async ({
     page,
   }) => {
     await boot(page, { fixtures: CHOSEN_FIXTURES, settings: SOUND_CHOSEN });
 
-    // TRE destinasjoner etter D3 (Opptak · Bibliotek · Eksport).
-    // Tannhjulet teller som `nav-*` (kontrakten `no-live-surface.spec.ts`
-    // hviler på), men det ligger utenfor gruppen — derfor fire, ikke tre.
+    // Fire sider, alle i samme gruppe.
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
 
     const bar = (await page.getByTestId("bottombar").boundingBox())!;
     const status = (await page.getByTestId("status-line").boundingBox())!;
     const dot = (await page.getByTestId("status-dot").boundingBox())!;
     const rec = (await page.getByTestId("nav-record").boundingBox())!;
-    const edit = (await page.getByTestId("nav-edit").boundingBox())!;
-    const exp = (await page.getByTestId("nav-export").boundingBox())!;
+    const recs = (await page.getByTestId("nav-recordings").boundingBox())!;
+    const plan = (await page.getByTestId("nav-plan").boundingBox())!;
+    const set = (await page.getByTestId("nav-settings").boundingBox())!;
     const version = (await page.getByTestId("app-version").boundingBox())!;
-    const gear = (await page.getByTestId("nav-setup").boundingBox())!;
 
     // 1. Båndet står NEDERST — under `<main>`, ikke over den.
     const main = (await page.getByTestId("main").boundingBox())!;
     expect(bar.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
 
-    // 2. Venstre → høyre: status · de tre · versjon · tannhjul.
+    // 2. Venstre → høyre: status · de fire · versjon.
     expect(dot.x).toBeLessThan(rec.x);
     expect(status.x + status.width).toBeLessThan(rec.x);
-    expect(rec.x).toBeLessThan(edit.x);
-    expect(edit.x).toBeLessThan(exp.x);
-    expect(exp.x + exp.width).toBeLessThan(version.x);
-    expect(version.x + version.width).toBeLessThanOrEqual(gear.x);
+    expect(rec.x).toBeLessThan(recs.x);
+    expect(recs.x).toBeLessThan(plan.x);
+    expect(plan.x).toBeLessThan(set.x);
+    expect(set.x + set.width).toBeLessThan(version.x);
 
     // 3. ALT inni det samme båndet. Dette er påstanden som faller hvis et felt
     //    forlater rutenettet — den formen for feil ser riktig ut i DOM-en.
-    for (const box of [status, rec, edit, exp, version, gear]) {
+    for (const box of [status, rec, recs, plan, set, version]) {
       expect(box.y).toBeGreaterThanOrEqual(bar.y);
       expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 0.5);
     }
 
-    // 4. …og de tre står SENTRERT i vinduet, ikke sentrert i det som blir igjen
-    //    etter statuslinjen. `1fr auto 1fr` er hele mekanismen.
+    // 4. …og de fire står SENTRERT i vinduet, ikke sentrert i det som blir
+    //    igjen etter statuslinjen. `1fr auto 1fr` er hele mekanismen.
     const viewport = page.viewportSize()!;
-    const navMid = (rec.x + exp.x + exp.width) / 2;
+    const navMid = (rec.x + set.x + set.width) / 2;
     expect(Math.abs(navMid - viewport.width / 2)).toBeLessThan(4);
 
     // 5. Treffmålet. Et ikon over en 11 px etikett er ~35 px innhold; knappen
     //    skal være større enn innholdet sitt.
-    for (const box of [rec, edit, exp, gear]) {
+    for (const box of [rec, recs, plan, set]) {
       expect(box.height).toBeGreaterThanOrEqual(40);
     }
   });
@@ -329,15 +322,17 @@ test.describe("skallet", () => {
       settings: { ...SOUND_CHOSEN, language: "en" },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
-    await expect(page.getByTestId("nav-edit")).toContainText("Library");
-    await expect(page.getByTestId("nav-export")).toContainText("Export");
-    await expect(page.getByTestId("nav-setup")).toContainText("Settings");
+    await expect(page.getByTestId("nav-recordings")).toContainText(
+      "Recordings",
+    );
+    await expect(page.getByTestId("nav-plan")).toContainText("Plan");
+    await expect(page.getByTestId("nav-settings")).toContainText("Settings");
     await expect(page.getByTestId("status-text")).toHaveText("All set");
   });
 });
 
-test.describe("de tre destinasjonene viser det som er sant", () => {
-  test("OPPTAK uten lydkilde åpner spørsmålet på stedet — og knappen virker", async ({
+test.describe("sidene viser det som er sant", () => {
+  test("TA OPP uten lydkilde peker på Innstillinger — og knappen virker", async ({
     page,
   }) => {
     await boot(page, {
@@ -346,90 +341,51 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     });
     await expect(page.getByTestId("record-no-source")).toBeVisible();
     await page.getByTestId("record-choose-sound").click();
-    // D2: knappen folder ut «Hvilken lyd?» der man står. Ingen skjermbytte —
-    // Start blir stående synlig mens man velger, som er hele poenget med
-    // kontrollrommet.
+    // Enhetsvalget bor under Lyd og kanaler i Innstillinger.
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("setup-sound")).toBeVisible();
-    await expect(page.getByTestId("record-start")).toBeVisible();
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
-    await expect(page.getByTestId("record-choose-sound")).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
   });
 
-  test("REDIGERING viser bibliotekets tomtilstand når det FAKTISK er tomt", async ({
+  test("OPPTAK viser tomtilstanden når det FAKTISK er tomt", async ({
     page,
   }) => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, recordings_list: [] },
       settings: SOUND_CHOSEN,
     });
-    await page.getByTestId("nav-edit").click();
+    await page.getByTestId("nav-recordings").click();
     await expect(page.getByTestId("library-empty")).toBeVisible();
     // Den ene handlingen, og den gjør noe.
     await page.getByTestId("library-go-record").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
   });
 
-  test("KONTROLLROMMET viser de fem kortene, og markerer det ubesvarte", async ({
+  test("TA OPP viser bare det man trenger: kilde, måler, Start og planlinja", async ({
     page,
   }) => {
     await boot(page, {
-      fixtures: {
-        ...BOOT_FIXTURES,
-        // Enheten FINNES: uten den ville spørsmål 1 vært «Finner ikke
-        // Behringer X32», som er en annen (og også riktig) påstand.
-        list_audio_devices: [
-          {
-            id: "x32",
-            name: "Behringer X32",
-            backend: "coreaudio",
-            inputChannels: 32,
-            sampleRates: [48000],
-            isDefault: true,
-          },
-        ],
-      },
-      // Ingen mappe valgt: det er det ubesvarte spørsmålet her.
+      fixtures: CHOSEN_FIXTURES,
       settings: { ...SOUND_CHOSEN, saveFolder: null },
-      goto: "home",
+      goto: "record",
     });
     for (const id of [
       "control-sound",
+      "record-vu",
+      "record-start",
+      "record-next-none",
+    ]) {
+      await expect(page.getByTestId(id)).toBeVisible();
+    }
+    // Oppsettskortene bor på Innstillinger og Plan.
+    for (const id of [
       "control-folder",
       "control-quality",
       "setup-camera",
       "setup-auto",
       "control-notify",
     ]) {
-      await expect(page.getByTestId(id)).toBeVisible();
+      await expect(page.getByTestId(id)).toHaveCount(0);
     }
-    // Ingen mappe ⇒ gul. Det er hele grunnen til at noen oppdager den tomme
-    // innstillingen før en søndag i stedet for etter — og knappen sier
-    // «Sett opp» fordi det ikke står et svar.
-    await expect(page.getByTestId("control-folder")).toHaveAttribute(
-      "data-tone",
-      "warn",
-    );
-    await expect(page.getByTestId("control-folder-expand")).toHaveText(
-      "Sett opp",
-    );
-    // Varslingen er alltid besvart — feil varsles på maskinen uansett — så
-    // den er nøytral og noe man ENDRER. Raden folder ut skjermen der det
-    // gjøres, uten å forlate kontrollrommet.
-    await expect(page.getByTestId("control-notify")).toHaveAttribute(
-      "data-tone",
-      "neutral",
-    );
-    await expect(page.getByTestId("control-notify-expand")).toHaveText("Endre");
-    await page.getByTestId("control-notify-expand").click();
-    await expect(page.getByTestId("setup-notify")).toBeVisible();
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
-    // …og veien tilbake er den samme raden: «Lukk».
-    await expect(page.getByTestId("control-notify-expand")).toHaveText("Lukk");
-    await page.getByTestId("control-notify-expand").click();
-    await expect(page.getByTestId("setup-notify")).toHaveCount(0);
   });
 });
 
@@ -458,7 +414,7 @@ test.describe("globalt feilbanner", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-global-error");

@@ -1,9 +1,10 @@
 /**
- * Tillegg — «Ta opp automatisk». Ett av de fem kortene i kontrollrommet.
+ * «Ta opp automatisk» — øverst på PLAN (F5; før et kort på OPPTAK).
  *
- * ÉN ukentlig tid: dag, klokkeslett, varighet. Flere tider, spesialopptak og
- * vekkingen er Avansert — de hører til den som allerede har svart ja på dette
- * spørsmålet. Lenken nederst i kortet går dit.
+ * ÉN ukentlig tid: dag, klokkeslett, varighet. Flere tider og vekkingen står i
+ * kortet under (`ScheduleCard`) på samme side. F6 bytter begge mot en grafisk
+ * ukevisning; skrivingen går gjennom `schedule-core`/`slots-core`, som ikke
+ * kjenner presentasjonen.
  *
  * ## Bryteren er i topplinja, tiden i kroppen
  *
@@ -51,7 +52,6 @@ import { useEffect } from "preact/hooks";
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
 import { t, tDyn, tf, tn } from "../../i18n";
-import { navigate } from "../../router/router";
 import { useDraftForm } from "../../settings/use-draft-form";
 import { usePatch } from "../../settings/use-patch";
 import { useReceipt } from "../../settings/use-receipt";
@@ -73,7 +73,7 @@ import {
   autoExpandable,
   autoValue,
   type AutoValue,
-} from "../record/control-core";
+} from "../setup/card-values-core";
 import {
   autoRecordOn,
   DEFAULT_PLAN,
@@ -83,19 +83,14 @@ import {
   WEEKDAYS,
   type WeeklyPlan,
 } from "./schedule-core";
-import styles from "./setup.module.css";
+import styles from "../setup/setup.module.css";
 
 export interface AutoRecordCardProps {
-  expanded: boolean;
-  onExpand: () => void;
   highlight?: boolean;
 }
 
-export function AutoRecordCard({
-  expanded,
-  onExpand,
-  highlight,
-}: AutoRecordCardProps) {
+/** Kortet står alltid åpent på PLAN: det er hele poenget med siden. */
+export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
   const s = settings.value;
   const slots = s.slots ?? [];
   const plan = planFromSlots(slots);
@@ -137,10 +132,7 @@ export function AutoRecordCard({
       testId="setup-auto"
       title={t("app.setup.auto.title")}
       value={autoText(autoValue(s))}
-      expanded={expanded && canExpand}
-      onExpand={canExpand ? onExpand : undefined}
-      expandLabel={t("app.setup.change")}
-      collapseLabel={t("app.record.close")}
+      expanded={canExpand}
       highlight={highlight}
       lead={
         <Toggle
@@ -165,15 +157,6 @@ export function AutoRecordCard({
         description={t("app.setup.auto.launchDesc")}
         testId="auto-launch"
       />
-      <div class={styles.footer}>
-        <Button
-          variant="ghost"
-          testId="setup-auto-advanced"
-          onClick={() => navigate("setup", { anchor: "schedule" })}
-        >
-          {t("app.setup.advanced.schedTitle")}
-        </Button>
-      </div>
     </ControlCard>
   );
 }

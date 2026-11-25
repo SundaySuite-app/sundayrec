@@ -4,7 +4,6 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
-  PATHS_OF_RECORDING_IDS,
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
@@ -14,33 +13,28 @@ import {
   editorFixtures,
   exportOkMastered,
   EXPORT_HELD,
-  FILE,
   OPENED,
   RECORDING_ID,
   REVEAL_TOKEN,
 } from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
-// EKSPORTERING som DESTINASJON — D3s tredje flate, sett utenfra.
+// EKSPORT som ARK inne i editoren (F5) — sett utenfra.
 //
-// Det som bare kan bevises i en ekte nettleser er nettopp det flyttingen hviler
-// på: at eksporten overlever at siden forlates. Signalene bak den bor på
-// modulnivå (`app/editor/export.ts`), og den påstanden er lett å skrive og lett
-// å miste — en refaktorering som gjør dem til komponent-tilstand ser helt
-// riktig ut i koden og river en kjøring som går.
+// Det som bare kan bevises i en ekte nettleser er at arket er en ekte modal
+// over editoren, og at eksporten overlever at arket lukkes. Signalene bak den
+// bor på modulnivå (`app/editor/export.ts`), og den påstanden er lett å skrive
+// og lett å miste — en refaktorering som gjør dem til komponent-tilstand ser
+// helt riktig ut i koden og river en kjøring som går.
 //
-// De seks journeyene:
+// Journeyene:
 //
-//   1. Uten en åpen fil er siden ikke tom: sist redigert + velger + «Åpne fil…».
-//   2. …og uten noe redigert står SISTE OPPTAK der, under sitt eget navn.
-//   3. Velgeren åpner en fil PÅ SIDEN — laster, så valgene.
-//   4. Eksport → kvittering → «Til biblioteket» lander på REDIGERING med lista.
-//   5. En kjøring og en kvittering overlever et sidebytte bort og tilbake.
-//   6. `?goto=editor` — den gamle dyplenken — lander på REDIGERING.
+//   1. «Eksporter» åpner arket; editoren bak er `inert`; Escape lukker.
+//   2. Eksport → kvittering → «Til opptakene» lander på lista.
+//   3. En kjøring og en kvittering overlever at arket lukkes og åpnes igjen.
+//   4. «Podkastklar lyd» står i arket, og følger det samme valget som Lyd-steget.
 
-/** Et opptak i biblioteket som IKKE er det editoren åpner. Kortet «Sist
- *  redigert» skal navngi den fila noen faktisk redigerte, og med to
- *  forskjellige filer i spill er forskjellen synlig. */
+/** Et opptak i biblioteket som IKKE er det editoren åpner. */
 const OTHER = "/Users/test/Opptak/2026-07-05 Kveldsmøte.mp3";
 
 const LIBRARY: Fixtures = {
@@ -54,22 +48,12 @@ const LIBRARY: Fixtures = {
   ],
 };
 
-/** Boot rett inn på EKSPORTERING, uten noe åpent. */
-async function openExport(page: Page, over: Fixtures = {}): Promise<void> {
+/** Åpne fikstur-opptaket i editoren (utenfor biblioteket, uten `startedAt`). */
+async function openEditorFile(page: Page, over: Fixtures = {}): Promise<void> {
   await boot(page, {
     fixtures: editorFixtures({ ...LIBRARY, ...over }),
     settings: SETTLED_SETTINGS,
-    goto: "export",
-  });
-  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "export");
-}
-
-/** Åpne fikstur-opptaket i editoren, og gå videre til EKSPORTERING. */
-async function openThenExport(page: Page, over: Fixtures = {}): Promise<void> {
-  await boot(page, {
-    fixtures: editorFixtures({ ...LIBRARY, ...over }),
-    settings: SETTLED_SETTINGS,
-    goto: "editor",
+    goto: "recordings",
   });
   await page.evaluate(
     (f) =>
@@ -82,217 +66,104 @@ async function openThenExport(page: Page, over: Fixtures = {}): Promise<void> {
     "data-state",
     "ready",
   );
-  await page.getByTestId("nav-export").click();
+}
+
+/** Åpne editoren, og så eksportarket. */
+async function openThenExport(page: Page, over: Fixtures = {}): Promise<void> {
+  await openEditorFile(page, over);
+  await page.getByTestId("editor-export-open").click();
   await expect(page.getByTestId("export-page")).toHaveAttribute(
     "data-state",
     "ready",
   );
 }
 
-test.describe("eksportering", () => {
-  test("uten en åpen fil tilbyr siden det sist redigerte, en velger og «Åpne fil…»", async ({
-    page,
-  }) => {
-    // MUTASJONSPRØVEN for `lastEdited`: fjern skrivingen i
-    // `app/editor/loader.ts` (den ene linja ved `loadState = "ready"`) og
-    // kortet faller tilbake på SISTE OPPTAK — som er en annen fil her, med et
-    // annet navn og en annen etikett. Begge assertionene under går rødt.
-    await openThenExport(page);
-
-    // Lukk fila igjen: det er nøyaktig situasjonen kortet finnes for.
-    await page.getByTestId("nav-edit").click();
-    await page.getByTestId("editor-close").click();
-    await expect(page.getByTestId("editor")).toHaveCount(0);
-
-    await page.getByTestId("nav-export").click();
-    await expect(page.getByTestId("export-page")).toHaveAttribute(
-      "data-state",
-      "idle",
-    );
-
-    // 1. Kortet navngir fila som ble REDIGERT, ikke den som ble tatt opp sist.
-    const last = page.getByTestId("export-last");
-    await expect(last).toBeVisible();
-    await expect(last).toContainText("2026-08-02 Gudstjeneste.mp3");
-    await expect(page.getByTestId("export-last-open")).toHaveText("Gjør klar");
-    // …og etiketten er den ærlige: «Sist redigert», ikke «Siste opptak».
-    await expect(page.getByTestId("export-page")).toContainText(
-      "Sist redigert",
-    );
-    await expect(page.getByTestId("export-page")).not.toContainText(
-      "Siste opptak",
-    );
-
-    // 2. Velgeren tilbyr det ANDRE opptaket — og bare det: en rad for fila som
-    //    allerede står øverst ville vært to knapper for samme handling.
-    const rows = page.getByTestId("export-pick-row");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("2026-07-05 Kveldsmøte.mp3");
-
-    // 3. Og veien inn for en fil fra en annen opptaker.
-    await expect(page.getByTestId("export-open")).toBeVisible();
+/** Åpne opptaket fra LISTA (så datoen følger med), og så eksportarket. */
+async function openFromLibraryThenExport(
+  page: Page,
+  over: Fixtures = {},
+): Promise<void> {
+  await boot(page, {
+    fixtures: editorFixtures({ ...LIBRARY, ...over }),
+    settings: SETTLED_SETTINGS,
+    goto: "recordings",
   });
+  await page.getByTestId("library-row-edit").first().click();
+  await expect(page.getByTestId("editor")).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
+  await page.getByTestId("editor-export-open").click();
+  await expect(page.getByTestId("editor-export")).toBeVisible();
+}
 
-  test("F2-9: kortet glemmer fila når den slettes fra biblioteket", async ({
+test.describe("eksportarket", () => {
+  test("«Eksporter» åpner arket over editoren, Escape lukker det", async ({
     page,
   }) => {
-    // ⚠️ FUNNET, og det er ekte. FØR F2-9 fortsatte kortet å peke på den
-    // redigerte fila selv etter at papirkurv-sømmen hadde flyttet den —
-    // «Gjør klar» ville åpnet en sti som ikke lenger førte til opptaket, og
-    // lasteren ville landet på den generiske «kunne ikke åpne»-teksten (se
-    // `library.spec.ts` for DEN halvparten). `LibraryPage.tsx` sin
-    // `forgetWhatIsNowTrashed` er det som glemmer den, rett etter slettingen.
-    //
-    // MUTASJONSPRØVEN: fjern kallet til `forgetWhatIsNowTrashed()` fra
-    // `remove()` i `LibraryPage.tsx`, og den siste assertionen blir rød —
-    // kortet fortsetter å hete «Sist redigert» over en fil som er borte.
-    await openThenExport(page, {
-      // `recordings_list` kommer FRA BACKENDEN nyeste først («Siste
-      // opptak»-kortet leser bare `[0]`, det sorterer ikke selv) — `OTHER`
-      // står derfor FØRST og med den seneste `started_at`, slik at «Siste
-      // opptak» etter slettingen umiskjennelig blir DEN andre fila.
-      recordings_list: [
-        recordingRow({
-          id: "rec-other",
-          file_path: OTHER,
-          started_at: 1_751_700_000_000,
-          created_at: 1_751_700_000_000,
-        }),
-        recordingRow({
-          id: "rec-file",
-          file_path: FILE,
-          started_at: 1_700_000_000_000,
-          created_at: 1_700_000_000_000,
-        }),
-      ],
-      // Delt tilstand mellom `trash_move` og `trash_list`: `forgetMovedPath`
-      // leser HVA SOM ER I PAPIRKURVEN via en `loadTrash()` etter flyttingen
-      // (`app/state/retention.ts`/`LibraryPage.tsx`'s `forgetWhatIsNowTrashed`),
-      // så en statisk `trash_list` som ikke ser flyttingen ville aldri klart
-      // å bevise fiksen. Samme mønster som `TRASH_STORE` i `library.spec.ts`.
-      trash_list: fn(`() => (window.__E2E_TRASH__ ||= [])`),
-      trash_move: fn(`(args) => {
-        const list = (window.__E2E_TRASH__ ||= []);
-        const now = Date.now();
-        const paths = (${PATHS_OF_RECORDING_IDS})(args.recordingIds);
-        const moved = paths.map((p, i) => ({
-          id: "e2e-trashed-" + now + "-" + i,
-          originalPath: p,
-          trashedPath: p + ".trashed",
-          name: p.split("/").pop(),
-          deletedAt: now,
-          related: [],
-          byteSize: 1000,
-          recordingId: args.recordingIds[i],
-        }));
-        list.push(...moved);
-        return moved;
-      }`),
-    });
+    await openEditorFile(page);
+    // Arket finnes ikke før noen ber om det.
+    await expect(page.getByTestId("export-page")).toHaveCount(0);
+    await page.getByTestId("editor-export-open").click();
 
-    // Lukk fila: samme steg som den FØRSTE testen i denne fila — kortet
-    // vises bare i EKSPORTERINGENS `idle`, ikke mens fila fortsatt er åpen.
-    await page.getByTestId("nav-edit").click();
-    await page.getByTestId("editor-close").click();
-    await expect(page.getByTestId("editor")).toHaveCount(0);
-
-    // Utgangspunktet: kortet er «Sist redigert» og navngir FILE.
-    await page.getByTestId("nav-export").click();
-    await expect(page.getByTestId("export-page")).toHaveAttribute(
-      "data-state",
-      "idle",
-    );
-    await expect(page.getByTestId("export-last")).toContainText(
-      "2026-08-02 Gudstjeneste.mp3",
-    );
-    await expect(page.getByTestId("export-page")).toContainText(
-      "Sist redigert",
-    );
-
-    // Slett den SAMME fila fra biblioteket — REDIGERING viser biblioteket nå
-    // at fila er lukket, uten et nytt klikk (`loadState` er `idle`).
-    await page.getByTestId("nav-edit").click();
-    await expect(page.getByTestId("library-row")).toHaveCount(2);
-    const fileRow = page
-      .getByTestId("library-row")
-      .filter({ hasText: "2026-08-02 Gudstjeneste.mp3" });
-    await fileRow.getByTestId("library-row-delete").click();
-    await expect(page.getByTestId("toast-host")).toContainText(
-      "Flyttet til papirkurven",
-    );
-
-    // Tilbake på EKSPORTERING: kortet har glemt fila — det faller tilbake på
-    // SISTE OPPTAK, som nå er den ANDRE fila, med den ærlige etiketten.
-    await page.getByTestId("nav-export").click();
-    await expect(page.getByTestId("export-page")).toHaveAttribute(
-      "data-state",
-      "idle",
-    );
-    const last = page.getByTestId("export-last");
-    await expect(last).not.toContainText("2026-08-02 Gudstjeneste.mp3");
-    await expect(last).toContainText("2026-07-05 Kveldsmøte.mp3");
-    await expect(page.getByTestId("export-page")).toContainText("Siste opptak");
-    await expect(page.getByTestId("export-page")).not.toContainText(
-      "Sist redigert",
-    );
-  });
-
-  test("uten noe redigert står SISTE OPPTAK der, og sier at det er dét", async ({
-    page,
-  }) => {
-    // Reserven, med sitt eget navn. `recordings_list` bærer ingen
-    // redigert-status, så et kort som het «Sist redigert» her ville vært appen
-    // som gjetter og later som den vet.
-    await openExport(page);
-    await expect(page.getByTestId("export-page")).toHaveAttribute(
-      "data-state",
-      "idle",
-    );
-    await expect(page.getByTestId("export-last")).toContainText("Kveldsmøte");
-    await expect(page.getByTestId("export-page")).toContainText("Siste opptak");
-    await expect(page.getByTestId("export-page")).not.toContainText(
-      "Sist redigert",
-    );
-    // Den ene raden er tilbudt som kortet — ikke også som en rad under det.
-    await expect(page.getByTestId("export-pick-row")).toHaveCount(0);
-  });
-
-  test("velgeren åpner opptaket på stedet: laster, så valgene", async ({
-    page,
-  }) => {
-    // TO opptak: det nyeste blir kortet øverst, og det andre er velgerens ene
-    // rad. Med bare ett ville lista vært tom med rette — se testen over.
-    await openExport(page, {
-      recordings_list: [
-        recordingRow({
-          id: "rec-new",
-          file_path: "/Users/test/Opptak/2026-08-16 Gudstjeneste.mp3",
-          started_at: 1_755_300_000_000,
-          created_at: 1_755_300_000_000,
-        }),
-        ...(LIBRARY.recordings_list as Record<string, unknown>[]),
-      ],
-    });
-    await page.getByTestId("export-pick-use").first().click();
-
-    // Siden BLIR stående — den viser lastingen selv, med editorens egne faser.
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "export",
-    );
-    await expect(page.getByTestId("export-page")).toHaveAttribute(
-      "data-state",
-      "ready",
-    );
+    const sheet = page.getByTestId("export-page");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveAttribute("role", "dialog");
+    await expect(sheet).toHaveAttribute("aria-modal", "true");
     await expect(page.getByTestId("editor-export")).toBeVisible();
     // Topplinja sier hvilken fil, hva som blir igjen og hvilken behandling.
     const sub = page.getByTestId("export-sub");
-    await expect(sub).toContainText("Kveldsmøte");
+    await expect(sub).toContainText("Gudstjeneste");
     await expect(sub).toContainText(`av ${Math.round(DURATION / 60)} min 0 s`);
     await expect(sub).toContainText("Podkastklar lyd");
+    // Editoren bak er `inert`: fokus og klikk kommer ikke ut av arket.
+    await expect(page.getByTestId("editor-workspace")).toHaveAttribute(
+      "inert",
+      "",
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("export-page")).toHaveCount(0);
+    await expect(page.getByTestId("editor-workspace")).not.toHaveAttribute(
+      "inert",
+      "",
+    );
+    // Fokus er tilbake på knappen som åpnet arket.
+    await expect(page.getByTestId("editor-export-open")).toBeFocused();
+    // Fila er fortsatt åpen — arket er ikke en navigering.
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
   });
 
-  test("eksport → kvittering → «Til biblioteket» lander på REDIGERING med lista", async ({
+  test("«Podkastklar lyd» står i arket og er det samme valget som Lyd-steget", async ({
+    page,
+  }) => {
+    await openThenExport(page);
+    const toggle = page.getByTestId("export-podcast-toggle");
+    await expect(toggle).toBeVisible();
+    await expect(page.getByTestId("export-sub")).toContainText(
+      "Podkastklar lyd",
+    );
+    await toggle.click();
+    await expect(page.getByTestId("export-sub")).not.toContainText(
+      "Podkastklar lyd",
+    );
+    await expect(page.getByTestId("export-sub")).toContainText(
+      "Uten lydbehandling",
+    );
+
+    // Steget bak arket har fått med seg valget.
+    await page.getByTestId("export-close").click();
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
+      "data-podcast",
+      "off",
+    );
+  });
+
+  test("eksport → kvittering → «Til opptakene» lander på lista", async ({
     page,
   }) => {
     await openThenExport(page);
@@ -300,8 +171,12 @@ test.describe("eksportering", () => {
     await expect(page.getByTestId("editor-exported")).toBeVisible();
 
     await page.getByTestId("editor-exported-library").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
-    // Lista, ikke arbeidsflaten: fila ble lukket på veien.
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
+    // Lista, ikke arbeidsflaten: fila ble lukket på veien, og arket med den.
+    await expect(page.getByTestId("export-page")).toHaveCount(0);
     await expect(page.getByTestId("editor")).toHaveCount(0);
     await expect(page.getByTestId("library-row")).toHaveCount(1);
   });
@@ -384,13 +259,12 @@ test.describe("eksportering", () => {
     await expect(page.getByTestId("editor-exported")).not.toContainText("LUFS");
   });
 
-  test("en kjøring og en kvittering overlever et sidebytte bort og tilbake", async ({
+  test("en kjøring og en kvittering overlever at arket lukkes og åpnes igjen", async ({
     page,
   }) => {
-    // Selve grunnen til at eksporten KAN være en egen destinasjon. Var
-    // tilstanden komponent-lokal, ville et blikk på biblioteket midt i en
-    // eksport revet fremdriften ned — og en frivillig som lurte på om det gikk
-    // ville drept kjøringen ved å sjekke.
+    // Selve grunnen til at tilstanden bor på modulnivå. Var den komponent-
+    // lokal, ville et blikk på editoren midt i en eksport revet fremdriften
+    // ned — og en frivillig som lurte på om det gikk ville drept kjøringen.
     await spyEvents(page);
     await openThenExport(page, { editor_export: EXPORT_HELD });
     await page.getByTestId("editor-export-go").click();
@@ -400,16 +274,20 @@ test.describe("eksportering", () => {
       "40%",
     );
 
-    // Bort til REDIGERING og tilbake: kjøringen står, med prosenten sin.
-    await page.getByTestId("nav-edit").click();
-    await expect(page.getByTestId("editor")).toBeVisible();
-    await page.getByTestId("nav-export").click();
+    // Arket kan lukkes midt i en kjøring: eksporten går videre, og knappen i
+    // editoren sier det.
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("export-page")).toHaveCount(0);
+    await expect(page.getByTestId("editor-export-open")).toHaveText(
+      "Eksporterer…",
+    );
+    await page.getByTestId("editor-export-open").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
     await expect(page.getByTestId("editor-export-progress-percent")).toHaveText(
       "40%",
     );
 
-    // La den bli ferdig, og gjenta prøven for KVITTERINGEN.
+    // La den bli ferdig; kvitteringen står.
     await page.evaluate(() =>
       (
         window as unknown as { __E2E_FINISH_EXPORT__?: () => void }
@@ -417,28 +295,27 @@ test.describe("eksportering", () => {
     );
     await expect(page.getByTestId("editor-exported")).toBeVisible();
 
-    await page.getByTestId("nav-edit").click();
-    await page.getByTestId("nav-export").click();
+    // Lukk og åpne igjen: kvitteringen står, ikke skjemaet under den — det
+    // ville invitert til å eksportere den samme fila på nytt.
+    await page.getByTestId("export-close").click();
+    await expect(page.getByTestId("export-page")).toHaveCount(0);
+    await page.getByTestId("editor-export-open").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
-    // Og ikke skjemaet under den: en kvittering som ble byttet ut med valgene
-    // ved et sidebytte ville invitert til å eksportere den samme fila igjen.
     await expect(page.getByTestId("editor-export")).toHaveCount(0);
   });
 
-  test("?goto=editor — den gamle dyplenken — lander på REDIGERING", async ({
-    page,
-  }) => {
-    // Aliastabellen utvides, aldri krympes: `editor` var en SIDE i legacy og en
-    // FANE i det forrige skallet, og den lander fortsatt der redigeringen bor.
+  test("?goto=recordings lander på lista, uten fane", async ({ page }) => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, ...LIBRARY },
       settings: SETTLED_SETTINGS,
-      goto: "editor",
+      goto: "recordings",
     });
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
-    // Ingen fane: at en fil er åpen er `loadState`, ikke en rute-akse.
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
-    await expect(page.getByTestId("app-heading")).toHaveText("Bibliotek");
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
     await expect(page.getByTestId("library-row")).toHaveCount(1);
   });
 });
@@ -471,7 +348,7 @@ test.describe("eksportering — innhold", () => {
     await boot(page, {
       fixtures: editorFixtures({ ...LIBRARY, ...CAPTURE_WRITES }),
       settings: SETTLED_SETTINGS,
-      goto: "editor",
+      goto: "recordings",
     });
     await page.evaluate(
       (f) =>
@@ -484,7 +361,7 @@ test.describe("eksportering — innhold", () => {
       "data-state",
       "ready",
     );
-    await page.getByTestId("nav-export").click();
+    await page.getByTestId("editor-export-open").click();
 
     // Uten tittel lover forhåndsvisningen navnet fila alltid har fått.
     const preview = page.getByTestId("editor-export-preview");
@@ -535,10 +412,8 @@ test.describe("eksportering — innhold", () => {
   test("et opptak fra biblioteket får datoen foran tittelen", async ({
     page,
   }) => {
-    await openExport(page);
-    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
-    await page.getByTestId("export-last-open").click();
-    await expect(page.getByTestId("editor-export")).toBeVisible();
+    // Åpnet fra lista, så datoen følger med.
+    await openFromLibraryThenExport(page);
 
     // Datoen regnes i LOKAL tid, slik opptakets eget filnavn gjør — så
     // fasiten regnes i nettleserens egen tidssone, ikke i testens.
@@ -585,10 +460,8 @@ test.describe("eksportering — innhold", () => {
     page,
   }) => {
     // Appen vet ikke hva prekenen het, og gjetter ikke.
-    await openExport(page);
-    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
-    await page.getByTestId("export-last-open").click();
-    await expect(page.getByTestId("editor-export")).toBeVisible();
+    // Åpnet fra lista, så datoen følger med.
+    await openFromLibraryThenExport(page);
     await expect(page.getByTestId("export-title")).toHaveValue("");
     await expect(page.getByTestId("editor-export-preview")).toContainText(
       "Kveldsmøte_redigert.mp3",

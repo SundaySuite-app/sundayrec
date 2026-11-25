@@ -28,7 +28,7 @@ test.describe("update channel", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // The owner's exact journey: pick Beta …
@@ -62,7 +62,7 @@ test.describe("update channel", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, updateChannel: "beta" },
-      goto: "settings:general",
+      goto: "settings",
     });
     const select = page.getByTestId("adv-update-channel-control-input");
     await expect(select).toHaveValue("beta");

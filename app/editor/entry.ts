@@ -28,7 +28,7 @@ export function installEditorEntry(): void {
     recordingId: string,
     seekToSec?: number,
   ): void => {
-    navigate("edit");
+    navigate("recordings");
     void openFile(
       { kind: "known", recordingId },
       { seekToSec: typeof seekToSec === "number" ? seekToSec : null },
@@ -48,7 +48,7 @@ export function openInEditor(
   startedAtMs: number | null,
   name?: string,
 ): void {
-  navigate("edit");
+  navigate("recordings");
   void openFile(
     recordingId
       ? { kind: "known", recordingId, name }

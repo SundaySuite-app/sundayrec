@@ -50,7 +50,7 @@ test.describe("enhets-id som ble omfordelt", () => {
         deviceName: "Behringer X32",
         deviceChannels: { "gammel-id": OLD_PAIR },
       },
-      goto: "home",
+      goto: "record",
     });
 
     // Lagringslaget er fasiten: helingen skal PERSISTERE, ikke bare leve i
@@ -87,7 +87,7 @@ test.describe("enhets-id som ble omfordelt", () => {
         deviceName: "Behringer X32",
         deviceChannels: { "gammel-id": OLD_PAIR },
       },
-      goto: "home",
+      goto: "record",
     });
 
     // «Finner ikke Behringer X32» — enhetslista ER lest, altså har helingen

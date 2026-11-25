@@ -81,10 +81,10 @@ for anybody holding an older report.
 The four claims that note makes are covered, and each is a mutation-proof for a
 guard that would otherwise fail in silence:
 
-- VERIFIED-BY: e2e/control-room.spec.ts::hvert kort åpner, lagrer, oppdaterer verdien sin og lukker igjen
-- VERIFIED-BY: e2e/control-room.spec.ts::?goto=settings:audio lander i kontrollrommet med kilde-kortet åpent
-- VERIFIED-BY: e2e/control-room.spec.ts::Innstillinger beholder leden sin etter et besøk i kontrollrommet
-- VERIFIED-BY: e2e/control-room.spec.ts::opptaksstart river BEGGE målerne ut av treet
+- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksformatet lagrer BÅDE format og bitrate, og seksjonen står der
+- VERIFIED-BY: e2e/settings-plan.spec.ts::?goto=settings:sound lander på Lyd og kanaler
+- VERIFIED-BY: e2e/settings-plan.spec.ts::«Endre» på kilden fører til Lyd og kanaler i Innstillinger
+- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksstart river måleren ut av TA OPP
 
 | where it used to be                              | where it is now                                                                           |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -591,15 +591,15 @@ lenger».
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_renderer_cannot_set_a_folder_the_vet_would_have_accepted
-   - VERIFIED-BY: e2e/control-room.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
-   - VERIFIED-BY: e2e/control-room.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
+   - VERIFIED-BY: e2e/settings-plan.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
+   - VERIFIED-BY: e2e/settings-plan.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
    - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
      Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
      Finder»** on the receipt. **Expected:** the exported file is shown.
      Restart the app: the receipt is gone, and nothing else can reveal that
      export any more — that is the policy, not a bug (the button's token is
      only good for this session).
-   - VERIFIED-BY: e2e/export-page.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
    - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_forged_foreign_or_misplaced_export_token_is_refused
    - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_symlink_swapped_in_at_a_delivered_name_is_refused
    - On a missing file (delete one by hand in Finder, then press its row's
@@ -705,7 +705,7 @@ Windows.
      permission is not queried on macOS yet (`docs/VARSLING.md`). «Åpne
      innstillinger» opens System Settings → Notifications.
    - VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
-   - VERIFIED-BY: e2e/control-room.spec.ts::varsler slått av i OS-et gjør kortet gult, og peker på bryteren
+   - VERIFIED-BY: e2e/settings-plan.spec.ts::varsler slått av i OS-et sier det, og peker på bryteren
 2. **«Send testvarsel»** shows a notification titled SundayRec.
 3. **During a take, with the window hidden or behind another app:** unplug
    the USB mixer. **Expected:** ONE notification «Lydkilden forsvant …». Plug
@@ -1096,8 +1096,8 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      delivered file has that name, and `ffprobe -show_format <file>` lists
      `title`, `artist` (the speaker), `comment` (the description) and `date`. Close the file and open the same
      recording again: the three fields are filled in from its `.meta.json`.
-     VERIFIED-BY: e2e/export-page.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
-     VERIFIED-BY: e2e/export-page.spec.ts::det som ble lagret sist, står i feltene neste gang
+     VERIFIED-BY: e2e/export-sheet.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
+     VERIFIED-BY: e2e/export-sheet.spec.ts::det som ble lagret sist, står i feltene neste gang
      VERIFIED-BY: crates/sundayrec-core/src/editor.rs::export_stem_matches_the_shared_vectors
    - **«Legg ut» is gone** (F2): the receipt has no upload panel, no channel
      setting and no description template — the file and the «Innhold» tags are
@@ -1174,9 +1174,9 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - «Samme mappe» lands exactly where it did before:
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
    - The page: the name shown, the token sent, a cancel, a refusal with its own sentence:
-   - VERIFIED-BY: e2e/export-page.spec.ts::en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes
-   - VERIFIED-BY: e2e/export-page.spec.ts::et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes
-   - VERIFIED-BY: e2e/export-page.spec.ts::en mappe som er borte når eksporten starter, sier det med egne ord
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes
+   - VERIFIED-BY: e2e/export-sheet.spec.ts::en mappe som er borte når eksporten starter, sier det med egne ord
    - VERIFIED-BY: app/editor/export.test.ts::en mappe Rust avviser blir en setning, og målet bytter ikke i det stille
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
    - The OS folder window itself (parented over the app, «Ny mappe», the
@@ -1450,7 +1450,7 @@ oppdateringen flytter databasen ut av; se neste avsnitt).
   `--features …,asio,…` — so that build owes the notice. The card lived in the
   old shell's `index.html` and vanished with it in fase B; nothing failed,
   because a missing trademark notice looks exactly like nothing. It is rebuilt,
-  and `app/pages/setup/advanced/AsioAttribution.test.tsx` pins the wording — but
+  and `app/pages/settings/advanced/AsioAttribution.test.tsx` pins the wording — but
   that a real Windows build actually SHOWS it is a rig observation.
 
 - **Vis** reveals the live log file in Finder/Explorer (`logs_reveal` →

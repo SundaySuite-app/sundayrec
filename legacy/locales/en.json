@@ -2,9 +2,9 @@
   "app": {
     "page": {
       "record": "Record",
-      "edit": "Library",
-      "export": "Export",
-      "setup": "Settings"
+      "recordings": "Recordings",
+      "plan": "Plan",
+      "settings": "Settings"
     },
     "rail": {
       "label": "Places in the app"
@@ -57,12 +57,12 @@
       "trashCount": "Trash ({n})",
       "trashLede": "Recordings here are deleted for good after {n} days.",
       "trashEmptyDesc": "Recordings you delete land here first.",
-      "back": "Back to the library",
       "restore": "Put back",
       "deleteNow": "Delete for good",
       "deleteSoon": "Deleted at the next cleanup",
       "deleteTomorrow": "Deleted tomorrow",
-      "deleteInDays": "Deleted in {n} days"
+      "deleteInDays": "Deleted in {n} days",
+      "tabsAria": "Recordings and trash"
     },
     "record": {
       "noSource": "You haven’t chosen a sound source",
@@ -78,7 +78,6 @@
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
       "nextAutoWhen": "{day} {time}",
-      "last": "Last recording",
       "close": "Close",
       "camera": {
         "searching": "Looking for cameras…",
@@ -90,7 +89,9 @@
         "starting": "Starting camera…",
         "denied": "Camera access denied — check System Settings",
         "noResponse": "Camera not responding — is another app using it?"
-      }
+      },
+      "openPlan": "Plan",
+      "nextNone": "No planned recordings yet."
     },
     "setup": {
       "q1": "Which sound source?",
@@ -329,8 +330,7 @@
         "licensesClose": "Close",
         "licensesFailed": "The license text could not be found. Try reinstalling the app.",
         "licensesFrameTitle": "Licenses and third-party notices",
-        "schedTitle": "More times",
-        "schedDesc": "The weekly time is set on the Record page, in the “Record automatically” card. Here you add more.",
+        "schedDesc": "Here you add more fixed times and control whether the machine wakes from sleep.",
         "schedTimes": "Weekly times",
         "schedNone": "No weekly times yet.",
         "schedRow": "{day} {start}–{stop}",
@@ -338,7 +338,7 @@
         "schedAddSave": "Add",
         "wakeTestBlocked": "Not while a recording is running.",
         "schedRemove": "Remove",
-        "schedFirstIsSetup": "The first time is the one you see in the “Record automatically” card on the Record page.",
+        "schedFirstIsSetup": "The first time is the one you see in the “Record automatically” card at the top.",
         "wake": "Wake the machine from sleep",
         "wakeDesc": "Without this the machine has to be awake when the recording starts.",
         "autoDeleteConfirmBody": "Recordings older than this are moved to the trash. Under 30 days can mean a service is gone before anyone has downloaded it.",
@@ -402,15 +402,20 @@
       "sections": {
         "nav": "Jump to",
         "language": "Language",
-        "schedule": "Schedule",
-        "recording": "The recording",
+        "schedule": "More times",
+        "recording": "Recording options",
         "recordingDesc": "How the recording itself should work: sound from before Start, stopping on silence, maximum length, splitting into several files and deleting old recordings.",
-        "updates": "Updates and privacy",
-        "updatesDesc": "You decide whether the app checks for new versions and whether it sends anonymous statistics.",
-        "help": "Help and troubleshooting",
-        "helpDesc": "If something is not working: get the error log.",
-        "about": "About",
-        "aboutDesc": "Licenses and notices for the software SundayRec is built on."
+        "updates": "Updates",
+        "updatesDesc": "You decide whether the app checks for new versions.",
+        "about": "About and log",
+        "aboutDesc": "Licenses and notices for the software SundayRec is built on.",
+        "sound": "Sound and channels",
+        "camera": "Camera",
+        "cameraDesc": "Include video from a camera along with the sound.",
+        "folder": "Storage folder",
+        "notify": "Notifications",
+        "privacy": "Privacy",
+        "privacyDesc": "You decide whether the app sends anonymous statistics."
       }
     },
     "language": {
@@ -488,7 +493,6 @@
       "keySpace": "Space",
       "stepSound": "Sound",
       "nextSound": "Next: Sound",
-      "nextExport": "Next: Export",
       "profile": {},
       "profileDesc": {},
       "listen": "Listen",
@@ -525,19 +529,15 @@
       "levelCapped": "Volume: a little lower than intended (loud peaks in the sound)",
       "exported": "Exported",
       "exportAgain": "Export in another format",
-      "toLibrary": "To the library",
+      "toLibrary": "Recordings",
       "exportFailed": "The export stopped. Try again.",
       "mxHelp": {},
       "podcastAudio": "Podcast-ready audio",
       "podcastAudioDesc": "Clearer voice, even levels and the right loudness for podcasts. The original is never touched.",
-      "podcastOff": "No audio processing"
+      "podcastOff": "No audio processing",
+      "exportOpen": "Export"
     },
     "export": {
-      "lastEdited": "Last edited",
-      "prepare": "Get it ready",
-      "pickTitle": "Or choose another recording",
-      "emptyDesc": "Record something first, or open a file from this machine.",
-      "use": "Choose",
       "content": "Content",
       "contentTitle": "Title",
       "contentTitlePlaceholder": "For example “The Good Shepherd”",
@@ -545,7 +545,9 @@
       "contentSpeakerPlaceholder": "Who spoke?",
       "contentDescription": "Description",
       "contentDescriptionPlaceholder": "Bible passage, theme or a line about the church",
-      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload."
+      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload.",
+      "title": "Export",
+      "close": "Close"
     },
     "span": {
       "hours": "{h} h",
@@ -563,6 +565,9 @@
       "missedWhy": "What can I do?",
       "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart.",
       "globalErrorTitle": "Something went wrong"
+    },
+    "plan": {
+      "lede": "Set up when SundayRec starts recording on its own. The machine wakes up and records without anyone pressing anything."
     }
   },
   "nav": {

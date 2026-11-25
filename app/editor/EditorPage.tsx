@@ -1,28 +1,28 @@
 /**
- * REDIGER — arbeidsflaten når en fil er åpen, steg 1: KLIPP.
+ * Editoren — arbeidsflaten når et opptak er åpent på OPPTAK-siden.
  *
- * Canvasens sett 4, artboard 4.1. Legacys editor har 47 kontroller i tre faner
- * pluss en eksportmodal med 25 til; her er det ÉN skjerm: bølgeformen, to
- * håndtak for hvor det du beholder begynner og slutter, og kuttverktøyene.
+ * Canvasens sett 4: bølgeformen, to håndtak for hvor det du beholder begynner
+ * og slutter, og kuttverktøyene — og et lydsteg. ÉN skjerm i stedet for
+ * legacys 47 kontroller i tre faner pluss en eksportmodal.
  *
  * ## Hvem monterer denne, og når
  *
- * `Shell` gjør det, og bare når det er en fil på gang: REDIGERING-destinasjonen
- * viser BIBLIOTEKET til `loadState` forlater `idle`. Denne fila har derfor
- * ingen tomtilstand lenger — biblioteket ER tomtilstanden, og en tom skjerm med
- * «dra et opptak hit» ved siden av en liste over alle opptakene var to svar på
- * det samme spørsmålet.
+ * `Shell` gjør det, og bare når det er en fil på gang: OPPTAK viser LISTA til
+ * `loadState` forlater `idle`. Pilen øverst til venstre («Opptak») lukker fila
+ * og lista står der igjen — samme side, ingen navigering.
+ *
+ * ## Eksporter er et ark (F5)
+ *
+ * Eksporten var en egen destinasjon (D3). Nå er den knappen «Eksporter» nederst,
+ * som åpner `ExportSheet` over editoren. Arket og editoren deler signalene på
+ * modulnivå (`export.ts`, `model.ts`), så en eksport som går overlever at
+ * arket lukkes. Editoren bak settes `inert` mens arket er åpent.
  *
  * ## Stegstripa har to
  *
- * D3 flyttet EKSPORTER ut til sin egen destinasjon: mastering og miksing skal
- * kunne bo der på sikt, og et steg inne i et annet steg er ikke et sted noe kan
- * vokse. «Neste: Eksporter» på steg 2 navigerer dit.
+ * Klipp og Lyd. Navigasjonen mellom dem er FRI: begge er klikkbare hele tiden.
  *
- * Navigasjonen mellom de to er FRI: begge er klikkbare hele tiden. En som har
- * vært innom lyden skal kunne gå tilbake og klippe litt til.
- *
- * ## Haken betyr «du har svart», ikke «det er en verdi her»
+ ## Haken betyr «du har svart», ikke «det er en verdi her»
  *
  *   **Klipp** ✓ når det finnes kutt.
  *   **Lyd** ✓ når brukeren har VÆRT der. «Tale» er standarden, og en hake fra
@@ -54,7 +54,6 @@ import { useEffect } from "preact/hooks";
 import { locale, t, tf } from "../i18n";
 import { spanOfSeconds } from "../pages/record/record-core";
 import { spanText } from "../pages/record/span-text";
-import { navigate } from "../router/router";
 import { Banner } from "../ui/Banner/Banner";
 import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
@@ -69,6 +68,8 @@ import {
 } from "./cuts";
 import { confirmDiscard } from "./discard";
 import { exactSpan, keptSeconds, timecode } from "./editor-core";
+import { exporting } from "./export";
+import { ExportSheet, exportSheetOpen, openExportSheet } from "./ExportSheet";
 import { Loading, LoadFailed } from "./LoadStates";
 import { closeFile } from "./loader";
 import {
@@ -160,31 +161,46 @@ function Workspace() {
   const step = activeStep.value;
   const cutAnswered = cuts.value.length > 0;
 
+  const sheet = exportSheetOpen.value;
+
+  // Arket lever bare så lenge fila er åpen: lukkes fila, rives hele
+  // arbeidsflaten (og arket med den), og signalet må ikke stå sant til neste
+  // fil.
+  useEffect(() => () => void (exportSheetOpen.value = false), []);
+
   return (
     <>
-      <Head />
-      <Tabs
-        label={t("editor.tabsAria")}
-        testId="editor-steps"
-        value={step}
-        onChange={(id) => (activeStep.value = id as Step)}
-        items={[
-          {
-            id: "cut",
-            label: t("app.editor.stepCut"),
-            step: "1",
-            done: cutAnswered,
-          },
-          {
-            id: "sound",
-            label: t("app.editor.stepSound"),
-            step: "2",
-            done: soundVisited.value,
-          },
-        ]}
-      />
-      {step === "cut" ? <CutStep /> : <SoundStep />}
-      <NextStep step={step} />
+      <div
+        class={styles.workspace}
+        data-testid="editor-workspace"
+        // `inert` bak arket: fokus og klikk kommer ikke ut av det.
+        inert={sheet}
+      >
+        <Head />
+        <Tabs
+          label={t("editor.tabsAria")}
+          testId="editor-steps"
+          value={step}
+          onChange={(id) => (activeStep.value = id as Step)}
+          items={[
+            {
+              id: "cut",
+              label: t("app.editor.stepCut"),
+              step: "1",
+              done: cutAnswered,
+            },
+            {
+              id: "sound",
+              label: t("app.editor.stepSound"),
+              step: "2",
+              done: soundVisited.value,
+            },
+          ]}
+        />
+        {step === "cut" ? <CutStep /> : <SoundStep />}
+        <NextStep step={step} />
+      </div>
+      {sheet ? <ExportSheet /> : null}
     </>
   );
 }
@@ -207,52 +223,34 @@ function CutStep() {
 }
 
 /**
- * «Neste: Lyd» / «Neste: Eksporter».
+ * Handlingslinja: «Neste: Lyd» på Klipp-steget, og «Eksporter» alltid.
  *
- * Canvasen tegner den nederst på 4.2; den står på 4.1 av samme grunn. Stripa
- * øverst er navigasjon for den som vet hvor hun skal — knappen nederst er veien
- * VIDERE for den som følger den, og den skal være der man er ferdig med å lese.
- *
- * D3: den siste av dem forlater SIDEN. Eksporteringen er en destinasjon nå, og
- * fila blir stående åpen — signalene bak den bor på modulnivå og overlever at
- * flaten avmonteres, så «Neste: Eksporter» er en navigasjon og ikke en
- * overlevering.
+ * «Eksporter» åpner `ExportSheet` over editoren — fila blir stående åpen, og
+ * signalene bak arket bor på modulnivå. «Neste: Lyd» er veien VIDERE for den
+ * som følger stegene; stripa øverst er navigasjon for den som vet hvor hun
+ * skal.
  */
 function NextStep({ step }: { step: Step }) {
   return (
     <ActionBar testId="editor-actions">
-      {/*
-        «Til biblioteket» — og ingen navigering. Etter D3 ER dette biblioteket:
-        REDIGERING viser lista igjen i samme øyeblikk fila lukkes, på den samme
-        siden. En `navigate` her ville vært et rutebytte til stedet man
-        allerede står, med fokusflytting og rulling som følge.
-      */}
-      <Button
-        variant="ghost"
-        testId="editor-close"
-        onClick={() => {
-          void confirmDiscard().then((ok) => {
-            if (!ok) return;
-            // `closeFile` stiller selv eksport-spørsmålet (F2-3) og kan svare
-            // nei — den er derfor ventet på, ikke fyrt av.
-            void closeFile();
-          });
-        }}
-      >
-        {t("app.editor.toLibrary")}
-      </Button>
+      {step === "cut" ? (
+        <Button
+          variant="secondary"
+          testId="editor-next"
+          onClick={() => (activeStep.value = "sound")}
+        >
+          {t("app.editor.nextSound")}
+        </Button>
+      ) : null}
       <Button
         variant="primary"
         size="lg"
-        testId="editor-next"
-        onClick={() => {
-          if (step === "cut") activeStep.value = "sound";
-          else navigate("export");
-        }}
+        testId="editor-export-open"
+        onClick={openExportSheet}
       >
-        {step === "cut"
-          ? t("app.editor.nextSound")
-          : t("app.editor.nextExport")}
+        {exporting.value
+          ? t("editor.exportExporting")
+          : t("app.editor.exportOpen")}
       </Button>
     </ActionBar>
   );
@@ -277,6 +275,23 @@ function Head() {
 
   return (
     <div class={styles.head}>
+      {/*
+        Pila tilbake til lista. `closeFile` stiller selv eksport-spørsmålet
+        (F2-3) og kan svare nei, så den er ventet på og ikke fyrt av. Lista
+        står på samme side i samme øyeblikk fila lukkes — ingen `navigate`.
+      */}
+      <Button
+        variant="ghost"
+        testId="editor-close"
+        icon={<span aria-hidden="true">←</span>}
+        onClick={() => {
+          void confirmDiscard().then((ok) => {
+            if (ok) void closeFile();
+          });
+        }}
+      >
+        {t("app.editor.toLibrary")}
+      </Button>
       <p data-testid="editor-sub" class={styles.sub}>
         <span>{sub}</span>
         <Summary />
@@ -300,7 +315,7 @@ function Head() {
  * Steg 1 har den i transportlinja, ved siden av bølgeformen den beskriver.
  * Steg 2 har ingen bølgeform, og «hva er det egentlig jeg sitter igjen med» er
  * det eneste tallet som betyr noe der. Setningen bygges i `summary.ts`, som
- * EKSPORTERING-siden også leser — to steder som regnet ut den samme
+ * eksportarket også leser — to steder som regnet ut den samme
  * varigheten er to steder som kan bli uenige om den.
  */
 function Summary() {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { RecordingEntry } from "@legacy/types";
 
 import { Overlays, Shell } from "./Shell";
-import { lastEdited, loadState } from "./editor/model";
+import { loadState } from "./editor/model";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
 import { globalError } from "./state/global-error";
@@ -39,7 +39,7 @@ describe("Shell", () => {
   it("rendrer skallet med sidenavnet fra katalogen, ikke fra en literal", () => {
     navigate("record");
     const html = render(<Shell />);
-    expect(html).toContain("Opptak");
+    expect(html).toContain("Ta opp");
     expect(html).toContain('data-testid="app-heading"');
     expect(html).toContain('data-testid="nav-record"');
     expect(html).toContain("data-tauri-drag-region");
@@ -80,16 +80,16 @@ describe("Shell", () => {
     expect(html).toContain('data-testid="app-logo"');
     expect(html).not.toContain('data-testid="shell-church"');
 
-    // Bunnlinja: statuslinjen, de tre destinasjonene, versjonen og tannhjulet.
+    // Bunnlinja: statuslinjen og de fire sidene.
     const bar = html.slice(bottom);
     for (const id of [
       "status-line",
       "status-dot",
       "status-text",
       "nav-record",
-      "nav-edit",
-      "nav-export",
-      "nav-setup",
+      "nav-recordings",
+      "nav-plan",
+      "nav-settings",
     ]) {
       expect(bar).toContain(`data-testid="${id}"`);
     }
@@ -99,7 +99,7 @@ describe("Shell", () => {
     // D2: destinasjonen heter «Innstillinger» og bor på tannhjulet nederst i
     // skinnen. Ruten er den samme (`setup`); det er navnet og plasseringen som
     // flyttet, og teksten kommer fortsatt fra katalogen.
-    navigate("settings", { tab: "settings-audio" });
+    navigate("settings");
     expect(render(<Shell />)).toContain("Innstillinger");
     await setLocale("en");
     // Sluttet `@lib` å resolve, ville `t()` gitt tom tekst og dette vært en
@@ -108,61 +108,58 @@ describe("Shell", () => {
     await setLocale("no");
   });
 
-  it("bærer den gamle logoen, og Innstillinger på et tannhjul framfor som destinasjon", () => {
+  it("bærer den gamle logoen, og Innstillinger som fjerde side", () => {
     navigate("record");
     const html = render(<Shell />);
 
-    // D2, eierens første ønske: merket fra den utsendte appen, ikke den gule
-    // «S»-boksen skallet malte mens tegningen manglet.
+    // Merket fra den utsendte appen, ikke den gule «S»-boksen.
     expect(html).toContain('data-testid="app-logo"');
     // ⚠️ `<defs>`-id-er er GLOBALE i dokumentet. Prefikset er kollisjonsvakten
     // mot `src-tauri/app-icon.svg`s generiske `bg`/`glow`/`gold`/`clip` — se
-    // filhodet i `ui/AppLogo/AppLogo.tsx`. Faller det bort, peker
-    // `url(#gold)` på hvem som helst.
+    // filhodet i `ui/AppLogo/AppLogo.tsx`.
     expect(html).toContain('id="srlogo-clip"');
     expect(html).toContain('id="srlogo-gold"');
     expect(html).not.toContain('id="clip"');
     expect(html).not.toContain('id="gold"');
 
-    // Kontrakten som IKKE flyttet: knappen heter fortsatt `nav-setup`, og den
-    // sier fortsatt fra når man står der. Alt som spør skinnen «hvor er jeg?»
-    // — e2e, `no-live-surface`s telling, skjermleseren — får samme svar.
-    expect(html).toContain('data-testid="nav-setup"');
-    expect(html).not.toMatch(/data-testid="nav-setup"[^>]*aria-current/);
-    navigate("setup");
+    // `nav-settings` sier fra når man står der.
+    expect(html).toContain('data-testid="nav-settings"');
+    expect(html).not.toMatch(/data-testid="nav-settings"[^>]*aria-current/);
+    navigate("settings");
     expect(render(<Shell />)).toMatch(
-      /data-testid="nav-setup"[^>]*aria-current="page"/,
+      /data-testid="nav-settings"[^>]*aria-current="page"/,
     );
     navigate("record");
   });
 
   it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {
-    // D2: hver gammel innstillingsfane er et KORT i kontrollrommet, ikke en
-    // fane. Lenken bærer derfor bare ankeret — og ankeret er kortet den skal
-    // folde ut.
-    navigate("settings", { tab: "settings-video" });
+    // På INNSTILLINGER er en `?goto=`-fane et anker, og bare det.
+    navigate("settings", { tab: "settings-camera" });
     const html = render(<Shell />);
+    expect(html).toContain('data-page="settings"');
     expect(html).toContain('data-anchor="camera"');
     expect(html).not.toContain("data-tab=");
-    expect(route.value.page).toBe("record");
-
-    navigate("settings", { tab: "settings-audio" });
     expect(route.value).toEqual({
-      page: "record",
-      anchor: "sound",
+      page: "settings",
+      anchor: "camera",
       highlight: true,
     });
 
-    // D3: `editor` er en DESTINASJON nå, ikke en fane. Den lander på REDIGERING
-    // uten fane i det hele tatt — attributtet skal derfor ikke finnes.
-    navigate("editor");
-    const edit = render(<Shell />);
-    expect(edit).toContain('data-page="edit"');
-    expect(edit).not.toContain("data-tab=");
+    // OPPTAK bærer papirkurven som en fane — og ingen fane uten den.
+    navigate("recordings");
+    const mainTag = (markup: string): string => {
+      const at = markup.indexOf('data-testid="main"');
+      return markup.slice(markup.lastIndexOf("<", at), markup.indexOf(">", at));
+    };
+    const list = mainTag(render(<Shell />));
+    expect(list).toContain('data-page="recordings"');
+    expect(list).not.toContain("data-tab=");
+    navigate("recordings", { tab: "trash" });
+    expect(mainTag(render(<Shell />))).toContain('data-tab="trash"');
     navigate("record");
   });
 
-  it("OPPTAK sier fra når ingen lydkilde er valgt — og peker på OPPSETT", () => {
+  it("TA OPP sier fra når ingen lydkilde er valgt — og peker på INNSTILLINGER", () => {
     navigate("record");
     patchSettings({ deviceName: null, deviceId: null });
     const html = render(<Shell />);
@@ -170,7 +167,7 @@ describe("Shell", () => {
     expect(html).toContain('data-testid="record-choose-sound"');
   });
 
-  it("OPPTAK viser kilden og måleren når kilden ER valgt", () => {
+  it("TA OPP viser kilden og måleren når kilden ER valgt", () => {
     navigate("record");
     patchSettings({ deviceName: "Behringer X32", deviceId: "x32" });
     const html = render(<Shell />);
@@ -181,7 +178,7 @@ describe("Shell", () => {
     patchSettings({ deviceName: null, deviceId: null });
   });
 
-  it("OPPTAK sperrer Start med en GRUNN, ikke med en grå knapp", () => {
+  it("TA OPP sperrer Start med en GRUNN, ikke med en grå knapp", () => {
     navigate("record");
     patchSettings({ deviceName: null, deviceId: null });
     const html = render(<Shell />);
@@ -192,19 +189,20 @@ describe("Shell", () => {
     expect(html).toContain("Start er sperret til dere har valgt lydkilde");
   });
 
-  it("REDIGERING påstår ingenting før opptakene er talt", () => {
-    navigate("edit");
+  it("OPPTAK påstår ingenting før opptakene er talt", () => {
+    navigate("recordings");
     recordings.value = null;
     const html = render(<Shell />);
-    // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-lenken
+    // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-fanen
     // står likevel — den er den ene tingen som ALLTID skal ha en dør.
     expect(html).not.toContain('data-testid="library-empty"');
     expect(html).not.toContain('data-testid="library-row"');
-    expect(html).toContain('data-testid="library-trash-open"');
+    expect(html).toContain('data-testid="recordings-tabs"');
+    expect(html).toContain('data-testid="recordings-tabs-row-trash"');
   });
 
-  it("REDIGERING viser tomtilstanden bare når det FAKTISK er tomt", () => {
-    navigate("edit");
+  it("OPPTAK viser tomtilstanden bare når det FAKTISK er tomt", () => {
+    navigate("recordings");
     recordings.value = [];
     expect(render(<Shell />)).toContain('data-testid="library-empty"');
 
@@ -220,14 +218,14 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("REDIGERING skjuler en rad som ligger i papirkurven, og viser den igjen når angre fjerner den fra signalet (F2-A-F)", () => {
+  it("OPPTAK skjuler en rad som ligger i papirkurven, og viser den igjen når angre fjerner den fra signalet (F2-A-F)", () => {
     // Funnet: `toLibraryRows`/`LibraryPage.tsx` filtrerte ikke selv — bare
     // `getHistory()` gjorde det, ved LASTING. Denne testen beviser at lista
     // også følger `trashEntries`-SIGNALET uten en ny historikklasting: det er
     // nøyaktig det «Angre» (som skriver til dette signalet før
     // `loadRecordingCount()` er ferdig) er avhengig av for å ikke la den
     // gjenopprettede raden mangle en runde til.
-    navigate("edit");
+    navigate("recordings");
     recordings.value = [
       row({ path: "/a.mp3", filename: "a.mp3" }),
       row({ path: "/b.mp3", filename: "b.mp3" }),
@@ -277,39 +275,44 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("REDIGERING har en papirkurv-inngang også når kurven er tom", () => {
+  it("OPPTAK har en papirkurv-fane også når kurven er tom", () => {
     // Atlaset §5, funn 9: legacy skjuler «Papirkurv»-lenken når `trash_list`
     // er tom, så en frivillig som slettet noe i går og leter etter det i dag
     // finner ingen dør hvis sveipen har vært innom i mellomtiden.
-    navigate("edit");
+    navigate("recordings");
     recordings.value = [];
     trashEntries.value = [];
     const html = render(<Shell />);
-    expect(html).toContain('data-testid="library-trash-open"');
-    expect(html).toContain("Papirkurven er tom");
+    expect(html).toContain('data-testid="recordings-tabs-row-trash"');
+    expect(html).toContain("Papirkurv");
     trashEntries.value = null;
     recordings.value = null;
   });
 
-  it("PAPIRKURVEN er en fane inne i REDIGERING, ikke et femte sted", () => {
-    navigate("edit", { tab: "trash" });
+  it("PAPIRKURVEN er en fane inne i OPPTAK, ikke en egen side", () => {
+    navigate("recordings", { tab: "trash" });
     const html = render(<Shell />);
-    // Skinnen står på REDIGERING hele veien; det er overskriften som bytter.
-    expect(html).toMatch(/data-testid="nav-edit"[^>]*aria-current="page"/);
-    expect(html).toContain('data-testid="trash-back"');
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Papirkurv</);
+    // Siden står på OPPTAK hele veien; fanen bytter innholdet.
+    expect(html).toMatch(
+      /data-testid="nav-recordings"[^>]*aria-current="page"/,
+    );
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Opptak</);
+    expect(html).toMatch(
+      /data-testid="recordings-tabs-row-trash"[^>]*aria-selected="true"/,
+    );
+    expect(html).toContain('data-testid="trash-lede"');
     // …og papirkurven er UTENFOR slippsonen: et opptak sluppet på den ville
     // sett ut som en handling, og den ene handlingen det ligner på er den vi
     // ikke gjør.
     expect(html).not.toContain('data-testid="edit-dropzone"');
-    navigate("edit");
+    navigate("recordings");
   });
 
-  it("REDIGERING viser biblioteket til en fil er på gang — og bytter da", () => {
+  it("OPPTAK viser biblioteket til en fil er på gang — og bytter da", () => {
     // Bryteren er `loadState`, ikke `hasFile`: se `app/Shell.tsx`. Grenen er
     // hele grunnen til at biblioteket aldri blinker innom under en åpning, og
     // e2e ser det samme utenfra (`e2e/editor.spec.ts`).
-    navigate("edit");
+    navigate("recordings");
     recordings.value = [row({ path: "/a.mp3", filename: "a.mp3" })];
     loadState.value = "idle";
     const list = render(<Shell />);
@@ -319,7 +322,7 @@ describe("Shell", () => {
     // skal kunne slippes mens LISTA står, som er mesteparten av tiden.
     expect(list).toContain('data-testid="edit-dropzone"');
     // Overskriften er destinasjonens eget navn så lenge ingen fil er åpen.
-    expect(list).toMatch(/data-testid="app-heading"[^>]*>Bibliotek</);
+    expect(list).toMatch(/data-testid="app-heading"[^>]*>Opptak</);
 
     loadState.value = "loading";
     const editing = render(<Shell />);
@@ -331,82 +334,65 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("EKSPORTERING uten en åpen fil tilbyr det sist redigerte, ikke en tom side", () => {
-    // Eiervalg 3 i D3: en eksport skal alltid være ett klikk unna.
-    navigate("export");
-    loadState.value = "idle";
-    lastEdited.value = {
-      opened: {
-        token: "t",
-        path: "/Users/x/SundayRec/2026-08-23.mp3",
-        name: "2026-08-23.mp3",
-      },
-      path: "/Users/x/SundayRec/2026-08-23.mp3",
-      fileName: "2026-08-23.mp3",
-      startedAtMs: null,
-    };
-    const html = render(<Shell />);
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Eksport</);
-    expect(html).toContain('data-testid="export-last"');
-    expect(html).toContain("Sist redigert");
-    expect(html).toContain("2026-08-23.mp3");
-    // Ingen valg-skjema uten en fil: knappene ville ikke kunnet gjøre noe.
-    expect(html).not.toContain('data-testid="editor-export-go"');
-
-    lastEdited.value = null;
-    navigate("record");
-  });
-
-  it("OPPTAK er kontrollrommet: seks kort, med svaret som gjelder nå", () => {
+  it("TA OPP er beskåret: kilde, måler og Start — uten oppsettskortene", () => {
     navigate("record");
     patchSettings({
       deviceId: "x32",
       deviceName: "Behringer X32",
       saveFolder: "/Users/x/SundayRec",
-      format: "mp3",
     });
     const html = render(<Shell />);
-    // Kilden i venstrekolonnen, og de fem i stabelen til høyre. De to
-    // tilleggene beholder sine egne id-er — kortene er de samme, flyttet.
-    for (const id of [
-      "control-sound",
-      "control-folder",
-      "control-quality",
-      "setup-camera",
-      "setup-auto",
-      "control-notify",
-    ]) {
+    for (const id of ["control-sound", "record-vu", "record-start"]) {
       expect(html).toContain(`data-testid="${id}"`);
     }
-    // Svaret som gjelder nå, ikke innstillingens navn.
-    expect(html).toContain("/Users/x/SundayRec");
-    // Varslingen er alltid besvart — feil varsles på maskinen uansett — så
-    // kortet er ikke gult, og svaret står der.
-    expect(html).not.toMatch(
-      /data-testid="control-notify"[^>]*data-tone="warn"/,
-    );
-    expect(html).toContain("På maskinen");
-    // …og hvert kort er lukket til noen ber om noe annet.
-    expect(html).toMatch(
-      /data-testid="control-folder"[^>]*data-expanded="false"/,
-    );
+    // Kamera, auto, mappe, kvalitet og varsling bor på INNSTILLINGER og PLAN.
+    for (const id of [
+      "setup-camera",
+      "setup-auto",
+      "control-folder",
+      "control-quality",
+      "control-notify",
+    ]) {
+      expect(html).not.toContain(`data-testid="${id}"`);
+    }
+    // Linja om neste planlagte opptak har en vei til PLAN.
+    expect(html).toContain('data-testid="record-next-plan"');
     patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
   });
 
-  it("INNSTILLINGER er språkvalget og Avansert — ikke de fem spørsmålene", () => {
-    // D2: de fem beslutningene redigeres der de brukes. Tannhjulet åpner det
-    // som IKKE hører til en søndag, og det er hele skjermen.
-    navigate("setup");
+  it("PLAN har «Ta opp automatisk» og «Flere tider»", () => {
+    navigate("plan");
+    const html = render(<Shell />);
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Plan</);
+    expect(html).toContain('data-testid="plan-page"');
+    expect(html).toContain('data-testid="setup-auto"');
+    expect(html).toContain('data-testid="advanced-schedule"');
+    navigate("record");
+  });
+
+  it("INNSTILLINGER har alle seksjonene, med lede", () => {
+    navigate("settings");
     const html = render(<Shell />);
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
-    expect(html).toContain('data-testid="setup-language"');
-    expect(html).toContain('data-testid="setup-advanced"');
-    // Seksjonene med overskrift og innholdsliste har erstattet «Avansert»-
-    // leden; språkvalgets egen lede viser at rammen (ikke-innebygd) står.
     expect(html).toContain('data-testid="setup-toc"');
-    expect(html).toContain('data-testid="setup-sec-recording"');
+    for (const id of [
+      "sound",
+      "camera",
+      "folder",
+      "notify",
+      "language",
+      "recording",
+      "updates",
+      "privacy",
+      "about",
+    ]) {
+      expect(html, id).toContain(`data-testid="setup-sec-${id}"`);
+    }
+    // Skjermene inni er de samme som første gang, og rammen (leden) står.
     expect(html).toContain('data-testid="setup-language-lede"');
-    expect(html).not.toContain('data-testid="setup-row-sound"');
+    expect(html).toContain('data-testid="setup-camera"');
+    // Tidsplanen bor på PLAN.
+    expect(html).not.toContain('data-testid="advanced-schedule"');
     navigate("record");
   });
 

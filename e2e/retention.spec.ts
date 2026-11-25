@@ -40,7 +40,7 @@ test.describe("retensjonspasset ved oppstart", () => {
         trash_list: MOVED_ENTRIES,
       },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "home",
+      goto: "record",
     });
 
     const host = page.getByTestId("toast-host");
@@ -50,7 +50,10 @@ test.describe("retensjonspasset ved oppstart", () => {
 
     // Handlingen går til papirkurven — og radene der er de som ble flyttet.
     await host.getByRole("button", { name: "Vis papirkurven" }).click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("trash-row")).toHaveCount(3);
   });
 
@@ -61,7 +64,7 @@ test.describe("retensjonspasset ved oppstart", () => {
         recordings_prune: { moved: 0, disabled: false } satisfies PruneSummary,
       },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "home",
+      goto: "record",
     });
 
     // Skallet er ferdig vekket (statuslinja står) — og ingen toast kom.

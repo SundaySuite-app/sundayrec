@@ -59,7 +59,7 @@ async function bootWithSnapshot(page: Page, snapshot: unknown): Promise<void> {
   await boot(page, {
     fixtures: { ...BASE, recording_snapshot: snapshot },
     settings: CHOSEN,
-    goto: "home",
+    goto: "record",
   });
 }
 

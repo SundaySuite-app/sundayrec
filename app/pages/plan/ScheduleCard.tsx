@@ -37,28 +37,28 @@ import type { WakeFailureEntry } from "@legacy/bindings/WakeFailureEntry";
 import type { WakeIssue } from "@legacy/bindings/WakeIssue";
 import type { WakeRecommendation } from "@legacy/bindings/WakeRecommendation";
 
-import { locale, t, tDyn, tf } from "../../../i18n";
+import { locale, t, tDyn, tf } from "../../i18n";
 import {
   patchSettings,
   saveSettingsDebounced,
   settings,
-} from "../../../state/settings";
-import { useReceipt } from "../../../settings/use-receipt";
-import { refreshWakeAfterReschedule } from "../../../state/next-recording";
-import { isRecording } from "../../../state/recording";
-import { BoundToggle } from "../../../ui/Bound/Bound";
-import { Button } from "../../../ui/Button/Button";
-import { Card } from "../../../ui/Card/Card";
-import { SettingRow } from "../../../ui/SettingRow/SettingRow";
-import { Select } from "../../../ui/Select/Select";
-import { toast } from "../../../ui/toast";
+} from "../../state/settings";
+import { useReceipt } from "../../settings/use-receipt";
+import { refreshWakeAfterReschedule } from "../../state/next-recording";
+import { isRecording } from "../../state/recording";
+import { BoundToggle } from "../../ui/Bound/Bound";
+import { Button } from "../../ui/Button/Button";
+import { Card } from "../../ui/Card/Card";
+import { SettingRow } from "../../ui/SettingRow/SettingRow";
+import { Select } from "../../ui/Select/Select";
+import { toast } from "../../ui/toast";
 import {
   DEFAULT_PLAN,
   DURATION_CHOICES,
   WEEKDAYS,
   type Weekday,
-} from "../schedule-core";
-import styles from "../setup.module.css";
+} from "./schedule-core";
+import styles from "../setup/setup.module.css";
 import {
   slotDay,
   slotRows,

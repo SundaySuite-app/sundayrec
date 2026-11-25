@@ -1,5 +1,5 @@
 /**
- * Tillegg — «Ta med kamera». Ett av de fem kortene i kontrollrommet.
+ * Kamera — «Ta med kamera», under Kamera i Innstillinger.
  *
  * Tre kontroller: av/på, hvilket kamera, og om lydfila skal ligge ved siden av
  * MP4-en. Oppløsning, bildefrekvens, container, kodek, koder-backend og bitrate
@@ -20,7 +20,7 @@
  *
  * ## Kompaktverdien er en ren regel
  *
- * `cameraValue` i `record/control-core.ts`. Særlig ÉN forskjell bor der og ikke
+ * `cameraValue` i `card-values-core.ts`. Særlig ÉN forskjell bor der og ikke
  * i en JSX-linje: en FEILET enhetslesning er ikke «ingen kameraer funnet». De
  * to har hvert sitt neste steg — en kabel å sjekke, eller en tillatelse å gi.
  *
@@ -51,12 +51,10 @@ import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { useSetting } from "../../settings/use-setting";
-import { cameraExpandable, cameraValue } from "../record/control-core";
+import { cameraExpandable, cameraValue } from "./card-values-core";
 import { motionWord, resolutionWord } from "./camera-words-core";
 
 export interface CameraCardProps {
-  expanded: boolean;
-  onExpand: () => void;
   highlight?: boolean;
 }
 
@@ -72,7 +70,7 @@ function deliversText(maxHeight: number, maxFps: number): string {
     : tf("app.setup.camera.deliversNoMotion", { res });
 }
 
-export function CameraCard({ expanded, onExpand, highlight }: CameraCardProps) {
+export function CameraCard({ highlight }: CameraCardProps) {
   const s = settings.value;
   const on = s.videoEnabled === true;
   const devices = videoDevices.value;
@@ -100,10 +98,7 @@ export function CameraCard({ expanded, onExpand, highlight }: CameraCardProps) {
       testId="setup-camera"
       title={t("app.setup.camera.title")}
       value={cameraText(value)}
-      expanded={expanded && cameraExpandable(facts)}
-      onExpand={cameraExpandable(facts) ? onExpand : undefined}
-      expandLabel={t("app.setup.change")}
-      collapseLabel={t("app.record.close")}
+      expanded={cameraExpandable(facts)}
       highlight={highlight}
       lead={
         <Toggle

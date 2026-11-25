@@ -11,7 +11,7 @@
 
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
-import { stopFor, type Weekday } from "../schedule-core";
+import { stopFor, type Weekday } from "./schedule-core";
 
 /** Én rad i listen: verdien, og hvor den ligger LAGRET. */
 export interface Row<T> {

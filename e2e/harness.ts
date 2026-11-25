@@ -35,14 +35,12 @@ export interface BootOptions {
   /** Seeded settings, merged over the shim's defaults by `loadSettings`. */
   settings?: Record<string, unknown>;
   /**
-   * `?goto=<page>[:<tab>]`, in the OLD shell's vocabulary — `home`, `schedule`,
-   * `settings`, `search` (that is the library; there never was a `history`
-   * page), `editor`, and the `settings:<tab>` forms. Those ids are still the
-   * ones written here because they are still the ones out in the world (the
-   * tray, deep links, this suite); `PAGE_ALIASES` / `TAB_ALIASES` in
-   * `app/router/router.ts` translate every one of them to a destination in the
-   * new three-place navigation, and `app/router/router.test.ts` has a row per
-   * form that appears in this repo.
+   * `?goto=<page>[:<anchor-or-tab>]` in the F5 vocabulary — `record`,
+   * `recordings` (`recordings:trash` for the trash tab), `plan`, `settings`
+   * (`settings:sound`, `settings:camera`, … scroll to that section). The old
+   * aliases (`home`, `search`, `editor`, `settings:audio`, …) are gone; an
+   * unknown page lands on `record` with a console warning
+   * (`app/router/router.ts`, `app/router/router.test.ts`).
    *
    * ⚠️ `?goto=` also forces `onboardingDone` true so a deep-linked boot skips
    * first-run. Any spec that wants the first-run sequence must boot WITHOUT it

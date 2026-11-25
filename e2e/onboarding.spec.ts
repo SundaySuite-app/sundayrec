@@ -106,7 +106,7 @@ test.describe("onboarding", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: false },
-      goto: "settings:audio",
+      goto: "settings:sound",
     });
     await expect(page.getByTestId("first-run")).toHaveCount(0);
     await expect(page.getByTestId("main")).not.toHaveAttribute(
@@ -138,7 +138,7 @@ test.describe("onboarding", () => {
         },
       },
       settings: { onboardingDone: true },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("consent-card-reask")).toContainText(
@@ -149,7 +149,7 @@ test.describe("onboarding", () => {
     await boot(page, {
       ...consentSpy(),
       settings: { onboardingDone: true },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("consent-card")).toBeVisible();
     await expect(page.getByTestId("consent-card-reask")).toHaveCount(0);
@@ -169,7 +169,7 @@ test.describe("onboarding", () => {
     await boot(page, {
       ...consentSpy(),
       settings: { onboardingDone: true },
-      goto: "home",
+      goto: "record",
     });
 
     const card = page.getByTestId("consent-card");
@@ -193,7 +193,7 @@ test.describe("onboarding", () => {
     await boot(page, {
       ...consentSpy(),
       settings: { onboardingDone: true },
-      goto: "home",
+      goto: "record",
     });
 
     await page.getByTestId("consent-card-yes").click();
@@ -258,14 +258,14 @@ test.describe("onboarding", () => {
         telemetry_consent_set: fn(`() => { throw new Error("backend down") }`),
       },
       settings: { onboardingDone: true },
-      goto: "home",
+      goto: "record",
     });
 
     await page.getByTestId("consent-card-no").click();
     await expect(page.getByTestId("consent-card-error")).toBeVisible();
     await expect(page.getByTestId("consent-card")).toBeVisible();
     // The rest of the app is untouched — the bottom bar still navigates.
-    await page.getByTestId("nav-setup").click();
+    await page.getByTestId("nav-settings").click();
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
   });
 });

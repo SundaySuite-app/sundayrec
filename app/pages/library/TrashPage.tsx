@@ -40,7 +40,6 @@ import {
 } from "@lib/pages/trash-core";
 
 import { locale, t, tf, tn } from "../../i18n";
-import { navigate } from "../../router/router";
 import { loadRecordingCount } from "../../state/recordings";
 import { loadTrash, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
@@ -49,6 +48,7 @@ import { confirmDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
 import { formatBytes } from "../record/record-core";
 import { dueLine } from "./library-core";
+import { RecordingsTabs } from "./LibraryPage";
 import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
 
@@ -135,17 +135,11 @@ export function TrashPage() {
 
   return (
     <div class={styles.page}>
+      <RecordingsTabs value="trash" />
       <div class={styles.trashHead}>
         <p data-testid="trash-lede" class={styles.sub}>
           {tf("app.library.trashLede", { n: TRASH_KEEP_DAYS })}
         </p>
-        <Button
-          variant="ghost"
-          testId="trash-back"
-          onClick={() => navigate("edit")}
-        >
-          {t("app.library.back")}
-        </Button>
       </div>
 
       {rows === null ? (

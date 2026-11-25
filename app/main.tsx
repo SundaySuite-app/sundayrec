@@ -87,7 +87,7 @@ let deepLinkApplied = false;
  * Hvor mange gjentakelser vi har lov til å slippe. ÉN, fordi shimmen gjentar
  * nøyaktig én gang (`setTimeout(tryGoto, 150)`). En tidsbasert grense ville
  * vært et tall å gjette; en engangsbillett er den samme grensen uten gjetting,
- * og en senere `showPage("setup")` fra menylinjen kommer alltid fram.
+ * og en senere `showPage("settings")` fra menylinjen kommer alltid fram.
  */
 let repeatsToDrop = deepLink ? 1 : 0;
 
@@ -255,6 +255,6 @@ async function boot(): Promise<void> {
   // banneret og «Prøv igjen» (Shell) i stedet for å sende en kirke med et
   // ferdig oppsett inn i førstegangsveiviseren.
   if (!settings.peek().onboardingDone && !hydrateError.peek()) {
-    navigate("setup", { firstRun: true });
+    navigate("settings", { firstRun: true });
   }
 }

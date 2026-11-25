@@ -33,13 +33,22 @@
   flex: 1 0 auto;
 }
 
+/* Arbeidsflaten: samme form som `.page`, så `inert` kan settes på ÉN boks
+   uten at handlingslinja mister bunnfestet sitt. */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  flex: 1 0 auto;
+}
+
 /* ── Topplinja ─────────────────────────────────────────────────────────── */
 
 .head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-4);
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sp-3);
 }
 
 .sub {

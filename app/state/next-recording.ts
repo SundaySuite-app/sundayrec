@@ -38,7 +38,7 @@ import {
   type WakeRefreshReason,
 } from "@lib/status/next-recording-core";
 
-import { anythingScheduled } from "../pages/setup/schedule-core";
+import { anythingScheduled } from "../pages/plan/schedule-core";
 import { isRecording } from "./recording";
 import { settings } from "./settings";
 

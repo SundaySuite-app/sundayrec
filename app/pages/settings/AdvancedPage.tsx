@@ -1,52 +1,37 @@
 /**
- * Resten av Innstillinger — canvasens artboard 5.4, delt i seksjoner.
+ * Resten av Innstillinger — opptaksvalg, oppdatering, personvern og om/logg.
  *
- * Fram til S2 var dette ÉN flat liste under «Avansert», uten overskrifter. Det
- * var riktig så lenge listen var kort; nå har den tidsplan, utlegging,
- * opptaksvalg, oppdateringer, logg og lisenser, og en frivillig som
- * leter etter «flere tider» skal ikke måtte lese seg gjennom alt. Hver
- * seksjon har en overskrift og én setning (`SettingsSection`), og
- * innholdslista øverst på siden (`SetupPage`) hopper mellom dem.
+ * Dette var «Avansert» (artboard 5.4). F5 flyttet tidsplanen til PLAN og
+ * lyd/kamera/mappe/varsler/språk opp som egne seksjoner i `SettingsPage`; det
+ * som står igjen her er det som ikke hører hjemme noe annet sted. Seksjonene er
+ * barn av `SettingsPage`-kolonnen (`display: contents`), så de har samme
+ * avstand som resten.
  *
- * Tidsplanen er ikke «avansert»: en frivillig trenger den. Språkvalget
- * (første seksjon) bor i `SetupPage`.
- *
- ## Hva som IKKE er her, og hvorfor
+ * ## Hva som IKKE er her, og hvorfor
  *
  * - **«Spør om redigering etter opptak», «Beskytt opptak», «Start med
  *   maskinen»** — tre av de fire uten bakendleser (ATLAS §2.6). «Start med
- *   maskinen» bor på nivå 1 inne i «Ta opp automatisk», der den betyr noe; de
- *   to andre er ute.
+ *   maskinen» bor på PLAN, inne i «Ta opp automatisk», der den betyr noe.
  *
- *   ⚠️ Den fjerde, **«Oppdater automatisk»**, kom TILBAKE i P3 — sammen med
- *   timeren som gjør den til noe. Den har ingen leser i Rust fordi det er
- *   renderen som eier den timesvise sjekken, og PRIVACY.md lover at den kan
- *   slås av: «Slår du den av, tar appen ikke kontakt med serveren — verken ved
- *   oppstart eller den vanlige sjekken hver time.» En bryter uten timer og en
- *   timer uten bryter er begge et brutt løfte, så de hører sammen. Se
- *   `app/state/auto-update.ts`.
- * - **`prerollEnabled`** — også uten bakendleser. Sekundene ER bryteren nå (se
- *   `app/state/preroll.ts`), så to kontroller for én ting er blitt én.
- * - **`silenceThreshold` (dBFS)** — Rust leser den, men −50 dBFS er ikke et
- *   tall noen frivillig kan ha en mening om, og feil verdi stopper opptaket
- *   midt i gudstjenesten. Standarden står; den er ikke synlig.
- * - **«Mikser og lydbehandling»** — canvasen tegner raden med en «Åpne»-knapp.
- *   Mikseren bygges i P4, så knappen ville ikke åpnet noe. En død knapp lærer
- *   en frivillig at knappene her ikke er til å stole på, så raden kommer
- *   sammen med mikseren.
+ *   ⚠️ **«Oppdater automatisk»** har en bakendleser likevel: renderen eier den
+ *   timesvise sjekken, og PRIVACY.md lover at den kan slås av: «Slår du den
+ *   av, tar appen ikke kontakt med serveren — verken ved oppstart eller den
+ *   vanlige sjekken hver time.» En bryter uten timer og en timer uten bryter er
+ *   begge et brutt løfte, så de hører sammen. Se `app/state/auto-update.ts`.
+ * - **`prerollEnabled`** — uten bakendleser. Sekundene ER bryteren (se
+ *   `app/state/preroll.ts`).
+ * - **`silenceThreshold` (dBFS)** — −50 dBFS er ikke et tall noen frivillig kan
+ *   ha en mening om, og feil verdi stopper opptaket midt i gudstjenesten.
+ * - **Tidsplan, vekking og feilsøkingsrader** — tidsplanen er PLAN. Diagnosen
+ *   og «Legg ut»-radene gikk ut i F2.
  *
  * ## Hvorfor rader og ikke et trekkspill
  *
  * `SettingRow` har allerede skillelinjen og de fire faste plassene (etikett,
- * kvittering, forklaring, kontroll), og `Card` er beholderen. En ny
- * `Accordion`-komponent ville vært en komponent for å skjule det canvasen
- * viser åpent.
+ * kvittering, forklaring, kontroll), og `Card` er beholderen.
  */
 
-import { useEffect } from "preact/hooks";
-
 import { t, tDyn } from "../../i18n";
-import { route } from "../../router/router";
 import { usePatch } from "../../settings/use-patch";
 import { settings, type Settings } from "../../state/settings";
 import {
@@ -60,11 +45,10 @@ import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
 import { LicensesCard } from "./advanced/LicensesCard";
 import { LogRow } from "./advanced/MaintenanceRows";
-import { ScheduleCard } from "./advanced/ScheduleCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";
 import { UpdateRow } from "./advanced/UpdateRow";
 import { SettingsSection } from "./SettingsSection";
-import styles from "./setup.module.css";
+import styles from "../setup/setup.module.css";
 
 /** Sekundene forhåndsbufferen tilbyr. 0 = av — den ENE bryteren. */
 const PREROLL_CHOICES = [0, 15, 30];
@@ -82,28 +66,10 @@ const AUTO_DELETE_DEFAULT_DAYS = 90;
 const AUTO_DELETE_GUARD_DAYS = 30;
 
 export function AdvancedPage() {
-  // Nivå 1 og de gamle dyplenkene peker på et sted INNE i denne lista
-  // (`?goto=settings:general` → toppen, tidsplanen → `schedule`). Uten
-  // dette lander man bare på toppen og må lete etter det man klikket seg fram
-  // til.
-  const anchor = route.value.anchor;
-  useEffect(() => {
-    if (!anchor) return;
-    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
-  }, [anchor]);
-
   return (
-    // `display: contents` (se `.advanced`): seksjonene er barn av SetupPage sin
-    // kolonne, så de har samme avstand som kirkeseksjonen over.
+    // `display: contents` (se `.advanced`): seksjonene er barn av
+    // SettingsPage sin kolonne, så de har samme avstand som seksjonene over.
     <div data-testid="setup-advanced" class={styles.advanced}>
-      <SettingsSection
-        id="sec-schedule"
-        sectionKey="schedule"
-        intro={t("app.setup.advanced.schedDesc")}
-      >
-        <ScheduleCard />
-      </SettingsSection>
-
       <SettingsSection
         id="sec-recording"
         sectionKey="recording"
@@ -111,8 +77,7 @@ export function AdvancedPage() {
       >
         {/*
           Ankeret heter fortsatt «engine»: Lyd-sida lenker hit for «Avansert
-          lyd», og lenka skal lande på opptaksinnstillingene. Selve motorvalget
-          (Windows' DirectShow-luke) gikk ut i C3b — det er én opptaksmotor nå.
+          lyd», og lenka skal lande på opptaksinnstillingene.
         */}
         <Card testId="advanced-recording" anchor="engine">
           <BoundSelect
@@ -138,11 +103,10 @@ export function AdvancedPage() {
           />
           <SplitRows />
           {/*
-            Bibliotekets bunnlinje lenker hit («Slettes automatisk etter 90
-            dager · Endre»), og `AdvancedPage` ruller til `route.anchor`.
+            Opptakslistens bunnlinje lenker hit («Slettes automatisk etter 90
+            dager · Endre»), og `SettingsPage` ruller til `route.anchor`.
             Ankeret er en bar `id` og ikke et `Card`-anker, fordi radene deler
-            kort med resten av opptaksinnstillingene — et andre kort bare for
-            å ha et anker ville delt en liste canvasen viser som én.
+            kort med resten av opptaksvalgene.
           */}
           <div id="autodelete">
             <AutoDeleteRows />
@@ -156,7 +120,6 @@ export function AdvancedPage() {
         intro={t("app.setup.sections.updatesDesc")}
       >
         <Card testId="advanced-updates">
-          <TelemetryRow />
           {/*
             Bryteren FØR raden den styrer: «Oppdater automatisk» av betyr at
             ingenting under skjer av seg selv, og rekkefølgen skal lese slik.
@@ -174,12 +137,12 @@ export function AdvancedPage() {
       </SettingsSection>
 
       <SettingsSection
-        id="sec-help"
-        sectionKey="help"
-        intro={t("app.setup.sections.helpDesc")}
+        id="sec-privacy"
+        sectionKey="privacy"
+        intro={t("app.setup.sections.privacyDesc")}
       >
-        <Card testId="advanced-help">
-          <LogRow />
+        <Card testId="advanced-privacy">
+          <TelemetryRow />
         </Card>
       </SettingsSection>
 
@@ -188,6 +151,9 @@ export function AdvancedPage() {
         sectionKey="about"
         intro={t("app.setup.sections.aboutDesc")}
       >
+        <Card testId="advanced-help">
+          <LogRow />
+        </Card>
         <AsioAttribution />
         <LicensesCard />
       </SettingsSection>

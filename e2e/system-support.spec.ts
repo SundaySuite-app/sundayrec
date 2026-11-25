@@ -38,7 +38,7 @@ test.describe("log file", () => {
     await boot(page, {
       fixtures,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
   }
 
@@ -91,7 +91,7 @@ test.describe("licenses", () => {
           "<!doctype html><h2>FFmpeg (GPL)</h2><p>source: https://ffmpeg.org</p>",
       },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await expect(page.getByTestId("adv-licenses")).toContainText("Lisenser");
@@ -114,7 +114,7 @@ test.describe("licenses", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await page.getByTestId("adv-licenses-open").click();

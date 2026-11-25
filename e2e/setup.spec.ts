@@ -18,7 +18,7 @@ import {
 //
 // ⚠️ D2 flyttet FLATEN, ikke påstandene: de fem kortene bor i kontrollrommet på
 // OPPTAK nå, så `goto` er «home» og selektorene er kortenes. Hvordan selve
-// utfoldingen oppfører seg står i `e2e/control-room.spec.ts`; her er det
+// utfoldingen oppfører seg står i `e2e/settings-plan.spec.ts`; her er det
 // fortsatt reglene bak svarene.
 
 /** Én lydenhet, i den formen `list_audio_devices` svarer med. */
@@ -45,7 +45,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, list_audio_devices: [device()] },
       settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("record-no-source")).toBeVisible();
@@ -71,7 +71,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceId: "x32",
         deviceName: "Behringer X32",
       },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-source-missing")).toHaveAttribute(
       "data-tone",
@@ -93,7 +93,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceName: "Behringer X32",
         deviceChannels: { x32: { channelL: 14, channelR: 15 } },
       },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-source")).toBeVisible();
     // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
@@ -114,15 +114,11 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "mp3", bitrate: "320" },
-      goto: "home",
+      goto: "settings:folder",
     });
-    await expect(page.getByTestId("control-quality-summary")).toHaveText(
-      "Egendefinert · MP3 320",
-    );
 
-    // Og kortet står øverst på skjermen som eier valget — valgt, men ikke
+    // Kortet står øverst på skjermen som eier valget — valgt, men ikke
     // valgBART: det beskriver det lagrede, det er ikke et valg noen kan ta.
-    await page.getByTestId("control-quality-expand").click();
     const custom = page.getByTestId("quality-choices-row-custom");
     await expect(custom).toHaveAttribute("data-selected", "true");
     await expect(custom.locator("input")).toBeDisabled();
@@ -136,12 +132,10 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "flac", bitrate: "128" },
-      // Dyplenken folder ut mappe-kortet; kvaliteten er et annet kort, og de
-      // to kan stå åpne samtidig.
-      goto: "settings:files",
+      // Mappe og format står i samme seksjon på Innstillinger.
+      goto: "settings:folder",
     });
     await expect(page.getByTestId("setup-folder")).toBeVisible();
-    await page.getByTestId("control-quality-expand").click();
 
     await page.getByTestId("quality-choices-row-mp3").click();
     await expect(page.getByTestId("quality-receipt")).toHaveText("Lagret ✓");
@@ -259,7 +253,7 @@ test.describe("en innstilling som ikke kunne lagres", () => {
         videoEnabled: true,
         keepSeparateAudio: true,
       },
-      goto: "home",
+      goto: "settings",
     });
 
     const toggle = page.getByTestId("camera-keep-audio-control-input");
@@ -288,7 +282,7 @@ test.describe("«Ta opp automatisk»", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, slots: [] },
-      goto: "home",
+      goto: "plan",
     });
 
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
@@ -327,7 +321,7 @@ test.describe("«Ta opp automatisk»", () => {
           { days: [2], start: "19:00", stop: "20:30", max: null },
         ],
       },
-      goto: "home",
+      goto: "plan",
     });
 
     await page.getByTestId("setup-auto-toggle").click();

@@ -47,7 +47,7 @@ import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
  * seam. Command names are the RUST names (snake_case); their payloads are
  * camelCase, except `recordings_list`, which answers snake_case rows.
  * `boot.settings` — a partial settings object merged over the defaults.
- * `boot.goto` — a deep link in the OLD vocabulary; the router translates it.
+ * `boot.goto` — a deep link in the F5 vocabulary (`record`, `recordings`, `plan`, `settings`).
  * `act` drives clicks and backend events; `pre` installs anything that has to
  * exist before the renderer's first line runs.
  *
@@ -297,7 +297,7 @@ function settingsScene(
   settings: Record<string, unknown>,
   fixtures: Fixtures = HEALTHY,
 ): BootOptions {
-  return { fixtures, settings, goto: "settings:general" };
+  return { fixtures, settings, goto: "settings" };
 }
 
 // ── First run ───────────────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-no-source",
     full: true,
@@ -366,7 +366,7 @@ export const SCENES: Scene[] = [
         autoRecordEnabled: true,
         slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
       },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -383,24 +383,24 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, list_audio_devices: [BUILT_IN] },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source-missing",
     full: true,
   },
 
-  // ── De seks kortene, foldet ut på stedet ──────────────────────────────────
+  // ── Det som bodde som kort på Ta opp, nå på Innstillinger og Plan ──────────
   {
     id: "opptak--kort-lyd",
     page: "Opptak",
-    state: "Kilde-kortet foldet ut — hele «Hvilken lydkilde?» på stedet",
-    recipe: "`?goto=settings:audio` → anker `sound`",
+    state: "Innstillinger › Lyd og kanaler — hele «Hvilken lydkilde?»",
+    recipe: "`?goto=settings:sound` → seksjonen `sec-sound`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:audio",
+      goto: "settings:sound",
     },
-    wait: "control-sound-body",
+    wait: "setup-sound",
     act: async (page) => {
       await settleVu(page);
     },
@@ -409,31 +409,27 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-mappe",
     page: "Opptak",
-    state: "«Hvor lagres opptakene?» foldet ut",
-    recipe: "`?goto=settings:files` → anker `folder`",
+    state: "Innstillinger › Lagringsmappe",
+    recipe: "`?goto=settings:folder` → seksjonen `sec-folder`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:files",
+      goto: "settings:folder",
     },
-    wait: "control-folder-body",
+    wait: "setup-folder",
     full: true,
   },
   {
     id: "opptak--kort-kvalitet",
     page: "Opptak",
-    state: "«Hvilken kvalitet?» foldet ut",
-    recipe: "klikk `control-quality-expand` (ingen gammel fane peker hit)",
+    state: "Innstillinger › opptaksformat (under Lagringsmappe)",
+    recipe: "`?goto=settings:folder` → `setup-quality` står under mappevalget",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "home",
+      goto: "settings:folder",
     },
-    wait: "control-quality",
-    act: async (page) => {
-      await page.getByTestId("control-quality-expand").click();
-      await expect(page.getByTestId("control-quality-body")).toBeVisible();
-    },
+    wait: "setup-quality",
     full: true,
   },
   {
@@ -445,7 +441,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "settings:video",
+      goto: "settings:camera",
     },
     // ⚠️ `setup-camera-*`, ikke `control-camera-*`: CameraCard gir ControlCard
     // sin egen testId. Samme for auto-kortet.
@@ -463,8 +459,8 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-auto",
     page: "Opptak",
-    state: "«Ta opp automatisk» foldet ut, med to faste tider",
-    recipe: "`?goto=schedule` → anker `auto`; to slots i innstillingene",
+    state: "Plan › «Ta opp automatisk», med to faste tider",
+    recipe: "`?goto=plan:auto`; to slots i innstillingene",
     boot: {
       fixtures: {
         ...BASE,
@@ -479,7 +475,7 @@ export const SCENES: Scene[] = [
           { days: [2], start: "19:00", stop: "20:30", max: null },
         ],
       },
-      goto: "schedule",
+      goto: "plan:auto",
     },
     wait: "setup-auto-body",
     full: true,
@@ -487,14 +483,14 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-varsling",
     page: "Opptak",
-    state: "«Varsling» foldet ut",
-    recipe: "`?goto=settings:sharing` → anker `notify`",
+    state: "Innstillinger › Varsler",
+    recipe: "`?goto=settings:notify` → seksjonen `sec-notify`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:sharing",
+      goto: "settings:notify",
     },
-    wait: "control-notify-body",
+    wait: "setup-notify",
     full: true,
   },
 
@@ -508,7 +504,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -531,7 +527,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("denied") },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -550,7 +546,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: CAMERA_FIXTURES,
       settings: { ...WITH_CAMERA, videoDeviceName: "Sony HandyCam" },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -567,7 +563,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Banner: opptaket ble avbrutt, med grunnen i klartekst",
     recipe: "`emit('recording-error', { code: 'device_disconnected' })`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitAt(page, "recording-error", {
@@ -592,7 +592,7 @@ export const SCENES: Scene[] = [
         get_disk_space: { freeBytes: 200_000_000, totalBytes: 500e9 },
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "banner-low-disk",
     act: async (page) => {
@@ -605,7 +605,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Banner: et planlagt opptak ble aldri tatt",
     recipe: "`emitEvent('scheduler://missed', [{ at, label }])`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitEventAt(page, "scheduler://missed", [
@@ -637,7 +641,7 @@ export const SCENES: Scene[] = [
         ],
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "banner-preflight",
     act: async (page) => {
@@ -664,7 +668,7 @@ export const SCENES: Scene[] = [
         },
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "consent-card",
     act: async (page) => {
@@ -677,7 +681,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Kvitteringen etter et ferdig opptak",
     recipe: "`emit('recording-finished', { path })`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitAt(page, "recording-finished", {
@@ -706,7 +714,7 @@ export const SCENES: Scene[] = [
         ...cameraFixtures(),
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -749,7 +757,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, stop_recording: true },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -782,7 +790,7 @@ export const SCENES: Scene[] = [
         recording_cancel_autostop: true,
       },
       settings: { ...CHOSEN, manualMaxMinutes: 60 },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -811,7 +819,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     full: true,
@@ -825,7 +833,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: [] },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-empty",
     full: true,
@@ -838,7 +846,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     act: async (page) => {
@@ -851,7 +859,7 @@ export const SCENES: Scene[] = [
     page: "Bibliotek og redigering",
     state: "Papirkurven — med «slettes om N dager»",
     recipe:
-      "to rader i `trash_list`, så klikk `library-trash-open` (ikke nåbar via `?goto=`)",
+      "to rader i `trash_list`, så klikk fanen `recordings-tabs-row-trash`",
     boot: {
       fixtures: {
         ...BASE,
@@ -869,11 +877,11 @@ export const SCENES: Scene[] = [
         ],
       },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
-    wait: "library-trash-open",
+    wait: "recordings-tabs",
     act: async (page) => {
-      await page.getByTestId("library-trash-open").click();
+      await page.getByTestId("recordings-tabs-row-trash").click();
       await expect(page.getByTestId("trash-row").first()).toBeVisible();
     },
     full: true,
@@ -882,7 +890,7 @@ export const SCENES: Scene[] = [
     id: "redigering--papirkurv-tom",
     page: "Bibliotek og redigering",
     state: "Papirkurven er tom",
-    recipe: "`trash_list: []`, så klikk `library-trash-open`",
+    recipe: "`trash_list: []`, så klikk fanen `recordings-tabs-row-trash`",
     boot: {
       fixtures: {
         ...BASE,
@@ -891,11 +899,11 @@ export const SCENES: Scene[] = [
         trash_list: [],
       },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
-    wait: "library-trash-open",
+    wait: "recordings-tabs",
     act: async (page) => {
-      await page.getByTestId("library-trash-open").click();
+      await page.getByTestId("recordings-tabs-row-trash").click();
       await expect(page.getByTestId("trash-empty")).toBeVisible();
     },
   },
@@ -904,7 +912,7 @@ export const SCENES: Scene[] = [
     page: "Bibliotek og redigering",
     state: "Arbeidsflaten, steget «Klipp» — bølgeform og de to håndtakene",
     recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
       await expect(page.getByTestId("editor-handle-start")).toBeVisible();
@@ -917,7 +925,7 @@ export const SCENES: Scene[] = [
     page: "Bibliotek og redigering",
     state: "Kuttlista — det som blir borte, som rader man kan angre",
     recipe: "åpne, så flytt startshåndtaket 3:30 inn med PageUp",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
       const start = page.getByTestId("editor-handle-start");
@@ -937,7 +945,7 @@ export const SCENES: Scene[] = [
     page: "Bibliotek og redigering",
     state: "Steget «Lyd» — bryteren «Podkastklar lyd»",
     recipe: "åpne, så klikk `editor-steps-row-sound`",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
       await expect(page.getByTestId("editor-handle-start")).toBeVisible();
@@ -956,7 +964,7 @@ export const SCENES: Scene[] = [
         editor_load_recording: fn("() => new Promise(() => {})"),
       }),
       settings: CHOSEN,
-      goto: "editor",
+      goto: "recordings",
     },
     act: async (page) => {
       await openFile(page);
@@ -975,7 +983,7 @@ export const SCENES: Scene[] = [
         editor_peaks: null,
       }),
       settings: CHOSEN,
-      goto: "editor",
+      goto: "recordings",
     },
     act: async (page) => {
       await openFile(page);
@@ -983,48 +991,22 @@ export const SCENES: Scene[] = [
     },
   },
 
-  // ══ EKSPORTERING ══════════════════════════════════════════════════════════
-  {
-    id: "eksport--tom",
-    page: "Eksport",
-    state: "Ingen fil åpen — siste opptak med én knapp, og en velger",
-    recipe: "`?goto=export` med tre opptak i lista",
-    boot: {
-      fixtures: editorScene({ recordings_list: LIBRARY_ROWS }),
-      settings: CHOSEN,
-      goto: "export",
-    },
-    wait: "export-last",
-    full: true,
-    narrow: true,
-  },
-  {
-    id: "eksport--ingenting",
-    page: "Eksport",
-    state: "Ingen opptak i det hele tatt",
-    recipe: "`recordings_list: []`",
-    boot: {
-      fixtures: editorScene({ recordings_list: [] }),
-      settings: CHOSEN,
-      goto: "export",
-    },
-    wait: "export-empty",
-  },
+  // ══ EKSPORT (arket inne i editoren) ═══════════════════════════════════════
   {
     id: "eksport--valg",
     page: "Eksport",
-    state: "Valgene — format, hvor, og hva som blir laget",
-    recipe: "`export-pick-use` på første rad i velgeren",
+    state: "Eksportarket — format, hvor, podkastklar lyd og hva som blir laget",
+    recipe: "åpne opptaket, så klikk `editor-export-open`",
     boot: {
       fixtures: editorScene({
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await expect(page.getByTestId("editor-export")).toBeVisible();
     },
     full: true,
@@ -1041,11 +1023,11 @@ export const SCENES: Scene[] = [
         editor_export: EXPORT_HELD,
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await page.getByTestId("editor-export-go").click();
       await expect(page.getByTestId("editor-exporting")).toBeVisible();
       await emitAt(page, "editor-export-progress", {
@@ -1067,11 +1049,11 @@ export const SCENES: Scene[] = [
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await page.getByTestId("editor-export-go").click();
       await expect(page.getByTestId("editor-exported-file")).toBeVisible();
     },
@@ -1083,7 +1065,7 @@ export const SCENES: Scene[] = [
     id: "innstillinger--landing",
     page: "Innstillinger",
     state: "Hele flaten — kirkeprofil øverst, Avansert under",
-    recipe: "`?goto=settings:general` på en frisk maskin",
+    recipe: "`?goto=settings` på en frisk maskin",
     boot: settingsScene(CHOSEN),
     wait: "setup-language",
     full: true,
@@ -1339,7 +1321,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1362,7 +1344,7 @@ export const SCENES: Scene[] = [
         get_disk_space: { freeBytes: 200_000_000, totalBytes: 500e9 },
       },
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1389,7 +1371,7 @@ export const SCENES: Scene[] = [
         autoRecordEnabled: true,
         slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
       },
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1407,7 +1389,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1425,7 +1407,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: { ...CHOSEN, autoUpdate: true },
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     act: async (page) => {
@@ -1445,7 +1427,7 @@ export const SCENES: Scene[] = [
         settings_get: fn(`() => { throw new Error("store_unreadable") }`),
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "hydrate-error",
     full: true,

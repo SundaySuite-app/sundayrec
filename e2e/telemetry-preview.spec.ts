@@ -58,7 +58,7 @@ async function openAdvanced(
   await boot(page, {
     fixtures,
     settings: SETTLED_SETTINGS,
-    goto: "settings:general",
+    goto: "settings",
   });
   await expect(page.getByTestId("adv-diag")).toBeVisible();
 }
@@ -223,7 +223,7 @@ test.describe("telemetry preview", () => {
         }`),
       },
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     });
 
     const card = page.getByTestId("consent-card");

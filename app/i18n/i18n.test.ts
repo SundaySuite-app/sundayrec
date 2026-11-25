@@ -21,7 +21,7 @@ describe("app i18n", () => {
   // measuring the catalogue instead of the app.
   it("starts on the catalogue the shell bundles eagerly", () => {
     expect(locale.value).toBe("no");
-    expect(t("app.page.record")).toBe("Opptak");
+    expect(t("app.page.recordings")).toBe("Opptak");
   });
 
   it("offers exactly Norwegian and English, in the ALL_LOCALES order", () => {
@@ -33,17 +33,17 @@ describe("app i18n", () => {
     // still re-runs when it changes. This is what a component gets for free.
     const seen: string[] = [];
     const dispose = effect(() => {
-      seen.push(t("app.page.record"));
+      seen.push(t("app.page.recordings"));
     });
     expect(seen).toEqual(["Opptak"]);
 
     await setLocale("en");
 
     expect(locale.value).toBe("en");
-    expect(t("app.page.record")).toBe("Record");
+    expect(t("app.page.recordings")).toBe("Recordings");
     expect(seen, "the effect did not re-run on the language change").toEqual([
       "Opptak",
-      "Record",
+      "Recordings",
     ]);
     dispose();
   });
@@ -56,8 +56,8 @@ describe("app i18n", () => {
     const mismatches: string[] = [];
     const dispose = effect(() => {
       const lang = locale.value;
-      const heading = t("app.page.record");
-      const expected = lang === "en" ? "Record" : "Opptak";
+      const heading = t("app.page.recordings");
+      const expected = lang === "en" ? "Recordings" : "Opptak";
       if (heading !== expected) mismatches.push(`${lang} → ${heading}`);
     });
     await setLocale("no");
@@ -70,7 +70,7 @@ describe("app i18n", () => {
   it("falls back to Norwegian for an unknown language, and says so", async () => {
     await setLocale("kv" as never);
     expect(locale.value).toBe("no");
-    expect(t("app.page.record")).toBe("Opptak");
+    expect(t("app.page.recordings")).toBe("Opptak");
   });
 
   it("tf interpolates and tn picks the count-aware form", async () => {
@@ -84,9 +84,9 @@ describe("app i18n", () => {
 
   it("tDyn resolves a dynamic suffix under a static prefix", async () => {
     await setLocale("no");
-    expect(tDyn("app.page", "record")).toBe("Opptak");
+    expect(tDyn("app.page", "recordings")).toBe("Opptak");
     await setLocale("en");
-    expect(tDyn("app.page", "record")).toBe("Record");
+    expect(tDyn("app.page", "recordings")).toBe("Recordings");
     await setLocale("no");
   });
 

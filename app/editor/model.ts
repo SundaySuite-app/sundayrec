@@ -40,7 +40,6 @@
  */
 
 import { signal } from "@preact/signals";
-import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
 import type { Cut } from "@lib/pages/editor/types";
 
 export type { Cut };
@@ -195,61 +194,6 @@ export const activeStep = signal<Step>("cut");
  * lever mellom `pointerdown` og `pointerup`.
  */
 export const dragWindow = signal<Range | null>(null);
-
-// ── Det sist redigerte, som overlever at fila lukkes ────────────────────────
-
-/** Nok om et opptak til å kunne åpne det igjen, og til å kunne navngi det. */
-export interface LastEdited {
-  /** Åpningen som ga lappen — «Gjør klar» åpner den igjen uten å spørre Rust om
-   *  noe nytt (lappen lever til appen lukkes). */
-  opened: OpenedRecording;
-  path: string;
-  fileName: string;
-  /** Millisekundet gudstjenesten begynte, når den som åpnet fila visste det. */
-  startedAtMs: number | null;
-}
-
-/**
- * Opptaket som SIST ble åpnet ferdig i denne økta.
- *
- * EKSPORTERING uten en åpen fil er ikke en tom side: eierens tredje D3-valg er
- * at det alltid skal være ett klikk fra en eksport. Kortet der leser dette.
- *
- * Tre regler, og de er hele kontrakten:
- *
- *   1. Skrives av lasteren når en åpning når `ready` — ikke ved `loading`. En
- *      fil som ikke lot seg lese er ikke noe man har redigert.
- *   2. Nullstilles ALDRI av `closeFile`/`resetFileState`. Å lukke fila er
- *      nettopp situasjonen kortet finnes for; en «sist redigert» som forsvant i
- *      det man lukket ville vært en huskelapp som glemmer.
- *   3. Nullstilles av [`forgetMovedPath`] — og BARE av den — når papirkurven
- *      eller retensjonspasset flytter filen. Uten det tilbyr kortet «Gjør
- *      klar» på en sti som ikke lenger fører til opptaket (F2-9): lasteren
- *      feiler, og feilteksten sa «formatet støttes kanskje ikke, eller fila er
- *      skadet» om en fil som bare lå i papirkurven.
- *
- * Øktvarig med vilje: ingenting skrives til disk. `recordings_list` bærer INGEN
- * redigert-status (se `app/state/recordings.ts`), og et merke som gjettes ut av
- * sidevogner er verre enn ingen merke.
- */
-export const lastEdited = signal<LastEdited | null>(null);
-
-/**
- * Glem «sist redigert» hvis dens fil er blant `paths` — regel 3 over.
- *
- * Kalt av papirkurv-sømmen (`LibraryPage.remove`/`undoTrash`) og
- * retensjonspasset (`state/retention.ts`) RETT ETTER at de har flyttet noe,
- * aldri av lasteren selv: den kjenner bare filen den nettopp åpnet, ikke hva
- * som skjer med den etterpå. Ren funksjon — bare signalet, ingen IPC — så
- * kravet er likhet på STIEN (kortet og papirkurven kjenner opptaket ved
- * samme streng), ikke identitet på objektet.
- */
-export function forgetMovedPath(paths: readonly string[]): void {
-  const current = lastEdited.peek();
-  if (current && paths.includes(current.path)) {
-    lastEdited.value = null;
-  }
-}
 
 // ── Synkroniseringen: ett par, ett sted ─────────────────────────────────────
 

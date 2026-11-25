@@ -1,5 +1,5 @@
 /**
- * En seksjon på Innstillinger: overskrift, én setning, og kortene.
+ * En seksjon på Innstillinger (og Plan): overskrift, én setning, og kortene.
  *
  * Overskriften er en `<h2>` med `tabIndex={-1}`: innholdslista øverst hopper
  * hit og flytter fokus, så en tastatur- eller skjermleserbruker lander der
@@ -9,11 +9,10 @@
 import type { ComponentChildren } from "preact";
 
 import { tDyn } from "../../i18n";
-import type { SettingsSectionId } from "./sections";
-import styles from "./setup.module.css";
+import styles from "../setup/setup.module.css";
 
 export interface SettingsSectionProps {
-  id: SettingsSectionId;
+  id: string;
   /** Suffikset i `app.setup.sections.*` — se `sections.ts`. */
   sectionKey: string;
   /** Den korte setningen under overskriften. Utelates når barna har sin egen. */

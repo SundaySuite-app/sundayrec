@@ -46,7 +46,7 @@ test.describe("statuslinjen sier ikke «Alt er klart» over en sperret Start", (
         deviceId: null,
         deviceName: "Behringer X32",
       },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("status-line")).toHaveAttribute(
@@ -114,7 +114,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         wake_verify: WAKE_NOT_ARMED,
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "home",
+      goto: "record",
     });
 
     const wake = page.getByTestId("record-next-auto-wake");
@@ -132,7 +132,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         wake_verify: WAKE_ARMED,
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("record-next-auto-wake")).toHaveText(
@@ -160,7 +160,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         },
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await page.getByTestId("adv-wake-arm-control-input").click();
@@ -187,7 +187,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         wake_verify: WAKE_ARMED,
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await page.getByTestId("adv-wake-arm-control-input").click();
@@ -219,7 +219,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         },
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await page.getByTestId("adv-wake-arm-control-input").click();
@@ -268,7 +268,7 @@ test.describe("wake_verify: poll-disiplin (F1-R3)", () => {
         wake_verify: countingWakeVerify(WAKE_NOT_ARMED),
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "home",
+      goto: "record",
     });
 
     // Oppstarten selv er ÉN lovlig grunn (innstillings-effektens FØRSTE
@@ -312,7 +312,7 @@ test.describe("wake_verify: poll-disiplin (F1-R3)", () => {
         wake_verify: countingWakeVerify(WAKE_ARMED),
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
-      goto: "home",
+      goto: "record",
     });
 
     const before = await wakeVerifyCallCount(page);

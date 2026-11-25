@@ -35,7 +35,7 @@ import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Select } from "../../ui/Select/Select";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
-import { autoRecordOn } from "./schedule-core";
+import { autoRecordOn } from "../plan/schedule-core";
 import { SubPage } from "./SubPage";
 
 /** Minuttene «påminnelse før opptak» tilbyr. 0 = av. */

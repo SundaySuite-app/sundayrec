@@ -406,10 +406,10 @@ test.describe("første gang", () => {
     await expect(page.getByTestId("setup-language-lede")).toHaveCount(0);
 
     // Ut av sekvensen, til INNSTILLINGER — der chippen også står.
-    await page.getByTestId("nav-setup").click();
+    await page.getByTestId("nav-settings").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "setup",
+      "settings",
     );
     await expect(page.getByTestId("first-run-resume")).toBeVisible();
     await expect(page.getByTestId("setup-language-lede")).toBeVisible();

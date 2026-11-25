@@ -576,9 +576,8 @@ describe("PageShell", () => {
     // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes. D3 flyttet
     // det fra skinnens rot til topplinjas; formen er den samme.
     expect(html).toContain("data-tauri-drag-region");
-    // Tre destinasjoner (D3: Opptak · Redigering · Eksportering) pluss
-    // tannhjulet, som teller som `nav-*` men ikke er en destinasjon.
-    for (const page of ["record", "edit", "export", "setup"]) {
+    // F5: fire sider i bunnlinja.
+    for (const page of ["record", "recordings", "plan", "settings"]) {
       expect(html).toContain(`data-testid="nav-${page}"`);
     }
     expect(html).toContain('data-testid="status-line"');

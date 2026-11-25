@@ -45,7 +45,7 @@ test.describe("innstillinger — commit", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, settings_save: SLOW_SAVE(600) },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     const field = page.getByTestId("adv-autodelete-days-control-input");
@@ -88,7 +88,7 @@ test.describe("innstillinger — commit", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     const receipt = page.getByTestId("adv-split-receipt");
@@ -119,7 +119,7 @@ test.describe("innstillinger — commit", () => {
         settings_save: fn("() => { throw new Error('database is locked') }"),
       },
       settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     const toggle = page.getByTestId("adv-split-control-input");
@@ -149,7 +149,7 @@ test.describe("innstillinger — commit", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, settings_save: SLOW_SAVE(300) },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     const field = page.getByTestId("adv-autodelete-days-control-input");
