@@ -41,6 +41,7 @@ import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
+import type { EditorChannelCheck } from "../../legacy/bindings/EditorChannelCheck";
 import type { EditorTaleSaid } from "../../legacy/bindings/EditorTaleSaid";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
@@ -277,6 +278,11 @@ declare global {
       /** B3b: what «Tale» did to the recording — codes (`hum`, `noise`,
        *  `reverb`, `clicks`), never prose. Null outside the Tauri shell. */
       editorTaleSaid: (sourceToken: string) => Promise<EditorTaleSaid | null>;
+      /** Is one side of the recording silent next to a live one? `deadSide` is
+       *  `"left"`, `"right"` or null. Null outside the Tauri shell. */
+      editorChannelCheck: (
+        sourceToken: string,
+      ) => Promise<EditorChannelCheck | null>;
       /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
        *  with `parseSavedContent`. Null when there is none. The sidecar
        *  commands name the recording by its File token, never its path (A3). */

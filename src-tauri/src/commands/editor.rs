@@ -440,6 +440,17 @@ pub async fn editor_tale_said(
     editor::tale_said(&source).await
 }
 
+/// Is one side of this recording dead (silent next to a live other side)? The editor shows a
+/// warning, nothing more. Reads the open round's channel levels.
+#[tauri::command]
+pub async fn editor_channel_check(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<editor::EditorChannelCheck> {
+    let source = resolve_source(&chosen, &source_token).await?;
+    Ok(editor::channel_check(&source).await)
+}
+
 /// The sentence-carrying error for a picked export folder that cannot be used.
 /// Codes, never the path: the renderer maps each to its own line
 /// (`app/editor/export-core.ts`, `EXPORT_ERROR_KEYS`).

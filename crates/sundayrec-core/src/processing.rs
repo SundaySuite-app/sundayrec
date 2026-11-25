@@ -1,9 +1,11 @@
-//! The one decision «Tale» still takes from the channel levels: does this recording crackle?
+//! The two decisions taken from a recording's channel levels: does it crackle (the speech
+//! clean-up, [`crate::tale`], switches click removal on), and is one side dead
+//! ([`dead_channel`], the editor's «sjekk kabelen» warning).
 //!
 //! F3 removed the editor's advanced vocal chain (the mixer) and the post-hoc channel repair
 //! (swap / duplicate-the-good-channel / per-channel makeup, with the diagnosis that recommended
-//! it). What is left is the crackle test the speech clean-up ([`crate::tale`]) uses to switch
-//! click removal on. The recording-side channel mapping (`capture::channel_map_filter`) is a
+//! it). The WARNING came back as [`dead_channel`] — the same dead/healthy rules as the old
+//! diagnosis, without any repair. The recording-side channel mapping (`capture::channel_map_filter`) is a
 //! different thing and untouched.
 //!
 //! Pure, deterministic. No I/O.
@@ -49,6 +51,67 @@ pub fn channel_crackles(levels: ChannelLevelsDb) -> bool {
         || (spiky(levels.peak_right_db, rr) && healthy(rl))
 }
 
+/// Peak fallback, used ONLY when the caller passed no RMS: a channel quieter than this while
+/// the other is healthy is treated as dead.
+const DEAD_FLOOR_DB: f64 = -45.0;
+/// Peak fallback for [`HEALTHY_RMS_DB`].
+const HEALTHY_PEAK_DB: f64 = -30.0;
+
+/// Which side of a stereo recording is dead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeadSide {
+    Left,
+    Right,
+}
+
+/// One channel's measurements, so the rules below read as rules.
+#[derive(Debug, Clone, Copy)]
+struct Chan {
+    peak_db: f64,
+    rms_db: Option<f64>,
+}
+
+impl Chan {
+    /// Loud enough on average to be a recording of something.
+    fn healthy(&self) -> bool {
+        match self.rms_db {
+            Some(rms) => rms >= HEALTHY_RMS_DB,
+            None => self.peak_db >= HEALTHY_PEAK_DB,
+        }
+    }
+
+    /// No usable programme material: under the RMS floor, or all transients next to a partner
+    /// that carries real material (the crackling cable).
+    fn dead(&self, partner: &Chan) -> bool {
+        match self.rms_db {
+            Some(rms) => {
+                rms < DEAD_RMS_FLOOR_DB
+                    || (self.peak_db - rms > CRACKLE_CREST_DB && partner.healthy())
+            }
+            None => self.peak_db < DEAD_FLOOR_DB,
+        }
+    }
+}
+
+/// Is exactly one side silent (or crackling) while the other carries signal? `None` for a
+/// healthy pair, for two dead sides (nothing to blame a cable for), and for anything unusable.
+pub fn dead_channel(levels: ChannelLevelsDb) -> Option<DeadSide> {
+    let left = Chan {
+        peak_db: levels.peak_left_db,
+        rms_db: levels.rms_left_db,
+    };
+    let right = Chan {
+        peak_db: levels.peak_right_db,
+        rms_db: levels.rms_right_db,
+    };
+    // A side that carries nothing is only a cable problem when the other side is alive.
+    match (left.dead(&right), right.dead(&left)) {
+        (true, false) if right.healthy() => Some(DeadSide::Left),
+        (false, true) if left.healthy() => Some(DeadSide::Right),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +147,68 @@ mod tests {
             rms_left_db: Some(-55.0),
             rms_right_db: Some(-24.0),
         }));
+    }
+
+    fn pair(pl: f64, pr: f64, rl: Option<f64>, rr: Option<f64>) -> ChannelLevelsDb {
+        ChannelLevelsDb {
+            peak_left_db: pl,
+            peak_right_db: pr,
+            rms_left_db: rl,
+            rms_right_db: rr,
+        }
+    }
+
+    #[test]
+    fn a_silent_side_next_to_a_live_one_is_named() {
+        assert_eq!(
+            dead_channel(pair(-70.0, -6.0, Some(-80.0), Some(-24.0))),
+            Some(DeadSide::Left)
+        );
+        assert_eq!(
+            dead_channel(pair(-6.0, -90.0, Some(-24.0), Some(-100.0))),
+            Some(DeadSide::Right)
+        );
+    }
+
+    #[test]
+    fn a_crackling_side_counts_as_dead() {
+        // Pops at -20 dBFS over -55 dBFS RMS, partner healthy: crest 35 dB.
+        assert_eq!(
+            dead_channel(pair(-6.0, -20.0, Some(-24.0), Some(-55.0))),
+            Some(DeadSide::Right)
+        );
+    }
+
+    #[test]
+    fn a_healthy_a_quiet_or_a_dead_pair_names_nobody() {
+        // Healthy and merely lopsided.
+        assert_eq!(
+            dead_channel(pair(-6.0, -12.0, Some(-24.0), Some(-30.0))),
+            None
+        );
+        // Quiet but balanced stereo is left alone.
+        assert_eq!(
+            dead_channel(pair(-50.0, -51.0, Some(-58.0), Some(-59.0))),
+            None
+        );
+        // Both dead: no cable to blame.
+        assert_eq!(
+            dead_channel(pair(-90.0, -92.0, Some(-100.0), Some(-101.0))),
+            None
+        );
+        // A quiet partner is not proof the other side is dead.
+        assert_eq!(
+            dead_channel(pair(-80.0, -48.0, Some(-90.0), Some(-55.0))),
+            None
+        );
+    }
+
+    #[test]
+    fn without_rms_the_peaks_decide() {
+        assert_eq!(
+            dead_channel(pair(-60.0, -8.0, None, None)),
+            Some(DeadSide::Left)
+        );
+        assert_eq!(dead_channel(pair(-10.0, -12.0, None, None)), None);
     }
 }

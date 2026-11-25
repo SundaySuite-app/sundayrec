@@ -46,6 +46,7 @@ import type { MasterPreviewParams } from "@lib/pages/editor/export-params";
 import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
 import { isRecording } from "../state/recording";
 import type { EditorListenEvent } from "@legacy/bindings/EditorListenEvent";
+import { resetChannelCheck } from "./channel-check";
 import { cuts, E } from "./model";
 import { keepWindow } from "./editor-core";
 import {
@@ -539,6 +540,7 @@ export function watchListenPrepare(): () => void {
 /** Glem alt som hørte til ÉN fil. */
 export function resetSound(): void {
   stopListen();
+  resetChannelCheck();
   podcastAudio.value = DEFAULT_PODCAST_AUDIO;
   soundVisited.value = false;
   taleSaid.value = null;

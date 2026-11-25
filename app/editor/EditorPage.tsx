@@ -51,7 +51,7 @@
 
 import { useEffect } from "preact/hooks";
 
-import { locale, t, tf } from "../i18n";
+import { locale, t, tDyn, tf } from "../i18n";
 import { spanOfSeconds } from "../pages/record/record-core";
 import { spanText } from "../pages/record/span-text";
 import { Banner } from "../ui/Banner/Banner";
@@ -66,6 +66,7 @@ import {
   redoCut,
   undoCut,
 } from "./cuts";
+import { deadChannel } from "./channel-check";
 import { confirmDiscard } from "./discard";
 import { exactSpan, keptSeconds, timecode } from "./editor-core";
 import { exporting } from "./export";
@@ -197,6 +198,7 @@ function Workspace() {
             },
           ]}
         />
+        <DeadChannelNotice />
         {step === "cut" ? <CutStep /> : <SoundStep />}
         <NextStep step={step} />
       </div>
@@ -325,6 +327,19 @@ function Summary() {
       {DOT}
       {resultLine()}
     </span>
+  );
+}
+
+/** «Venstre side er stille — sjekk kabelen», når analysen fant en død side. Ingen reparasjon. */
+function DeadChannelNotice() {
+  const side = deadChannel.value;
+  if (!side) return null;
+  return (
+    <Banner
+      tone="warn"
+      testId="editor-dead-channel"
+      title={tDyn("app.editor.deadChannel", side)}
+    />
   );
 }
 

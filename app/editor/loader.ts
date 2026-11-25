@@ -44,6 +44,7 @@ import {
   startedAtMs,
   duration as durationSignal,
 } from "./model";
+import { checkChannels } from "./channel-check";
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import { seekTo, teardownPlayback } from "./playback";
@@ -334,6 +335,8 @@ async function openFileNow(
   loadPhase.value = null;
   loadProgress.value = null;
   loadState.value = "ready";
+  // Kanalvarselet leser måleren åpne-runden alt har kjørt; det venter ingen på.
+  void checkChannels(token);
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
 }

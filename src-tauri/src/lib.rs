@@ -657,6 +657,7 @@ pub fn run() {
             commands::editor::editor_open_recording,
             commands::editor::editor_open_known,
             commands::editor::editor_tale_said,
+            commands::editor::editor_channel_check,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
             // «Velg mappe …»: Rust opens the folder picker and answers with a

@@ -1424,6 +1424,9 @@ const api: Record<string, unknown> = {
   // B3b: hva «Podkastklar lyd» gjorde med opptaket (koder, ikke tekst).
   editorTaleSaid: async (sourceToken: string) =>
     call("editor_tale_said", { sourceToken }, null),
+  // Er den ene siden av opptaket død? Kode (`left`/`right`), ikke tekst.
+  editorChannelCheck: async (sourceToken: string) =>
+    call("editor_channel_check", { sourceToken }, null),
   // Kill the in-flight export's ffmpeg. Returns whether one was running; the
   // export itself then rejects with `cancelled`, which the editor maps to a
   // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt

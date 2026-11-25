@@ -535,7 +535,11 @@
       "podcastAudio": "Podcast-ready audio",
       "podcastAudioDesc": "Clearer voice, even levels and the right loudness for podcasts. The original is never touched.",
       "podcastOff": "No audio processing",
-      "exportOpen": "Export"
+      "exportOpen": "Export",
+      "deadChannel": {
+        "left": "The left side is silent — check the cable",
+        "right": "The right side is silent — check the cable"
+      }
     },
     "export": {
       "content": "Content",

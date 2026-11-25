@@ -29,7 +29,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16};
+use sundayrec_core::open_read::{LevelMeter, OpenRead, Pass16, SourceLevels};
 use sundayrec_core::pcm_stream::{for_each_block, output_args};
 use sundayrec_core::tale::SpeechAnalysis;
 use tokio::sync::watch;
@@ -48,6 +48,8 @@ const BLOCKS_IN_FLIGHT: usize = 4;
 pub(super) struct Opened {
     /// Max-abs per 10 ms of the 8 kHz mono mix.
     pub(super) peaks: Vec<f32>,
+    /// Peak and RMS of channel 1 and 2 — what the dead-channel warning reads.
+    pub(super) levels: SourceLevels,
     /// «Tale»'s measurements; [`SpeechAnalysis::decide`] turns them into what the profile takes
     /// along.
     pub(super) analysis: SpeechAnalysis,
@@ -232,6 +234,7 @@ async fn read_once(
 
     Ok(Arc::new(Opened {
         peaks: read.read16.peaks,
+        levels: read.levels,
         analysis,
     }))
 }

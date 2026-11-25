@@ -298,6 +298,17 @@ pub(crate) fn export_target(
     (out_dir, out_stem)
 }
 
+/// The dead-channel warning's answer: which side of the recording is silent while the other
+/// carries signal, as the stable code the editor turns into «Venstre/høyre side er stille — sjekk
+/// kabelen». No repair follows: the warning is the whole feature.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "EditorChannelCheck.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct EditorChannelCheck {
+    /// `left` or `right`; `None` for a healthy, mono, silent or unreadable recording.
+    pub dead_side: Option<String>,
+}
+
 /// B3b: what «Tale» did to this recording, as the stable codes the sound step turns into
 /// three words each (`app.editor.said.*`). The DATA is the contract; no prose crosses.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -1581,6 +1592,44 @@ fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTa
             .map(|c| c.said().into_iter().map(String::from).collect())
             .unwrap_or_default(),
     }
+}
+
+/// Is one side of the recording dead? Reads the channel meter the open round already ran (one
+/// decode shared with the waveform and «Tale»). Never an error: a recording that cannot be read
+/// says nothing, and the editor then says nothing too.
+#[cfg(feature = "editor")]
+pub async fn channel_check(input_path: &str) -> EditorChannelCheck {
+    let engine = ExportEngine::new();
+    let dead_side = match open::opened(&engine, input_path, &|_| {}).await {
+        Ok(opened) => dead_side_of(opened.levels.levels),
+        Err(_) => None,
+    };
+    EditorChannelCheck { dead_side }
+}
+
+#[cfg(not(feature = "editor"))]
+pub async fn channel_check(_input_path: &str) -> EditorChannelCheck {
+    EditorChannelCheck { dead_side: None }
+}
+
+/// The side code for measured levels. Mono (no right peak) has nothing to compare. Pure.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+fn dead_side_of(levels: Option<sundayrec_core::levels::ChannelLevels>) -> Option<String> {
+    use sundayrec_core::processing::{ChannelLevelsDb, DeadSide, dead_channel};
+    let l = levels?;
+    let side = dead_channel(ChannelLevelsDb {
+        peak_left_db: l.peak_db_left,
+        peak_right_db: l.peak_db_right?,
+        rms_left_db: l.rms_db_left,
+        rms_right_db: l.rms_db_right,
+    })?;
+    Some(
+        match side {
+            DeadSide::Left => "left",
+            DeadSide::Right => "right",
+        }
+        .to_string(),
+    )
 }
 
 /// Probe just has_video/has_audio — reuses the full load probe and projects the
@@ -4390,6 +4439,32 @@ mod tests {
         // With a preset: gain is skipped, the preset's chain runs.
         let with_preset = build_pre_chain(Some(3.0), Some(&preset), None).unwrap();
         assert_eq!(with_preset, Chain::from_master_preset(&preset).unwrap());
+    }
+
+    /// The dead-channel warning names the silent side, and nothing for mono, a healthy pair or
+    /// a recording with no samples.
+    #[test]
+    fn the_dead_side_is_named_from_measured_levels() {
+        use sundayrec_core::levels::ChannelLevels;
+        let lv = |pl: f64, pr: Option<f64>, rl: f64, rr: Option<f64>| {
+            Some(ChannelLevels {
+                peak_db_left: pl,
+                peak_db_right: pr,
+                rms_db_left: Some(rl),
+                rms_db_right: rr,
+            })
+        };
+        assert_eq!(
+            dead_side_of(lv(-70.0, Some(-6.0), -80.0, Some(-24.0))).as_deref(),
+            Some("left")
+        );
+        assert_eq!(
+            dead_side_of(lv(-6.0, Some(-90.0), -24.0, Some(-100.0))).as_deref(),
+            Some("right")
+        );
+        assert_eq!(dead_side_of(lv(-6.0, Some(-8.0), -24.0, Some(-26.0))), None);
+        assert_eq!(dead_side_of(lv(-6.0, None, -24.0, None)), None, "mono");
+        assert_eq!(dead_side_of(None), None);
     }
 
     /// B3a: what the analysis found goes between the channel repair and the preset's own chain,

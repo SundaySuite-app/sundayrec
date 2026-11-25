@@ -535,7 +535,11 @@
       "podcastAudio": "Podkastklar lyd",
       "podcastAudioDesc": "Tydeligere stemme, jevnere lyd og riktig volum for podkast. Originalen røres ikke.",
       "podcastOff": "Uten lydbehandling",
-      "exportOpen": "Eksporter"
+      "exportOpen": "Eksporter",
+      "deadChannel": {
+        "left": "Venstre side er stille — sjekk kabelen",
+        "right": "Høyre side er stille — sjekk kabelen"
+      }
     },
     "export": {
       "content": "Innhold",

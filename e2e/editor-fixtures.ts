@@ -74,6 +74,9 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
     // den styrer noe. V1-halen tok `editor_detect_chapters` — samme sort, død
     // siden R2 — og med den er hele denne klassen ute av e2e/: et sveip mot
     // kommando-registeret fant ingen flere.)
+    // Balansert som standard: en fikstur som «fant» en død side i hver spec ville satt et
+    // varsel i hver skjermflate.
+    editor_channel_check: { deadSide: null },
     editor_prepare_listen: fn(`(args) => {
       (window.__E2E_PREPARES__ ||= []).push(args.request);
       return true;

@@ -724,6 +724,33 @@ test.describe("editor", () => {
     expect((await exportPayloads(page))[0].podcastAudio).toBe(false);
   });
 
+  test("en stille kanal gir et varsel i editoren — og ingen reparasjon", async ({
+    page,
+  }) => {
+    await openEditor(page, {
+      editor_channel_check: { deadSide: "left" },
+    });
+    await waitForEditor(page);
+    await expect(page.getByTestId("editor-dead-channel")).toContainText(
+      "Venstre side er stille — sjekk kabelen",
+    );
+    // Ingen bryter og ingen mikser å slå på: bare varselet.
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-dead-channel")).toBeVisible();
+    await page.getByTestId("editor-steps-row-cut").click();
+    await goToExport(page);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = (await exportPayloads(page))[0];
+    expect("channelRepair" in sent).toBe(false);
+  });
+
+  test("et balansert opptak får ikke noe varsel", async ({ page }) => {
+    await openEditor(page);
+    await waitForEditor(page);
+    await expect(page.getByTestId("editor-dead-channel")).toHaveCount(0);
+  });
+
   test("lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting", async ({
     page,
   }) => {
