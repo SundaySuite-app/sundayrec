@@ -264,7 +264,7 @@ describe("feilkodene", () => {
   });
 
   // F2-A-A: den tidligere fallbacken søkte med `includes` over HELE
-  // meldingen for alle sju kodene, ikke bare de flerords-fraser som aldri
+  // meldingen for begge kodene, ikke bare de flerords-fraser som aldri
   // kan bli `lead` — så et ord som «timeout» eller «cancelled» i 500 tegn rå
   // ffmpeg-prosa (helt urelatert til vår egen `timeout`/`cancelled`-kode) ga
   // feil setning. Den er nå strammet til KUN å gjelde koder med mellomrom.

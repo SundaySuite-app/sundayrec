@@ -9,7 +9,7 @@
  *
  * Tre `tf()`-nøkler og ingen `tn()`. Pausen var én grunn til det (F2-S6
  * avsluttet den); den som består er at «s», «min» og «t» er INVARIANTE
- * forkortelser i alle sju språk, i hele tallområdet de faktisk vises for.
+ * forkortelser i begge språk, i hele tallområdet de faktisk vises for.
  */
 
 import { tf } from "../i18n";

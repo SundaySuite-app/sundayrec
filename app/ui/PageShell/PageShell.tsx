@@ -69,7 +69,7 @@
  * er ordrett den samme.
  *
  * ⚠️ Katalognøklene heter fortsatt `app.rail.*`. Nøkler er identiteter, ikke
- * beskrivelser: å døpe dem om ville kostet sju språkfiler og paritetslista for
+ * beskrivelser: å døpe dem om ville kostet to språkfiler og paritetslista for
  * å endre et ord ingen bruker ser.
  */
 
@@ -98,7 +98,7 @@ const PAGES: readonly Page[] = ["record", "edit", "export"];
 
 /**
  * Produktnavnet. En KONSTANT og ikke tekst i treet: navnet oversettes ikke —
- * det heter SundayRec på alle sju språk — men en gate som må vurdere hver
+ * det heter SundayRec på begge språk — men en gate som må vurdere hver
  * bokstavsekvens i JSX kan ikke vite det, og skal ikke måtte gjette. Ett navn,
  * ett sted.
  */

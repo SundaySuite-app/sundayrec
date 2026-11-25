@@ -239,11 +239,11 @@ test.describe("engine codes render as catalogue sentences", () => {
     // …og oppslaget skjer ved RENDER, så et språkbytte etterpå virker. F2-W9
     // oversatte ved mottak; da hadde denne stått igjen på norsk.
     await page.getByTestId("nav-setup").click();
-    await page.getByTestId("language-control-input").selectOption("de");
+    await page.getByTestId("language-control-input").selectOption("en");
     await page.getByTestId("nav-record").click();
 
     await expect(page.getByTestId("banner-preflight")).toContainText(
-      "Nur 0.4 GB frei auf dem Speicherlaufwerk",
+      "Only 0.4 GB free on the save disk",
     );
   });
 

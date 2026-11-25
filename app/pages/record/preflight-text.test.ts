@@ -6,7 +6,7 @@
  * ## MUTASJONSPRØVEN
  *
  * La `preflightText` returnere `f.message` uansett (den ENGELSKE reserven):
- * «viser katalogens setning» blir rød. Slett `deviceMissing` fra én av de sju
+ * «viser katalogens setning» blir rød. Slett `deviceMissing` fra én av de to
  * katalogene: `app/i18n/backend-codes.test.ts` og sjuspråkstesten under blir røde.
  */
 

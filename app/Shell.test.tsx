@@ -15,7 +15,7 @@ import { hydrateError, patchSettings } from "./state/settings";
 // Fortsatt det ene stedet i enhetsgaten som beviser (a) at `.tsx` kompilerer
 // uten et Babel-forvalg — transformen er tsconfigs `jsxImportSource: "preact"`
 // — og (b) at `@lib/*` når fram til legacy-rendereren, så det nye skallet
-// leser de SAMME sju katalogene den utsendte appen gjør.
+// leser de SAMME to katalogene den utsendte appen gjør.
 //
 // S1b legger til det som er nytt: at skallet faktisk er der, og at hver
 // destinasjon viser det som er SANT i stedet for en plassholdertekst.

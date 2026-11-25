@@ -4,7 +4,7 @@
  *
  * ## Hvorfor
  *
- * Hele appen er oversatt til sju språk — bortsett fra de to kanalene som når en
+ * Hele appen er oversatt til to språk — bortsett fra de to kanalene som når en
  * frivillig som IKKE ser på skjermen: OS-varselet og linja i varsel-e-posten.
  * De var skrevet i norsk, som literaler, på stedet der det gikk galt:
  *
@@ -13,7 +13,7 @@
  *
  * En polsk frivillig fikk polsk grensesnitt, polsk e-post-emne — og DEN
  * setningen på norsk. Det var funn A8. `sundayrec_core::alerts` flyttet
- * setningene inn i en katalog der kompilatoren krever alle sju.
+ * setningene inn i en katalog der kompilatoren krever begge.
  *
  * Denne gaten er den andre halvdelen (funn D5): den holder på flyttingen.
  * Ingen enkelt test kan se at noen skriver en NY norsk streng inn i motoren i
@@ -538,7 +538,7 @@ function main() {
     }
     console.error(
       "\nEn brukervendt setning hører hjemme i `sundayrec_core::alerts`\n" +
-        "(`AlertText`-varianten + alle sju språk — kompilatoren krever dem).\n" +
+        "(`AlertText`-varianten + begge språk — kompilatoren krever dem).\n" +
         "En loggtekst eller en diagnose hører hjemme på ENGELSK.\n" +
         "Er norsken faktisk riktig her (data, et navn), sett fila i\n" +
         "`allowlist` i scripts/rust-norwegian-baseline.json MED en grunn.",

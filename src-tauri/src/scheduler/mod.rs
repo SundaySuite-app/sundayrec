@@ -1508,14 +1508,14 @@ mod tests {
     /// Every scheduler sentence goes through `lang_of`, so a settings language
     /// the catalog knows must produce a NON-Norwegian sentence. This is the
     /// test that would fail if somebody re-hardcoded a literal at a call site:
-    /// the Polish church in finding A8 would be back to Norwegian alerts.
+    /// the English church in finding A8 would be back to Norwegian alerts.
     #[test]
-    fn a_polish_church_gets_polish_scheduler_alerts() {
-        let pl = Settings {
-            language: Some("pl".into()),
+    fn an_english_church_gets_english_scheduler_alerts() {
+        let en = Settings {
+            language: Some("en".into()),
             ..Settings::default()
         };
-        assert_eq!(lang_of(&pl), Lang::Pl);
+        assert_eq!(lang_of(&en), Lang::En);
         for a in [
             AlertText::ScheduledSkippedBusy,
             AlertText::ScheduledStarted,
@@ -1526,9 +1526,9 @@ mod tests {
             AlertText::SchedulerTaskBody,
         ] {
             assert_ne!(
-                a.text(lang_of(&pl)),
+                a.text(lang_of(&en)),
                 a.text(Lang::No),
-                "{a:?} came out Norwegian for a Polish church"
+                "{a:?} came out Norwegian for an English church"
             );
         }
     }
@@ -2074,22 +2074,25 @@ mod tests {
         // …and the SAME two shapes in the volunteer's own language (F1 A8).
         // The Sunday a church lost is the one sentence that must never arrive
         // in a language nobody in the building reads.
-        let p1 = missed_summary(std::slice::from_ref(&one), Lang::Pl);
+        let p1 = missed_summary(std::slice::from_ref(&one), Lang::En);
         assert!(
-            p1.starts_with("Zaplanowane nagranie nie zostało wykonane:"),
+            p1.starts_with("A scheduled recording was not made:"),
             "{p1}"
         );
-        let p3 = missed_summary(&many, Lang::Pl);
-        assert!(p3.starts_with("Nie wykonano 3 "), "{p3}");
-        // The slot's NAME and TIME are Polish too now — the words are built
+        let p3 = missed_summary(&many, Lang::En);
+        assert!(
+            p3.starts_with("3 scheduled recordings were not made"),
+            "{p3}"
+        );
+        // The slot's NAME and TIME are English too now — the words are built
         // from the kind; the Norwegian label stays underneath, as the key.
-        assert!(p1.contains("Cotygodniowe nagranie (11:00–13:00)"), "{p1}");
-        assert!(p1.contains("niedz. 11:00"), "{p1}");
+        assert!(p1.contains("Weekly recording (11:00–13:00)"), "{p1}");
+        assert!(p1.contains("Sun 11:00"), "{p1}");
         assert!(
             !p1.contains("Ukentlig") && !p1.contains("2026-09-06T"),
             "{p1}"
         );
-        assert!(p3.contains("Cotygodniowe nagranie"), "{p3}");
+        assert!(p3.contains("Weekly recording"), "{p3}");
         assert_eq!(
             one.seen_key(),
             crate::notify::MissedSlot {

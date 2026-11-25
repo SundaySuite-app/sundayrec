@@ -113,7 +113,7 @@ export interface DecisionFacts {
    * Språket appen FAKTISK rendrer i (`app/i18n`s `locale`), ikke det som står
    * i `settings.language`.
    *
-   * De to er like i dag: alle sju språk er aktive (F2-S6), så en profil satt
+   * De to er like i dag: begge språk er aktive (F2-S6), så en profil satt
    * til tysk LESER tysk. Skillet står fordi det er det ærlige: mens fem
    * kataloger var pauset leste en tysk profil engelsk, og et språkkort som
    * svarte «Språk: tysk» ville sagt noe brukeren kan se med egne øyne at ikke

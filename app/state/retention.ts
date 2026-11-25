@@ -98,7 +98,7 @@ export async function runRetentionPass(): Promise<void> {
   forgetLastEdited(inTrash);
   forgetFinishedRecording(inTrash);
   // `trash.*`, ikke `app.*`: nøklene bor hos papirkurv-søsknene sine
-  // (`app/lib/i18n.test.ts` sveiper alle sju). Plasseringen ble avgjort mens
+  // (`app/lib/i18n.test.ts` sveiper begge). Plasseringen ble avgjort mens
   // `app.`-subtreet var pauset og derfor ikke kunne bære en flertallsgruppe;
   // pausen er over (F2-S6), men naboskapet er fortsatt den riktige grunnen.
   toast("info", tn("trash.retentionMoved", summary.moved), {

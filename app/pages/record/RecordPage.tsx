@@ -1246,7 +1246,7 @@ function RecordBanners() {
 }
 
 /** «{n} feil må rettes før opptaket» / «{n} ting å se på». Katalognøklene er
- *  legacy-skallets egne og finnes i alle sju språk — ingen NY tellende nøkkel. */
+ *  legacy-skallets egne og finnes i begge språk — ingen NY tellende nøkkel. */
 function preflightHeadline(findings: readonly PreflightFinding[]): string {
   const errors = findings.filter((f) => f.severity === "error").length;
   return errors > 0

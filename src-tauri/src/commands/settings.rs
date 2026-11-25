@@ -214,11 +214,6 @@ pub(super) fn all_files_name(lang: Lang) -> &'static str {
     match lang {
         Lang::No => "Alle filer",
         Lang::En => "All files",
-        Lang::De => "Alle Dateien",
-        Lang::Sv => "Alla filer",
-        Lang::Da => "Alle filer",
-        Lang::Pl => "Wszystkie pliki",
-        Lang::Fr => "Tous les fichiers",
     }
 }
 

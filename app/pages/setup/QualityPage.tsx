@@ -3,7 +3,7 @@
  *
  * Tre kort, ikke to velgere. Dagens app har fire formater OG tre bitrater, som
  * er tolv kombinasjoner en frivillig må rangere selv — og etikettene («MP3»,
- * «Kompakt», «Anbefalt», «Høyeste») er aldri oversatt til noen av de sju
+ * «Kompakt», «Anbefalt», «Høyeste») er aldri oversatt til noen av de to
  * språkene og sier ingenting om hva forskjellen betyr.
  *
  * Her er det tre svar med en begrunnelse hver, og hver av dem skriver BEGGE

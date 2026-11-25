@@ -61,7 +61,7 @@ pub enum WakePlatform {
 /// Was `Vec<String>` of hardcoded Norwegian. The strings were user-facing —
 /// they are what a volunteer reads when the wake toggle cannot promise what it
 /// looks like it promises — and a Norwegian sentence out of the engine is a
-/// sentence six of the seven languages never get. The code is the contract
+/// sentence the English reader never gets. The code is the contract
 /// instead: `app/pages/setup/advanced/ScheduleCard.tsx` renders it through
 /// `app.setup.advanced.wakeIssue.<code>`, and [`Self::as_str`] is the ENGLISH
 /// reserve for a shell that meets a code its catalogue predates.

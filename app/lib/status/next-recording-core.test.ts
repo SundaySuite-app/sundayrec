@@ -48,7 +48,7 @@ const tf = (
 /** Count-aware stub. The CLDR category is appended to the key so an assertion
  *  can still tell singular from plural without knowing any language's words;
  *  nb-NO stands in for "the active language" (the real per-language form
- *  selection is proven against all seven catalogues in i18n.test.ts). */
+ *  selection is proven against all two catalogues in i18n.test.ts). */
 const tn = (
   key: string,
   count: number,

@@ -111,7 +111,7 @@ export function TrashPage() {
     if (busy) return;
     const ok = await confirmDialog({
       // Antallet står i tittelen: forskjellen på å slette 2 og 200 opptak er
-      // hele beslutningen. Katalognøkkelen er legacys egen og finnes i alle sju
+      // hele beslutningen. Katalognøkkelen er legacys egen og finnes i begge
       // språk — en ny tellende nøkkel ville krevd polske flertallsformer midt i
       // pausen som finnes for å slippe akkurat det.
       title: tn("trash.confirmEmpty", count),
@@ -257,7 +257,7 @@ function Row({
 }
 
 /** «i dag» / «i går» / «3 dager siden». `trash-core` tar ordene utenfra så den
- *  slipper i18n-importen; alle tre finnes i alle sju språk. */
+ *  slipper i18n-importen; alle tre finnes i begge språk. */
 function ageWords(): {
   today: string;
   yesterday: string;

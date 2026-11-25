@@ -159,8 +159,7 @@
       "language": {
         "lede": "Språket appen bruker.",
         "label": "Språk i appen",
-        "desc": "Bytter med én gang.",
-        "paused": "Dette språket er midlertidig ikke tilgjengelig — appen viser {language} inntil videre."
+        "desc": "Bytter med én gang."
       },
       "notify": {
         "lede": "Maskinen sier alltid fra når noe går galt — til den som står ved den.",
@@ -416,12 +415,7 @@
     },
     "language": {
       "no": "Norsk",
-      "en": "Engelsk",
-      "sv": "Svensk",
-      "da": "Dansk",
-      "de": "Tysk",
-      "fr": "Fransk",
-      "pl": "Polsk"
+      "en": "Engelsk"
     },
     "first": {
       "step": "Steg {n} av {total}",

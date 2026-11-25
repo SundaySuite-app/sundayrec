@@ -106,7 +106,7 @@ jobs:
       # …og motsatt vei: finnes det nøkler ingen leser? Den halvdelen var
       # informativ mens legacy-skallet eide mesteparten av katalogen. Fase B
       # slettet skallet, `--unused` ble en FEILENDE gate, og 653 nøkler ble
-      # ryddet ut av alle sju katalogene. «Leser» er BÅDE et `t()`-kall i
+      # ryddet ut av begge katalogene. «Leser» er BÅDE et `t()`-kall i
       # SKALLET og en nøkkel navngitt av en delt kjerne under `app/lib/` — de
       # rene modulene svarer med nøkler, og en prune som bare talte kallene
       # ville slettet tekst som faktisk rendres.
@@ -131,8 +131,8 @@ jobs:
       # i18n-flertallsgate: hver `tn()`-nøkkel må være en CLDR-flertallsgruppe,
       # hver gruppe må ha nøyaktig kategoriene språket trenger (regnet ut med
       # Intl.PluralRules, ikke listet for hånd), og ingen gruppe må leses med
-      # `t()`. En manglende `few` i pl.json er ellers helt stille: teksten er
-      # bare gal for 2–4 og 22–24. Selvtest innebygd som mutasjonsvern. I
+      # `t()`. En manglende kategori i en.json eller no.json er ellers helt
+      # stille: teksten er bare gal for noen tall. Selvtest innebygd som mutasjonsvern. I
       # `npm run check` og ci-local.sh også — gate-paritet er lov.
       - name: i18n plural groups complete in every locale
         run: npm run i18n-plurals
@@ -161,9 +161,9 @@ jobs:
       # under src-tauri/src og crates/<krate>/src, per fil, mot en fasit som
       # bare kan gå NED. Setningene som når en frivillig utenfor skjermen —
       # OS-varselet og linja i varsel-e-posten — bor i
-      # `sundayrec_core::alerts`, der kompilatoren krever alle sju språk; denne
+      # `sundayrec_core::alerts`, der kompilatoren krever begge språk; denne
       # gaten er det som hindrer at nye norske setninger sniker seg tilbake inn
-      # i motoren. Sju-språks-katalogene og de norske DATA-tabellene står på
+      # i motoren. To-språks-katalogene og de norske DATA-tabellene står på
       # allowlisten i scripts/rust-norwegian-baseline.json, med grunnen skrevet
       # ut. Selvtest innebygd som mutasjonsvern. I `npm run check` og
       # ci-local.sh også — gate-paritet er lov.

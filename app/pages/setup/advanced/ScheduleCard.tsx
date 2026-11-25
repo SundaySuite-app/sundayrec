@@ -236,7 +236,7 @@ function WeeklyTimes() {
  * trenger å vite FØR søndagen, ikke etterpå.
  *
  * Nå er de KODER (`WakeIssue`/`WakeRecommendation`), og setningen står i
- * katalogen på alle sju språk. Listene er korte og plattformbestemte (én til
+ * katalogen på begge språk. Listene er korte og plattformbestemte (én til
  * fire punkter), så de står som en punktliste under setningen — ikke det
  * seks-panelers diagnosekortet modulhodet over sier nei til.
  *

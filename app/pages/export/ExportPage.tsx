@@ -29,7 +29,7 @@
  *
  * Atlasets §3d er de ti radene dette erstatter: eksporttype, videoformat,
  * videokodek, format, bitrate, «Bithybde» *(skrivefeil for «Bitdybde», sendt i
- * alle sju språk)*, destinasjon, behandling, intro & outro, lydforbedring —
+ * begge språk)*, destinasjon, behandling, intro & outro, lydforbedring —
  * ni klikk hvis alt velges. Her er det to spørsmål: **hvilket format**, og
  * **hvor** — pluss et valgfritt «Innhold» (tittel, taler, beskrivelse), som
  * kom med publiseringen; se `Content`.
@@ -421,7 +421,7 @@ function Choices() {
 
   const formats: RadioOption[] = EXPORT_FORMATS.map((id) => ({
     value: id,
-    // Formatnavnene er PRODUKTNAVN — «MP3» heter MP3 på alle sju språk.
+    // Formatnavnene er PRODUKTNAVN — «MP3» heter MP3 på begge språk.
     title: id.toUpperCase(),
     description: tDyn("app.editor.fmtDesc", id),
     recommended: id === "mp3",
@@ -583,7 +583,7 @@ function Content() {
  *
  * En AVBRUTT eksport er ikke en feil — brukeren ba om det — så den er nøytral
  * og ikke rød. De kjente kodene er bakendens egne, og setningene er legacys
- * (og finnes derfor i alle sju språk).
+ * (og finnes derfor i begge språk).
  *
  * ⚠️ Vakten leser `exportFailed`, IKKE `exportErrorText`: en kode
  * `exportErrorKey` ikke kjenner (en USB-pinne trukket ut, full disk under et

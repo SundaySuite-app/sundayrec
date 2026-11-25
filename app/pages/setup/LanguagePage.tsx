@@ -10,34 +10,19 @@
  * «trykk Lagre først» — det gamle skallet sa begge deler til forskjellige
  * tider.
  *
- * ✅ Alle sju språk står i lista siden F2-S6 (`ACTIVE_LOCALES`). Gjennom
- * redesignet var det bare norsk og engelsk — å tilby et språk der halvparten
- * av skjermen er tom er verre enn å ikke tilby det ennå — og en profil satt
- * til tysk beholdt «de» i basen hele veien. Nå får den tysk tilbake.
- *
- * ## Valgboksen lyver ikke om et valg den ikke kan tilby (F1-R2 / R9)
- *
- * Før la `<Select>` bare fram de aktive kodene som `<option>`. En profil
- * migrert med `language: "de"` satte da kontrollens `value` til noe INGEN
- * option hadde — og en `<select>` uten treff blant sine egne options viser
- * stille den FØRSTE optionen, uansett hva som faktisk står lagret. Se
- * `language-core.ts`s `languageOptions`: den legger til en ekstra, DEAKTIVERT
- * rad med det ekte navnet når det lagrede språket ikke er aktivt, og linja
- * under boksen (`isPausedLanguage`) sier hvorfor den ikke kan velges.
- *
- * ⚠️ Med alle sju aktive er `paused` alltid `false`, så raden og linja rendres
- * ikke i dag. De står fordi en pause kan skje igjen — se `language-core.ts`s
- * filhode, som forklarer hvorfor mekanismen fortsatt er dekket av tester.
+ * Fra F4 er det bare norsk og engelsk. Står det et språk i basen som ikke finnes lenger (en
+ * profil fra før F4 med svensk, dansk, tysk, fransk eller polsk), viser boksen språket som
+ * GJELDER — det `resolveStartupLocale` valgte etter systemregelen — og ikke den lagrede
+ * strengen. Velger du et språk, skrives det over.
  */
 
-import { locale, setLocale, t, tDyn, tf, type Locale } from "../../i18n";
+import { ALL_LOCALES, locale, setLocale, t, type Locale } from "../../i18n";
 import { useSetting } from "../../settings/use-setting";
 import { Card } from "../../ui/Card/Card";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Select } from "../../ui/Select/Select";
-import { isPausedLanguage, languageOptions } from "./language-core";
+import { languageOptions } from "./language-core";
 import { SubPage } from "./SubPage";
-import styles from "./setup.module.css";
 
 export function LanguagePage() {
   // Språket er en vanlig innstilling med vanlig kvittering — men BYTTET skjer
@@ -52,11 +37,13 @@ export function LanguagePage() {
       if (next !== locale.peek()) void setLocale(next);
     },
   });
-  // Den samme strengen går til BÅDE `<Select value>` og `languageOptions`:
-  // det er det som garanterer at boksens valgte verdi alltid finnes blant
-  // options'ene den får (se filhodet — det manglende treffet var hele feilen).
-  const selected = String(language.draft ?? locale.value);
-  const paused = isPausedLanguage(selected);
+  // Boksen viser språket som gjelder. Står det noe annet i basen (et fjernet språk), er det
+  // `locale` som er sannheten: det valgte `resolveStartupLocale` ved oppstart.
+  // Under en skriving står det valgte (utkastet) til den har landet.
+  const draft = String(language.draft ?? "");
+  const selected = (ALL_LOCALES as readonly string[]).includes(draft)
+    ? draft
+    : locale.value;
 
   return (
     <SubPage lede={t("app.setup.language.lede")} testId="setup-language">
@@ -71,7 +58,7 @@ export function LanguagePage() {
           {(ids) => (
             <Select
               value={selected}
-              options={languageOptions(selected)}
+              options={languageOptions()}
               onChange={(next) => language.set(next)}
               disabled={language.busy}
               labelId={ids.labelId}
@@ -80,13 +67,6 @@ export function LanguagePage() {
             />
           )}
         </SettingRow>
-        {paused ? (
-          <p data-testid="language-paused" class={styles.hint}>
-            {tf("app.setup.language.paused", {
-              language: tDyn("app.language", locale.value),
-            })}
-          </p>
-        ) : null}
       </Card>
     </SubPage>
   );

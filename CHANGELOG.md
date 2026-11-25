@@ -23,6 +23,10 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   uten at toppene går over taket). Av betyr lyden slik den ble tatt opp. De andre
   profilene («Tale og musikk»), den avanserte mikseren og kanalreparasjonen er borte.
   Gamle valg leses og ignoreres uten feilmelding.
+- **Bare norsk og engelsk.** Svensk, dansk, tysk, fransk og polsk er fjernet fra appen,
+  menylinjen og varslene. Har du valgt et av dem fra før, starter SundayRec uten
+  feilmelding på norsk hvis maskinen er norsk, ellers på engelsk, og du kan velge
+  språk under «Hvilket språk?».
 - **Filnavnet «kirkeår» er borte.** Et lagret filnavnmønster «church» leses som dato,
   som er standarden.
 - **Personvernteksten sier nå bare det som faktisk samles inn:** krasj, kvalitetsdata om

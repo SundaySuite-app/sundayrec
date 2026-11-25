@@ -17,11 +17,11 @@
  *   3. En gruppe lest med `t()` i stedet for `tn()` → objektet er ikke en
  *      streng, så brukeren får reservestrengen (norsk) uansett språk.
  *
- * F2-T1: kategori-kravet i (2) gjelder alle sju katalogene, MEN med samme
+ * F2-T1: kategori-kravet i (2) gjelder begge katalogene, MEN med samme
  * unntak som `legacy/locales/parity.test.ts` allerede gir flate nøkler — en
  * gruppe som står i `PAUSED_KEYS` slipper i de fem PAUSET språkene (se
  * `parsePausedLists`/`isPausedException` under). Uten unntaket måtte en ny
- * `tn()`-nøkkel oversettes til sju språk med én gang eller gaten feilet, som
+ * `tn()`-nøkkel oversettes til to språk med én gang eller gaten feilet, som
  * er nøyaktig hvorfor nye flater unngikk `tn()` i stedet.
  *
  * Påkrevde kategorier per språk regnes ut med `Intl.PluralRules`, ikke listet
@@ -57,7 +57,7 @@ const LOCALE_DIR = path.join(ROOT, "legacy", "locales");
  * not touch.
  */
 const SOURCE_DIRS = [path.join(ROOT, "app")];
-const LANGS = ["no", "en", "sv", "da", "de", "fr", "pl"];
+const LANGS = ["no", "en"];
 /** BCP-47 for plural data — mirrors i18n.ts `localeTag()`. */
 const TAG = (lang) => (lang === "no" ? "nb-NO" : lang);
 
@@ -100,7 +100,7 @@ const lookup = (tree, key) =>
 // languages (`PAUSED_LOCALES`) while it is on `PAUSED_KEYS` — «app/ er norsk +
 // engelsk til fase B, og de fem andre er PAUSET for nøklene redesignet legger
 // til, og BARE for dem» (that file's own words). This gate had no equivalent:
-// every plural GROUP was required, correctly shaped, in all seven catalogs
+// every plural GROUP was required, correctly shaped, in all two catalogs
 // from the moment it existed — which meant a brand-new `tn()` key needed a
 // Polish `few`/`many` before `npm run check` would pass, so new screens simply
 // avoided `tn()` rather than pay that tax. The exemption below is the same
@@ -156,7 +156,9 @@ function stripLineComments(text) {
  * makes every paused-language check strict again by accident.
  */
 export function parsePausedLists(source) {
-  const localesBlock = source.match(/PAUSED_LOCALES\s*=\s*\[([^\]]*)\]/);
+  const localesBlock = source.match(
+    /PAUSED_LOCALES(?::\s*string\[\])?\s*=\s*\[([^\]]*)\]/,
+  );
   if (!localesBlock) {
     throw new Error(
       "PAUSED_LOCALES ble ikke funnet i parity.test.ts — er fila omformet?",

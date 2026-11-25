@@ -58,7 +58,7 @@ pub enum PreflightCategory {
 /// Was six hardcoded Norwegian sentences (F2-I18N-R2). The findings are
 /// rendered verbatim in the app's preflight card AND in the native
 /// notification the scheduler fires half an hour before a service, so the
-/// prose was the app's own voice in exactly one of its seven languages.
+/// prose was the app's own voice in exactly one of its two languages.
 ///
 /// The code is the contract now, and it has TWO catalogues because it has two
 /// surfaces — which is the rule, not an exception to it:
@@ -114,7 +114,7 @@ impl PreflightCode {
         }
     }
 
-    /// The native notification's sentence for this code — the seven-language
+    /// The native notification's sentence for this code — the two-language
     /// catalogue Rust CAN reach.
     pub fn alert(self) -> AlertText {
         match self {
@@ -1013,11 +1013,6 @@ mod tests {
         let catalogues = [
             (Lang::No, include_str!("../../../legacy/locales/no.json")),
             (Lang::En, include_str!("../../../legacy/locales/en.json")),
-            (Lang::De, include_str!("../../../legacy/locales/de.json")),
-            (Lang::Sv, include_str!("../../../legacy/locales/sv.json")),
-            (Lang::Da, include_str!("../../../legacy/locales/da.json")),
-            (Lang::Pl, include_str!("../../../legacy/locales/pl.json")),
-            (Lang::Fr, include_str!("../../../legacy/locales/fr.json")),
         ];
         let glyphs = |s: &str| {
             s.replace(['\u{201C}', '\u{201D}'], "\"")

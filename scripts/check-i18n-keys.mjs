@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * i18n-nøkkelgate for `app/` — hver nøkkel finnes, i riktig FORM, i hver av
- * de sju katalogene. Erstatter fallback-gaten for det nye skallet.
+ * de to katalogene. Erstatter fallback-gaten for det nye skallet.
  *
  * ## Hvorfor en ny gate og ikke den gamle
  *
@@ -25,9 +25,9 @@
  *
  * Ingen av dem kaster. Alle fire ser ut som «teksten mangler bare litt».
  *
- * ## Hvorfor ALLE SJU katalogene
+ * ## Hvorfor BEGGE katalogene
  *
- * `ACTIVE_LOCALES` i `app/i18n/index.ts` er alle sju siden F2-S6. Et krav om
+ * `ACTIVE_LOCALES` i `app/i18n/index.ts` er begge siden F2-S6. Et krav om
  * at nøkkelen finnes i no.json alene ville gjort de seks andre til
  * andrerangs språk som oppdages av en BRUKER i stedet for av CI — og
  * kravet må gjelde nøyaktig de språkene appen tilbyr, ellers er det ikke
@@ -35,7 +35,7 @@
  *
  * ⚠️ Speiler `ACTIVE_LOCALES`, ikke `ALL_LOCALES`: det som pauses der skal
  * pauses her i samme bevegelse. `legacy/locales/parity.test.ts` er det andre
- * halve svaret — den krever hele nøkkelsettet i alle sju katalogene uansett
+ * halve svaret — den krever hele nøkkelsettet i begge katalogene uansett
  * hvem som er aktiv, så en pause aldri blir til en katalog som råtner.
  *
  * ## `--unused` — FEILENDE siden fase B
@@ -43,7 +43,7 @@
  * Lister nøkler i no.json ingen leser. Den var informativ mens
  * inventaret eide mesteparten av katalogen; nå er skallet borte, og en
  * nøkkel ingen leser er en setning ingen ser — som likevel må oversettes til
- * sju språk, holdes i paritet og leses på nytt hver gang noen rydder.
+ * to språk, holdes i paritet og leses på nytt hver gang noen rydder.
  *
  * ⚠️ «Ingen leser» er IKKE det samme som «ingen `t()` i `app/`». De rene
  * modulene under `@lib/*` svarer med NØKLER — `status/next-recording-core`
@@ -105,10 +105,10 @@ const APP_DIR = path.join(ROOT, "app");
 const LIB_DIR = path.join(APP_DIR, "lib");
 
 /**
- * Språkene `app/` er oversatt til NÅ. Speiler `ACTIVE_LOCALES` i
- * `app/i18n/index.ts` — alle sju siden F2-S6 (se filhodet).
+ * Språkene `app/` er oversatt til. Speiler `ALL_LOCALES` i
+ * `app/i18n/index.ts` — norsk og engelsk siden F4 (se filhodet).
  */
-const REQUIRED_LOCALES = ["no", "en", "sv", "da", "de", "fr", "pl"];
+const REQUIRED_LOCALES = ["no", "en"];
 
 const CLDR = new Set(["zero", "one", "two", "few", "many", "other"]);
 
@@ -444,7 +444,7 @@ function main() {
       console.error(
         `\n${unused.length} nøkkel/nøkler i legacy/locales/*.json som verken ` +
           "et `t/tf/tn/tArr/tDyn`-kall i app/ eller en delt kjerne under " +
-          "app/lib/ nevner.\nSlett dem i ALLE sju katalogene " +
+          "app/lib/ nevner.\nSlett dem i BEGGE katalogene " +
           "(parity.test.ts krever «ingen ekstra nøkler» overalt), og ta dem ut " +
           "av PAUSED_KEYS hvis de står der.",
       );

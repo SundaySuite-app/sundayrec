@@ -17,8 +17,8 @@
 //!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
-//!   - [`lang`]          — the seven UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
-//!   - [`alerts`]        — the sentences the NATIVE notification says, in the 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
+//!   - [`lang`]          — the two UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
+//!   - [`alerts`]        — the sentences the NATIVE notification says, in the 2 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
 //!   - [`notify`]        — the notification decisions: warning codes, once-semantics for the repeating observers, and the "we already said this" ledger for missed recordings
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)

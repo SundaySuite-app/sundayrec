@@ -195,7 +195,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
  *
  * Tauris oppdaterer-kommandoer POLLES (`update_status`, `update_check`,
  * `update_download_install`, `update_relaunch`); api-shimmen gjør om svarene
- * til de sju Electron-hendelsene under, og eier både nedlastingsløkka og
+ * til de to Electron-hendelsene under, og eier både nedlastingsløkka og
  * dødmannsbryteren for «omstarten skjedde ikke». Vi lytter på hendelsene i
  * stedet for å polle selv: én maskin som driver løpet, ikke to som er nesten
  * enige.

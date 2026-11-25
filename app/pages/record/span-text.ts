@@ -7,7 +7,7 @@
  * Tre `tf()`-nøkler og ingen `tn()`. Begrunnelsen var en gang pausen — en ny
  * tellende nøkkel ville krevd polske flertallsformer midt i den — men pausen
  * er over (F2-S6), og valget står på egne ben: «t» og «min» er INVARIANTE
- * forkortelser i alle sju språk, i hele tallområdet de faktisk vises for. En
+ * forkortelser i begge språk, i hele tallområdet de faktisk vises for. En
  * flertallsgruppe her ville vært sju identiske par.
  *
  * ⚠️ Det er forkortelsene som bærer det, ikke tallet. Skrives noen av dem ut

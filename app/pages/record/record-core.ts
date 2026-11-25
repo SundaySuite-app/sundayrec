@@ -175,7 +175,7 @@ function pad2(n: number): string {
  * `tn()` var en gang utelukket av pausen — en ny flertallsgruppe ville krevd
  * polske former midt i den. Pausen er over (F2-S6), og formen består likevel:
  * «14 t», «14 t 20 min» og «45 min» bruker INVARIANTE forkortelser, riktige i
- * hele tallområdet de faktisk vises for og i alle sju språk. Så: tre
+ * hele tallområdet de faktisk vises for og i begge språk. Så: tre
  * `tf()`-nøkler, og kjernen velger hvilken. Se `span-text.ts` for hva som
  * gjør valget om.
  */
@@ -213,7 +213,7 @@ export function spanOfSeconds(total: number | null): Span {
  * Byte → «112 MB» / «1,4 GB».
  *
  * Enhetene er KONSTANTER og ikke katalognøkler: MB og GB heter det samme på
- * alle sju språk, og en enhet i katalogen er en enhet noen kommer til å
+ * begge språk, og en enhet i katalogen er en enhet noen kommer til å
  * oversette. Desimaltegnet følger språket, fordi det ikke gjør det —
  * `toLocaleString` er den eneste delen her som er lokal.
  */
@@ -243,7 +243,7 @@ export function basename(path: string): string {
  * Tabellen er den samme som `translateNativeError` i
  * `legacy/renderer/pages/recording.ts`, og den peker på de SAMME
  * katalognøklene. Ikke en kopi av tekstene: kopierte tekster driver fra
- * hverandre, og disse finnes allerede oversatt i alle sju språk. Grunnen til
+ * hverandre, og disse finnes allerede oversatt i begge språk. Grunnen til
  * at funksjonen likevel finnes her er at legacy-utgaven bor i en 1100-linjers
  * DOM-modul som `app/` ikke kan importere uten å dra hele det gamle treet med
  * seg — samme forbehold som `state/disk.ts` sitt.
@@ -264,7 +264,7 @@ export function basename(path: string): string {
  *
  * Den andre halvdelen av skjøten er `app/i18n/backend-codes.test.ts`: at
  * suffikset finnes HER er ikke det samme som at `recording.<suffiks>` finnes
- * i alle sju katalogene. Gaten over ville vært grønn med en rad som peker på
+ * i begge katalogene. Gaten over ville vært grønn med en rad som peker på
  * en nøkkel bare no.json har — og de seks andre språkene ville rendret tomt.
  * Derfor er tabellen eksportert.
  */

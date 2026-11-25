@@ -1,4 +1,4 @@
-// Only the default/fallback locale is bundled eagerly. The other six are
+// Only the default/fallback locale is bundled eagerly. The other one (English) is
 // dynamic-imported on first use (see LAZY_LOADERS) — that keeps ~280 KB of
 // unused locale JSON OUT of the initial bundle, the single biggest startup win.
 import noLocale from "../../legacy/locales/no.json";
@@ -13,11 +13,6 @@ const LOCALE_MAP: Record<string, LocaleData> = {
  *  own chunk, fetched only when that language is selected. */
 const LAZY_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   en: () => import("../../legacy/locales/en.json"),
-  fr: () => import("../../legacy/locales/fr.json"),
-  de: () => import("../../legacy/locales/de.json"),
-  sv: () => import("../../legacy/locales/sv.json"),
-  da: () => import("../../legacy/locales/da.json"),
-  pl: () => import("../../legacy/locales/pl.json"),
 };
 
 export let T: LocaleData = LOCALE_MAP["no"];

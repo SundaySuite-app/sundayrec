@@ -81,11 +81,11 @@ describe("kodetabellen mot sundayrec_core::notify::code", () => {
     expect(Object.keys(WARNING_SUFFIXES).sort()).toEqual(rustCodes().sort());
   });
 
-  it("har teksten i BEGGE de aktive katalogene, i alle sju", () => {
-    // De sju er parity-testens ansvar; det denne legger til er at nøkkelen
+  it("har teksten i BEGGE de aktive katalogene, i begge", () => {
+    // De to er parity-testens ansvar; det denne legger til er at nøkkelen
     // faktisk er DEN nøkkelen `warningText` slår opp — en `notify.*` som bare
     // finnes i no.json ville gitt en tom stripe på engelsk.
-    for (const lang of ["no", "en", "sv", "da", "de", "fr", "pl"]) {
+    for (const lang of ["no", "en"]) {
       const cat = JSON.parse(
         readFileSync(
           join(import.meta.dirname, `../../legacy/locales/${lang}.json`),

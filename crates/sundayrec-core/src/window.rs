@@ -122,27 +122,12 @@ pub fn hidden_notice(reason: HideReason, lang: Lang, spot: TraySpot) -> (String,
     let title = match (reason, lang) {
         (HideReason::Recording, Lang::No) => "SundayRec tar fortsatt opp",
         (HideReason::Recording, Lang::En) => "SundayRec is still recording",
-        (HideReason::Recording, Lang::De) => "SundayRec nimmt weiterhin auf",
-        (HideReason::Recording, Lang::Sv) => "SundayRec spelar fortfarande in",
-        (HideReason::Recording, Lang::Da) => "SundayRec optager stadig",
-        (HideReason::Recording, Lang::Pl) => "SundayRec nadal nagrywa",
-        (HideReason::Recording, Lang::Fr) => "SundayRec enregistre toujours",
         (HideReason::Finishing, Lang::No) => "SundayRec lagrer opptaket",
         (HideReason::Finishing, Lang::En) => "SundayRec is saving the recording",
-        (HideReason::Finishing, Lang::De) => "SundayRec speichert die Aufnahme",
-        (HideReason::Finishing, Lang::Sv) => "SundayRec sparar inspelningen",
-        (HideReason::Finishing, Lang::Da) => "SundayRec gemmer optagelsen",
-        (HideReason::Finishing, Lang::Pl) => "SundayRec zapisuje nagranie",
-        (HideReason::Finishing, Lang::Fr) => "SundayRec enregistre le fichier",
     };
     let body = match lang {
         Lang::No => "Vinduet er skjult, ikke lukket. Hent det tilbake fra {spot}.",
         Lang::En => "The window is hidden, not closed. Bring it back from the {spot}.",
-        Lang::De => "Das Fenster ist ausgeblendet, nicht geschlossen. Hol es über {spot} zurück.",
-        Lang::Sv => "Fönstret är dolt, inte stängt. Hämta tillbaka det från {spot}.",
-        Lang::Da => "Vinduet er skjult, ikke lukket. Hent det tilbage fra {spot}.",
-        Lang::Pl => "Okno jest ukryte, a nie zamknięte. Przywróć je z {spot}.",
-        Lang::Fr => "La fenêtre est masquée, pas fermée. Rouvrez-la depuis {spot}.",
     };
     (
         title.to_string(),
@@ -156,18 +141,8 @@ fn spot_noun(spot: TraySpot, lang: Lang) -> &'static str {
     match (spot, lang) {
         (TraySpot::Menubar, Lang::No) => "menylinja",
         (TraySpot::Menubar, Lang::En) => "menu bar",
-        (TraySpot::Menubar, Lang::De) => "die Menüleiste",
-        (TraySpot::Menubar, Lang::Sv) => "menyraden",
-        (TraySpot::Menubar, Lang::Da) => "menulinjen",
-        (TraySpot::Menubar, Lang::Pl) => "paska menu",
-        (TraySpot::Menubar, Lang::Fr) => "la barre de menus",
         (TraySpot::SystemTray, Lang::No) => "systemstatusfeltet",
         (TraySpot::SystemTray, Lang::En) => "system tray",
-        (TraySpot::SystemTray, Lang::De) => "den Infobereich",
-        (TraySpot::SystemTray, Lang::Sv) => "aktivitetsfältet",
-        (TraySpot::SystemTray, Lang::Da) => "proceslinjen",
-        (TraySpot::SystemTray, Lang::Pl) => "zasobnika systemowego",
-        (TraySpot::SystemTray, Lang::Fr) => "la zone de notification",
     }
 }
 
@@ -189,9 +164,9 @@ fn spot_noun(spot: TraySpot, lang: Lang) -> &'static str {
 /// while a refusal that fails to notify still leaves an app that quits on the
 /// second press.
 ///
-/// ⚠️ The refusal text spells this number out in seconds ({seconds} → 10). Polish
-/// takes the genitive plural ("10 sekund") for 10; a value of 2–4 s would need
-/// "sekundy" instead, so `the_refusal_wording_is_pinned_to_ten_seconds` fails if
+/// ⚠️ The refusal text spells this number out in seconds ({seconds} → 10). Norwegian
+/// and English take the plural ("10 sekunder" / "10 seconds") for 10; a value of 1 s would need
+/// the singular, so `the_refusal_wording_is_pinned_to_ten_seconds` fails if
 /// anyone retunes this without revisiting the wording.
 pub const QUIT_CONFIRM_WINDOW_MS: u64 = 10_000;
 
@@ -413,26 +388,6 @@ pub fn quit_notice(notice: QuitNotice, lang: Lang) -> (String, String) {
             "SundayRec is recording",
             "Press Quit again within {seconds} seconds to stop the recording and quit.",
         ),
-        (QuitNotice::Refused, Lang::De) => (
-            "SundayRec nimmt auf",
-            "Drücke innerhalb von {seconds} Sekunden erneut auf Beenden, um die Aufnahme zu stoppen und das Programm zu schließen.",
-        ),
-        (QuitNotice::Refused, Lang::Sv) => (
-            "SundayRec spelar in",
-            "Tryck Avsluta igen inom {seconds} sekunder för att stoppa inspelningen och avsluta.",
-        ),
-        (QuitNotice::Refused, Lang::Da) => (
-            "SundayRec optager",
-            "Tryk Afslut igen inden for {seconds} sekunder for at stoppe optagelsen og afslutte.",
-        ),
-        (QuitNotice::Refused, Lang::Pl) => (
-            "SundayRec nagrywa",
-            "Naciśnij Zakończ ponownie w ciągu {seconds} sekund, aby zatrzymać nagrywanie i zamknąć aplikację.",
-        ),
-        (QuitNotice::Refused, Lang::Fr) => (
-            "SundayRec enregistre",
-            "Appuyez de nouveau sur Quitter dans les {seconds} secondes pour arrêter l'enregistrement et quitter.",
-        ),
         (QuitNotice::Waiting, Lang::No) => (
             "Lagrer opptaket",
             "SundayRec avslutter når fila er trygg. Ett trykk til avslutter med én gang.",
@@ -440,26 +395,6 @@ pub fn quit_notice(notice: QuitNotice, lang: Lang) -> (String, String) {
         (QuitNotice::Waiting, Lang::En) => (
             "Saving the recording",
             "SundayRec quits once the file is safe. One more press quits immediately.",
-        ),
-        (QuitNotice::Waiting, Lang::De) => (
-            "Aufnahme wird gespeichert",
-            "SundayRec beendet sich, sobald die Datei sicher ist. Noch einmal drücken beendet sofort.",
-        ),
-        (QuitNotice::Waiting, Lang::Sv) => (
-            "Sparar inspelningen",
-            "SundayRec avslutas när filen är trygg. Ett tryck till avslutar direkt.",
-        ),
-        (QuitNotice::Waiting, Lang::Da) => (
-            "Gemmer optagelsen",
-            "SundayRec afslutter, når filen er sikker. Endnu et tryk afslutter med det samme.",
-        ),
-        (QuitNotice::Waiting, Lang::Pl) => (
-            "Zapisywanie nagrania",
-            "SundayRec zamknie się, gdy plik będzie bezpieczny. Kolejne naciśnięcie zamyka natychmiast.",
-        ),
-        (QuitNotice::Waiting, Lang::Fr) => (
-            "Sauvegarde de l'enregistrement",
-            "SundayRec se ferme une fois le fichier en sécurité. Une pression de plus quitte immédiatement.",
         ),
     };
     (
@@ -547,16 +482,8 @@ mod tests {
     }
 
     #[test]
-    fn the_hide_notice_is_localised_in_all_seven_languages() {
-        let langs = [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ];
+    fn the_hide_notice_is_localised_in_both_languages() {
+        let langs = [Lang::No, Lang::En];
         let mut titles = Vec::new();
         for lang in langs {
             for spot in [TraySpot::Menubar, TraySpot::SystemTray] {
@@ -572,11 +499,11 @@ mod tests {
             }
             titles.push(hidden_notice(HideReason::Recording, lang, TraySpot::Menubar).0);
         }
-        // Seven distinct titles: a copy-paste that leaves two languages sharing
+        // Two distinct titles: a copy-paste that leaves both languages sharing
         // the Norwegian string is the failure this catches.
         titles.sort();
         titles.dedup();
-        assert_eq!(titles.len(), 7);
+        assert_eq!(titles.len(), 2);
     }
 
     #[test]
@@ -784,16 +711,8 @@ mod tests {
     }
 
     #[test]
-    fn the_quit_notices_are_localised_in_all_seven_languages() {
-        let langs = [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ];
+    fn the_quit_notices_are_localised_in_both_languages() {
+        let langs = [Lang::No, Lang::En];
         for notice in [QuitNotice::Refused, QuitNotice::Waiting] {
             let mut titles = Vec::new();
             for lang in langs {
@@ -807,11 +726,11 @@ mod tests {
                 );
                 titles.push(title);
             }
-            // Seven distinct titles: a copy-paste that leaves two languages
+            // Two distinct titles: a copy-paste that leaves both languages
             // sharing the Norwegian string is what this catches.
             titles.sort();
             titles.dedup();
-            assert_eq!(titles.len(), 7, "{notice:?}");
+            assert_eq!(titles.len(), 2, "{notice:?}");
         }
     }
 
@@ -819,15 +738,7 @@ mod tests {
     fn the_refusal_says_how_long_the_volunteer_has_and_the_wait_does_not() {
         // The refusal has to name the window — "press again" without "within
         // ten seconds" is an instruction the volunteer cannot follow.
-        for lang in [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ] {
+        for lang in [Lang::No, Lang::En] {
             let (_, refused) = quit_notice(QuitNotice::Refused, lang);
             assert!(refused.contains("10"), "{lang:?}: {refused}");
             let (_, waiting) = quit_notice(QuitNotice::Waiting, lang);
@@ -842,16 +753,16 @@ mod tests {
     fn the_refusal_wording_is_pinned_to_ten_seconds() {
         // The seconds slot is filled from the constant, so the number can never
         // contradict the rule — but the surrounding grammar is not translated
-        // per value: Polish "10 sekund" is the genitive plural, and 2–4 s would
-        // need "sekundy". Retuning the window means revisiting the seven texts.
+        // per value: "10 seconds" / "10 sekunder" are plural forms, and 1 s would
+        // need the singular. Retuning the window means revisiting the two texts.
         assert_eq!(QUIT_CONFIRM_WINDOW_MS, 10_000);
         assert_eq!(
             QUIT_CONFIRM_WINDOW_MS % 1000,
             0,
             "a fractional second has no wording"
         );
-        let (_, pl) = quit_notice(QuitNotice::Refused, Lang::Pl);
-        assert!(pl.contains("10 sekund"), "{pl}");
+        let (_, en) = quit_notice(QuitNotice::Refused, Lang::En);
+        assert!(en.contains("10 seconds"), "{en}");
         let (_, no) = quit_notice(QuitNotice::Refused, Lang::No);
         assert!(no.contains("10 sekunder"), "{no}");
     }
@@ -860,15 +771,7 @@ mod tests {
     fn the_refusal_and_the_wait_never_say_the_same_thing() {
         // "I did not quit" and "I am quitting" are opposite messages; a shared
         // string would be the cruellest possible bug here.
-        for lang in [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ] {
+        for lang in [Lang::No, Lang::En] {
             assert_ne!(
                 quit_notice(QuitNotice::Refused, lang),
                 quit_notice(QuitNotice::Waiting, lang),

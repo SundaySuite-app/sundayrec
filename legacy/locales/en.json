@@ -159,8 +159,7 @@
       "language": {
         "lede": "The language the app uses.",
         "label": "Language in the app",
-        "desc": "Changes right away.",
-        "paused": "This language is temporarily unavailable — the app shows {language} for now."
+        "desc": "Changes right away."
       },
       "notify": {
         "lede": "The computer always tells you when something goes wrong — whoever is at it.",
@@ -416,12 +415,7 @@
     },
     "language": {
       "no": "Norwegian",
-      "en": "English",
-      "sv": "Swedish",
-      "da": "Danish",
-      "de": "German",
-      "fr": "French",
-      "pl": "Polish"
+      "en": "English"
     },
     "first": {
       "step": "Step {n} of {total}",

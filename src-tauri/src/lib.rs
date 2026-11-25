@@ -477,7 +477,7 @@ pub fn run() {
             // `setup` reaches nobody). «Once» is a settings claim in the very
             // database in use, so a later start with the same problem is
             // quiet in the UI and loud only in the log. The banner shows the
-            // CATALOGUE text for the code (7 languages); `msg` is the fallback.
+            // CATALOGUE text for the code (2 languages); `msg` is the fallback.
             let startup_warnings = appdata::installed()
                 .map(appdata::pending_warnings)
                 .unwrap_or_default();

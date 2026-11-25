@@ -12,7 +12,7 @@
  * Tauris oppdaterer-kommandoer polles, men det er api-shimmen som poller dem:
  * den eier nedlastingsløkka OG dødmannsbryteren for den gjentakende «omstarten
  * skjedde ikke»-feilen, og sender ut sju Electron-formede hendelser underveis.
- * `e2e/auto-update.spec.ts` hviler på nøyaktig de sju. En andre poller her ville
+ * `e2e/auto-update.spec.ts` hviler på nøyaktig de to. En andre poller her ville
  * vært to maskiner som er nesten enige om samme løp.
  *
  * ## Hvorfor raden ikke abonnerer selv lenger (P3)

@@ -73,7 +73,7 @@ import { SubPage } from "./SubPage";
 
 /**
  * Drivernavnet på Windows' proffvei inn. En KONSTANT og ikke en katalognøkkel:
- * ASIO heter ASIO på alle sju språk, og et navn som ikke oversettes skal ikke
+ * ASIO heter ASIO på begge språk, og et navn som ikke oversettes skal ikke
  * ligge i katalogen og be om å bli oversatt.
  */
 const ASIO = "ASIO";

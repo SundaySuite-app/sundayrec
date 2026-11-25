@@ -18,11 +18,6 @@
 import { describe, expect, it } from 'vitest'
 import no from './no.json'
 import en from './en.json'
-import sv from './sv.json'
-import da from './da.json'
-import de from './de.json'
-import fr from './fr.json'
-import pl from './pl.json'
 
 type Tree = Record<string, unknown>
 
@@ -83,13 +78,13 @@ export function requiredCategories(locale: string): Set<string> {
 /**
  * ## Pausemekanismen — tom, og med vilje beholdt (S1a 2026-08, S6 2026-09)
  *
- * ✅ **Ingenting er pauset i dag.** Alle sju språk står i `ACTIVE_LOCALES`
+ * ✅ **Ingenting er pauset i dag.** Alle to språk står i `ACTIVE_LOCALES`
  * (`app/i18n/index.ts`), `PAUSED_KEYS` under er tom, og hele nøkkelsettet
- * kreves i alle sju katalogene. Lista her navngir hvilke språk som KAN pauses,
+ * kreves i begge katalogene. Lista her navngir hvilke språk som KAN pauses,
  * ikke hvilke som er det.
  *
  * Bakgrunnen: redesignet rev og bygde UI-teksten i `app/` om igjen, skjerm for
- * skjerm, gjennom seks faser. Å oversette hver nye nøkkel til sju språk mens
+ * skjerm, gjennom seks faser. Å oversette hver nye nøkkel til to språk mens
  * teksten fortsatt flytter seg er å oversette det samme fire ganger — og en
  * oversetter som får det samme til gjennomsyn fire ganger slutter å lese nøye.
  * Så `app/` var norsk + engelsk fram til språkrunden, og de fem andre språkene
@@ -105,7 +100,7 @@ export function requiredCategories(locale: string): Set<string> {
  * Lista går bare én vei, som en skralle: å legge noe til her er en beslutning
  * noen må skrive ned, ikke noe som siger inn.
  */
-export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
+export const PAUSED_LOCALES: string[] = []
 
 /**
  * Nøkler `app/` har lagt til under redesignet — TØMT 2026-09-06 (F2-S).
@@ -114,12 +109,12 @@ export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
  * #229 sv, #230 da, #232 fr, og pl i samme PR som denne tømmingen), så
  * pause-vakten under («hver pauset nøkkel mangler i minst ett pauset
  * språk») krevde at lista ble tom i samme øyeblikk som det siste språket
- * kom inn. F2-S6 tok konsekvensen av det og aktiverte alle sju i appen.
+ * kom inn. F2-S6 tok konsekvensen av det og aktiverte begge i appen.
  *
- * MEKANISMEN står: en ny nøkkel som ikke kan oversettes til alle sju med én
+ * MEKANISMEN står: en ny nøkkel som ikke kan oversettes til begge med én
  * gang, pauses her i en append-blokk med kommentarhode (`// F2-<id>`) — og
  * forsvinner igjen når oversettelsen kommer. ⚠️ Fra og med S6 er REGELEN at
- * en ny nøkkel skal inn i alle sju katalogene i samme PR (tom nøkkel = tom
+ * en ny nøkkel skal inn i begge katalogene i samme PR (tom nøkkel = tom
  * tekst er ikke et alternativ — den blir en tom etikett i UI). Lista her er
  * unntaket noen må argumentere for, ikke standardveien.
  */
@@ -130,11 +125,6 @@ const referenceGroups = pluralGroupKeys(no as Tree).sort()
 
 const locales: Array<[string, Tree, string]> = [
   ['en', en as Tree, 'en'],
-  ['sv', sv as Tree, 'sv'],
-  ['da', da as Tree, 'da'],
-  ['de', de as Tree, 'de'],
-  ['fr', fr as Tree, 'fr'],
-  ['pl', pl as Tree, 'pl'],
 ]
 
 describe('locale key parity with no.json', () => {

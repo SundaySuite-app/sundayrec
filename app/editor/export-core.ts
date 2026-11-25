@@ -2,7 +2,7 @@
  * Eksportens avgjørelser — filnavnet, størrelsen og feilen, som ren aritmetikk.
  *
  * Atlasets §3d teller ti rader i eksportmodalen, med bitrate, bitdybde,
- * videokodek og «Bithybde» (skrivefeilen som er sendt ut i alle sju språk).
+ * videokodek og «Bithybde» (skrivefeilen som er sendt ut i begge språk).
  * Canvasens 4.3 er to spørsmål: hvilket format, og hvor. Alt annet følger av
  * kvalitetsvalget i Oppsett eller av fila selv, og det som følger av noe skal
  * regnes ut ett sted og testes der.

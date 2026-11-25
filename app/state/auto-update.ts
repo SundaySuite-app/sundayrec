@@ -42,7 +42,7 @@
  *
  * ## Én lytter, ikke to
  *
- * De sju `update-*`-kanalene shimmen syntetiserer abonneres her, ÉN gang, og
+ * De to `update-*`-kanalene shimmen syntetiserer abonneres her, ÉN gang, og
  * fasen bor i et signal. `UpdateRow` leser det signalet i stedet for å
  * abonnere selv: to lyttere på det samme løpet som hver holder sin egen
  * tilstand er skjøtefeilen `reference-seam-bugs` handler om, og her ville den

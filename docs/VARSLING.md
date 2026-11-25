@@ -102,7 +102,7 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
 
 - **Feil under opptak varsles med setningen, ikke ffmpeg-linja.**
   `AlertText::for_recording_code` gir hver feilkode vinduets egen setning
-  (`recording.error*` i `legacy/locales`) på sju språk; testen
+  (`recording.error*` i `legacy/locales`) på norsk og engelsk; testen
   `recording_failures_say_what_the_window_says` feiler hvis de to katalogene
   sprikker. `engine::emit_failure` sender setningen og legger detaljen i loggen
   og i Lydhjelps `last-error.json`.
@@ -135,7 +135,7 @@ som de andre pensjonerte oppføringene; lista over dem står i modulhodet til
 - Faller kameraet ut under et opptak, sier overlegget «Kameraet falt ut — lyden
   tas fortsatt opp» så lenge det er borte (`recording://progress.video_lost_ms`).
 - Er det borte i **60 s**, går det i tillegg et systemvarsel med samme setning
-  (`AlertText::TakeCameraLost`, sju språk), når vinduet ikke er i fokus. **Én
+  (`AlertText::TakeCameraLost`, norsk og engelsk), når vinduet ikke er i fokus. **Én
   gang per utfall**, ikke per opptak: gjenkobling re-armerer, så et nytt utfall
   varsles på nytt (`notify::CameraOutageWatch`, `notify::take`). Beslutningen
   er ren og testet på varigheter, uten klokke.
@@ -150,7 +150,7 @@ Verifisering på rigg: `docs/RIG-DAY.md` (v9).
   (aldri i lydtilbakekallet), og sender den med 1 Hz-hjerteslaget
   (`recording://progress.short_term_lufs`). Under **−40 LUFS i mer enn 5 minutter**
   sier appen «Opptaket er svært svakt — er mikseren dempet?» (`AlertText::TakeLevelWeak`,
-  sju språk):
+  norsk og engelsk):
   - som **banner** med en gang (`backend://warning`, kode `level_weak`, nøkkelen
     `notify.levelWeak`), og
   - som **systemvarsel** når vinduet ikke er i fokus (`TakeAlert::LevelWeak`,
