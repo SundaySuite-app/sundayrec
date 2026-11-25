@@ -286,7 +286,7 @@ test.describe("«Ta opp automatisk»", () => {
     });
 
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Sett en tid én gang. Maskinen vekkes og starter selv.",
+      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
     );
     await page.getByTestId("setup-auto-toggle").click();
 

@@ -2,25 +2,22 @@
  * PLAN — den ukentlige tidsplanen. Jobb nr. 4 av fire, og den som får appen til
  * å starte opptak av seg selv.
  *
- * ## Hva som bor her (F5)
+ * ## Hva som bor her (F6)
  *
- * Fram til F5 var «Ta opp automatisk» et kort i kontrollrommet på TA OPP, og
- * «Flere tider» + vekkingen lå under Innstillinger → Tidsplan. De to var
- * halvdeler av det samme spørsmålet — «når skal appen ta opp av seg selv?» —
- * og eieren ville ha dem på ett sted, med et eget navn i navigasjonen.
- *
- *   • `AutoRecordCard` — bryteren og ÉN fast ukentlig tid (dag, klokkeslett,
- *     varighet), med «start med maskinen».
- *   • `ScheduleCard`   — flere faste tider og vekkingen av maskinen.
+ *   • `AutoRecordCard` — bryteren «Ta opp automatisk» og «Start automatisk med
+ *     maskinen». De to er ett spørsmål: skjer det planlagte opptaket, også
+ *     etter en omstart?
+ *   • `WeekView`       — uka som rutenett: mandag–søndag som kolonner, tid
+ *     nedover, hvert faste opptak som en blokk du drar og strekker. Erstattet
+ *     (F6) skjemaet med ÉN fast tid og listen «Flere tider».
+ *   • `WakeCard`       — vekkingen av maskinen, som holder opptaket i live.
  *
  * ## Presentasjon og regler er skilt
  *
- * F6 bytter begge kortene mot en grafisk ukevisning. Alt som SKRIVER til
- * tidsplanen går gjennom de rene kjernene `schedule-core.ts` (planen som
- * data: `planFromSlots`/`slotsFromPlan`, varigheter, ukedager) og
- * `slots-core.ts` (listen med lagret indeks, `withSlot`/`withoutIndex`, vekke-
- * ordene). Denne fila og kortene er tynne lag over dem; den nye visningen kan
- * kalle de samme funksjonene uten å arve en eneste JSX-linje herfra.
+ * Alt som SKRIVER til tidsplanen går gjennom de rene kjernene `plan-core.ts`
+ * (geometri, snapping, overlapp, slot-skriving), `schedule-core.ts` (planen
+ * som data: varigheter, ukedager) og `slots-core.ts` (listen med lagret indeks,
+ * vekkeordene). Denne fila og kortene er tynne lag over dem.
  */
 
 import { useEffect } from "preact/hooks";
@@ -31,7 +28,8 @@ import { SettingsSection } from "../settings/SettingsSection";
 import { FirstRunResumeChip } from "../setup/FirstRunResumeChip";
 import styles from "../setup/setup.module.css";
 import { AutoRecordCard } from "./AutoRecordCard";
-import { ScheduleCard } from "./ScheduleCard";
+import { WakeCard } from "./WakeCard";
+import { WeekView } from "./WeekView";
 
 export function PlanPage() {
   const current = route.value;
@@ -56,12 +54,13 @@ export function PlanPage() {
         {t("app.plan.lede")}
       </p>
       <AutoRecordCard highlight={highlight && anchor === "auto"} />
+      <WeekView />
       <SettingsSection
         id="sec-schedule"
         sectionKey="schedule"
         intro={t("app.setup.advanced.schedDesc")}
       >
-        <ScheduleCard />
+        <WakeCard />
       </SettingsSection>
     </div>
   );

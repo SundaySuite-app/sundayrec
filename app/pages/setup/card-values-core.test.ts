@@ -4,7 +4,6 @@ import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 
 import type { Settings } from "../../state/settings";
 import {
-  autoExpandable,
   autoValue,
   cameraExpandable,
   cameraValue,
@@ -80,12 +79,5 @@ describe("auto-kortets kompaktverdi", () => {
     expect(autoValue(settings({ autoRecordEnabled: true, slots: [] }))).toEqual(
       { key: "off" },
     );
-  });
-
-  it("kan bare foldes ut når det finnes en tid å redigere", () => {
-    expect(autoExpandable(settings({ slots: [] }))).toBe(false);
-    expect(
-      autoExpandable(settings({ autoRecordEnabled: true, slots: [slot] })),
-    ).toBe(true);
   });
 });

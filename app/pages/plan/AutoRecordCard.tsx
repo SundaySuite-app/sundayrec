@@ -1,20 +1,18 @@
 /**
- * «Ta opp automatisk» — øverst på PLAN (F5; før et kort på OPPTAK).
+ * «Ta opp automatisk» — øverst på PLAN, over ukevisningen.
  *
- * ÉN ukentlig tid: dag, klokkeslett, varighet. Flere tider og vekkingen står i
- * kortet under (`ScheduleCard`) på samme side. F6 bytter begge mot en grafisk
- * ukevisning; skrivingen går gjennom `schedule-core`/`slots-core`, som ikke
- * kjenner presentasjonen.
+ * Kortet har to ting: bryteren, og «Start automatisk med maskinen». Tidene
+ * selv står i ukevisningen (`WeekView`) rett under; skrivingen går gjennom
+ * `plan-core`/`schedule-core`/`slots-core`, som ikke kjenner presentasjonen.
  *
- * ## Bryteren er i topplinja, tiden i kroppen
+ * ## Bryteren er i topplinja, valgene i kroppen
  *
- * Samme form som kamera-kortet: en `ControlCard` med bryteren til venstre,
- * tiden som gjelder som kompaktverdi, og redigeringen i en kropp som folder seg
- * ut på stedet. Kortet kan bare foldes ut når det FINNES en tid å redigere
- * (`autoExpandable`) — en tom slot-redigerer bak en avslått bryter er en
- * kontroll uten virkning.
+ * Samme form som kamera-kortet: en `ControlCard` med bryteren til venstre, det
+ * som gjelder som kompaktverdi («Søndag 11:00 · 90 min», eller «3 faste tider
+ * hver uke»), og en kropp med radene som hører til. Kroppen står alltid åpen:
+ * «start med maskinen» er meningsfull selv før den første tiden er satt.
  *
- * ## Av/på sletter INGENTING lenger
+ * ## Av/på sletter INGENTING
  *
  * P1a skrev dette ned som en eiersak: `Settings` hadde ikke noe sted å huske
  * «armert», så en tom `slots`-liste var den eneste måten å stave «av» på — og
@@ -22,9 +20,10 @@
  * den ikke viser.
  *
  * Eieren svarte, og P1b la til nøkkelen: `autoRecordEnabled`, med ÉN leser i
- * bakenden (`Settings::active_slots`). «Av» skriver nå bare flagget; tiden blir
- * stående i basen og kommer tilbake nøyaktig som den var — også etter en
- * omstart, som en økt-hukommelse aldri kunne love.
+ * bakenden (`Settings::active_slots`). «Av» skriver nå bare flagget; tidene
+ * blir stående i basen og kommer tilbake nøyaktig som de var — også etter en
+ * omstart, som en økt-hukommelse aldri kunne love. Ukevisningen viser dem
+ * dempet, med en setning om at ingenting startes.
  *
  * `default = true` i Rust, så en profil skrevet før feltet fantes fortsetter å
  * ta opp. Det motsatte ville stille avvæpnet hver menighet som allerede hadde
@@ -49,41 +48,15 @@
 
 import { useEffect } from "preact/hooks";
 
-import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
-
 import { t, tDyn, tf, tn } from "../../i18n";
-import { useDraftForm } from "../../settings/use-draft-form";
 import { usePatch } from "../../settings/use-patch";
-import { useReceipt } from "../../settings/use-receipt";
-import {
-  patchSettings,
-  saveSettingsDebounced,
-  settings,
-  syncLaunchAtLoginFromOs,
-} from "../../state/settings";
+import { settings, syncLaunchAtLoginFromOs } from "../../state/settings";
 import { BoundToggle } from "../../ui/Bound/Bound";
-import { Button } from "../../ui/Button/Button";
 import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { Receipt } from "../../ui/Receipt/Receipt";
-import { Select } from "../../ui/Select/Select";
-import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
-import { toast } from "../../ui/toast";
-import {
-  autoExpandable,
-  autoValue,
-  type AutoValue,
-} from "../setup/card-values-core";
-import {
-  autoRecordOn,
-  DEFAULT_PLAN,
-  DURATION_CHOICES,
-  planFromSlots,
-  slotsFromPlan,
-  WEEKDAYS,
-  type WeeklyPlan,
-} from "./schedule-core";
-import styles from "../setup/setup.module.css";
+import { autoValue, type AutoValue } from "../setup/card-values-core";
+import { autoRecordOn, DEFAULT_PLAN, slotsFromPlan } from "./schedule-core";
 
 export interface AutoRecordCardProps {
   highlight?: boolean;
@@ -93,9 +66,7 @@ export interface AutoRecordCardProps {
 export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
   const s = settings.value;
   const slots = s.slots ?? [];
-  const plan = planFromSlots(slots);
   const on = autoRecordOn(s);
-  const canExpand = autoExpandable(s);
   // Den delte lagringsmodellen: bryteren skriver TO nøkler (flagget og — når
   // profilen ikke har en tid — den første slotten), så den kan ikke gå gjennom
   // `useSetting`. `usePatch` gir den samme sekvensen, den samme
@@ -131,8 +102,8 @@ export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
       id="auto"
       testId="setup-auto"
       title={t("app.setup.auto.title")}
-      value={autoText(autoValue(s))}
-      expanded={canExpand}
+      value={autoText(autoValue(s), slots.length)}
+      expanded
       highlight={highlight}
       lead={
         <Toggle
@@ -145,12 +116,6 @@ export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
       }
       trail={<Receipt state={save.receipt} testId="setup-auto-receipt" />}
     >
-      {plan ? <PlanEditor plan={plan} slots={slots} /> : null}
-      {slots.length > 1 ? (
-        <p data-testid="setup-auto-more" class={styles.hint}>
-          {tn("app.setup.auto.more", slots.length)}
-        </p>
-      ) : null}
       <BoundToggle
         setting="launchAtLogin"
         label={t("app.setup.auto.launch")}
@@ -162,130 +127,12 @@ export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
 }
 
 /** Kompaktverdien som SETNING — kjernen svarer med tallene, ikke med teksten. */
-function autoText(value: AutoValue): string {
+function autoText(value: AutoValue, count: number): string {
   if (value.key === "off") return t("app.setup.auto.desc");
+  if (count > 1) return tn("app.plan.summaryMany", count);
   return tf("app.setup.auto.summary", {
     day: tDyn("app.setup.days", String(value.day)),
     start: value.start,
     n: value.minutes,
   });
-}
-
-/**
- * Dag, klokkeslett og varighet — med eksplisitt Lagre.
- *
- * Auto-lagring er feil her, og det er den ene grunnen `useDraftForm` finnes:
- * «søndag 10:0» er et halvskrevet klokkeslett bakenden ville armet en OS-vekking
- * på. Det er også slik legacy-slot-redigereren gjør det.
- */
-function PlanEditor({
-  plan,
-  slots,
-}: {
-  plan: WeeklyPlan;
-  slots: readonly ScheduleSlot[];
-}) {
-  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
-
-  const form = useDraftForm<WeeklyPlan>(
-    () => plan,
-    async (value) => {
-      patchSettings({ slots: slotsFromPlan(value, slots) });
-      const ok = await saveSettingsDebounced(120);
-      if (!ok) toast("error", t("general.saveFailed"));
-      return ok;
-    },
-  );
-
-  return (
-    <>
-      <SettingRow
-        label={t("app.setup.auto.day")}
-        receipt={receipt}
-        testId="auto-day"
-      >
-        {(ids) => (
-          <Select
-            value={String(form.draft.day)}
-            options={WEEKDAYS.map((day) => ({
-              value: String(day),
-              label: tDyn("app.setup.days", String(day)),
-            }))}
-            onChange={(next) =>
-              form.set({ day: Number(next) as WeeklyPlan["day"] })
-            }
-            labelId={ids.labelId}
-            describedBy={ids.describedBy}
-            testId="auto-day-control-input"
-          />
-        )}
-      </SettingRow>
-
-      <SettingRow label={t("app.setup.auto.start")} testId="auto-start">
-        {(ids) => (
-          // Et ekte `<input type="time">`: OS-ets egen tidsvelger, tastaturet
-          // og 12/24-timers oppsett følger brukerens system, og et ugyldig
-          // klokkeslett kan ikke skrives inn i det hele tatt.
-          <input
-            type="time"
-            value={form.draft.start}
-            aria-labelledby={ids.labelId}
-            aria-describedby={ids.describedBy}
-            data-testid="auto-start-control-input"
-            class={styles.time}
-            onInput={(event) =>
-              form.set({ start: (event.target as HTMLInputElement).value })
-            }
-          />
-        )}
-      </SettingRow>
-
-      <SettingRow
-        label={t("app.setup.auto.duration")}
-        description={t("app.setup.auto.durationDesc")}
-        testId="auto-duration"
-      >
-        {(ids) => (
-          <Select
-            value={String(form.draft.minutes)}
-            options={DURATION_CHOICES.map((n) => ({
-              value: String(n),
-              label: tf("app.setup.auto.minutes", { n }),
-            }))}
-            onChange={(next) => form.set({ minutes: Number(next) })}
-            labelId={ids.labelId}
-            describedBy={ids.describedBy}
-            testId="auto-duration-control-input"
-          />
-        )}
-      </SettingRow>
-
-      <div class={styles.footer}>
-        <Button
-          variant="primary"
-          disabled={!form.dirty}
-          disabledReason={t("app.setup.auto.nothingToSave")}
-          testId="auto-save"
-          onClick={() => {
-            showReceipt("saving");
-            void form.save().then((ok) => showReceipt(ok ? "saved" : "failed"));
-          }}
-        >
-          {t("app.setup.save")}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={!form.dirty}
-          disabledReason={t("app.setup.auto.nothingToSave")}
-          testId="auto-cancel"
-          onClick={() => {
-            resetReceipt();
-            form.cancel();
-          }}
-        >
-          {t("app.setup.cancel")}
-        </Button>
-      </div>
-    </>
-  );
 }

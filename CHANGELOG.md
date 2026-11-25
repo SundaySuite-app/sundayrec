@@ -5,11 +5,21 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Plan er en ukevisning.** Mandag til søndag som kolonner, tid nedover, og hvert faste
+  opptak som en blokk. Dra i en tom flate for å legge til en tid, dra blokken for å flytte
+  den (også til en annen dag), og dra i kanten for å endre start eller slutt, alt i
+  kvarter. Et trykk på blokken åpner en liten redigering med eksakte klokkeslett og
+  «Slett». Med tastatur flytter piltastene blokken, Skift + pil strekker den, Enter
+  redigerer og Delete fjerner. Neste opptak er fremhevet, et opptak som ikke ble tatt opp
+  denne uka er merket, dagens kolonne og «nå» er markert, og en tid over midnatt tegnes i
+  to kolonner. To tider kan ikke overlappe. Erstatter skjemaet med én tid (dag, starter,
+  varer) og lista «Flere tider». Bryterne «Ta opp automatisk» og «Start automatisk med
+  maskinen» står over uka, og vekkingen av maskinen står under.
 - **Fire sider: Ta opp, Opptak, Plan og Innstillinger.** Ta opp har bare den store
   knappen, kilden og nivået, kameraet og linja om neste planlagte opptak. Opptak er lista
   over opptakene; et klikk åpner redigeringen på samme side (pila tilbake går til lista),
   «Eksporter» åpner eksporten som et ark i redigeringen, og papirkurven er en fane. Plan
-  har den ukentlige tiden og flere faste tider. Lyd og kanaler, kamera, lagringsmappe,
+  viser uka (se under). Lyd og kanaler, kamera, lagringsmappe,
   varsler, språk, oppdatering, personvern og logg ligger samlet under Innstillinger.
   Eksportsiden og «Sist redigert»-kortet er borte.
 - **Redigeringen er enklere.** SundayRec leter ikke lenger etter prekenen og foreslår ikke

@@ -82,8 +82,3 @@ export function autoValue(settings: Settings): AutoValue {
     minutes: plan.minutes,
   };
 }
-
-/** Kan auto-kortet foldes ut? Samme regel som kamera. */
-export function autoExpandable(settings: Settings): boolean {
-  return autoValue(settings).key === "plan";
-}

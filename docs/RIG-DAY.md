@@ -106,7 +106,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       opptakshistorikken er intakt og lesbar i **Redigering** etterpå — WAL
       har ikke mistet noe som lå der fra før.
 - [ ] **(e) Vekketest.** Skru på «Vekk maskinen fra dvale» (gearikonet →
-      Avansert), og bruk **«Test vekking om 2 min»** på kortet «Flere tider». La maskinen sovne (eller sovne den selv). Rett
+      Avansert), og bruk **«Test vekking om 2 min»** på kortet «Vekking» (Plan). La maskinen sovne (eller sovne den selv). Rett
       etter at testen har løst ut (eller du har trykket «Avbryt»), kjør
       `pmset -g sched` i Terminal.
       **Forventet FØR fiksen:** «Test vekking»/«Avbryt» gikk rett på pmset og

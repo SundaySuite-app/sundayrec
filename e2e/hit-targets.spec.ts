@@ -258,7 +258,7 @@ const X32 = {
 const SETTINGS_TOGGLES = 7;
 const SETTINGS_GHOSTS = 9;
 const PLAN_TOGGLES = 3;
-const PLAN_GHOSTS = 1;
+const PLAN_GHOSTS = 0;
 
 const FIXTURES: Fixtures = { ...BOOT_FIXTURES, list_audio_devices: [X32] };
 

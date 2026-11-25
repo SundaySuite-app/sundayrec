@@ -360,13 +360,16 @@ describe("Shell", () => {
     patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
   });
 
-  it("PLAN har «Ta opp automatisk» og «Flere tider»", () => {
+  it("PLAN har «Ta opp automatisk», ukevisningen og vekkingen", () => {
     navigate("plan");
     const html = render(<Shell />);
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Plan</);
     expect(html).toContain('data-testid="plan-page"');
     expect(html).toContain('data-testid="setup-auto"');
-    expect(html).toContain('data-testid="advanced-schedule"');
+    expect(html).toContain('data-testid="plan-week"');
+    expect(html).toContain('data-testid="plan-wake"');
+    // Skjemaet og «Flere tider»-lista er borte (F6).
+    expect(html).not.toContain('data-testid="adv-slot-add"');
     navigate("record");
   });
 

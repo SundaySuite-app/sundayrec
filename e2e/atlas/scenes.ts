@@ -457,10 +457,12 @@ export const SCENES: Scene[] = [
     full: true,
   },
   {
-    id: "opptak--kort-auto",
-    page: "Opptak",
-    state: "Plan › «Ta opp automatisk», med to faste tider",
-    recipe: "`?goto=plan:auto`; to slots i innstillingene",
+    id: "plan--ukevisning",
+    page: "Plan",
+    state:
+      "Ukevisningen — tre faste tider, «Neste» fremhevet, ett opptak denne uka ikke tatt opp",
+    recipe:
+      "`?goto=plan:auto`; tre slots, `scheduler_status.next` på søndagen, `emitEvent('scheduler://missed')`",
     boot: {
       fixtures: {
         ...BASE,
@@ -471,13 +473,84 @@ export const SCENES: Scene[] = [
         ...CHOSEN,
         autoRecordEnabled: true,
         slots: [
-          { days: [0], start: "11:00", stop: "12:30", max: null },
+          { days: [6], start: "11:00", stop: "12:30", max: null },
           { days: [2], start: "19:00", stop: "20:30", max: null },
+          { days: [4], start: "09:30", stop: "10:30", max: null },
         ],
       },
       goto: "plan:auto",
     },
-    wait: "setup-auto-body",
+    wait: "plan-week",
+    act: async (page) => {
+      // ATLAS_NOW er søndag 23. august 2026: fredagen i samme uke er 21.
+      await emitEventAt(page, "scheduler://missed", [
+        { at: "2026-08-21T09:30:00", label: "Bibeltime" },
+      ]);
+      await expect(
+        page.locator('[data-testid="plan-block"][data-missed="true"]'),
+      ).toHaveCount(1);
+    },
+    full: true,
+  },
+  {
+    id: "plan--popover",
+    page: "Plan",
+    state: "Ukevisningen — redigeringen åpen ved siden av blokken",
+    recipe: "som over, så et trykk på søndagsblokka",
+    boot: {
+      fixtures: {
+        ...BASE,
+        ...DEVICES,
+        scheduler_status: { next: NEXT_SERVICE_ISO },
+      },
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: [
+          { days: [6], start: "11:00", stop: "12:30", max: null },
+          { days: [2], start: "19:00", stop: "20:30", max: null },
+        ],
+      },
+      goto: "plan",
+    },
+    wait: "plan-week",
+    act: async (page) => {
+      await page.locator('[data-testid="plan-block"][data-day="6"]').click();
+      await expect(page.getByTestId("plan-editor")).toBeVisible();
+    },
+    full: true,
+  },
+  {
+    id: "plan--tom",
+    page: "Plan",
+    state: "Ukevisningen — ingen faste tider ennå",
+    recipe: "`slots: []`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, slots: [] },
+      goto: "plan",
+    },
+    wait: "plan-empty",
+    full: true,
+  },
+  {
+    id: "plan--vekking",
+    page: "Plan",
+    state: "Vekking av maskinen under uka",
+    recipe: "`wake_capabilities`; rullet ned til vekke-kortet",
+    boot: {
+      fixtures: HEALTHY,
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
+      },
+      goto: "plan",
+    },
+    wait: "plan-wake",
+    act: async (page) => {
+      await page.getByTestId("plan-wake").scrollIntoViewIfNeeded();
+    },
     full: true,
   },
   {
@@ -1166,40 +1239,6 @@ export const SCENES: Scene[] = [
       await page.getByTestId("adv-diag-preview").click();
       await expect(page.getByTestId("dialog-pre")).toBeVisible();
     },
-  },
-  {
-    id: "innstillinger--tidsplan",
-    page: "Innstillinger",
-    state: "Tidsplanen — to faste tider, vekking",
-    recipe: "`slots` + `wake_capabilities`",
-    boot: settingsScene({
-      ...CHOSEN,
-      autoRecordEnabled: true,
-      slots: [
-        { days: [0], start: "11:00", stop: "12:30", max: null },
-        { days: [2], start: "19:00", stop: "20:30", max: null },
-      ],
-    }),
-    wait: "advanced-schedule",
-    act: async (page) => {
-      await page.getByTestId("advanced-schedule").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "innstillinger--tidsplan-tom",
-    page: "Innstillinger",
-    state: "Tidsplanen — ingen faste tider ennå",
-    recipe: "`slots: []`",
-    boot: settingsScene({
-      ...CHOSEN,
-      slots: [],
-    }),
-    wait: "advanced-schedule",
-    act: async (page) => {
-      await page.getByTestId("advanced-schedule").scrollIntoViewIfNeeded();
-    },
-    full: true,
   },
 
   // ══ FØRSTE GANG ═══════════════════════════════════════════════════════════

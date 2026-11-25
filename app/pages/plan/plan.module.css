@@ -1,0 +1,466 @@
+/*
+ * Ukevisningen på PLAN. Uka er et rutenett: tidsakse til venstre, mandag–søndag
+ * som kolonner, og hvert opptak som en blokk du kan ta tak i.
+ *
+ * Størrelsene som regnes (timehøyden) kommer fra `plan-core.ts` som
+ * `--hour-px` på roten, så CSS og geometrien aldri kan være uenige om hvor
+ * 11:00 ligger.
+ */
+
+.wrap {
+  --gutter: 48px;
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--pad-card-tight);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* ── Topplinja: neste opptak, kvittering, «Legg til» ───────────────────── */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.nextWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.nextLabel {
+  color: var(--ink-3);
+  font-size: var(--label-fs);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+}
+
+.nextValue {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-md);
+}
+
+.nextWake {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.offNote {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  font-size: var(--fs-base);
+}
+
+/* ── Rutenettet ─────────────────────────────────────────────────────────── */
+
+.scroll {
+  position: relative;
+  height: min(60vh, 600px);
+  min-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  scrollbar-gutter: stable;
+}
+
+.head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-2);
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.dayHead {
+  padding: var(--sp-2) var(--sp-1);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayHead[aria-current="date"] {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.body {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+}
+
+.hours {
+  position: relative;
+}
+
+.hour {
+  position: absolute;
+  right: var(--sp-2);
+  transform: translateY(-50%);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+.cols {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Timelinjene: én hårlinje per time, litt tydeligere ved hver sjette. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0,
+    var(--line) 1px,
+    transparent 1px,
+    transparent var(--hour-px)
+  );
+}
+
+.col {
+  position: relative;
+  border-left: 1px solid var(--line);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.col[data-today="true"] {
+  background: var(--gold-soft);
+}
+
+.now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--rec);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.now::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--rec);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--sp-8);
+  pointer-events: none;
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+  text-align: center;
+  z-index: 1;
+}
+
+.emptyNote {
+  background: var(--bg);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+}
+
+/* ── Blokkene ───────────────────────────────────────────────────────────── */
+
+.block {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  box-sizing: border-box;
+  z-index: 1;
+  overflow: hidden;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--gold-line);
+  background: var(--raised);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  /* En lys venstrekant: blokken leses som «et opptak» også uten fargen. */
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.block:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  z-index: 4;
+}
+
+.block[data-short="true"] {
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: var(--fs-xs);
+}
+
+/* Halen på neste dag og hodet over midnatt er ett opptak: kanten som er
+   «kuttet» av midnatt er flat. */
+.block[data-part="head"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-style: dashed;
+}
+
+.block[data-part="tail"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-style: dashed;
+}
+
+/* Neste opptak: fylt gull, som primærknappen. */
+.block[data-next="true"] {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+  box-shadow: none;
+}
+
+/* Et opptak som ikke ble tatt opp denne uka. */
+.block[data-missed="true"] {
+  border-color: var(--warn-line);
+  border-style: dashed;
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--raised);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.block[data-off="true"] {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.block[data-dragging="true"] {
+  cursor: grabbing;
+  z-index: 5;
+  box-shadow: var(--shadow-toast);
+}
+
+.block[data-bad="true"] {
+  border-color: var(--rec-line);
+  background:
+    linear-gradient(0deg, var(--rec-soft), var(--rec-soft)), var(--raised);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--rec);
+}
+
+.blockLabel {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  display: block;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.handle[data-handle="start"] {
+  top: 0;
+}
+
+.handle[data-handle="end"] {
+  bottom: 0;
+}
+
+/* Et tydelig tak å gripe i: en liten strek midt i kanten, synlig ved hover
+   og fokus. */
+.handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  margin: -1px 0 0 -9px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0;
+}
+
+.block:hover .handle::after,
+.block:focus-visible .handle::after {
+  opacity: 0.5;
+}
+
+.ghost {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 5;
+  box-sizing: border-box;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--gold);
+  background: var(--gold-soft);
+  pointer-events: none;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ghost[data-bad="true"] {
+  border-color: var(--rec);
+  background: var(--rec-soft);
+}
+
+/* ── Meldinger og tastaturhint ──────────────────────────────────────────── */
+
+.status {
+  margin: 0;
+  min-height: 1.4em;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.status[data-kind="error"] {
+  color: var(--bad);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+/* ── Redigering (popover) ───────────────────────────────────────────────── */
+
+.pop {
+  position: absolute;
+  z-index: var(--z-header);
+  width: 264px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-dialog);
+}
+
+.popTitle {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+
+.input {
+  font: inherit;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  min-height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.popInfo {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.popError {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--bad);
+}
+
+.popActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.popSpacer {
+  flex: 1;
+}
+
+@media (max-width: 1000px) {
+  .wrap {
+    --gutter: 40px;
+  }
+
+  .dayHead {
+    font-size: var(--fs-xs);
+  }
+
+  .block {
+    padding: var(--sp-1);
+  }
+}

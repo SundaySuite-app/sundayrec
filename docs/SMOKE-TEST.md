@@ -96,7 +96,7 @@ guard that would otherwise fail in silence:
 | Innstillinger → Generelt (Menighet)              | **the gear › «Hvilken kirke?»** — the one question that is not a Sunday decision          |
 | Innstillinger → Deling / Varsler                 | **Opptak › «Hvem får beskjed hvis noe går galt?»**                                        |
 | Innstillinger → Video                            | **Opptak › «Ta med kamera»** — a card in the stack, no «Tillegg» heading                  |
-| Tidsplan (month calendar + day detail)           | **Opptak › «Ta opp automatisk»**, and the gear › Avansert for the rest                    |
+| Tidsplan (month calendar + day detail)           | **Plan › the week view** (Mon–Sun columns, draggable blocks) + «Vekking» under it         |
 | Innstillinger → System (log, profile, telemetry) | **the gear › Avansert**                                                                   |
 | Oppdateringer / Oppdateringskanal                | **the gear › Avansert › Oppdateringer**                                                   |
 | E-postserver (SMTP), inside the alerts card      | **removed** with e-mail alerts — see «Flater som ikke finnes lenger»                      |
@@ -859,15 +859,34 @@ shell and fake timers:
 
 What is left for the rig:
 
-The weekly time lives on the **«Ta opp automatisk»** card on **Opptak** (one
-day, one start, one duration) — its toggle opens the body, and `?goto=schedule`
-lands on exactly that card, folded out. **The gear → Avansert → «Flere tider og
-spesialopptak»** holds the rest: extra fixed times, and single-date specials (a
-concert, a Christmas Eve).
+The weekly times live on **Plan** (F6) as a **week view**: Monday–Sunday as
+columns, time running down (06:00 on top, scroll for the night), every fixed time a
+coloured block. Drag an empty area to add one (a plain click adds 90 min), drag a
+block to move it (also to another day), drag its top/bottom edge to change start/stop —
+all in 15-minute steps, never shorter than 15 minutes. A click on a block opens a small
+editor (day, exact start/stop, Delete). Keyboard: Tab to a block, arrows move
+(up/down 15 min, left/right a day), Shift + up/down resize, Enter edits, Delete removes.
+Today's column is tinted and a red line marks «now»; the scheduler's **next** recording is
+filled gold («Neste») and a recording that was missed this week carries «Ikke tatt opp».
+A time crossing midnight is drawn in two columns (Sunday night continues on Monday).
+Two times may not overlap — the scheduler records one thing at a time — and the sentence
+under the grid says which time is in the way. The master toggle «Ta opp automatisk» and
+«Start automatisk med maskinen» sit above the grid; the wake toggle, its sentence and
+«Test vekking» sit in the **«Vekking»** card under it. `?goto=plan:auto` lands on the toggle card.
+
+- VERIFIED-BY: e2e/plan-week.spec.ts::å dra i en tom flate lager en tid, rundet til kvarter
+- VERIFIED-BY: e2e/plan-week.spec.ts::å dra en blokk til en annen dag og et annet klokkeslett flytter den
+- VERIFIED-BY: e2e/plan-week.spec.ts::bunnkanten endrer slutten, toppkanten starten
+- VERIFIED-BY: e2e/plan-week.spec.ts::et trykk på blokken åpner redigeringen; Lagre skriver eksakte tider og dag
+- VERIFIED-BY: e2e/plan-week.spec.ts::Slett fjerner tiden
+- VERIFIED-BY: e2e/plan-week.spec.ts::piler flytter, Skift + piler strekker, Enter åpner, Delete fjerner
+- VERIFIED-BY: e2e/plan-week.spec.ts::overlapp avvises med en setning, og tiden står der den var
+- VERIFIED-BY: e2e/plan-week.spec.ts::en tid over midnatt tegnes i to kolonner og kan redigeres
+- VERIFIED-BY: e2e/plan-week.spec.ts::«Neste opptak» er fremhevet, og savnede opptak denne uka er merket
 
 ⚠️ **The month calendar, the day detail and the wake-diagnostics card are gone**
-— the same information is two lists and one sentence now. The wake sentence is
-on Avansert next to the toggle: «Denne maskinen kan vekkes fra dvale.» /
+— the same information is the week view and one sentence now. The wake sentence is
+in the «Vekking» card on Plan next to the toggle: «Denne maskinen kan vekkes fra dvale.» /
 «… kan ikke vekkes — la den stå på.» / «… spør om administratorpassord første
 gang.» / «Vi vet ikke ennå …».
 

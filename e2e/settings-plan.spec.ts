@@ -228,7 +228,8 @@ test.describe("innstillingene lagrer der man står", () => {
       await expect(page.getByTestId(`setup-toc-${key}`)).toBeVisible();
     }
     // Tidsplanen bor på PLAN.
-    await expect(page.getByTestId("advanced-schedule")).toHaveCount(0);
+    await expect(page.getByTestId("plan-week")).toHaveCount(0);
+    await expect(page.getByTestId("plan-wake")).toHaveCount(0);
 
     await page.getByTestId("setup-toc-about").click();
     await expect(page.locator("#sec-about-h")).toBeFocused();
@@ -319,7 +320,7 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
 });
 
 test.describe("PLAN", () => {
-  test("bryteren slår «Ta opp automatisk» på med søndag 11:00, og kroppen vises", async ({
+  test("bryteren slår «Ta opp automatisk» på med søndag 11:00, og blokken står i uka", async ({
     page,
   }) => {
     await boot(page, {
@@ -329,17 +330,26 @@ test.describe("PLAN", () => {
     });
 
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Sett en tid én gang. Maskinen vekkes og starter selv.",
+      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
     );
-    await expect(page.getByTestId("auto-day")).toHaveCount(0);
+    // Uka er der, tom, og sier det.
+    await expect(page.getByTestId("plan-week")).toBeVisible();
+    await expect(page.getByTestId("plan-empty")).toBeVisible();
+    await expect(page.getByTestId("plan-block")).toHaveCount(0);
 
     await page.getByTestId("setup-auto-toggle").click();
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
       "Søndag 11:00 · 90 min",
     );
-    await expect(page.getByTestId("auto-day")).toBeVisible();
-    // «Flere tider» og vekkingen står på samme side.
-    await expect(page.getByTestId("advanced-schedule")).toBeVisible();
+    await expect(page.getByTestId("plan-block")).toHaveCount(1);
+    await expect(page.getByTestId("plan-block")).toHaveAttribute(
+      "data-day",
+      "6",
+    );
+    await expect(page.getByTestId("plan-block")).toContainText("11:00–12:30");
+    // Vekkingen står på samme side, og skjemaet fra før er borte.
+    await expect(page.getByTestId("plan-wake")).toBeVisible();
+    await expect(page.getByTestId("auto-day")).toHaveCount(0);
   });
 });
 
@@ -381,7 +391,7 @@ test.describe("dyplenkene lander på siden de navngir", () => {
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
       "Søndag 11:00 · 90 min",
     );
-    await expect(page.getByTestId("auto-day")).toBeVisible();
+    await expect(page.getByTestId("plan-block")).toHaveCount(1);
   });
 
   test("en ukjent side lander på TA OPP", async ({ page }) => {

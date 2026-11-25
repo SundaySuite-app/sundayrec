@@ -213,20 +213,13 @@
       },
       "auto": {
         "title": "Record automatically",
-        "desc": "Set a time once. The computer wakes and starts on its own.",
+        "desc": "Add the times in the week below. The computer wakes and starts on its own.",
         "summary": "{day} {start} · {n} min",
         "day": "Day",
         "start": "Starts",
-        "duration": "Lasts",
-        "durationDesc": "The recording stops by itself after this.",
         "minutes": "{n} min",
-        "nothingToSave": "Nothing has changed.",
         "launch": "Start automatically with the computer",
-        "launchDesc": "Without this the recording won’t start after a restart.",
-        "more": {
-          "one": "This computer has {n} weekly time. Here you change it.",
-          "other": "This computer has {n} weekly times. Here you change the first one."
-        }
+        "launchDesc": "Without this the recording won’t start after a restart."
       },
       "days": {
         "0": "Monday",
@@ -330,15 +323,8 @@
         "licensesClose": "Close",
         "licensesFailed": "The license text could not be found. Try reinstalling the app.",
         "licensesFrameTitle": "Licenses and third-party notices",
-        "schedDesc": "Here you add more fixed times and control whether the machine wakes from sleep.",
-        "schedTimes": "Weekly times",
-        "schedNone": "No weekly times yet.",
-        "schedRow": "{day} {start}–{stop}",
-        "schedAdd": "Add a weekly time",
-        "schedAddSave": "Add",
+        "schedDesc": "Here you control whether the computer wakes from sleep before a recording.",
         "wakeTestBlocked": "Not while a recording is running.",
-        "schedRemove": "Remove",
-        "schedFirstIsSetup": "The first time is the one you see in the “Record automatically” card at the top.",
         "wake": "Wake the machine from sleep",
         "wakeDesc": "Without this the machine has to be awake when the recording starts.",
         "autoDeleteConfirmBody": "Recordings older than this are moved to the trash. Under 30 days can mean a service is gone before anyone has downloaded it.",
@@ -402,7 +388,7 @@
       "sections": {
         "nav": "Jump to",
         "language": "Language",
-        "schedule": "More times",
+        "schedule": "Wake-up",
         "recording": "Recording options",
         "recordingDesc": "How the recording itself should work: sound from before Start, stopping on silence, maximum length, splitting into several files and deleting old recordings.",
         "updates": "Updates",
@@ -571,7 +557,34 @@
       "globalErrorTitle": "Something went wrong"
     },
     "plan": {
-      "lede": "Set up when SundayRec starts recording on its own. The machine wakes up and records without anyone pressing anything."
+      "lede": "Set up when SundayRec starts recording on its own. The machine wakes up and records without anyone pressing anything.",
+      "gridLabel": "Weekly plan of fixed recordings, Monday to Sunday",
+      "add": "Add time",
+      "next": "Next",
+      "missed": "Not recorded",
+      "block": "{day} {start}–{stop}",
+      "blockNext": "next recording",
+      "blockMissed": "not recorded this week",
+      "continues": "continues from the day before",
+      "empty": "No fixed times yet. Drag in the week to add a recording.",
+      "off": "Automatic recording is off. The times stay in the week, but nothing starts on its own.",
+      "keys": "Times repeat every week. Drag on an empty area to add a recording, drag a block to move it, and drag an edge to change the start or end. With the keyboard: Enter opens, arrow keys move (Shift + up/down changes the length), Delete removes.",
+      "changed": "Changed to {day} {range}.",
+      "added": "Added: {day} {range}.",
+      "removed": "Removed: {day} {range}.",
+      "errOverlap": "Overlaps {day} {range}. SundayRec can only record one thing at a time.",
+      "errNoRoom": "There is no room for a recording here. Try another time.",
+      "errTime": "Enter the time as hh:mm.",
+      "errLength": "A recording must last at least 15 minutes and less than a day.",
+      "editTitle": "Edit time",
+      "newTitle": "New time",
+      "stop": "Ends",
+      "nextDay": "ends the next day",
+      "delete": "Delete",
+      "summaryMany": {
+        "one": "{n} fixed time each week",
+        "other": "{n} fixed times each week"
+      }
     }
   },
   "nav": {
