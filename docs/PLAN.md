@@ -1,6 +1,6 @@
 # Plan — SundayRec etter «rent bord»
 
-_Sist gått gjennom: 2026-11-26. Versjon 0.31.0 («rent bord») er klar på grenen `rent-bord`; stabil og beta er fortsatt v0.30.1 til grenen er merget og sluppet._
+_Sist gått gjennom: 2026-11-26. «Rent bord» er merget (#464) og sluppet som **v0.31.0-beta.1 på beta-ringen** (#465). Stabil er fortsatt v0.30.1 til beta-søndagen er ren._
 
 Én side som svarer på «hva er SundayRec nå, hva er bevisst fjernet, og hva er ikke
 gjort?». Et punkt som ikke står her, er ikke planlagt. Kartet over alle
@@ -58,12 +58,13 @@ Ingenting av dette kan bevises i den headless gaten. Gå gjennom det på
 
 ## Åpent — eier (Richard)
 
-- [ ] **Oppdater GitHub branch protection på `main`.** Kravet «Rust clippy + tests (vad feature)» finnes ikke lenger i `.github/workflows/ci.yml` (jobben ble fjernet med VAD-en), så en PR kan henge på en sjekk som aldri kommer. Jobbene som finnes nå: «Lint, typecheck & test», «Build Tauri app (no bundle)», «Playwright e2e (renderer harness)», «Windows check + test», «Dependency audit» (og, ikke påkrevd i dag: «macOS check + test», «Windows check (asio release combo)»). Fjern den døde sjekken fra lista; legg gjerne til «macOS check + test».
+- [ ] Legg gjerne «macOS check + test» til de påkrevde sjekkene på `main` (den døde VAD-sjekken ble fjernet 2026-11-26; påkrevd nå: «Lint, typecheck & test», «Build Tauri app (no bundle)», «Playwright e2e (renderer harness)», «Windows check + test», «Dependency audit»).
 - [ ] **Regenerer atlas-skjermbildene** (`npm run atlas`) — sidene, første gang (tre steg) og ukevisningen er endret siden forrige serie, og `docs/design/atlas/INDEX.md` peker på de gamle sceneid-ene.
 - [ ] Notarisering: godta Apples oppdaterte avtale, sett `NOTARIZE_MAC=true` ([NEEDS-RICHARD](archive/NEEDS-RICHARD.md) §Release blockers).
 - [ ] Windows-kodesigneringssertifikat (valgfritt; fjerner SmartScreen-advarselen).
 - [ ] Sletting av lagrede adresser og rivingen av `notify.sundaysuite.app` i `sunday-telemetry`, når flåten er på v0.23.0 eller nyere.
-- [ ] Merge `rent-bord`, slipp v0.31.0 (RELEASE-CHECKLIST) og avgjør om første søndag er helseporten.
+- [ ] **Beta-søndag på v0.31.0-beta.1:** en ekte gudstjeneste på beta-bygget, gjennom `SMOKE-TEST.md` §beta-søndag og helseporten i [RELEASE-CHECKLIST](RELEASE-CHECKLIST.md) §6a (dette slippet endret opptak, editor og oppstart).
+- [ ] Er den ren: slipp **v0.31.0** til stabil og beta (RELEASE-CHECKLIST §5g), med `.msi` på Windows-utkastet.
 
 ## Kjent og akseptert
 
