@@ -446,9 +446,6 @@
         "wav": "Ukomprimert. Størst fil.",
         "mp4": "Video med lyd. Passer for nett og deling."
       },
-      "sameFolder": "Samme mappe som opptaket",
-      "pickFolder": "Velg mappe …",
-      "pickFolderDesc": "Minnepinne, Dropbox-mappe, hvor som helst.",
       "jingleIntro": "Intro",
       "jingleOutro": "Outro",
       "jinglePickLabel": "Velg lydfil for {which}",
@@ -490,7 +487,9 @@
       "jingleSwap": "Velg en annen fil",
       "jingleSwapLabel": "Velg en annen fil for {which}",
       "saveBtn": "Lagre",
-      "saved": "Lagret"
+      "saved": "Lagret",
+      "destSame": "Samme mappe",
+      "destReset": "Tilbake til samme mappe"
     },
     "export": {
       "content": "Innhold",

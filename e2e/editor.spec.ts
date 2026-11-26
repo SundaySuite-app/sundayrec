@@ -854,11 +854,15 @@ test.describe("editor", () => {
     await openEditor(page);
     await goToExport(page);
 
-    const same = page.getByTestId("editor-dest-row-same");
-    await expect(same).toHaveAttribute("data-selected", "true");
-    await expect(same).toContainText("Samme mappe som opptaket");
-    // …og den NAVNGIR mappen, i stedet for å be brukeren stole på ordet.
-    await expect(same).toContainText("Opptak");
+    const same = page.getByTestId("editor-dest-row");
+    await expect(same).toHaveAttribute("data-selected", "false");
+    await expect(same).toContainText("Samme mappe");
+    // …og den NAVNGIR mappen (tittelen og forhåndsvisningen), i stedet for å
+    // be brukeren stole på ordet.
+    await expect(same).toHaveAttribute("title", /Opptak/);
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "Opptak",
+    );
 
     // Navnet er bakendens form (`<navn>_redigert.<ext>`), ikke et løfte om
     // innholdet, og anslaget er regnet av det som faktisk blir igjen.

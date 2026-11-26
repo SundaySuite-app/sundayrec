@@ -372,3 +372,60 @@
   place-items: center;
   animation: pop var(--dur-slow) var(--ease-out);
 }
+
+/* ── Mappe-raden: ÉN rad, ikke to kort ─────────────────────────────────── */
+
+.dest {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.destRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  text-align: left;
+}
+
+.destRow.on {
+  border-color: var(--gold);
+}
+
+.destRow:focus-visible,
+.destReset:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.destName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destReset {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}

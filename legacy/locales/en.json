@@ -446,9 +446,6 @@
         "wav": "Uncompressed. Largest file.",
         "mp4": "Video with sound. Good for the web and sharing."
       },
-      "sameFolder": "Same folder as the recording",
-      "pickFolder": "Choose folder …",
-      "pickFolderDesc": "USB stick, Dropbox folder, anywhere.",
       "jingleIntro": "Intro",
       "jingleOutro": "Outro",
       "jinglePickLabel": "Choose an audio file for the {which}",
@@ -490,7 +487,9 @@
       "jingleSwap": "Choose another file",
       "jingleSwapLabel": "Choose another file for {which}",
       "saveBtn": "Save",
-      "saved": "Saved"
+      "saved": "Saved",
+      "destSame": "Same folder",
+      "destReset": "Back to the same folder"
     },
     "export": {
       "content": "Content",

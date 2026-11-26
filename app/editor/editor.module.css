@@ -51,6 +51,30 @@
   gap: var(--sp-3);
 }
 
+/* «Eksporter»: gullpille øverst til høyre i hodet. */
+.exportBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  height: 44px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+}
+
+.exportBtn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .sub {
   display: flex;
   align-items: center;

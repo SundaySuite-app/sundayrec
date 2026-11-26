@@ -245,26 +245,17 @@ function CutStep() {
  * skal.
  */
 function NextStep({ step }: { step: Step }) {
+  // «Eksporter» bor øverst til høyre i hodet (E8-fiks); her står bare veien
+  // videre til Lyd-steget.
+  if (step !== "cut") return null;
   return (
     <ActionBar testId="editor-actions">
-      {step === "cut" ? (
-        <Button
-          variant="secondary"
-          testId="editor-next"
-          onClick={() => (activeStep.value = "sound")}
-        >
-          {t("app.editor.nextSound")}
-        </Button>
-      ) : null}
       <Button
-        variant="primary"
-        size="lg"
-        testId="editor-export-open"
-        onClick={openExportSheet}
+        variant="secondary"
+        testId="editor-next"
+        onClick={() => (activeStep.value = "sound")}
       >
-        {exporting.value
-          ? t("editor.exportExporting")
-          : t("app.editor.exportOpen")}
+        {t("app.editor.nextSound")}
       </Button>
     </ActionBar>
   );
@@ -319,6 +310,21 @@ function Head() {
           />
         ) : null}
       </p>
+      {/* Gullpillen oppe til høyre: eksporten er det siste man gjør, og
+          knappen står der øyet ender. Åpner `ExportSheet` over editoren. */}
+      <button
+        type="button"
+        class={styles.exportBtn}
+        data-testid="editor-export-open"
+        onClick={openExportSheet}
+      >
+        <Icon name="download" size={20} strokeWidth={2} />
+        <span>
+          {exporting.value
+            ? t("editor.exportExporting")
+            : t("app.editor.exportOpen")}
+        </span>
+      </button>
     </div>
   );
 }

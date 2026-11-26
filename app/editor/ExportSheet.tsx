@@ -67,7 +67,6 @@ import { activeDialog } from "../ui/dialog";
 import { Button } from "../ui/Button/Button";
 import { Card } from "../ui/Card/Card";
 import { ProgressBar } from "../ui/ProgressBar/ProgressBar";
-import { RadioCards, type RadioOption } from "../ui/RadioCards/RadioCards";
 import { revealExport, revealLabel } from "../ui/reveal";
 import { TextArea } from "../ui/TextArea/TextArea";
 import { TextField } from "../ui/TextField/TextField";
@@ -306,19 +305,6 @@ function Choices() {
     ? picked.displayName
     : folderLabel(folderOf(E.filePath));
 
-  const destinations: RadioOption[] = [
-    {
-      value: "same",
-      title: t("app.editor.sameFolder"),
-      description: folderLabel(folderOf(E.filePath)),
-    },
-    {
-      value: "pick",
-      title: t("app.editor.pickFolder"),
-      description: picked ? picked.displayName : t("app.editor.pickFolderDesc"),
-    },
-  ];
-
   return (
     <div data-testid="editor-export" class={styles.step}>
       <ExportProblem />
@@ -339,16 +325,36 @@ function Choices() {
 
       <div class={styles.field}>
         <span class={styles.label}>{t("app.editor.exWhere")}</span>
-        <RadioCards
-          testId="editor-dest"
-          value={picked ? "pick" : "same"}
-          options={destinations}
-          columns={1}
-          onChange={(next) => {
-            if (next === "same") exportFolder.value = null;
-            else void pickExportFolder();
-          }}
-        />
+        {/* ÉN rad: mappeikon + «Samme mappe» eller navnet på den valgte.
+            Trykk åpner velgeren (Rust åpner den); med en valgt mappe går
+            den lille pila tilbake til samme mappe. */}
+        <div class={styles.dest}>
+          <button
+            type="button"
+            class={`${styles.destRow} ${picked ? styles.on : ""}`}
+            data-testid="editor-dest-row"
+            data-selected={picked ? "true" : "false"}
+            title={folderLabel(folderOf(E.filePath))}
+            onClick={() => void pickExportFolder()}
+          >
+            <Icon name="folder" size={22} />
+            <span class={styles.destName}>
+              {picked ? picked.displayName : t("app.editor.destSame")}
+            </span>
+          </button>
+          {picked ? (
+            <button
+              type="button"
+              class={styles.destReset}
+              data-testid="editor-dest-reset"
+              aria-label={t("app.editor.destReset")}
+              title={t("app.editor.destReset")}
+              onClick={() => (exportFolder.value = null)}
+            >
+              <Icon name="restore" size={18} strokeWidth={2} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <Content />

@@ -483,12 +483,12 @@ test.describe("eksportering — innhold", () => {
       }`),
     });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
       "true",
     );
-    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
       "Skrivebord",
     );
     await expect(page.getByTestId("editor-export-preview")).toContainText(
@@ -516,10 +516,13 @@ test.describe("eksportering — innhold", () => {
   }) => {
     await openThenExport(page, { editor_pick_output_folder: null });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-same")).toHaveAttribute(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
-      "true",
+      "false",
+    );
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
+      "Samme mappe",
     );
 
     await page.getByTestId("editor-export-go").click();
@@ -545,8 +548,8 @@ test.describe("eksportering — innhold", () => {
       }`),
     });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
       "USB-PINNE",
     );
     await page.getByTestId("editor-export-go").click();
@@ -555,9 +558,15 @@ test.describe("eksportering — innhold", () => {
       "Mappen du valgte, finnes ikke lenger",
     );
     // Valget står: målet bytter ikke til «Samme mappe» i det stille.
-    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
       "true",
+    );
+    // Pila på raden går tilbake til «Samme mappe».
+    await page.getByTestId("editor-dest-reset").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
+      "data-selected",
+      "false",
     );
   });
 
