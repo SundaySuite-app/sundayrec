@@ -1,0 +1,141 @@
+/*
+ * To LED-stolper. Fargene står fast under et dekke som glir bort: grønn til
+ * 72 %, gul til 88 %, rød resten (skissens tall). `--meter-bg` er hva stolpen
+ * står mot, så dekket og LED-mellomrommene blir usynlige i bakgrunnen.
+ */
+.meter {
+  --meter-bg: var(--bg);
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+
+.onCard {
+  --meter-bg: var(--raised);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.label {
+  width: var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-3);
+}
+
+.track {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--sp-1);
+}
+
+.cover {
+  position: absolute;
+  background: var(--meter-bg);
+}
+
+/* ── Vannrett ──────────────────────────────────────────────────────────── */
+
+.wide {
+  flex-direction: column;
+}
+
+.wide .track {
+  width: var(--meter-w, 420px);
+  max-width: 100%;
+  height: var(--sp-4);
+  background: linear-gradient(
+    to right,
+    var(--good) 0,
+    var(--good) 72%,
+    var(--warn) 72%,
+    var(--warn) 88%,
+    var(--rec) 88%
+  );
+}
+
+/* LED-mellomrommene: tynne striper i bakgrunnsfargen over fargefeltet. */
+.wide .track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 7px,
+    var(--meter-bg) 7px,
+    var(--meter-bg) 9px
+  );
+}
+
+.wide .cover {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  z-index: 1;
+}
+
+/* ── Mini (kilde-brikka) ───────────────────────────────────────────────── */
+
+.mini {
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: 30px;
+}
+
+.mini .track {
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(
+    to right,
+    var(--good) 0,
+    var(--good) 72%,
+    var(--warn) 72%,
+    var(--warn) 88%,
+    var(--rec) 88%
+  );
+}
+
+.mini .cover {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+}
+
+/* ── Loddrett (kamerabildet) ───────────────────────────────────────────── */
+
+.vertical {
+  --meter-bg: var(--meter-cover);
+  height: 100%;
+  flex-direction: row;
+}
+
+.vertical .row {
+  height: 100%;
+}
+
+.vertical .track {
+  width: 7px;
+  height: 100%;
+  background: linear-gradient(
+    to top,
+    var(--good) 0,
+    var(--good) 72%,
+    var(--warn) 72%,
+    var(--warn) 88%,
+    var(--rec) 88%
+  );
+}
+
+.vertical .cover {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+}

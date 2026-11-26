@@ -273,13 +273,24 @@ test.describe("treffflater", () => {
   test("TA OPP: kilden og planlinja", async ({ page }) => {
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await expect(page.getByTestId("record-change-source")).toBeVisible();
-    // Ingen brytere og ingen utfoldingsknapper etter F5; de to ghost-knappene
-    // er kildens «Endre» og planlinjas «Plan».
+    // Ingen brytere og ingen utfoldingsknapper; kilde-brikka, kamerabryteren
+    // og kalenderknappen er runde ikonknapper, ikke ghost-knapper (E3).
     await assertHitTargets(page, "record", {
       toggles: 0,
       expands: 0,
-      ghosts: 2,
+      ghosts: 0,
     });
+    // De tre store målene har et ekte treffmål.
+    for (const id of [
+      "record-change-source",
+      "record-start",
+      "record-camera-toggle",
+      "record-next-plan",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+    }
   });
 
   test("INNSTILLINGER: bryterne og knappene på hele flaten", async ({

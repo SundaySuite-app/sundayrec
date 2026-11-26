@@ -68,9 +68,7 @@
       "noSource": "You haven’t chosen a sound source",
       "noSourceDesc": "Choose the mixing desk — or the computer’s own microphone if that’s what you use.",
       "chooseSound": "Choose sound source",
-      "sub": "Press Start when the service begins.",
       "listening": "Listening",
-      "soundFrom": "Sound from",
       "start": "Start recording",
       "whyBlocked": "Start is blocked until a sound source is chosen. We never record from a source nobody picked.",
       "canStart": "You can start anyway — the recording stays silent until the mixing desk is back.",
@@ -89,8 +87,17 @@
         "denied": "Camera access denied — check System Settings",
         "noResponse": "Camera not responding — is another app using it?"
       },
-      "openPlan": "Plan",
-      "nextNone": "No planned recordings yet."
+      "nextNone": "No planned recordings yet.",
+      "bigLabel": "Record",
+      "camOn": "Turn camera on",
+      "camOff": "Turn camera off",
+      "camChoose": "Camera and audio file",
+      "camPopover": "Camera settings",
+      "camDefault": "Camera",
+      "sourceChip": "Sound source",
+      "sourceChipTitle": "Sound source, folder and recording options",
+      "builtInShort": "This computer",
+      "planAria": "Plan recurring recordings"
     },
     "setup": {
       "q3": "Which quality?",
@@ -104,7 +111,6 @@
       "cancel": "Cancel",
       "sound": {
         "lede": "Choose the sound source you record from, and check that we hear it.",
-        "deviceWithPair": "{name} · input {l}–{r}",
         "gone": "Can’t find {name}",
         "goneDesc": "Check that it is on and the cable is in.",
         "noneDesc": "We never record from a sound source nobody chose.",
@@ -587,6 +593,10 @@
         "one": "{n} fixed time each week",
         "other": "{n} fixed times each week"
       }
+    },
+    "sheet": {
+      "title": "Sound",
+      "close": "Close"
     }
   },
   "nav": {

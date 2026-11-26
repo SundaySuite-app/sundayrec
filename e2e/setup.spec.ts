@@ -95,12 +95,12 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
       },
       goto: "record",
     });
-    await expect(page.getByTestId("record-source")).toBeVisible();
-    // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
+    await expect(page.getByTestId("record-change-source")).toBeVisible();
     await expect(page.getByTestId("record-source-value")).toHaveText(
-      "Behringer X32 · inngang 15–16",
+      "Behringer X32",
     );
-    await expect(page.getByTestId("record-change-source")).toHaveText("Endre");
+    // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
+    await expect(page.getByTestId("record-source-pair")).toHaveText("15–16");
   });
 });
 

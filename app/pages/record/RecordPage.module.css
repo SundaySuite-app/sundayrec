@@ -1,0 +1,86 @@
+/*
+ * TA OPP — hvilen. Flaten er full bredde (PageShell slipper `<main>` løs på
+ * denne siden); scenen fyller høyden under bannerne og er rammen de absolutte
+ * delene (kameraet, ukestripa, arket) står i.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.notices {
+  display: grid;
+  gap: var(--gap-stack);
+  padding: 0 var(--sp-6);
+}
+
+.notices:empty {
+  display: none;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.listening {
+  position: absolute;
+  right: var(--sp-6);
+  top: var(--sp-5);
+  z-index: 2;
+}
+
+.top {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--sp-6);
+}
+
+.big {
+  position: relative;
+  margin-top: var(--sp-8);
+}
+
+/* Kamerabryteren ved siden av knappen, midt på høyden. */
+.cam {
+  position: absolute;
+  left: calc(100% + 30px);
+  top: 84px;
+}
+
+.bigLabel {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-md);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.why {
+  margin: var(--sp-1) 0 0;
+  max-width: 460px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.meter {
+  margin-top: var(--sp-6);
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  padding: 0 var(--sp-5);
+}

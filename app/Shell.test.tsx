@@ -185,7 +185,7 @@ describe("Shell", () => {
     navigate("record");
     patchSettings({ deviceName: "Behringer X32", deviceId: "x32" });
     const html = render(<Shell />);
-    expect(html).toContain('data-testid="record-source"');
+    expect(html).toContain('data-testid="record-change-source"');
     expect(html).toContain('data-testid="record-vu"');
     expect(html).toContain("Behringer X32");
     expect(html).not.toContain('data-testid="record-no-source"');

@@ -6,16 +6,16 @@
 //! ```text
 //! camera callback ─push─▶ FrameQueue ─▶ (drain | video track)     ← the recorder's
 //!                    │                                                only consumer
-//!                    └─ tap: 4/s by capture time, a SHARE ─▶ mailbox (1 slot)
+//!                    └─ tap: 12/s by capture time, a SHARE ─▶ mailbox (1 slot)
 //!                                                                 │
-//!                          preview worker: scale to 640 px, JPEG ◀┘
+//!                          preview worker: scale to 1280 px, JPEG ◀┘
 //!                                                                 │
-//!                                          Tauri channel ◀────────┘  (~4 frames/s)
+//!                                          Tauri channel ◀────────┘  (~12 frames/s)
 //! ```
 //!
 //! **The preview never reads the recorder's queue and never slows it.** The tap
 //! ([`FrameQueue::set_tap`]) runs on the camera's callback thread and does
-//! three cheap things: count, and — for one frame per 250 ms of capture time
+//! three cheap things: count, and — for one frame per ~83 ms of capture time
 //! ([`preview_due`]) — `try_lock` a
 //! one-slot mailbox and put a *clone* of the frame in it (a reference count,
 //! [`Frame`]'s `Clone` never copies pixels). A busy mailbox or a slow worker
@@ -55,7 +55,7 @@
 //!
 //! Everything is turned into tight NV12 first (the recorder's own
 //! `pack_tight`), the two planes are scaled with `fast_image_resize` (luma
-//! `U8`, chroma `U8x2`) so the YUV→RGB step only touches 640×360 pixels, and
+//! `U8`, chroma `U8x2`) so the YUV→RGB step only touches at most 1280×720 pixels, and
 //! `jpeg-encoder` codes the RGB. MJPEG cameras are passed through as the
 //! camera's own JPEG (no decoder in the tree; the webview scales it).
 
@@ -73,10 +73,10 @@ use super::{Frame, PixelFormat};
 use crate::recorder::native_capture::video::{VideoSource, raw_format_of};
 
 /// The width of a preview picture.
-pub const PREVIEW_WIDTH: u32 = 640;
+pub const PREVIEW_WIDTH: u32 = 1280;
 /// Preview pictures per second the tap aims at.
-pub const TARGET_FPS: f64 = 4.0;
-/// JPEG quality: a 640 px picture the size of a thumbnail, not an archive.
+pub const TARGET_FPS: f64 = 12.0;
+/// JPEG quality: a 1280 px picture for the stage, not an archive.
 pub const JPEG_QUALITY: u8 = 70;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -89,9 +89,9 @@ pub const PREVIEW_PERIOD_NS: u64 = (1_000_000_000.0 / TARGET_FPS) as u64;
 /// Whether the frame captured at `t_ns` becomes a preview picture, given the
 /// next due time `due_ns` (0 = none yet); returns the new due time when it
 /// does. Chosen by the frame's CAPTURE time, not by counting frames: a camera
-/// that slows down in poor light (FaceTime HD at ~22 fps) still gives ~4/s,
+/// that slows down in poor light (FaceTime HD at ~22 fps) still gives ~12/s,
 /// where "every 7th frame" gave 3.1/s. The due time advances by one period per
-/// picture, so the AVERAGE is exactly 4/s at any camera rate ≥ 4 fps; after a
+/// picture, so the AVERAGE is exactly 12/s at any camera rate ≥ 12 fps; after a
 /// gap longer than a period it restarts from the frame instead of catching
 /// up with a burst.
 pub fn preview_due(t_ns: u64, due_ns: u64) -> Option<u64> {
@@ -924,11 +924,11 @@ mod tests {
     }
 
     #[test]
-    fn the_tap_takes_four_pictures_a_second_from_any_camera_rate() {
+    fn the_tap_takes_twelve_pictures_a_second_from_any_camera_rate() {
         // Count picks over 60 s of frames at `fps`, stamped on their capture
-        // times; the average is 4/s whether the camera runs at 60, 30, a
-        // dim-light 22 or 12.5 fps.
-        for fps in [60.0, 30.0, 29.97, 25.0, 22.0, 12.5] {
+        // times; the average is TARGET_FPS (12/s) whether the camera runs at 60, 30, a
+        // dim-light 22 or 15 fps.
+        for fps in [60.0, 30.0, 29.97, 25.0, 22.0, 15.0] {
             let period = 1e9 / fps;
             let (mut due, mut picks) = (0u64, 0u32);
             let mut k = 0u64;
@@ -940,12 +940,15 @@ mod tests {
                 k += 1;
             }
             let rate = f64::from(picks) / 60.0;
-            assert!((3.8..=4.2).contains(&rate), "{fps} fps → {rate:.2}/s");
+            assert!(
+                (TARGET_FPS - 0.4..=TARGET_FPS + 0.4).contains(&rate),
+                "{fps} fps → {rate:.2}/s"
+            );
         }
-        // Slower than 4 fps: every frame.
+        // Slower than the target (10 fps): every frame.
         let (mut due, mut picks) = (0u64, 0u32);
         for k in 0..20u64 {
-            if let Some(next) = preview_due(k * 500_000_000, due) {
+            if let Some(next) = preview_due(k * 100_000_000, due) {
                 due = next;
                 picks += 1;
             }
@@ -958,10 +961,12 @@ mod tests {
     }
 
     #[test]
-    fn the_picture_is_640_wide_even_in_proportion_and_never_enlarged() {
-        assert_eq!(preview_size(1920, 1080), Some((640, 360)));
-        assert_eq!(preview_size(1280, 720), Some((640, 360)));
-        assert_eq!(preview_size(1440, 1080), Some((640, 480)));
+    fn the_picture_is_1280_wide_even_in_proportion_and_never_enlarged() {
+        assert_eq!(preview_size(3840, 2160), Some((1280, 720)));
+        assert_eq!(preview_size(1920, 1080), Some((1280, 720)));
+        assert_eq!(preview_size(1280, 720), Some((1280, 720)));
+        assert_eq!(preview_size(1440, 1080), Some((1280, 960)));
+        assert_eq!(preview_size(640, 360), Some((640, 360)));
         assert_eq!(preview_size(320, 240), Some((320, 240)));
         assert_eq!(preview_size(1, 1080), None);
         let (_, h) = preview_size(1919, 1081).unwrap();
@@ -969,12 +974,12 @@ mod tests {
     }
 
     #[test]
-    fn an_nv12_frame_becomes_a_640_wide_jpeg() {
+    fn an_nv12_frame_becomes_a_1280_wide_jpeg() {
         let jpeg = PreviewEncoder::default()
             .encode(&nv12(1920, 1080, 128, 128, 128))
             .expect("a jpeg");
-        assert_eq!(jpeg_size(&jpeg), Some((640, 360)));
-        assert!(jpeg.len() < 40_000, "a flat grey picture: {} B", jpeg.len());
+        assert_eq!(jpeg_size(&jpeg), Some((1280, 720)));
+        assert!(jpeg.len() < 80_000, "a flat grey picture: {} B", jpeg.len());
     }
 
     #[test]
@@ -1084,7 +1089,7 @@ mod tests {
     const RATE: u32 = 48_000;
 
     /// THE proof for C4a, for any camera: one session, opened for the preview,
-    /// then recorded from. The preview holds ~4 pictures per second before AND
+    /// then recorded from. The preview holds ~12 pictures per second before AND
     /// during the recording, the recording writes exactly one frame per audio
     /// slot and drops none, the camera's push never waited (when the source
     /// reports it). Returns the two measured rates.
@@ -1125,16 +1130,16 @@ mod tests {
         let before = sent.load(Ordering::Relaxed) - first;
         let secs0 = t0.elapsed().as_secs_f64();
         let rate_before = before as f64 / secs0;
-        // The SELECTION is by capture time and holds ~4/s on any machine; how
+        // The SELECTION is by capture time and holds ~12/s on any machine; how
         // many of those a slow runner manages to JPEG-encode in time is the
         // machine's business (`min_sent`: 3 on a real Mac, 2 on CI).
         let offered_before = (current_stats().map_or(0, |s| s.offered) - offered0) as f64 / secs0;
         assert!(
-            (3.0..=5.0).contains(&offered_before),
+            (TARGET_FPS - 1.0..=TARGET_FPS + 1.0).contains(&offered_before),
             "{offered_before:.2} pictures/s offered before the recording"
         );
         assert!(
-            (min_sent..=5.0).contains(&rate_before),
+            (min_sent..=TARGET_FPS + 1.0).contains(&rate_before),
             "{rate_before:.2} pictures/s before the recording ({before})"
         );
 
@@ -1180,11 +1185,11 @@ mod tests {
         let rate_during = (sent.load(Ordering::Relaxed) - mid) as f64 / secs1;
         let offered_during = (current_stats().map_or(0, |s| s.offered) - offered1) as f64 / secs1;
         assert!(
-            (3.0..=5.0).contains(&offered_during),
+            (TARGET_FPS - 1.0..=TARGET_FPS + 1.0).contains(&offered_during),
             "{offered_during:.2} pictures/s offered DURING the recording"
         );
         assert!(
-            (min_sent..=5.0).contains(&rate_during),
+            (min_sent..=TARGET_FPS + 1.0).contains(&rate_during),
             "{rate_during:.2} pictures/s DURING the recording"
         );
         let preview_stats = current_stats().expect("still previewing");
@@ -1263,11 +1268,11 @@ mod tests {
             worst < max_gap,
             "the picture stopped for {worst:?} (limit {max_gap:?}) — gaps {gaps:?}"
         );
-        // Every picture was 640 wide.
+        // Every picture was at most PREVIEW_WIDTH wide (never enlarged).
         assert!(
             lock(&sizes)
                 .iter()
-                .all(|s| s.is_some_and(|(w, _)| w == 640)),
+                .all(|s| s.is_some_and(|(w, _)| w <= PREVIEW_WIDTH)),
             "{:?}",
             lock(&sizes)
         );
@@ -1281,7 +1286,7 @@ mod tests {
     }
 
     #[test]
-    fn the_preview_holds_four_a_second_from_one_session_through_a_recording() {
+    fn the_preview_holds_twelve_a_second_from_one_session_through_a_recording() {
         let _serial = serial();
         let key = SessionKey {
             camera: "Synthetic".into(),
@@ -1312,7 +1317,7 @@ mod tests {
             Duration::from_secs(3),
             Some(&meter),
             // A shared CI runner, in a debug build, may not JPEG-encode every
-            // 720p pick in time (2.00/s seen on Linux). The tap's 4/s is held
+            // 720p pick in time (2.00/s seen on Linux). The tap's 12/s is held
             // by the `offered` bound above; the sent rate is proved on a real
             // camera (3.0). Here it only proves pictures keep flowing.
             1.0,
@@ -1783,7 +1788,7 @@ mod tests {
     /// `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_preview -- --ignored --nocapture`
     #[test]
     #[ignore = "needs a real camera and camera permission for the terminal"]
-    fn real_camera_preview_holds_four_a_second_through_a_recording() {
+    fn real_camera_preview_holds_twelve_a_second_through_a_recording() {
         let _serial = serial();
         let name = std::env::var("SUNDAYREC_REAL_CAMERA").expect("SUNDAYREC_REAL_CAMERA");
         let cams = crate::camera::list().expect("camera list");

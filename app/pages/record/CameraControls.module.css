@@ -1,0 +1,72 @@
+.root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cam {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out);
+}
+
+.cam.on {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+/* Over kamerabildet: mørk, mindre, alltid «på». */
+.stage .cam {
+  width: 44px;
+  height: 44px;
+  background: var(--scrim-chip);
+  border-color: transparent;
+}
+
+.more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 44px;
+  border-radius: var(--r-pill);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.more:hover {
+  color: var(--ink);
+}
+
+.flip {
+  transform: rotate(180deg);
+}
+
+.popover {
+  position: absolute;
+  z-index: var(--z-header);
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  width: 340px;
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-dialog);
+  animation: rise var(--dur) var(--ease-out);
+}

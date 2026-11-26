@@ -68,9 +68,7 @@
       "noSource": "Du har ikke valgt lydkilde",
       "noSourceDesc": "Velg miksebordet — eller maskinens egen mikrofon hvis det er det dere bruker.",
       "chooseSound": "Velg lydkilde",
-      "sub": "Trykk Start når gudstjenesten begynner.",
       "listening": "Lytter",
-      "soundFrom": "Lyd fra",
       "start": "Start opptak",
       "whyBlocked": "Start er sperret til dere har valgt lydkilde. Vi tar aldri opp fra en lydkilde ingen har valgt.",
       "canStart": "Du kan starte likevel — opptaket blir stille til miksebordet er tilbake.",
@@ -89,8 +87,17 @@
         "denied": "Kameratilgang nektet — sjekk Systeminnstillinger",
         "noResponse": "Kamera svarte ikke — er det i bruk av et annet program?"
       },
-      "openPlan": "Plan",
-      "nextNone": "Ingen planlagte opptak ennå."
+      "nextNone": "Ingen planlagte opptak ennå.",
+      "bigLabel": "Ta opp",
+      "camOn": "Slå på kamera",
+      "camOff": "Slå av kamera",
+      "camChoose": "Velg kamera og lydfil",
+      "camPopover": "Kamerainnstillinger",
+      "camDefault": "Kamera",
+      "sourceChip": "Lydkilde",
+      "sourceChipTitle": "Lydkilde, mappe og opptaksvalg",
+      "builtInShort": "Maskinen",
+      "planAria": "Planlegg faste opptak"
     },
     "setup": {
       "q3": "Hvilken kvalitet?",
@@ -104,7 +111,6 @@
       "cancel": "Avbryt",
       "sound": {
         "lede": "Velg lydkilden dere tar opp fra, og sjekk at vi hører den.",
-        "deviceWithPair": "{name} · inngang {l}–{r}",
         "gone": "Finner ikke {name}",
         "goneDesc": "Sjekk at den er på og at kabelen sitter.",
         "noneDesc": "Vi tar aldri opp fra en lydkilde ingen har valgt.",
@@ -587,6 +593,10 @@
         "one": "{n} fast tid hver uke",
         "other": "{n} faste tider hver uke"
       }
+    },
+    "sheet": {
+      "title": "Lyd",
+      "close": "Lukk"
     }
   },
   "nav": {

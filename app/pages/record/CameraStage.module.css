@@ -1,0 +1,62 @@
+.stage {
+  position: absolute;
+  left: var(--stage-gutter, 40px);
+  right: var(--stage-gutter, 40px);
+  top: 96px;
+  bottom: 100px;
+  border-radius: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  overflow: hidden;
+  animation: rise var(--dur) var(--ease-out);
+}
+
+.picture {
+  position: absolute;
+  inset: 0;
+}
+
+.name {
+  position: absolute;
+  left: 18px;
+  top: var(--sp-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 30px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--scrim-chip);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.live {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--good);
+}
+
+.corner {
+  position: absolute;
+  right: 14px;
+  top: var(--sp-3);
+}
+
+.meter {
+  position: absolute;
+  right: 22px;
+  top: 80px;
+  bottom: 80px;
+  display: flex;
+}
+
+.start {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  display: flex;
+  justify-content: center;
+}

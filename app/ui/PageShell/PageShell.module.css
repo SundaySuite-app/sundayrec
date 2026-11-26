@@ -261,3 +261,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/*
+ * TA OPP er en full-bleed flate («Én flate»): ingen sidepolstring, ingen
+ * lesebredde, og overskriften er der for skjermlesere og fokus — ikke for
+ * øynene (skissen har ingen sidetittel).
+ */
+.main[data-page="record"] {
+  padding: 0;
+  gap: 0;
+}
+
+.main[data-page="record"] > * {
+  max-width: none;
+}
+
+.main[data-page="record"] > .h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

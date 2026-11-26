@@ -36,6 +36,8 @@ export interface CameraFrameProps {
   /** `<img>`. Skjult av CSS til fasen er `live`. */
   children?: ComponentChildren;
   testId?: string;
+  /** Fyll flaten rammen står i (kamerascenen), i stedet for å følge sideforholdet. */
+  fill?: boolean;
 }
 
 export function CameraFrame({
@@ -45,12 +47,14 @@ export function CameraFrame({
   flip,
   children,
   testId,
+  fill,
 }: CameraFrameProps) {
   return (
     <div
       data-testid={testId}
       data-phase={phase}
       data-flip={flip ? "true" : undefined}
+      data-fill={fill ? "true" : undefined}
       class={styles.frame}
       style={aspect ? `--rec-video-ar: ${aspect}` : undefined}
     >

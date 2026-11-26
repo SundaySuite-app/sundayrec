@@ -421,7 +421,7 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
   BSD-lignende lisens og er lagt til i `deny.toml`/`about.toml`; teksten står i
   THIRD-PARTY-NOTICES. (0.6.0 står som ren MIT/Apache, men 0.6.1 rettet lisensen
   fordi koden bærer IJG-tabeller — derfor 0.7.)
-- **Bevis:** `camera::preview::tests::the_preview_holds_four_a_second_from_one_session_through_a_recording`
+- **Bevis:** `camera::preview::tests::the_preview_holds_twelve_a_second_from_one_session_through_a_recording`
   (syntetisk kilde, 1280×720@30, nøyaktig én ramme per lydplass, 0 droppede) og
   den ignorerte `real_camera_preview_…` for ekte kamera (RIG-DAY (v5)).
   **CI-grense og målt verdi er to ting.** Testen i CI går på en delt løper i
@@ -477,7 +477,7 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
 - **Lyden.** Kamerakallbacken er uendret: den skyver til den begrensede køen og
   kaller tappen (`try_lock`). Gi-tilbake skjer etter at lyden er ferdig skrevet
   og sporet har joinet, og berører ikke lydklokka.
-- **Bevis.** Rust: `the_preview_holds_four_a_second_from_one_session_through_a_recording`
+- **Bevis.** Rust: `the_preview_holds_twelve_a_second_from_one_session_through_a_recording`
   måler nå også lengste opphold mellom to bilder over start, opptak, stopp og en
   fragmentgrense (syntetisk kilde); tre nye livssyklustester. e2e (301 grønne):
   `⚠️ bildet blinker IKKE ved Start og Stopp…` logger tilstandene til begge

@@ -1,0 +1,72 @@
+.dock {
+  position: absolute;
+  left: var(--sp-6);
+  bottom: var(--sp-5);
+  z-index: 8;
+}
+
+.pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.pill:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+
+.plus {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  color: var(--gold);
+}
+
+.line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 56px;
+  padding: 0 var(--sp-5) 0 var(--sp-4);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--gold);
+  cursor: pointer;
+  text-align: left;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+}
+
+.when {
+  font-size: var(--fs-md);
+  color: var(--ink);
+}
+
+.wake {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}

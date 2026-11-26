@@ -1,0 +1,80 @@
+.wrap {
+  position: relative;
+  display: inline-block;
+  width: 232px;
+  height: 232px;
+}
+
+.small {
+  width: 96px;
+  height: 96px;
+}
+
+.halo {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold-line);
+  animation: breathe 4.5s ease-in-out infinite;
+}
+
+.button {
+  position: absolute;
+  inset: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-dialog);
+  cursor: pointer;
+  transition:
+    background var(--dur-slow) var(--ease-out),
+    box-shadow var(--dur-slow) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.button:hover {
+  transform: scale(1.02);
+}
+
+.small .button {
+  inset: 0;
+  background: var(--meter-cover);
+  box-shadow: var(--shadow-toast);
+}
+
+.dot {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-pill);
+  background: var(--rec);
+  box-shadow: var(--shadow-rec);
+}
+
+.small .dot {
+  width: 40px;
+  height: 40px;
+  box-shadow: none;
+}
+
+.off {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.off:hover {
+  transform: none;
+}
+
+/* Grunnen leses av skjermleser og står som `title`; den males ikke i knappen. */
+.reason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

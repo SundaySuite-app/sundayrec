@@ -188,7 +188,7 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
     expect((await storedSettings(page)).deviceName).toBe(
       "MacBook Pro Microphone",
     );
-    await expect(page.getByTestId("record-source")).toBeVisible();
+    await expect(page.getByTestId("record-change-source")).toBeVisible();
   });
 
   test("kilden er valgt og til stede: Start kaller start_recording én gang — uten sti", async ({
