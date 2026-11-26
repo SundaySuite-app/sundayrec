@@ -43,12 +43,13 @@ import { locale, t, tf, tn } from "../../i18n";
 import { loadRecordingCount } from "../../state/recordings";
 import { loadTrash, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
+import { Icon } from "../../ui/Icon/Icon";
+import { navigate } from "../../router/router";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { confirmDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
 import { formatBytes } from "../record/record-core";
 import { dueLine } from "./library-core";
-import { RecordingsTabs } from "./LibraryPage";
 import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
 
@@ -133,8 +134,19 @@ export function TrashPage() {
 
   return (
     <div class={styles.page}>
-      <RecordingsTabs value="trash" />
-      <div class={styles.trashHead}>
+      {/* Pila tilbake til lista, og søppelikonet som sier hvor man er. */}
+      <div class={styles.trashBar}>
+        <button
+          type="button"
+          class={styles.iconBtn}
+          data-testid="trash-back"
+          aria-label={t("app.library.trashBack")}
+          title={t("app.library.trashBack")}
+          onClick={() => navigate("recordings")}
+        >
+          <Icon name="arrow-left" size={22} strokeWidth={2} />
+        </button>
+        <Icon name="trash" size={20} />
         <p data-testid="trash-lede" class={styles.sub}>
           {tf("app.library.trashLede", { n: TRASH_KEEP_DAYS })}
         </p>
@@ -211,38 +223,52 @@ function Row({
 
   return (
     <div data-testid="trash-row" class={styles.row}>
-      <div class={styles.grow}>
-        <div data-testid="trash-row-name" class={styles.title}>
-          {row.name}
-        </div>
-        <div class={styles.meta}>
-          <span data-testid="trash-row-due">
-            {due.kind === "now"
-              ? t("app.library.deleteSoon")
-              : due.kind === "tomorrow"
-                ? t("app.library.deleteTomorrow")
-                : tf("app.library.deleteInDays", { n: due.days })}
+      <div class={styles.open} aria-label={row.name}>
+        <span class={styles.play} aria-hidden="true">
+          <Icon name="trash" size={18} />
+        </span>
+        <span class={styles.titles}>
+          <span data-testid="trash-row-name" class={styles.title}>
+            {row.name}
           </span>
-        </div>
-        <div class={styles.muted}>{meta}</div>
+          <span class={styles.meta}>{meta}</span>
+        </span>
+        <span class={styles.wave} aria-hidden="true" />
+        <span data-testid="trash-row-due" class={styles.due}>
+          {due.kind === "now"
+            ? t("app.library.emptiesSoon")
+            : due.kind === "tomorrow"
+              ? t("app.library.emptiesTomorrow")
+              : tf("app.library.emptiesInDays", { n: due.days })}
+        </span>
       </div>
       <div class={styles.acts}>
-        <Button
-          variant="secondary"
-          busy={busy}
-          testId="trash-row-restore"
-          onClick={onRestore}
+        <button
+          type="button"
+          class={styles.iconBtn}
+          data-testid="trash-row-restore"
+          data-busy={busy ? "true" : undefined}
+          aria-label={t("app.library.restore")}
+          title={t("app.library.restore")}
+          onClick={() => {
+            if (!busy) onRestore();
+          }}
         >
-          {t("app.library.restore")}
-        </Button>
-        <Button
-          variant="danger"
-          busy={busy}
-          testId="trash-row-purge"
-          onClick={onPurge}
+          <Icon name="restore" size={20} />
+        </button>
+        <button
+          type="button"
+          class={styles.iconBtn}
+          data-testid="trash-row-purge"
+          data-busy={busy ? "true" : undefined}
+          aria-label={t("app.library.deleteNow")}
+          title={t("app.library.deleteNow")}
+          onClick={() => {
+            if (!busy) onPurge();
+          }}
         >
-          {t("app.library.deleteNow")}
-        </Button>
+          <Icon name="x" size={20} />
+        </button>
       </div>
     </div>
   );

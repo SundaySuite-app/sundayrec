@@ -476,9 +476,12 @@ test.describe("treffflater", () => {
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
     // «Endre» (autoslett) — papirkurven er en fane nå, ikke en ghost-knapp.
     expect(ghosts.length).toBe(1);
-    // To rader × «Vis i Finder» + «Slett»: dempede knapper (`quiet`), med
-    // samme treffgulv som ghost-knappene.
-    const quiets = await measure(page, 'button[data-variant="quiet"]');
+    // To rader × «Vis i Finder» + «Slett»: runde ikonknapper (E7), med samme
+    // treffgulv som ghost-knappene.
+    const quiets = await measure(
+      page,
+      'button[data-testid="library-row-reveal"], button[data-testid="library-row-delete"]',
+    );
     expect(quiets.length).toBe(4);
     for (const g of [...ghosts, ...quiets]) {
       expect(g.hitH, `library/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(

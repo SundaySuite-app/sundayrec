@@ -930,9 +930,9 @@ export const SCENES: Scene[] = [
   {
     id: "redigering--papirkurv",
     page: "Bibliotek og redigering",
-    state: "Papirkurven — med «slettes om N dager»",
+    state: "Papirkurven — med «tømmes om N d»",
     recipe:
-      "to rader i `trash_list`, så klikk fanen `recordings-tabs-row-trash`",
+      "to rader i `trash_list`, så klikk søppelikonet `library-trash-open`",
     boot: {
       fixtures: {
         ...BASE,
@@ -952,9 +952,9 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "recordings",
     },
-    wait: "recordings-tabs",
+    wait: "library-trash-open",
     act: async (page) => {
-      await page.getByTestId("recordings-tabs-row-trash").click();
+      await page.getByTestId("library-trash-open").click();
       await expect(page.getByTestId("trash-row").first()).toBeVisible();
     },
     full: true,
@@ -963,7 +963,7 @@ export const SCENES: Scene[] = [
     id: "redigering--papirkurv-tom",
     page: "Bibliotek og redigering",
     state: "Papirkurven er tom",
-    recipe: "`trash_list: []`, så klikk fanen `recordings-tabs-row-trash`",
+    recipe: "`trash_list: []`, så klikk søppelikonet `library-trash-open`",
     boot: {
       fixtures: {
         ...BASE,
@@ -974,9 +974,9 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "recordings",
     },
-    wait: "recordings-tabs",
+    wait: "library-trash-open",
     act: async (page) => {
-      await page.getByTestId("recordings-tabs-row-trash").click();
+      await page.getByTestId("library-trash-open").click();
       await expect(page.getByTestId("trash-empty")).toBeVisible();
     },
   },

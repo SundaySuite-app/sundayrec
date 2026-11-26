@@ -207,12 +207,11 @@ describe("Shell", () => {
     navigate("recordings");
     recordings.value = null;
     const html = render(<Shell />);
-    // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-fanen
+    // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-ikonet
     // står likevel — den er den ene tingen som ALLTID skal ha en dør.
     expect(html).not.toContain('data-testid="library-empty"');
     expect(html).not.toContain('data-testid="library-row"');
-    expect(html).toContain('data-testid="recordings-tabs"');
-    expect(html).toContain('data-testid="recordings-tabs-row-trash"');
+    expect(html).toContain('data-testid="library-trash-open"');
   });
 
   it("OPPTAK viser tomtilstanden bare når det FAKTISK er tomt", () => {
@@ -289,7 +288,7 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("OPPTAK har en papirkurv-fane også når kurven er tom", () => {
+  it("OPPTAK har et papirkurv-ikon også når kurven er tom", () => {
     // Atlaset §5, funn 9: legacy skjuler «Papirkurv»-lenken når `trash_list`
     // er tom, så en frivillig som slettet noe i går og leter etter det i dag
     // finner ingen dør hvis sveipen har vært innom i mellomtiden.
@@ -297,23 +296,21 @@ describe("Shell", () => {
     recordings.value = [];
     trashEntries.value = [];
     const html = render(<Shell />);
-    expect(html).toContain('data-testid="recordings-tabs-row-trash"');
-    expect(html).toContain("Papirkurv");
+    expect(html).toContain('data-testid="library-trash-open"');
+    expect(html).toContain('aria-label="Papirkurv"');
     trashEntries.value = null;
     recordings.value = null;
   });
 
-  it("PAPIRKURVEN er en fane inne i OPPTAK, ikke en egen side", () => {
+  it("PAPIRKURVEN er en visning inne i OPPTAK, ikke en egen side", () => {
     navigate("recordings", { tab: "trash" });
     const html = render(<Shell />);
-    // Siden står på OPPTAK hele veien; fanen bytter innholdet.
+    // Siden står på OPPTAK hele veien; ikonet bytter innholdet.
     expect(html).toMatch(
       /data-testid="nav-recordings"[^>]*aria-current="page"/,
     );
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Opptak</);
-    expect(html).toMatch(
-      /data-testid="recordings-tabs-row-trash"[^>]*aria-selected="true"/,
-    );
+    expect(html).toContain('data-testid="trash-back"');
     expect(html).toContain('data-testid="trash-lede"');
     // …og papirkurven er UTENFOR slippsonen: et opptak sluppet på den ville
     // sett ut som en handling, og den ene handlingen det ligner på er den vi

@@ -253,7 +253,11 @@ test.describe("bibliotek — lista", () => {
       trash_list: [],
     });
     await expect(page.getByTestId("library-row")).toHaveCount(1);
-    await expect(page.getByTestId("library-row-video")).toHaveText("Video");
+    // Kameraet er et lite ikon på raden; navnet «Video» bærer skjermleseren.
+    await expect(page.getByTestId("library-row-video")).toHaveAttribute(
+      "aria-label",
+      "Video",
+    );
   });
 });
 
@@ -271,9 +275,11 @@ test.describe("opptak — papirkurvfanen", () => {
       recordings_list: ROWS,
       trash_list: [],
     });
-    const link = page.getByTestId("recordings-tabs-row-trash");
+    const link = page.getByTestId("library-trash-open");
     await expect(link).toBeVisible();
-    await expect(link).toContainText("Papirkurv");
+    await expect(link).toHaveAttribute("aria-label", "Papirkurv");
+    // Tom kurv ⇒ ikke noe tall på ikonet.
+    await expect(page.getByTestId("library-trash-count")).toHaveCount(0);
 
     await link.click();
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
@@ -292,9 +298,7 @@ test.describe("opptak — papirkurvfanen", () => {
       recordings_list: ROWS,
       trash_list: [trashEntry(), trashEntry({ id: "t2" })],
     });
-    await expect(page.getByTestId("recordings-tabs-row-trash")).toContainText(
-      "Papirkurv (2)",
-    );
+    await expect(page.getByTestId("library-trash-count")).toHaveText("2");
   });
 });
 
@@ -306,12 +310,12 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("recordings-tabs-row-trash").click();
+    await page.getByTestId("library-trash-open").click();
 
     await expect(page.getByTestId("trash-row")).toHaveCount(1);
     // 30 dagers frist minus sju dager i kurven.
     await expect(page.getByTestId("trash-row-due")).toHaveText(
-      "Slettes om 23 dager",
+      "tømmes om 23 d",
     );
 
     await page.getByTestId("trash-row-restore").click();
@@ -330,7 +334,7 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("recordings-tabs-row-trash").click();
+    await page.getByTestId("library-trash-open").click();
     await page.getByTestId("trash-row-purge").click();
 
     const dialog = page.getByTestId("dialog");
@@ -375,7 +379,7 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("recordings-tabs-row-trash").click();
+    await page.getByTestId("library-trash-open").click();
     await expect(page.getByTestId("trash-row")).toHaveCount(2);
 
     await page.getByTestId("trash-empty-all").click();
@@ -396,15 +400,49 @@ test.describe("papirkurven", () => {
     await expect(page.getByTestId("trash-empty-all")).toHaveCount(0);
   });
 
-  test("fanen «Opptak» går tilbake til lista", async ({ page }) => {
+  test("søppelikonet åpner papirkurven, og pila tilbake går til lista", async ({
+    page,
+  }) => {
+    await seedTrash(page, [trashEntry()]);
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      ...TRASH_STORE,
+      recordings_list: ROWS,
+    });
+    // Ingen faner: lista har ikke noe «Alle»-valg.
+    await expect(page.getByTestId("recordings-tabs")).toHaveCount(0);
+    await expect(page.getByTestId("library-trash-count")).toHaveText("1");
+
+    await page.getByTestId("library-trash-open").click();
+    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
+    await expect(page.getByTestId("trash-row")).toHaveCount(1);
+    // Inne i kurven: pil tilbake, og rader med legg-tilbake-ikon.
+    await expect(page.getByTestId("trash-row-restore")).toHaveAttribute(
+      "aria-label",
+      "Legg tilbake",
+    );
+    await expect(page.getByTestId("trash-row-due")).toHaveText(
+      "tømmes om 23 d",
+    );
+    await expect(page.getByTestId("library-trash-open")).toHaveCount(0);
+
+    await page.getByTestId("trash-back").click();
+    await expect(page.getByTestId("main")).not.toHaveAttribute(
+      "data-tab",
+      "trash",
+    );
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+  });
+
+  test("pila tilbake går til lista også med tom kurv", async ({ page }) => {
     await openLibrary(page, {
       ...BOOT_FIXTURES,
       recordings_list: ROWS,
       trash_list: [],
     });
-    await page.getByTestId("recordings-tabs-row-trash").click();
+    await page.getByTestId("library-trash-open").click();
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
-    await page.getByTestId("recordings-tabs-row-all").click();
+    await page.getByTestId("trash-back").click();
     await expect(page.getByTestId("main")).not.toHaveAttribute(
       "data-tab",
       "trash",
@@ -558,13 +596,13 @@ test.describe("F2-A-F: en slettet rad overlever en omstart", () => {
 
     // Angre, fra papirkurv-visningen inne i biblioteket — raden kommer
     // tilbake med en gang.
-    await page.getByTestId("recordings-tabs-row-trash").click();
+    await page.getByTestId("library-trash-open").click();
     await expect(page.getByTestId("trash-row")).toHaveCount(1);
     await page.getByTestId("trash-row-restore").click();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_RESTORED__))
       .toEqual(["t0"]);
-    await page.getByTestId("recordings-tabs-row-all").click();
+    await page.getByTestId("trash-back").click();
     await expect(page.getByTestId("library-row")).toHaveCount(2);
     await expect(page.getByTestId("main")).toContainText("Bønnemøte");
 

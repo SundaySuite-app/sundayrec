@@ -4,7 +4,7 @@
  * ## F5: siden heter Opptak, lista er landingen
  *
  * Et klikk på et opptak åpner editoren på SAMME side (pila tilbake lukker fila
- * og lista står der igjen); papirkurven er en fane ved siden av. Klipp hentes
+ * og lista står der igjen); papirkurven er et ikon oppe til høyre (E7). Klipp hentes
  * også fra ANDRE opptakere — en ekstern fil man drar inn har aldri vært i
  * biblioteket, så «Åpne fil …» står alltid.
  *
@@ -81,10 +81,9 @@ import { loadRecordingCount, recordings } from "../../state/recordings";
 import { settings } from "../../state/settings";
 import { loadTrash, trashCount, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
-import { Chip } from "../../ui/Chip/Chip";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
+import { Icon } from "../../ui/Icon/Icon";
 import { reveal, revealLabel } from "../../ui/reveal";
-import { Tabs } from "../../ui/Tabs/Tabs";
 import { TextField } from "../../ui/TextField/TextField";
 import { toast } from "../../ui/toast";
 import { spanOfSeconds } from "../record/record-core";
@@ -99,6 +98,8 @@ import {
 } from "./library-core";
 import { dateTimeTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
+import { loadPeakPreviews } from "./peaks-store";
+import { flatBars } from "@lib/pages/library/peaks-preview";
 import styles from "./library.module.css";
 
 /** Varighet vi ikke kjenner. Ikke «0 min» — se `library-core`. */
@@ -140,37 +141,31 @@ const UNDO_MS = 9000;
 export const TRASH_TAB = "trash";
 
 /**
- * «Opptak · Papirkurv» — fanene øverst på OPPTAK-siden (F5).
+ * Papirkurven: et ikon oppe til høyre med antallet som merke.
  *
- * Papirkurven er et filter inne i Opptak, ikke en egen dør: «Papirkurv» står
- * ALLTID, også med tom kurv (atlasets funn 9 — legacy skjulte lenken når
- * kurven var tom, og en frivillig som slettet noe i går fant ingen dør hvis
- * sveipen hadde vært innom). Antallet står i fanen når det er lest og ikke
- * null: et tall vi ikke har er ikke null.
+ * Inngangen står ALLTID, også med tom kurv (atlasets funn 9 — legacy skjulte
+ * lenken når kurven var tom, og en frivillig som slettet noe i går fant ingen
+ * dør hvis sveipen hadde vært innom). Merket står bare når antallet er lest og
+ * ikke null: et tall vi ikke har er ikke null.
  */
-export function RecordingsTabs({ value }: { value: "all" | "trash" }) {
+function TrashButton() {
   const inTrash = trashCount.value;
   return (
-    <Tabs
-      label={t("app.library.tabsAria")}
-      testId="recordings-tabs"
-      value={value}
-      onChange={(id) =>
-        id === "trash"
-          ? navigate("recordings", { tab: TRASH_TAB })
-          : navigate("recordings")
-      }
-      items={[
-        { id: "all", label: t("app.page.recordings") },
-        {
-          id: "trash",
-          label:
-            inTrash === null || inTrash === 0
-              ? t("trash.title")
-              : tf("app.library.trashCount", { n: inTrash }),
-        },
-      ]}
-    />
+    <button
+      type="button"
+      class={styles.iconBtn}
+      data-testid="library-trash-open"
+      aria-label={t("trash.title")}
+      title={t("trash.title")}
+      onClick={() => navigate("recordings", { tab: TRASH_TAB })}
+    >
+      <Icon name="trash" size={22} />
+      {inTrash === null || inTrash === 0 ? null : (
+        <span class={styles.badge} data-testid="library-trash-count">
+          {inTrash}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -261,6 +256,8 @@ export function LibraryPage() {
   const entries = recordings.value;
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Bølgeformene editoren har husket; lista leser dem én gang per åpning.
+  const [previews] = useState(loadPeakPreviews);
 
   // Leses når SIDEN åpnes: et opptak som ble tatt mens man sto på OPPTAK skal
   // være her når man går hit, og papirkurven kan ha blitt tømt av sveipen.
@@ -317,7 +314,6 @@ export function LibraryPage() {
 
   return (
     <div class={styles.page}>
-      <RecordingsTabs value="all" />
       <div class={styles.head}>
         {rows && rows.length > 0 ? (
           <p data-testid="library-sub" class={styles.sub}>
@@ -362,6 +358,7 @@ export function LibraryPage() {
           >
             {t("editor.openFile")}
           </Button>
+          <TrashButton />
         </div>
       </div>
 
@@ -398,6 +395,7 @@ export function LibraryPage() {
             <Row
               key={row.key}
               row={row}
+              bars={(row.path ? previews[row.path] : undefined) ?? FLAT}
               busy={busy === row.key}
               onDelete={() => void remove(row)}
             />
@@ -427,54 +425,70 @@ function countLine(rows: readonly LibraryRow[]): string {
 
 // ── Raden ───────────────────────────────────────────────────────────────────
 
+/** Raden uten topper: en flat linje. */
+const FLAT = flatBars();
+
 function Row({
   row,
+  bars,
   busy,
   onDelete,
 }: {
   row: LibraryRow;
+  bars: readonly number[];
   busy: boolean;
   onDelete: () => void;
 }) {
+  const canOpen = Boolean(row.entry.id);
+  const lufs = formatLufs(row.loudnessLufs);
+  // Filnavn, lydstyrke og notat: én dempet linje under datoen. Datoen er
+  // tittelen; resten er fakta man ikke leser først, men som søket treffer.
+  const facts = [
+    <span key="name" data-testid="library-row-name">
+      {row.filename}
+    </span>,
+    lufs !== null ? (
+      <span key="lufs" data-testid="library-row-lufs">
+        {tf("app.library.loudness", { lufs })}
+      </span>
+    ) : null,
+    row.note ? (
+      <span key="note" data-testid="library-row-note">
+        {row.note}
+      </span>
+    ) : null,
+  ].filter(Boolean);
+
   return (
     <div
       data-testid="library-row"
       data-path={row.path ?? undefined}
       class={styles.row}
     >
-      <div class={styles.grow}>
-        <div data-testid="library-row-when" class={styles.title}>
-          {rowTitle(row)}
-        </div>
-        {/* Varighet, lydstyrke, video, filnavn og notat: ÉN linje. */}
-        <div class={styles.meta}>
-          {[
-            <span key="span" data-testid="library-row-span">
-              {spanLabel(row.durationSec)}
-            </span>,
-            formatLufs(row.loudnessLufs) !== null ? (
-              <span key="lufs" data-testid="library-row-lufs">
-                {tf("app.library.loudness", {
-                  lufs: formatLufs(row.loudnessLufs) ?? "",
-                })}
-              </span>
-            ) : null,
-            row.hasVideo ? (
-              <Chip key="video" tone="neutral" testId="library-row-video">
-                {t("app.library.video")}
-              </Chip>
-            ) : null,
-            <span key="name" data-testid="library-row-name">
-              {row.filename}
-            </span>,
-            row.note ? (
-              <span key="note" data-testid="library-row-note">
-                {row.note}
-              </span>
-            ) : null,
-          ]
-            .filter(Boolean)
-            .flatMap((node, i) =>
+      {/*
+        Hele raden er knappen som åpner opptaket — «Rediger» er ikke lenger en
+        egen knapp ved siden av, den er raden selv (skissen). Videoikonet står
+        inni, og bærer navnet «Video» til skjermleseren.
+      */}
+      <button
+        type="button"
+        class={styles.open}
+        data-testid="library-row-edit"
+        aria-disabled={canOpen ? undefined : "true"}
+        title={canOpen ? undefined : t("app.done.revealFailed")}
+        onClick={() => {
+          if (canOpen) openInEditor(row.entry.id, row.atMs, row.filename);
+        }}
+      >
+        <span class={styles.play} aria-hidden="true">
+          <Icon name="play" size={18} />
+        </span>
+        <span class={styles.titles}>
+          <span data-testid="library-row-when" class={styles.title}>
+            {rowTitle(row)}
+          </span>
+          <span class={styles.meta}>
+            {facts.flatMap((node, i) =>
               i === 0
                 ? [node]
                 : [
@@ -484,48 +498,62 @@ function Row({
                     node,
                   ],
             )}
-        </div>
-      </div>
+          </span>
+        </span>
+        <span class={styles.wave} aria-hidden="true">
+          {bars.map((h, i) => (
+            <span key={i} class={styles.bar} style={{ height: `${h}%` }} />
+          ))}
+        </span>
+        <span data-testid="library-row-span" class={styles.length}>
+          {spanLabel(row.durationSec)}
+        </span>
+        {row.hasVideo ? (
+          <span
+            class={styles.cam}
+            data-testid="library-row-video"
+            role="img"
+            aria-label={t("app.library.video")}
+            title={t("app.library.video")}
+          >
+            <Icon name="camera" size={18} />
+          </span>
+        ) : (
+          <span class={styles.cam} aria-hidden="true" />
+        )}
+      </button>
       <div class={styles.acts}>
         {/*
-          «Rediger» er radens PRIMÆRKNAPP (canvas 3.1). P3 satte «Vis i Finder»
-          her fordi redigeringsflaten ikke fantes ennå og en knapp til en side
-          som ikke finnes lærer en frivillig at knappene ikke er til å stole
-          på. Nå finnes den, så knappen er byttet og «Vis i Finder» er
-          sekundær — den gjør fortsatt noe, den er bare ikke det man kom for.
-        */}
-        <Button
-          variant="primary"
-          disabled={!row.entry.id}
-          disabledReason={t("app.done.revealFailed")}
-          testId="library-row-edit"
-          onClick={() => openInEditor(row.entry.id, row.atMs, row.filename)}
-        >
-          {t("nav.editor")}
-        </Button>
-        {/*
           Én «Vis i Finder» også for en økt med kamera: de to filene ligger side
-          om side i samme mappe, så Finder viser begge. Legacy hadde en egen
-          knapp for videofila, som er et andre klikk for å åpne det samme
-          vinduet.
+          om side i samme mappe, så Finder viser begge.
         */}
-        <Button
-          variant="quiet"
-          disabled={!row.entry.id}
-          disabledReason={t("app.done.revealFailed")}
-          testId="library-row-reveal"
-          onClick={() => void reveal(row.entry.id ?? null)}
+        <button
+          type="button"
+          class={styles.iconBtn}
+          data-testid="library-row-reveal"
+          aria-disabled={canOpen ? undefined : "true"}
+          aria-label={revealLabel()}
+          title={canOpen ? revealLabel() : t("app.done.revealFailed")}
+          onClick={() => {
+            if (canOpen) void reveal(row.entry.id ?? null);
+          }}
         >
-          {revealLabel()}
-        </Button>
-        <Button
-          variant="quiet"
-          busy={busy}
-          testId="library-row-delete"
-          onClick={onDelete}
+          <Icon name="folder" size={20} />
+        </button>
+        <button
+          type="button"
+          class={styles.iconBtn}
+          data-testid="library-row-delete"
+          data-busy={busy ? "true" : undefined}
+          aria-disabled={busy ? "true" : undefined}
+          aria-label={t("app.library.delete")}
+          title={t("app.library.delete")}
+          onClick={() => {
+            if (!busy) onDelete();
+          }}
         >
-          {t("app.library.delete")}
-        </Button>
+          <Icon name="trash" size={20} />
+        </button>
       </div>
     </div>
   );
