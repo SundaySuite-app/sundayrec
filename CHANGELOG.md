@@ -3,7 +3,7 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## v0.31.0 — rent bord
+## v0.31.0-beta.1 — rent bord, til beta-ringen
 
 SundayRec er skåret ned til det en frivillig bruker på en søndag: ta opp, rediger,
 eksporter og planlegg. Alt annet er borte, og det er gjort med vilje.
