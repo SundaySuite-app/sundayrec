@@ -13,7 +13,7 @@ import { t } from "../../i18n";
 import { settings } from "../../state/settings";
 import { CameraPreview } from "../../ui/CameraPreview/CameraPreview";
 import { BigButton } from "./BigButton";
-import { CameraControls } from "./CameraControls";
+import { CameraControls, type CameraToggle } from "./CameraControls";
 import styles from "./CameraStage.module.css";
 import { pickForSource } from "./source-pick";
 import { StereoMeter } from "./StereoMeter";
@@ -25,6 +25,7 @@ export interface CameraStageProps {
   busy: boolean;
   /** Mens det starter/tas opp står ingen måler i treet. */
   meter: boolean;
+  camera: CameraToggle;
 }
 
 export function CameraStage({
@@ -32,6 +33,7 @@ export function CameraStage({
   onStart,
   busy,
   meter,
+  camera,
 }: CameraStageProps) {
   const name = (settings.value.videoDeviceName ?? "").trim();
   return (
@@ -44,7 +46,7 @@ export function CameraStage({
         {name || t("app.record.camDefault")}
       </span>
       <div class={styles.corner}>
-        <CameraControls place="stage" />
+        <CameraControls place="stage" enabled={camera} />
       </div>
       {meter ? (
         <span class={styles.meter}>

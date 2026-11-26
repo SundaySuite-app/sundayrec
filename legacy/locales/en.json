@@ -100,7 +100,6 @@
       "planAria": "Plan recurring recordings"
     },
     "setup": {
-      "q3": "Which quality?",
       "quality": {
         "mp3": "Good",
         "flac": "Best",
@@ -146,14 +145,12 @@
         "refusedAppData": "That folder is the app’s own data folder, or is inside it, and can’t be used for recordings. Choose another folder.",
         "refusedInvalid": "That folder can’t be used for recordings. Choose another folder."
       },
-      "qualityLede": "Higher quality means bigger files. Most people stay on Good.",
       "qDesc": {
         "mp3": "Good for the web and sharing. About 1 GB per 10 hours · MP3",
         "flac": "Everything that came in, with nothing lost. About 5 GB per 10 hours · FLAC",
         "wav": "Uncompressed, the way an archive should be. About 10 GB per 10 hours · WAV"
       },
       "qualityCustom": "Custom · {format} {bitrate}",
-      "qualityCustomDesc": "This combination isn’t one of the three. Pick a card to change it.",
       "language": {
         "lede": "The language the app uses.",
         "label": "Language in the app",
@@ -182,9 +179,6 @@
         "openSettingsFailed": "Couldn't open the notification settings. Open them from the system settings."
       },
       "camera": {
-        "title": "Include video",
-        "desc": "Record video alongside the sound.",
-        "noneChosen": "No camera chosen",
         "pick": "Camera",
         "keepAudio": "Keep a separate audio file",
         "keepAudioDesc": "A plain audio file next to the video.",
@@ -227,46 +221,11 @@
       "advanced": {
         "soundLink": "More recording options",
         "preroll": "Include sound from before Start",
-        "prerollDesc": "The app listens in the background, so the seconds before you press Start are not lost. The microphone stays open for as long as the app is ready to record.",
-        "prerollChoice": {
-          "0": "Off",
-          "15": "15 seconds",
-          "30": "30 seconds"
-        },
         "silence": "Stop on long silence",
-        "silenceDesc": "Stops the recording once it has been completely silent for a while.",
-        "silenceAfter": "Stops after",
-        "silenceChoice": {
-          "2": "2 minutes",
-          "5": "5 minutes",
-          "10": "10 minutes",
-          "15": "15 minutes"
-        },
         "maxLen": "Maximum recording length",
-        "maxLenDesc": "A safety net if someone forgets to stop.",
-        "maxLenChoice": {
-          "0": "No limit",
-          "60": "1 hour",
-          "120": "2 hours",
-          "180": "3 hours",
-          "240": "4 hours",
-          "360": "6 hours"
-        },
         "split": "Split long recordings",
-        "splitDesc": "Each part becomes its own file. Useful for long recordings: smaller files are easier to edit and upload, and if something goes wrong only the last part is at risk.",
-        "splitEvery": "New file every",
-        "splitChoice": {
-          "30": "30 minutes",
-          "45": "45 minutes",
-          "60": "1 hour",
-          "90": "1 hour 30 minutes",
-          "120": "2 hours"
-        },
         "autoDelete": "Delete old recordings",
-        "autoDeleteDesc": "Moved to the trash, not deleted for good.",
-        "autoDeleteAfter": "Delete after (days)",
         "autoDeleteConfirm": "Delete recordings sooner",
-        "autoDeleteRange": "Enter a number between 1 and 3650.",
         "diag": "Send anonymous usage statistics",
         "diagDesc": "Never audio, names or files. You can see exactly what is sent.",
         "diagPreviewTitle": "What is sent",
@@ -377,7 +336,8 @@
           "onBattery": "running on battery"
         },
         "audioTech": "About the audio technology",
-        "audioTechNote": "The text below is a licence notice from Steinberg and is shown in English."
+        "audioTechNote": "The text below is a licence notice from Steinberg and is shown in English.",
+        "prerollDesc": "The app listens in the background, so the seconds before you press Start are not lost. The microphone stays open for as long as the app is ready to record."
       },
       "sections": {
         "nav": "Jump to",
@@ -476,8 +436,6 @@
       "keySpace": "Space",
       "stepSound": "Sound",
       "nextSound": "Next: Sound",
-      "profile": {},
-      "profileDesc": {},
       "listen": "Listen",
       "listenAria": "Hear the sound before or after the improvement",
       "before": "Before",
@@ -493,7 +451,6 @@
         "clicks": "We removed clicks and crackle",
         "clean": "The recording was clean."
       },
-      "mx": {},
       "exFormat": "Format",
       "exWhere": "Where",
       "fmtDesc": {
@@ -524,7 +481,6 @@
       "exportAgain": "Export in another format",
       "toLibrary": "Recordings",
       "exportFailed": "The export stopped. Try again.",
-      "mxHelp": {},
       "podcastAudio": "Podcast-ready audio",
       "podcastAudioDesc": "Clearer voice, even levels and the right loudness for podcasts. The original is never touched.",
       "podcastOff": "No audio processing",
@@ -596,7 +552,25 @@
     },
     "sheet": {
       "title": "Sound",
-      "close": "Close"
+      "close": "Close",
+      "channels": "Inputs",
+      "more": "More",
+      "folder": "Where recordings are saved",
+      "tile": {
+        "pre": "Before",
+        "silence": "Quiet",
+        "split": "Split",
+        "clean": "Clean",
+        "max": "Max"
+      },
+      "off": "Off",
+      "unit": {
+        "s": "{n} s",
+        "min": "{n} min",
+        "h": "{n} h",
+        "d": "{n} d"
+      },
+      "change": "Change value"
     }
   },
   "nav": {

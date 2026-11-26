@@ -34,20 +34,20 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      // F5: kamerabryteren bor under Kamera i Innstillinger.
-      goto: "settings",
+      // E3: kamerabryteren sitter ved opptaksknappen på TA OPP.
+      goto: "record",
     });
 
-    const toggle = page.getByTestId("setup-camera-toggle");
+    const toggle = page.getByTestId("record-camera-toggle");
     await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
     await toggle.click();
 
     // 1. The operator is TOLD. Kvitteringen er forbigående (~1,8 s), så dette
     //    må være en web-first-assertion — en sleep her ville vært både tregere
     //    og racier.
-    const receipt = page.getByTestId("setup-camera-receipt");
+    const receipt = page.getByTestId("record-camera-receipt");
     await expect(receipt).toHaveText("Lagret ✓");
 
     // 2. It actually persisted — checked at the storage layer, because "the
@@ -63,11 +63,11 @@ test.describe("settings", () => {
       "data-page",
       "recordings",
     );
-    await page.getByTestId("nav-settings").click();
-    await expect(page.getByTestId("setup-camera")).toBeVisible();
+    await page.getByTestId("nav-record").click();
+    await expect(page.getByTestId("camera-stage")).toBeVisible();
 
-    await expect(page.getByTestId("setup-camera-toggle")).toHaveAttribute(
-      "aria-checked",
+    await expect(page.getByTestId("record-camera-toggle")).toHaveAttribute(
+      "aria-pressed",
       "true",
     );
   });
@@ -115,10 +115,10 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      goto: "settings",
+      goto: "record",
     });
-    await page.getByTestId("setup-camera-toggle").click();
-    await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
+    await page.getByTestId("record-camera-toggle").click();
+    await expect(page.getByTestId("record-camera-receipt")).toHaveText(
       "Lagret ✓",
     );
 
@@ -126,8 +126,8 @@ test.describe("settings", () => {
     await page.waitForFunction(
       () => typeof (window as any).showPage === "function",
     );
-    await expect(page.getByTestId("setup-camera-toggle")).toHaveAttribute(
-      "aria-checked",
+    await expect(page.getByTestId("record-camera-toggle")).toHaveAttribute(
+      "aria-pressed",
       "true",
     );
   });
@@ -143,7 +143,7 @@ test.describe("settings", () => {
       ["settings:notify", "notify", "setup-notify"],
       ["settings:folder", "folder", "setup-folder"],
       // Den fullt kvalifiserte skrivemåten betyr det samme som den bare.
-      ["settings:settings-camera", "camera", "setup-camera"],
+      ["settings:settings-language", "language", "setup-language"],
     ] as const) {
       await boot(page, {
         fixtures: BOOT_FIXTURES,

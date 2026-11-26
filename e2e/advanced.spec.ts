@@ -98,68 +98,57 @@ test.describe("opptaksradene", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, preRollSeconds: 0, splitMinutes: 0 },
-      goto: "settings",
+      // E4: opptaksvalgene er fliser under «Mer» i lydarket.
+      goto: "settings:engine",
     });
 
-    await page.getByTestId("adv-preroll-control-input").selectOption("30");
+    // Før: flisen slår på med standarden, og verdien under blar videre.
+    await page.getByTestId("tile-pre").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).preRollSeconds)
+      .toBe(15);
+    await page.getByTestId("tile-pre-value").click();
     await expect
       .poll(async () => (await storedSettings(page)).preRollSeconds)
       .toBe(30);
 
-    // «Del opp» is one key where 0 means off: the switch writes the default,
-    // and the interval row appears WITH it rather than sitting there inert.
-    await expect(page.getByTestId("adv-split-every")).toHaveCount(0);
-    await page.getByTestId("adv-split-control-input").click();
+    // «Del opp» is one key where 0 means off: the tile writes the default,
+    // and the value shows up WITH it rather than sitting there inert.
+    await expect(page.getByTestId("tile-split-value")).toHaveCount(0);
+    await page.getByTestId("tile-split").click();
     await expect
       .poll(async () => (await storedSettings(page)).splitMinutes)
       .toBe(60);
-    await expect(page.getByTestId("adv-split-every")).toBeVisible();
+    await expect(page.getByTestId("tile-split-value")).toHaveText("1 t");
+    await page.getByTestId("tile-split-value").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).splitMinutes)
+      .toBe(90);
+
+    // Stille: flisen er av/på, og verdien blar minuttene.
+    await page.getByTestId("tile-silence").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).stopOnSilence)
+      .toBe(true);
   });
 
-  test("den ene lenken fra spørsmål 1 lander på raden den handler om", async ({
-    page,
-  }) => {
+  test("lenken til «engine» lander i «Mer» i lydarket", async ({ page }) => {
     await boot(page, {
-      // En enhet MÅ finnes: uten en eneste lydenhet viser spørsmål 1 sin
-      // tomtilstand, og da er det ingen skjerm å ha en lenke nederst på.
-      fixtures: {
-        ...BOOT_FIXTURES,
-        list_audio_devices: [
-          {
-            id: "x32",
-            name: "Behringer X32",
-            backend: "coreaudio",
-            inputChannels: 2,
-            sampleRates: [48000],
-            isDefault: true,
-          },
-        ],
-      },
-      settings: {
-        ...SETTLED_SETTINGS,
-        deviceId: "x32",
-        deviceName: "Behringer X32",
-      },
-      goto: "settings:sound",
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:engine",
     });
-    // D2: `?goto=settings:audio` folder ut kilde-kortet i kontrollrommet, og
-    // lenken nederst på den skjermen går til raden under Innstillinger.
-    await page.getByTestId("sound-advanced").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-anchor",
-      "engine",
+      "data-panel",
+      "source-more",
     );
-    // Kortet ankeret peker på: motorraden er borte (C3b — én opptaksmotor),
-    // så det er kortet som er beviset på at lenken landet.
-    await expect(page.getByTestId("advanced-recording")).toBeVisible();
+    await expect(page.getByTestId("sheet-more")).toBeVisible();
+    await expect(page.getByTestId("tile-pre")).toBeVisible();
   });
 
-  test("Avansert er halve Innstillinger, ikke en lenke til et sjuende sted", async ({
+  test("Innstillinger har det som er igjen, ikke opptaksvalgene", async ({
     page,
   }) => {
-    // Opptaksvalgene er en seksjon på Innstillinger-flaten, ikke en lenke til
-    // et annet sted.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
@@ -169,10 +158,8 @@ test.describe("opptaksradene", () => {
     await expect(page.getByTestId("setup-language")).toBeVisible();
     // Resten er delt i seksjoner med overskrift (og en innholdsliste øverst).
     await expect(page.getByTestId("setup-toc")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Opptaksvalg", level: 2 }),
-    ).toBeVisible();
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
+    await expect(page.getByTestId("tile-pre")).toHaveCount(0);
   });
 });
 

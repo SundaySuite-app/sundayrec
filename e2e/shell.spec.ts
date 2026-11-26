@@ -341,8 +341,12 @@ test.describe("sidene viser det som er sant", () => {
     });
     await expect(page.getByTestId("record-no-source")).toBeVisible();
     await page.getByTestId("record-choose-sound").click();
-    // Enhetsvalget bor under Lyd og kanaler i Innstillinger.
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
+    // Enhetsvalget bor i lydarket på TA OPP (E4).
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
+    await expect(page.getByTestId("source-sheet")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
     await expect(page.getByTestId("setup-sound")).toBeVisible();
   });
 

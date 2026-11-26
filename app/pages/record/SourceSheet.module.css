@@ -52,6 +52,9 @@
 }
 
 .close {
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -75,4 +78,9 @@
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--sp-6) var(--sp-6);
+}
+
+/* Innholdet ruller; det krymper aldri for å få plass. */
+.body > * {
+  flex-shrink: 0;
 }

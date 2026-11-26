@@ -49,12 +49,15 @@ test.describe("innstillingene lagrer der man står", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...CHOSEN, format: "flac", bitrate: "128" },
-      goto: "settings",
+      // E4: kvalitet og mappe står under «Mer» i lydarket.
+      goto: "settings:folder",
     });
 
-    // Den EKTE skjermen, med sin egen lede: Innstillinger er ikke innbygget.
     await expect(page.getByTestId("setup-quality")).toBeVisible();
-    await expect(page.getByTestId("setup-quality-lede")).toBeVisible();
+    await expect(page.getByTestId("quality-choices-row-flac")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await page.getByTestId("quality-choices-row-mp3").click();
     await expect(page.getByTestId("quality-receipt")).toHaveText("Lagret ✓");
@@ -128,7 +131,7 @@ test.describe("innstillingene lagrer der man står", () => {
         get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500e9 },
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
 
     await expect(page.getByTestId("folder-path")).toHaveText(
@@ -153,7 +156,7 @@ test.describe("innstillingene lagrer der man står", () => {
         }`),
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
     await page.getByTestId("folder-pick").click();
 
@@ -180,7 +183,7 @@ test.describe("innstillingene lagrer der man står", () => {
         }`),
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
     await page.getByTestId("folder-pick").click();
 
@@ -188,21 +191,6 @@ test.describe("innstillingene lagrer der man står", () => {
     await expect(page.getByTestId("folder-path")).toHaveText(
       "/Users/frivillig/SundayRec",
     );
-  });
-
-  test("kamera-bryteren styrer kroppen, uten en utfoldingsknapp", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: { ...CHOSEN, videoEnabled: false },
-      goto: "settings",
-    });
-
-    await expect(page.getByTestId("setup-camera-expand")).toHaveCount(0);
-    await expect(page.getByTestId("setup-camera-body")).toHaveCount(0);
-    await page.getByTestId("setup-camera-toggle").click();
-    await expect(page.getByTestId("setup-camera-body")).toBeVisible();
   });
 
   test("seksjonene er der, og innholdslista hopper til dem", async ({
@@ -213,19 +201,13 @@ test.describe("innstillingene lagrer der man står", () => {
       settings: CHOSEN,
       goto: "settings",
     });
-    for (const key of [
-      "sound",
-      "camera",
-      "folder",
-      "notify",
-      "language",
-      "recording",
-      "updates",
-      "privacy",
-      "about",
-    ]) {
+    for (const key of ["notify", "language", "updates", "privacy", "about"]) {
       await expect(page.getByTestId(`setup-sec-${key}`)).toBeVisible();
       await expect(page.getByTestId(`setup-toc-${key}`)).toBeVisible();
+    }
+    // Lyd, kamera, mappe og opptaksvalg bor i lydarket (E4).
+    for (const key of ["sound", "camera", "folder", "recording"]) {
+      await expect(page.getByTestId(`setup-sec-${key}`)).toHaveCount(0);
     }
     // Tidsplanen bor på PLAN.
     await expect(page.getByTestId("plan-week")).toHaveCount(0);

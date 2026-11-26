@@ -32,46 +32,40 @@ const SLOW_SAVE = (ms: number) =>
   }, ${ms}))`);
 
 test.describe("innstillinger — commit", () => {
-  test("en redigering som lander midt i en skrivning går ikke tapt", async ({
+  test("to trykk på samme flis etter hverandre ender på siste verdi", async ({
     page,
   }) => {
-    // GRANSKNINGENS REPRO. `useSetting.commit()` ryddet den ventende
-    // commit-timeren FØR den sjekket om en skrivning allerede gikk, og
-    // returnerte så tomhendt. Alt brukeren hadde skrevet siden forrige commit
-    // forsvant uten et ord: skjermen sto på «900 dager», basen på «90», og de
-    // to var uenige helt til noen lastet appen på nytt.
-    //
-    // Sekvensen under er skriv → Enter → (mens skrivningen går) skriv → Enter.
+    // GRANSKNINGENS REPRO (nå på Rydd-flisen). Skrivningen tar 600 ms; trykk
+    // nr. 2 kommer ikke før kvitteringen står, og begge må lande — skjermen
+    // og basen skal være enige til slutt. (En redigering MIDT i en skrivning
+    // køes av `useSetting`; flisene går gjennom `usePatch`, som tar ett kall
+    // om gangen og slår kontrollene av mens det står — se
+    // `use-setting-core.test.ts` for køen.)
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, settings_save: SLOW_SAVE(600) },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "settings",
+      goto: "settings:autodelete",
     });
 
-    const field = page.getByTestId("adv-autodelete-days-control-input");
-    await expect(field).toHaveValue("90");
+    const value = page.getByTestId("tile-clean-value");
+    await expect(value).toHaveText("90 d");
 
-    // 1. Første endring, committet med Enter. Skrivningen tar 600 ms.
-    await field.fill("900");
-    await field.press("Enter");
-
-    // 2. Andre endring MENS den første fortsatt går. Ingen ventetid mellom —
-    //    det er hele poenget, og Playwright er raskere enn 600 ms.
-    await field.fill("3650");
-    await field.press("Enter");
-
-    // 3. Fasiten er lagringslaget, ikke feltet: «feltet står på 3650» ville
-    //    vært sant også i den ødelagte utgaven. Det er nettopp derfor feilen
-    //    var usynlig.
+    await value.click();
     await expect
       .poll(async () => (await storedSettings(page)).autoDeleteDays, {
         timeout: 10_000,
       })
-      .toBe(3650);
+      .toBe(180);
+    await expect(value).toHaveText("180 d");
+    await expect(value).toBeEnabled();
 
-    // 4. …og skjermen og basen er enige til slutt. Den ene setningen hele
-    //    lagringsmodellen finnes for.
-    await expect(field).toHaveValue("3650");
+    await value.click();
+    await expect
+      .poll(async () => (await storedSettings(page)).autoDeleteDays, {
+        timeout: 10_000,
+      })
+      .toBe(365);
+    await expect(value).toHaveText("365 d");
   });
 
   test("«Lagret ✓» forsvinner igjen — den er en kvittering, ikke en tilstand", async ({
@@ -88,13 +82,13 @@ test.describe("innstillinger — commit", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
-      goto: "settings",
+      goto: "settings:engine",
     });
 
-    const receipt = page.getByTestId("adv-split-receipt");
+    const receipt = page.getByTestId("tiles-receipt");
     await expect(receipt).toHaveText("");
 
-    await page.getByTestId("adv-split-control-input").click();
+    await page.getByTestId("tile-split").click();
 
     await expect(receipt).toHaveText("Lagret ✓");
     // Skrivningen landet på ekte — kvitteringen er ikke bare pynt.
@@ -119,20 +113,18 @@ test.describe("innstillinger — commit", () => {
         settings_save: fn("() => { throw new Error('database is locked') }"),
       },
       settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
-      goto: "settings",
+      goto: "settings:engine",
     });
 
-    const toggle = page.getByTestId("adv-split-control-input");
+    const toggle = page.getByTestId("tile-split");
     await toggle.click();
 
-    await expect(page.getByTestId("adv-split-receipt")).toHaveText(
-      "Ikke lagret",
-    );
+    await expect(page.getByTestId("tiles-receipt")).toHaveText("Ikke lagret");
     await expect(page.getByTestId("toast-host")).toContainText(
       /Kunne ikke lagre/,
     );
     // Tilbake på det som faktisk står lagret.
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
   test("R2: pagehide tømmer en ventende lagring — ⌘W utenfor et opptak skal ikke miste den siste endringen", async ({
@@ -149,16 +141,15 @@ test.describe("innstillinger — commit", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, settings_save: SLOW_SAVE(300) },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
-      goto: "settings",
+      goto: "settings:autodelete",
     });
 
-    const field = page.getByTestId("adv-autodelete-days-control-input");
-    await expect(field).toHaveValue("90");
+    const value = page.getByTestId("tile-clean-value");
+    await expect(value).toHaveText("90 d");
 
-    // Skriv og committ med Enter — koaleseringstimeren armes, men får ALDRI
+    // Bla til neste forhåndsvalg — koaleseringstimeren armes, men får ALDRI
     // lov til å forfalle på egen hånd i denne testen.
-    await field.fill("730");
-    await field.press("Enter");
+    await value.click();
 
     // …og vinduet forsvinner, akkurat idet et ekte ⌘W ville gjort det.
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
@@ -170,6 +161,6 @@ test.describe("innstillinger — commit", () => {
       .poll(async () => (await storedSettings(page)).autoDeleteDays, {
         timeout: 2_000,
       })
-      .toBe(730);
+      .toBe(180);
   });
 });

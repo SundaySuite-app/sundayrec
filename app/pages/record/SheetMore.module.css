@@ -1,0 +1,223 @@
+.more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 44px;
+  color: var(--ink-2);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.chev {
+  display: flex;
+  transform: rotate(90deg);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.chevOpen {
+  transform: rotate(180deg);
+}
+
+.rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  animation: rise var(--dur) var(--ease-out);
+}
+
+/* ── Mappen ───────────────────────────────────────────────────────────── */
+
+.folderWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 64px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder:hover {
+  border-color: var(--line-2);
+}
+
+.folderIcon {
+  display: flex;
+  color: var(--gold);
+}
+
+.folderText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+
+.space {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+/* ── Kvalitet ─────────────────────────────────────────────────────────── */
+
+.quality {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.custom {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--gold);
+}
+
+.qualityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.q {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 74px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.qOn {
+  border-color: var(--gold-line);
+  background: var(--gold-faint);
+}
+
+.bars {
+  display: flex;
+  gap: var(--sp-1);
+  align-items: flex-end;
+  height: 18px;
+}
+
+.bar {
+  width: 5px;
+  border-radius: 2px;
+  background: var(--line-2);
+}
+
+.barOn {
+  background: var(--gold);
+}
+
+/* ── Fliser ───────────────────────────────────────────────────────────── */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 96px;
+  border-radius: 18px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  transition:
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out);
+}
+
+.tileOn {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+.tileMain {
+  border: 0;
+  background: transparent;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding-top: var(--sp-2);
+  color: inherit;
+  cursor: pointer;
+}
+
+.word {
+  font-size: var(--fs-base);
+  color: var(--ink);
+}
+
+.value,
+.valueOff {
+  align-self: center;
+  min-width: 44px;
+  min-height: 28px;
+  margin-bottom: var(--sp-1);
+  padding: 0 var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+
+.value {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.value:hover {
+  background: var(--gold-mid);
+  color: var(--ink);
+}
+
+.note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}

@@ -93,7 +93,7 @@ test.describe("app shell boot", () => {
 // a different shell on a different port is itself the point: one seam, two
 // shells.
 test.describe("app shell foundation", () => {
-  test("?goto=settings:sound lands on INNSTILLINGER at Lyd og kanaler", async ({
+  test("?goto=settings:sound opens the sound sheet on TA OPP", async ({
     page,
   }) => {
     // `parseGoto` qualifies the bare tab id, `resolveRoute` turns it into an
@@ -104,9 +104,12 @@ test.describe("app shell foundation", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings:sound",
     });
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    // E2: Lyd og kanaler bor i lydkilde-arket på TA OPP (midlertidig vist som
-    // innstillingssiden til arket finnes, E3/E4).
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
+    // E4: Lyd og kanaler bor i lydarket på TA OPP, som åpnes av dyplenken.
+    await expect(page.getByTestId("source-sheet")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
     await expect(page.getByTestId("nav-record")).toHaveAttribute(
       "aria-current",
       "page",

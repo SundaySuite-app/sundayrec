@@ -22,19 +22,29 @@ import { settings } from "../../state/settings";
 import { BoundToggle } from "../../ui/Bound/Bound";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { Icon } from "../../ui/Icon/Icon";
+import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { motionWord, resolutionWord } from "../settings/camera-words-core";
 import styles from "./CameraControls.module.css";
 
+/** Av/på-tilstanden for kameratillegget — ÉN instans i `RecordPage`, delt av
+ *  begge plasseringene, så kvitteringen overlever at knappen bytter plass
+ *  (hvile ⇄ kamerascene) idet kameraet slås på. */
+export type CameraToggle = ReturnType<typeof useCameraToggle>;
+
+export function useCameraToggle() {
+  return useSetting("videoEnabled", { kind: "toggle" });
+}
+
 export interface CameraControlsProps {
   /** `stage` = over kamerabildet (mørk knapp); `rest` = ved opptaksknappen. */
   place: "rest" | "stage";
+  enabled: CameraToggle;
 }
 
-export function CameraControls({ place }: CameraControlsProps) {
+export function CameraControls({ place, enabled }: CameraControlsProps) {
   const on = settings.value.videoEnabled === true;
-  const enabled = useSetting("videoEnabled", { kind: "toggle" });
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement | null>(null);
 
@@ -88,6 +98,9 @@ export function CameraControls({ place }: CameraControlsProps) {
       >
         <Icon name="chevron-up" size={14} class={open ? "" : styles.flip} />
       </button>
+      <span class={styles.receipt}>
+        <Receipt state={enabled.receipt} testId="record-camera-receipt" />
+      </span>
       {open ? (
         <div
           data-testid="record-camera-popover"

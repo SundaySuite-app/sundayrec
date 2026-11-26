@@ -119,9 +119,15 @@ test.describe("kvalitet", () => {
 
     // Kortet står øverst på skjermen som eier valget — valgt, men ikke
     // valgBART: det beskriver det lagrede, det er ikke et valg noen kan ta.
-    const custom = page.getByTestId("quality-choices-row-custom");
-    await expect(custom).toHaveAttribute("data-selected", "true");
-    await expect(custom.locator("input")).toBeDisabled();
+    // Linja over kortene sier hva det ER, og INGEN av de tre er valgt.
+    await expect(page.getByTestId("quality-choices-row-custom")).toContainText(
+      "320",
+    );
+    for (const id of ["mp3", "flac", "wav"]) {
+      await expect(
+        page.getByTestId(`quality-choices-row-${id}`),
+      ).toHaveAttribute("aria-pressed", "false");
+    }
   });
 
   test("å velge «God» skriver BÅDE format og bitrate, i én lagring", async ({
@@ -257,8 +263,10 @@ test.describe("en innstilling som ikke kunne lagres", () => {
         videoEnabled: true,
         keepSeparateAudio: true,
       },
-      goto: "settings",
+      // E3: «egen lydfil» bor i kamera-popoveren ved opptaksknappen.
+      goto: "record",
     });
+    await page.getByTestId("record-camera-more").click();
 
     const toggle = page.getByTestId("camera-keep-audio-control-input");
     await expect(toggle).toHaveAttribute("aria-checked", "true");

@@ -37,6 +37,9 @@
 }
 
 .more {
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -69,4 +72,12 @@
   border: 1px solid var(--line-2);
   box-shadow: var(--shadow-dialog);
   animation: rise var(--dur) var(--ease-out);
+}
+
+/* Kvitteringen for av/på under knappen — «Lagret ✓» i noen sekunder. */
+.receipt {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  white-space: nowrap;
 }

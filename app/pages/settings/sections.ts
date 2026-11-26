@@ -9,12 +9,8 @@
  */
 
 export const SETTINGS_SECTIONS = [
-  { id: "sec-sound", key: "sound" },
-  { id: "sec-camera", key: "camera" },
-  { id: "sec-folder", key: "folder" },
   { id: "sec-notify", key: "notify" },
   { id: "sec-language", key: "language" },
-  { id: "sec-recording", key: "recording" },
   { id: "sec-updates", key: "updates" },
   { id: "sec-privacy", key: "privacy" },
   { id: "sec-about", key: "about" },

@@ -5,12 +5,14 @@
  *
  * Alt man setter én gang bor her, i denne rekkefølgen:
  *
- *   Lyd og kanaler · Kamera · Lagringsmappe (og format) · Varsler · Språk ·
- *   Opptaksvalg · Oppdatering · Personvern · Om og logg
+ *   Varsler · Språk · Oppdatering · Personvern · Om og logg
+ *
+ * Lyd og kanaler, kamera, mappe, kvalitet og opptaksvalg flyttet til lydarket
+ * på TA OPP (E4): ruten `settings#sound|engine|folder|autodelete` åpner arket.
  *
  * Hver seksjon har overskrift og lede; innholdslista øverst hopper mellom dem.
- * Skjermene inni er de SAMME som første-gangs-sekvensen bruker (`SoundPage`,
- * `FolderPage`, `NotifyPage` …) — ikke kopier.
+ * Skjermene inni er de SAMME som første-gangs-sekvensen bruker (`NotifyPage` …)
+ * — ikke kopier.
  *
  * ## Ankre
  *
@@ -26,17 +28,11 @@ import { useEffect } from "preact/hooks";
 
 import { t, tDyn } from "../../i18n";
 import { route } from "../../router/router";
-import { loadAudioDevices } from "../../state/devices";
-import { refreshDiskSpace } from "../../state/disk";
 import { refreshNotificationPermission } from "../../state/notification-permission";
-import { CameraCard } from "./CameraCard";
 import { FirstRunResumeChip } from "../firstrun/FirstRunResumeChip";
-import { FolderPage } from "./FolderPage";
 import { LanguagePage } from "./LanguagePage";
 import { NotifyPage } from "./NotifyPage";
-import { QualityPage } from "./QualityPage";
 import styles from "./settings.module.css";
-import { SoundPage } from "./SoundPage";
 import { AdvancedPage } from "./AdvancedPage";
 import { SETTINGS_SECTIONS } from "./sections";
 import { SettingsSection } from "./SettingsSection";
@@ -54,11 +50,8 @@ export function SettingsPage() {
   const current = route.value;
   const anchor = current.anchor;
 
-  // Fakta seksjonene trenger. Leses når INNSTILLINGER åpnes, ikke ved oppstart:
-  // enhetslisten er den ferskvaren den er.
+  // Fakta seksjonene trenger. Leses når INNSTILLINGER åpnes, ikke ved oppstart.
   useEffect(() => {
-    void loadAudioDevices();
-    void refreshDiskSpace();
     // Viser OS-et varslene? Seksjonen «Varsler» følger svaret.
     void refreshNotificationPermission();
   }, []);
@@ -102,26 +95,6 @@ export function SettingsPage() {
           ))}
         </ul>
       </nav>
-
-      <SettingsSection id="sec-sound" sectionKey="sound">
-        <SoundPage />
-      </SettingsSection>
-
-      <SettingsSection
-        id="sec-camera"
-        sectionKey="camera"
-        intro={t("app.setup.sections.cameraDesc")}
-      >
-        <CameraCard
-          highlight={route.value.highlight === true && anchor === "camera"}
-        />
-      </SettingsSection>
-
-      <SettingsSection id="sec-folder" sectionKey="folder">
-        <FolderPage />
-        <h3 class={styles.sectionLabel}>{t("app.setup.q3")}</h3>
-        <QualityPage />
-      </SettingsSection>
 
       <SettingsSection id="sec-notify" sectionKey="notify">
         <NotifyPage />

@@ -63,7 +63,7 @@ import { settings } from "../../state/settings";
 import { Chip } from "../../ui/Chip/Chip";
 import { toast } from "../../ui/toast";
 import { BigButton } from "./BigButton";
-import { CameraControls } from "./CameraControls";
+import { CameraControls, useCameraToggle } from "./CameraControls";
 import { CameraStage } from "./CameraStage";
 import { nativeErrorSuffixFromText, sourceState } from "./record-core";
 import { RecordBanners } from "./RecordBanners";
@@ -71,12 +71,15 @@ import { Consent, Done } from "./RecordDone";
 import styles from "./RecordPage.module.css";
 import { pickForSource } from "./source-pick";
 import { SourceControl } from "./SourceChip";
+import { SheetMore } from "./SheetMore";
+import { SheetSound } from "./SheetSound";
 import { SourceSheet } from "./SourceSheet";
 import { confirmAndStop } from "./stop";
 import { StereoMeter } from "./StereoMeter";
 import { WeekStrip } from "./WeekStrip";
 
 export function RecordPage() {
+  const camera = useCameraToggle();
   const sheetOpen = panel.value === "source" || panel.value === "source-more";
   const s = settings.value;
   const devices = audioDevices.value;
@@ -213,6 +216,7 @@ export function RecordPage() {
               onStart={() => void handleStart()}
               busy={starting}
               meter={showMeter}
+              camera={camera}
             />
           </>
         ) : (
@@ -227,7 +231,7 @@ export function RecordPage() {
                 reason={t("app.record.whyBlocked")}
               />
               <div class={styles.cam}>
-                <CameraControls place="rest" />
+                <CameraControls place="rest" enabled={camera} />
               </div>
             </div>
 
@@ -266,7 +270,10 @@ export function RecordPage() {
 
         <WeekStrip />
 
-        <SourceSheet open={sheetOpen} onClose={() => navigate("record")} />
+        <SourceSheet open={sheetOpen} onClose={() => navigate("record")}>
+          <SheetSound />
+          <SheetMore initiallyOpen={panel.value === "source-more"} />
+        </SourceSheet>
       </div>
     </div>
   );

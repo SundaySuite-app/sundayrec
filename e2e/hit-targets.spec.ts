@@ -255,8 +255,8 @@ const X32 = {
 };
 
 /** Tallene målt på de to flatene — se `assertHitTargets`. */
-const SETTINGS_TOGGLES = 7;
-const SETTINGS_GHOSTS = 9;
+const SETTINGS_TOGGLES = 3;
+const SETTINGS_GHOSTS = 8;
 const PLAN_TOGGLES = 3;
 const PLAN_GHOSTS = 0;
 
@@ -360,11 +360,13 @@ test.describe("treffflater", () => {
       settings: CHOSEN,
       goto: "settings",
     });
-    await expect(page.getByTestId("adv-silence-control-input")).toBeVisible();
+    await expect(
+      page.getByTestId("adv-auto-update-control-input"),
+    ).toBeVisible();
     // Den lengste siden i appen, og den tetteste: her står brytere 43 px fra
     // hverandre og 8 px fra en slett-knapp sidelengs.
     const toggles = await measure(page, 'button[role="switch"]');
-    expect(toggles.length).toBeGreaterThanOrEqual(6);
+    expect(toggles.length).toBeGreaterThanOrEqual(3);
     for (const t of toggles) {
       expect(t.hitH, `advanced/${t.id}: treffhøyde`).toBeGreaterThanOrEqual(
         TOGGLE_FLOOR - PROBE_STEP,

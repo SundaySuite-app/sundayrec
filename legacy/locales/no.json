@@ -100,7 +100,6 @@
       "planAria": "Planlegg faste opptak"
     },
     "setup": {
-      "q3": "Hvilken kvalitet?",
       "quality": {
         "mp3": "God",
         "flac": "Best",
@@ -146,14 +145,12 @@
         "refusedAppData": "Den mappen er appens egen datamappe, eller ligger i den, og kan ikke brukes til opptak. Velg en annen mappe.",
         "refusedInvalid": "Den mappen kan ikke brukes til opptak. Velg en annen mappe."
       },
-      "qualityLede": "Høyere kvalitet gir større filer. De fleste blir stående på God.",
       "qDesc": {
         "mp3": "Passer for nett og deling. Ca. 1 GB per 10 timer · MP3",
         "flac": "Alt som kom inn, uten tap. Ca. 5 GB per 10 timer · FLAC",
         "wav": "Ukomprimert, som et arkiv skal være. Ca. 10 GB per 10 timer · WAV"
       },
       "qualityCustom": "Egendefinert · {format} {bitrate}",
-      "qualityCustomDesc": "Denne kombinasjonen er ikke ett av de tre. Velg et kort for å bytte.",
       "language": {
         "lede": "Språket appen bruker.",
         "label": "Språk i appen",
@@ -182,9 +179,6 @@
         "openSettingsFailed": "Fant ikke varslingsinnstillingene. Åpne dem fra systeminnstillingene."
       },
       "camera": {
-        "title": "Ta med video",
-        "desc": "Ta opp video sammen med lyden.",
-        "noneChosen": "Ingen kamera valgt",
         "pick": "Kamera",
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden av videoen.",
@@ -227,46 +221,11 @@
       "advanced": {
         "soundLink": "Flere valg for opptaket",
         "preroll": "Ta med lyd fra før Start",
-        "prerollDesc": "Appen lytter i bakgrunnen, så de første sekundene før du trykker Start ikke går tapt. Mikrofonen er åpen så lenge appen er klar til å ta opp.",
-        "prerollChoice": {
-          "0": "Av",
-          "15": "15 sekunder",
-          "30": "30 sekunder"
-        },
         "silence": "Stopp ved lang stillhet",
-        "silenceDesc": "Stopper opptaket når det har vært helt stille en stund.",
-        "silenceAfter": "Stopper etter",
-        "silenceChoice": {
-          "2": "2 minutter",
-          "5": "5 minutter",
-          "10": "10 minutter",
-          "15": "15 minutter"
-        },
         "maxLen": "Maks lengde på et opptak",
-        "maxLenDesc": "Sikkerhetsnett hvis noen glemmer å stoppe.",
-        "maxLenChoice": {
-          "0": "Ingen grense",
-          "60": "1 time",
-          "120": "2 timer",
-          "180": "3 timer",
-          "240": "4 timer",
-          "360": "6 timer"
-        },
         "split": "Del opp lange opptak",
-        "splitDesc": "Hver del blir en egen fil. Lurt for lange opptak: små filer er lettere å redigere og laste opp, og hvis noe går galt, er det bare siste del som er i fare.",
-        "splitEvery": "Ny fil hver",
-        "splitChoice": {
-          "30": "30 minutter",
-          "45": "45 minutter",
-          "60": "1 time",
-          "90": "1 time 30 minutter",
-          "120": "2 timer"
-        },
         "autoDelete": "Slett gamle opptak",
-        "autoDeleteDesc": "Flyttes til papirkurven, ikke slettet for godt.",
-        "autoDeleteAfter": "Slett etter (dager)",
         "autoDeleteConfirm": "Slette opptak raskere",
-        "autoDeleteRange": "Skriv et tall mellom 1 og 3650.",
         "diag": "Send anonym bruksstatistikk",
         "diagDesc": "Aldri lyd, navn eller filer. Du kan se nøyaktig hva som sendes.",
         "diagPreviewTitle": "Hva sendes",
@@ -377,7 +336,8 @@
           "onBattery": "gikk på batteri"
         },
         "audioTech": "Om lydteknologien",
-        "audioTechNote": "Teksten under er lisensvilkår fra Steinberg og står på engelsk."
+        "audioTechNote": "Teksten under er lisensvilkår fra Steinberg og står på engelsk.",
+        "prerollDesc": "Appen lytter i bakgrunnen, så de første sekundene før du trykker Start ikke går tapt. Mikrofonen er åpen så lenge appen er klar til å ta opp."
       },
       "sections": {
         "nav": "Hopp til",
@@ -476,8 +436,6 @@
       "keySpace": "mellomrom",
       "stepSound": "Lyd",
       "nextSound": "Neste: Lyd",
-      "profile": {},
-      "profileDesc": {},
       "listen": "Lytt",
       "listenAria": "Hør lyden før eller etter forbedringen",
       "before": "Før",
@@ -493,7 +451,6 @@
         "clicks": "Vi fjernet klikk og knitring",
         "clean": "Opptaket var rent."
       },
-      "mx": {},
       "exFormat": "Format",
       "exWhere": "Hvor",
       "fmtDesc": {
@@ -524,7 +481,6 @@
       "exportAgain": "Eksporter i annet format",
       "toLibrary": "Opptak",
       "exportFailed": "Eksporten stoppet. Prøv igjen.",
-      "mxHelp": {},
       "podcastAudio": "Podkastklar lyd",
       "podcastAudioDesc": "Tydeligere stemme, jevnere lyd og riktig volum for podkast. Originalen røres ikke.",
       "podcastOff": "Uten lydbehandling",
@@ -596,7 +552,25 @@
     },
     "sheet": {
       "title": "Lyd",
-      "close": "Lukk"
+      "close": "Lukk",
+      "channels": "Innganger",
+      "more": "Mer",
+      "folder": "Hvor opptakene lagres",
+      "tile": {
+        "pre": "Før",
+        "silence": "Stille",
+        "split": "Del",
+        "clean": "Rydd",
+        "max": "Maks"
+      },
+      "off": "Av",
+      "unit": {
+        "s": "{n} s",
+        "min": "{n} min",
+        "h": "{n} t",
+        "d": "{n} d"
+      },
+      "change": "Bytt verdi"
     }
   },
   "nav": {

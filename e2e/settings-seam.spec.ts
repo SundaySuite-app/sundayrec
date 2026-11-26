@@ -68,13 +68,13 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
         autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
-      // F5: kamera-kortet bor under Kamera i Innstillinger.
-      goto: "settings",
+      // E3: kamerabryteren sitter ved opptaksknappen på TA OPP.
+      goto: "record",
     });
 
     // The one change: slå på «Ta med kamera» (seeded av).
-    await page.getByTestId("setup-camera-toggle").click();
-    await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
+    await page.getByTestId("record-camera-toggle").click();
+    await expect(page.getByTestId("record-camera-receipt")).toHaveText(
       "Lagret ✓",
     );
 

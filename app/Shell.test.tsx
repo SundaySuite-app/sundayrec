@@ -392,22 +392,15 @@ describe("Shell", () => {
     const html = render(<Shell />);
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
     expect(html).toContain('data-testid="setup-toc"');
-    for (const id of [
-      "sound",
-      "camera",
-      "folder",
-      "notify",
-      "language",
-      "recording",
-      "updates",
-      "privacy",
-      "about",
-    ]) {
+    for (const id of ["notify", "language", "updates", "privacy", "about"]) {
       expect(html, id).toContain(`data-testid="setup-sec-${id}"`);
+    }
+    // Lyd, kamera, mappe og opptaksvalg flyttet til lydarket (E4).
+    for (const id of ["sound", "camera", "folder", "recording"]) {
+      expect(html, id).not.toContain(`data-testid="setup-sec-${id}"`);
     }
     // Skjermene inni er de samme som første gang, og rammen (leden) står.
     expect(html).toContain('data-testid="setup-language-lede"');
-    expect(html).toContain('data-testid="setup-camera"');
     // Tidsplanen bor på PLAN.
     expect(html).not.toContain('data-testid="advanced-schedule"');
     navigate("record");

@@ -31,6 +31,8 @@
   position: relative;
   overflow: hidden;
   border-radius: var(--sp-1);
+  /* Stolpens ramme: uten den er en stille måler bare et tomt hull. */
+  border: 1px solid var(--line);
 }
 
 .cover {

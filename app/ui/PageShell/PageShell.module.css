@@ -267,16 +267,16 @@
  * lesebredde, og overskriften er der for skjermlesere og fokus — ikke for
  * øynene (skissen har ingen sidetittel).
  */
-.main[data-page="record"] {
+.main[data-page="record"]:not([data-panel="strip"]) {
   padding: 0;
   gap: 0;
 }
 
-.main[data-page="record"] > * {
+.main[data-page="record"]:not([data-panel="strip"]) > * {
   max-width: none;
 }
 
-.main[data-page="record"] > .h1 {
+.main[data-page="record"]:not([data-panel="strip"]) > .h1 {
   position: absolute;
   width: 1px;
   height: 1px;
