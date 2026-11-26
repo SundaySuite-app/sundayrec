@@ -64,7 +64,7 @@ import { jingleFlags, jinglePatch, type JingleSlot } from "./jingles-core";
 import { clearDirty, E, mediaInfo } from "./model";
 import { clearDraft } from "./cuts";
 import { podcastAudio } from "./sound";
-import { soundExportFields } from "./sound-profiles";
+import { soundExportFields } from "./sound-recipe";
 
 // ── Valgene ─────────────────────────────────────────────────────────────────
 

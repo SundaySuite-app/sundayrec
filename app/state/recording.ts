@@ -62,7 +62,7 @@ export const recorderState = signal<RecorderState | null>(null);
 export const sessionStartedAtMs = signal<number | null>(null);
 
 /** Byte skrevet så langt, fra `recording://progress`. `null` = ikke målt. */
-export const sessionBytes = signal<number | null>(null);
+const sessionBytes = signal<number | null>(null);
 
 /**
  * Kamerabilder videosporet har sluppet så langt i økta (C3c), fordi koderen ikke
@@ -308,7 +308,7 @@ let stateGeneration: StateGeneration = 0;
  * `reference-seam-bugs` handler om — i den ene flaten der den koster en
  * gudstjeneste.
  */
-export function applyStatePayload(
+function applyStatePayload(
   payload: Partial<StatePayload> | null | undefined,
 ): void {
   // Fristen rir med på HVER tilstandsemit — også den motoren fyrer bare

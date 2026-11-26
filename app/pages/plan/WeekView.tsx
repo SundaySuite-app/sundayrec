@@ -113,6 +113,9 @@ import styles from "./plan.module.css";
 
 const HINT_ID = "plan-keys-hint";
 
+/** Hvor mange piksler rutenettet rulles tilbake så første timeetikett er synlig. */
+const HOUR_LABEL_CLEARANCE_PX = 12;
+
 type MessageKind = "info" | "error";
 
 /** Det som tegnes mens en gest pågår. */
@@ -208,7 +211,12 @@ export function WeekView() {
     if (scrolled.current || !scrollRef.current) return;
     scrolled.current = true;
     const visible = pxToMinutes(scrollRef.current.clientHeight);
-    scrollRef.current.scrollTop = minutesToPx(initialTopMinutes(occs, visible));
+    // Litt luft over første timelinje: etiketten står midt på linja og ville
+    // ellers havnet halvt under den klebrige dagsraden.
+    scrollRef.current.scrollTop = Math.max(
+      0,
+      minutesToPx(initialTopMinutes(occs, visible)) - HOUR_LABEL_CLEARANCE_PX,
+    );
   }, [occs]);
 
   // Etter en tastaturflytting havner fokus på blokken igjen, selv om den bytte

@@ -111,9 +111,7 @@ export function TrashPage() {
     if (busy) return;
     const ok = await confirmDialog({
       // Antallet står i tittelen: forskjellen på å slette 2 og 200 opptak er
-      // hele beslutningen. Katalognøkkelen er legacys egen og finnes i begge
-      // språk — en ny tellende nøkkel ville krevd polske flertallsformer midt i
-      // pausen som finnes for å slippe akkurat det.
+      // hele beslutningen. Katalognøkkelen finnes i begge språk.
       title: tn("trash.confirmEmpty", count),
       message: t("trash.confirmEmptyBody"),
       confirmLabel: t("trash.deleteForever"),

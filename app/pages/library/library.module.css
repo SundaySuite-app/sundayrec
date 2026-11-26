@@ -42,7 +42,7 @@
 }
 
 /*
- * Slippsonen rundt hele REDIGERING-visningen.
+ * Slippsonen rundt hele OPPTAK-visningen.
  *
  * Ingen ramme i hviletilstand: sonen dekker siden, og en stiplet kant rundt
  * hele skjermen ville vært en kontroll som alltid roper. Den viser seg først

@@ -38,7 +38,7 @@ import { toast } from "../../ui/toast";
  * og et lite steg man kan ta to ganger er ærligere enn et stort man ikke kan ta
  * tilbake. Motoren tar minutter som argument, så tallet bor her.
  */
-export const AUTOSTOP_EXTEND_MINUTES = 15;
+const AUTOSTOP_EXTEND_MINUTES = 15;
 
 /** Skyv fristen. Motorens svar kommer som en tilstandsemit. */
 export async function extendAutostop(): Promise<void> {

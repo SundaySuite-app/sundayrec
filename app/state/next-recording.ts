@@ -105,7 +105,7 @@ function derive(): void {
  * `shouldRefreshWake` i `@lib/status/next-recording-core` for hvor sjekken bor
  * nå, og `refreshWakeArmed` under for de fire stedene som faktisk kaller den.
  */
-export async function refreshNextRecording(): Promise<void> {
+async function refreshNextRecording(): Promise<void> {
   try {
     const next = await window.api.getNextRecording();
     lastNextIso = next?.date ?? null;

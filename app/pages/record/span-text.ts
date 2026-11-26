@@ -4,9 +4,7 @@
  * En egen liten fil fordi BÅDE opptakssiden og overlegget sier det samme om et
  * tidsrom, og fordi den er den ene i18n-halvdelen av en ellers ren kjerne.
  *
- * Tre `tf()`-nøkler og ingen `tn()`. Begrunnelsen var en gang pausen — en ny
- * tellende nøkkel ville krevd polske flertallsformer midt i den — men pausen
- * er over (F2-S6), og valget står på egne ben: «t» og «min» er INVARIANTE
+ * Tre `tf()`-nøkler og ingen `tn()`: «t» og «min» er INVARIANTE
  * forkortelser i begge språk, i hele tallområdet de faktisk vises for. En
  * flertallsgruppe her ville vært sju identiske par.
  *

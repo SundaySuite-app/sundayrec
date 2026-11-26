@@ -275,16 +275,10 @@ export function totalSeconds(rows: readonly LibraryRow[]): number {
 
 // ── De to setningene om dager ───────────────────────────────────────────────
 //
-// Begge er tellende, og ingen av dem er en `tn()`-nøkkel. Begrunnelsen var en
-// gang pausen (F2-S6 avsluttet den); den som holder er at «1 dag» har sin egen
-// nøkkel og «etter {n} dager» er invariant fra 2 og oppover i begge — også
-// polsk, der lokativen «po {n} dniach» er den samme for 2, 5 og 90. Så:
+// Begge er tellende, og ingen av dem er en `tn()`-nøkkel. «1 dag» har sin egen
+// nøkkel og «etter {n} dager» er invariant fra 2 og oppover i begge språk. Så:
 // kjernen velger FORMEN, og hver form har en `tf()`-nøkkel som er riktig for
 // hele tallområdet den faktisk vises for.
-//
-// ⚠️ Det er kasusen som redder polsk her, ikke flaksen. En omskriving til
-// nominativ («{n} dager igjen») trenger en flertallsgruppe — det er nøyaktig
-// fellen S6 måtte rydde opp i for tre andre tellinger.
 
 /** Hva bunnlinjas venstre halvdel skal si om automatisk sletting. */
 export type AutoDeleteKind = "off" | "oneDay" | "days";

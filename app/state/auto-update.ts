@@ -83,7 +83,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
  * en andre timer. To timere er dobbelt så mye trafikk som eieren fikk vite om,
  * og ingenting på skjermen ville noensinne vist det.
  */
-export function applyAutoUpdateSchedule(): void {
+function applyAutoUpdateSchedule(): void {
   // En innstilling vi ikke fikk lest er IKKE «på»: signalet holder da
   // standardverdiene (`autoUpdate: true`), ikke eierens valg, og en eier som
   // har slått sjekken av skal ikke få kontakt med serveren fordi basen hakket.

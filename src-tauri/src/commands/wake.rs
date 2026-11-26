@@ -2,9 +2,6 @@
 //!
 //! The renderer:
 //!   - reads `wake_capabilities` to show what this machine can/can't do,
-//!   - reads `wake_get_sleep_config` to surface sleep settings that sabotage
-//!     wake (the admin-prompting fix, `wake_fix_sleep`, has no UI and is not
-//!     registered — audit 2026-10),
 //!   - calls `wake_verify` to compare the OS-scheduled wakes against what we
 //!     expect from the current schedule,
 //!   - calls `wake_reschedule` (user-initiated, may prompt for admin) to (re)
@@ -25,8 +22,7 @@ use crate::db::store;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    TestWakeResult, WakeEngine, WakeResult, WakeStatus, current_platform, get_sleep_config,
-    verify_scheduled_wakes,
+    TestWakeResult, WakeEngine, WakeResult, WakeStatus, current_platform, verify_scheduled_wakes,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -48,12 +44,6 @@ pub fn wake_capabilities() -> WakeCapabilities {
         tracing::info!(target: "wake", platform = ?caps.platform, "{}", issue.as_str());
     }
     caps
-}
-
-/// The OS sleep/power configuration (mac standby/autopoweroff, win wake-timers).
-#[tauri::command]
-pub async fn wake_get_sleep_config() -> sundayrec_core::wake::SleepConfig {
-    get_sleep_config().await
 }
 
 /// Compare the OS-scheduled wakes against what the current schedule expects.

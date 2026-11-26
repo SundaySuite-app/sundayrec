@@ -10,11 +10,10 @@
  * `window.loadSettings`, ingen `window.__isRecording`. Denne er unntaket av
  * samme grunn som den: noe UTENFOR treet hviler på den.
  *
- * ## D3: ingen fane lenger
+ * ## Ingen fane
  *
- * Fram til D3 var Rediger en FANE inne i BIBLIOTEK, og begge kallene her
- * navigerte til `library` med `tab: "edit"`. Nå er REDIGERING destinasjonen,
- * og hvilken av dens to visninger som står avgjøres av om det er en fil åpen
+ * OPPTAK er destinasjonen, og hvilken av dens to visninger (lista eller
+ * editoren) som står avgjøres av om det er en fil åpen
  * (`loadState`), ikke av ruten — se `app/Shell.tsx`. Så: naviger dit, og åpne
  * fila. Rekkefølgen er den samme, og den betyr det samme: `openFile` setter
  * `loadState` SYNKRONT, så biblioteket rekker aldri å blinke innom.

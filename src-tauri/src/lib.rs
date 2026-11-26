@@ -616,7 +616,6 @@ pub fn run() {
             commands::recorder::get_disk_space,
             commands::db::recordings_list,
             commands::db::recordings_delete,
-            commands::db::recording_update_note,
             commands::db::recordings_prune,
             // Papirkurv. `trash_move` (history row ids, never paths) is what the
             // delete actions in Historikk now run; `trash_purge` is the only one that loses anything.
@@ -677,7 +676,6 @@ pub fn run() {
             commands::editor::editor_listen_chain,
             commands::editor::editor_listen_transport,
             commands::editor::editor_listen_close,
-            commands::editor::editor_master_cancel,
             // OS notifications: does the OS show them, a test, its settings page.
             commands::notification::notification_permission,
             commands::notification::notification_request_permission,
@@ -685,9 +683,7 @@ pub fn run() {
             commands::notification::notification_open_settings,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
-            commands::scheduler::scheduler_check_missed,
             commands::wake::wake_capabilities,
-            commands::wake::wake_get_sleep_config,
             commands::wake::wake_verify,
             commands::wake::wake_reschedule,
             commands::wake::wake_test,
@@ -699,9 +695,7 @@ pub fn run() {
             commands::telemetry::telemetry_consent_get,
             commands::telemetry::telemetry_consent_set,
             commands::telemetry::telemetry_regenerate_install_id,
-            commands::telemetry::telemetry_count,
             commands::telemetry::telemetry_preview_payload,
-            commands::telemetry::telemetry_queue_status,
             // R7 auto-update (status pure; check/download/relaunch gated by `updater`).
             commands::update::update_status,
             commands::update::update_check,

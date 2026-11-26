@@ -27,7 +27,7 @@ export const VIDEO_CODEC = "h264";
 
 /** Bitraten mp3 får når `settings.bitrate` er tom eller tull. Legacys eget
  *  tall, og det `QualityPage` skriver for «God». */
-export const FALLBACK_BITRATE_KBPS = 256;
+const FALLBACK_BITRATE_KBPS = 256;
 
 /** Les bitraten ut av innstillingene. Samme regel som `app/state/disk.ts`:
  *  et ubrukelig tall faller tilbake på 256 i stedet for på 0. */
@@ -131,7 +131,7 @@ export function predictedOutputName(
 
 /** Lengste tittel, i tegn, et filnavn får bære. Samme tall som
  *  `EXPORT_TITLE_MAX_CHARS` i kjernen. */
-export const EXPORT_TITLE_MAX_CHARS = 100;
+const EXPORT_TITLE_MAX_CHARS = 100;
 
 /** Windows' reserverte enhetsnavn — `WIN_RESERVED` i `filename.rs`. */
 const WIN_RESERVED = new Set([

@@ -36,7 +36,6 @@ import {
   currentLang,
   loadLocaleCatalogue,
   t as legacyT,
-  tArr as legacyTArr,
   tf as legacyTf,
   tn as legacyTn,
 } from "@lib/i18n";
@@ -93,11 +92,6 @@ export function resolveStartupLocale(
  */
 export const locale = signal<Locale>(currentLang as Locale);
 
-/** Tom liste for `tArr`. Frossen og delt: den returneres aldri til noen som
- *  har lov til å endre den, og en ny array per kall ville gitt et nytt
- *  identitetsbytte i hver render. */
-const NO_ITEMS: readonly string[] = Object.freeze([]);
-
 /**
  * Les signalet uten å bruke verdien.
  *
@@ -133,12 +127,6 @@ export function tn(
 ): string {
   track();
   return legacyTn(key, count, params);
-}
-
-/** Oversett en nøkkel som er en LISTE i katalogen. */
-export function tArr(key: string): string[] {
-  track();
-  return legacyTArr(key, NO_ITEMS as string[]);
 }
 
 /**

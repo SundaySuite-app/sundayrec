@@ -56,7 +56,7 @@ export const prerollActive = signal(false);
  * finnes for. `prerollEnabled` er urørt i basen og fortsatt legacy-skallets
  * bryter; ingen av skallene kjører samtidig.
  */
-export function currentConditions(): PrerollConditions {
+function currentConditions(): PrerollConditions {
   const s = settings.value;
   const seconds = s.preRollSeconds ?? 0;
   return {

@@ -148,7 +148,7 @@ export function openExportSheet(): void {
   exportSheetOpen.value = true;
 }
 
-export function closeExportSheet(): void {
+function closeExportSheet(): void {
   exportSheetOpen.value = false;
 }
 

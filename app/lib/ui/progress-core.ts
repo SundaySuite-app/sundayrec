@@ -48,16 +48,16 @@ export const MIN_SAMPLES = 3;
 /** Wall time the samples must span before an estimate is offered, ms. */
 export const MIN_SPAN_MS = 2000;
 /** τ for the rate EMA, ms. ~4 s: a phase change re-converges in about that. */
-export const RATE_TAU_MS = 4000;
+const RATE_TAU_MS = 4000;
 /** No forward movement for this long ⇒ we admit we don't know any more, ms. */
 export const STALL_MS = 5000;
 /** How much worse than the coasted value a raw estimate must be before the
  *  display is allowed to grow at all. Below this it is noise, and held. */
 export const GROW_TOLERANCE = 1.25;
 /** Fraction of an accepted growth applied per update — grow eased, not snapped. */
-export const GROW_EASE = 0.25;
+const GROW_EASE = 0.25;
 /** Sanity clamp so a near-zero rate yields a big number rather than Infinity. */
-export const MAX_ETA_MS = 24 * 3600_000;
+const MAX_ETA_MS = 24 * 3600_000;
 /**
  * How far backward a fraction may drift before we call it a restarted phase
  * rather than noise. Producers accumulate their fraction in floating point

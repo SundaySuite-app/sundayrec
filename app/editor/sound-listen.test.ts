@@ -18,7 +18,7 @@ import {
   resetSound,
   toggleListen,
 } from "./sound";
-import { soundExportFields } from "./sound-profiles";
+import { soundExportFields } from "./sound-recipe";
 import { fakeListen, type FakeListen } from "./test-support/fake-listen-api";
 
 const TOKEN = "11111111-1111-4111-8111-111111111111";

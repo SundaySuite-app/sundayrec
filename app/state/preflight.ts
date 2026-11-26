@@ -60,7 +60,7 @@ let hasRun = false;
 
 /** Tillatelsene og sidecar-helsen, som forhåndssjekk-funn. Best effort — en
  *  probe vi ikke fikk kjørt legger ingenting til i stedet for å blokkere. */
-export async function collectHealthFindings(): Promise<PreflightFinding[]> {
+async function collectHealthFindings(): Promise<PreflightFinding[]> {
   const [permissions, ffmpeg] = await Promise.all([
     window.api.mediaPermissions?.().catch(() => null) ?? null,
     window.api.ffmpegHealth?.().catch(() => null) ?? null,

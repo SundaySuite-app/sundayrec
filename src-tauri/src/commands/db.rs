@@ -27,17 +27,6 @@ pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {
     store::delete_recording(&db.pool, &id).await
 }
 
-/// Set (or clear, with `null`) a recording's free-text note (capped at 4096
-/// chars in the store).
-#[tauri::command]
-pub async fn recording_update_note(
-    db: State<'_, Db>,
-    id: String,
-    note: Option<String>,
-) -> AppResult<()> {
-    store::update_recording_note(&db.pool, &id, note).await
-}
-
 /// The outcome of one retention pass: how many recordings were MOVED into the
 /// Papirkurv. (Until the owner decision below, the field was `deleted` and the
 /// pass hard-deleted — see the history on `recordings_prune`.)

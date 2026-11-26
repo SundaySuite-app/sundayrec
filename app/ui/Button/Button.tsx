@@ -69,8 +69,8 @@ export interface ButtonProps {
   /**
    * Knappen folder ut noe: `aria-expanded` + `aria-controls`.
    *
-   * D2s kontrollrom folder skjermer ut på stedet, og kilde-kortets «Endre» er
-   * en slik knapp uten å være en `ControlCard`-rad. Uten de to attributtene
+   * Kamera-kortet og ukevisningen folder noe ut på stedet, og en slik knapp er
+   * ikke alltid en `ControlCard`-rad. Uten de to attributtene
    * ville en skjermleserbruker fått en knapp som «gjør noe» og en ny landmasse
    * som dukket opp uten forklaring.
    */

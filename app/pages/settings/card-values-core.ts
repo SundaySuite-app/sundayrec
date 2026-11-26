@@ -7,9 +7,7 @@
  * ferdig setning. En kjerne som kalte `t()` ville trukket katalogen inn i
  * node-gaten og gjort hver regel avhengig av hvilken tekst noen skrev sist.
  *
- * (Fram til F5 het fila `record/control-core.ts` og eide også kortlista i
- * kontrollrommet på TA OPP. Kortene bor på INNSTILLINGER og PLAN nå, så
- * ankerlista og stabelradene er borte.)
+ * (Kortene bor på INNSTILLINGER og PLAN.)
  */
 
 import type { Settings } from "../../state/settings";

@@ -1,19 +1,11 @@
 /**
- * ControlCard — én rad i kontrollrommet: hva den heter, hva den står på nå, og
+ * ControlCard — én rad (kamera, automatisk opptak): hva den heter, hva den står på nå, og
  * veien til å endre det UTEN å forlate skjermen.
  *
  *     ┌──────────────────────────────────────────────┬───────────┐
  *     │ HVOR SKAL OPPTAKENE?                         │  [Endre]  │
  *     │ /Users/frivillig/SundayRec                   │           │
  *     └──────────────────────────────────────────────┴───────────┘
- *
- * ## Hvorfor ikke `DecisionCard`
- *
- * `DecisionCard` er en NUMMERERT rad i en liste man går ovenfra og ned én gang
- * — den er sjekklisten første gang, og den lever videre i `FirstRun`. Her er
- * det ingen rekkefølge å komme gjennom: kontrollrommet er skjermen man står på
- * hver søndag, og kortet skal si ett faktum og folde seg ut på stedet. Et
- * nummer her ville lovet en rekkefølge som ikke finnes.
  *
  * ## Utfoldingen er ett sted, ikke to
  *

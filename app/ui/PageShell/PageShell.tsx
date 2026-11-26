@@ -4,7 +4,7 @@
  * ## Skinnen er borte, og hvorfor
  *
  * Fram til D3 lå navigasjonen i en 208 px bred venstreskinne. Den kostet en
- * sjettedel av bredden på en 1180 px skjerm — plass kontrollrommet trenger til
+ * sjettedel av bredden på en 1180 px skjerm — plass sidene trenger til
  * innhold som faktisk sier noe. Det som var i skinnen bor nå i to bånd som til
  * sammen er hundre piksler høye i stedet for to hundre piksler brede:
  *

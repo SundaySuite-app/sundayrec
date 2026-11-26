@@ -15,7 +15,7 @@ const LAZY_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   en: () => import("../../legacy/locales/en.json"),
 };
 
-export let T: LocaleData = LOCALE_MAP["no"];
+let T: LocaleData = LOCALE_MAP["no"];
 export let currentLang = "no";
 
 /**
@@ -70,7 +70,7 @@ export function t(key: string, fallback = ""): string {
  *
  * Lives here because `currentLang` lives here and `tn()` needs the tag.
  */
-export function localeTag(lang: string = currentLang): string {
+function localeTag(lang: string = currentLang): string {
   return lang === "no" ? "nb-NO" : lang;
 }
 

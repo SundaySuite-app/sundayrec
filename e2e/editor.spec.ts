@@ -671,7 +671,7 @@ test.describe("editor", () => {
   test("«Podkastklar lyd» er standarden, og den sender oppskriften med eksporten", async ({
     page,
   }) => {
-    // MUTASJONSPRØVEN for `sound-profiles.ts`: la `soundExportFields(true)` returnere `{}` og
+    // MUTASJONSPRØVEN for `sound-recipe.ts`: la `soundExportFields(true)` returnere `{}` og
     // denne går rød på `podcastAudio`.
     await openEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();

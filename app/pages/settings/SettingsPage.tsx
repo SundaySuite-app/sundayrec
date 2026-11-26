@@ -3,9 +3,7 @@
  *
  * ## Hva som bor her
  *
- * Fram til F5 lå svarene på de fem spørsmålene som kort i kontrollrommet på TA
- * OPP, og «resten» på en egen Avansert-flate. Eieren beskar TA OPP til den
- * store knappen — alt man setter én gang bor nå her, i denne rekkefølgen:
+ * Alt man setter én gang bor her, i denne rekkefølgen:
  *
  *   Lyd og kanaler · Kamera · Lagringsmappe (og format) · Varsler · Språk ·
  *   Opptaksvalg · Oppdatering · Personvern · Om og logg

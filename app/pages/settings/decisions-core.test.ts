@@ -242,11 +242,9 @@ describe("4 — Hvilket språk?", () => {
   });
 
   it("språket er det som RENDRES, ikke det som står lagret", () => {
-    // Slik så det ut mens fem kataloger var pauset: en profil satt til tysk
-    // leste engelsk. Alle sju er aktive nå (F2-S6), så de to følger hverandre
-    // i praksis — men påstanden er om hvilken KILDE kortet leser, og den kan
-    // skille lag igjen (en pause, en katalog som ikke lastet). Kortet skal si
-    // det brukeren faktisk ser.
+    // Påstanden er om hvilken KILDE kortet leser: en lagret verdi fra før F4
+    // (et språk som ikke finnes lenger) rendres på et av de to som finnes.
+    // Kortet skal si det brukeren faktisk ser.
     const d = decideLanguage(
       withSettings({ language: "de" }, { locale: "en" }),
     );

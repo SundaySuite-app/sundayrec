@@ -67,7 +67,7 @@ import styles from "./firstrun.module.css";
  * Et modulnivå-signal, fordi tre ting leser det: rammen under, `PageShell`s
  * overskrift (utenfor denne komponenten) og chippen.
  */
-export const firstRunIndex = signal(0);
+const firstRunIndex = signal(0);
 
 /** Overskriften steget skal ha. `undefined` når sekvensen ikke er i gang. */
 export function firstRunHeading(active: boolean): string | undefined {

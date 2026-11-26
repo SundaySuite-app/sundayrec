@@ -97,7 +97,7 @@ function syncHistory(): void {
 }
 
 /** Registrer et øyeblikksbilde ETTER en mutasjon. */
-export function pushCutHistory(): void {
+function pushCutHistory(): void {
   const next = pushSnapshot(
     {
       history: E.cutHistory,

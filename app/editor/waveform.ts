@@ -79,14 +79,14 @@ export function cancelDraw(): void {
 }
 
 /** Tegn begge lerretene nå. */
-export function draw(): void {
+function draw(): void {
   drawWaveform();
   drawMinimap();
 }
 
 // ── Bølgeformen ─────────────────────────────────────────────────────────────
 
-export function drawWaveform(): void {
+function drawWaveform(): void {
   const canvas = E.canvas;
   if (!canvas || !E.peaks) return;
   const ctx = canvas.getContext("2d");
@@ -274,7 +274,7 @@ function rulerLabel(sec: number): string {
  * Det er den ene flaten som svarer på «hvor i gudstjenesten er jeg?» når
  * bølgeformen viser to minutter av to timer.
  */
-export function drawMinimap(): void {
+function drawMinimap(): void {
   const canvas = E.minimap;
   if (!canvas || !E.peaks || E.duration <= 0) return;
   const ctx = canvas.getContext("2d");
@@ -318,7 +318,7 @@ export function drawMinimap(): void {
 
 // ── Predikatene tegningen trenger ───────────────────────────────────────────
 
-export function isInCut(sec: number): boolean {
+function isInCut(sec: number): boolean {
   return E.cuts.some((c) => sec >= c.start && sec <= c.end);
 }
 

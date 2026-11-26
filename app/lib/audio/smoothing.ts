@@ -23,13 +23,13 @@
  */
 
 /** Rise instantly by default — a level meter that lags upward under-reports. */
-export const ATTACK_TAU_MS = 0;
+const ATTACK_TAU_MS = 0;
 /** τ ≈ 80 ms release: ~184 ms to cover 90 % of a fall. Hardware-tuned on the
  *  recording overlay; every other meter now inherits the same feel. */
 export const RELEASE_TAU_MS = 80;
 /** Longest dt a single step may act on. A tab that was backgrounded for two
  *  seconds must not teleport the meter — it resumes, it doesn't replay. */
-export const MAX_STEP_MS = 200;
+const MAX_STEP_MS = 200;
 
 /**
  * Fraction of the remaining distance covered in `dtMs` for an exponential

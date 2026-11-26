@@ -172,9 +172,7 @@ function pad2(n: number): string {
  *
  * ## Hvorfor en form og ikke en streng
  *
- * `tn()` var en gang utelukket av pausen — en ny flertallsgruppe ville krevd
- * polske former midt i den. Pausen er over (F2-S6), og formen består likevel:
- * «14 t», «14 t 20 min» og «45 min» bruker INVARIANTE forkortelser, riktige i
+ * Formen: «14 t», «14 t 20 min» og «45 min» bruker INVARIANTE forkortelser, riktige i
  * hele tallområdet de faktisk vises for og i begge språk. Så: tre
  * `tf()`-nøkler, og kjernen velger hvilken. Se `span-text.ts` for hva som
  * gjør valget om.

@@ -310,13 +310,6 @@ export const BOOT_FIXTURES: Fixtures = {
     needsPrompt: false,
     active: false,
   },
-  telemetry_queue_status: {
-    pending: 0,
-    failed: 0,
-    oldestAt: null,
-    lastError: null,
-  },
-  telemetry_count: VOID,
 };
 
 /**

@@ -37,7 +37,7 @@ import { toast } from "../../../ui/toast";
 import { useReceipt } from "../../../settings/use-receipt";
 
 /** Samtykket slik bakenden ser det. `null` = ikke lest ennå. */
-export function useConsent(): {
+function useConsent(): {
   consent: TelemetryConsent | null;
   refresh: () => Promise<void>;
 } {

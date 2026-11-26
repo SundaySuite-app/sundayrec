@@ -4,7 +4,7 @@
  *
  * D2 tok bort tilleggenes egne klasser (`.addons`, `.addonHead`, `.addonTitle`,
  * `.addonSummary`, `.addonBody`) og undersidens `.subHead`: kamera- og
- * auto-kortet er `ControlCard`-rader i kontrollrommet nå, og de tegner
+ * auto-kortet er `ControlCard`-rader nå, og de tegner
  * topplinja si der. En CSS-modul som beholder klasser ingen bruker ser ut som
  * om den fortsatt eier flaten.
  */

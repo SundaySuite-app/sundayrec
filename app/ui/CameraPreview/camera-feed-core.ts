@@ -64,7 +64,7 @@ export interface CameraFeed {
 }
 
 /** Frist mellom siste slipp og stopp. */
-export const FEED_GRACE_MS = 400;
+const FEED_GRACE_MS = 400;
 
 export function createCameraFeed(
   api: FeedApi,

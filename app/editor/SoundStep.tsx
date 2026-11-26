@@ -7,7 +7,7 @@
  * lytteknapp med «Før» og «Etter».
  *
  * Før F3 var det her tre profiler, en avansert mikser og en kanalreparasjon. De er borte:
- * oppskriften er den samme for alle opptak, og tallene står i `sound-profiles.ts`.
+ * oppskriften er den samme for alle opptak, og tallene står i `sound-recipe.ts`.
  */
 
 import { useEffect } from "preact/hooks";
@@ -35,7 +35,7 @@ import {
   toggleListen,
   watchListenPrepare,
 } from "./sound";
-import { taleSaidKeys } from "./sound-profiles";
+import { taleSaidKeys } from "./sound-recipe";
 import styles from "./editor.module.css";
 import { PLAY_KEYS_ARIA, playShortcutHint } from "./shortcut-labels";
 

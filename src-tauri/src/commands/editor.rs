@@ -60,7 +60,7 @@ use crate::db::{Db, store};
 use crate::editor::{
     self, EditorDecodeProgress, EditorExportProgress, EditorExportRequest, EditorExportResult,
     EditorMasterPreviewRequest, EditorMediaInfo, EditorPeaks, EditorSidecar, ExportEngine,
-    ExportFolder, MasterEngine, ResolvedExport,
+    ExportFolder, ResolvedExport,
 };
 use crate::error::{AppError, AppResult};
 use crate::settings;
@@ -955,15 +955,6 @@ pub async fn editor_listen_close(listen: State<'_, editor::listen::ListenEngine>
 // already carried as `unreachable` in `scripts/command-reachability-baseline.json`
 // — see the note above `editor::master_apply` in `crate::editor` for the full
 // reasoning and what stays.
-
-/// Abort an in-flight mastering apply by job id. Returns whether it was live.
-#[tauri::command]
-pub async fn editor_master_cancel(
-    engine: State<'_, MasterEngine>,
-    job_id: String,
-) -> AppResult<bool> {
-    editor::master_cancel(&engine, &job_id).await
-}
 
 /// Whether the recorder's state forbids starting an export now: a recording is
 /// starting, running, reconnecting or finalising. Idle/stopped/failed are free.

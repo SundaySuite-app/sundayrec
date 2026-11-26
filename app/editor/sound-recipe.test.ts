@@ -13,7 +13,7 @@ import {
   listenStartSec,
   soundExportFields,
   taleSaidKeys,
-} from "./sound-profiles";
+} from "./sound-recipe";
 
 describe("bryteren «Podkastklar lyd»", () => {
   it("er på som standard", () => {

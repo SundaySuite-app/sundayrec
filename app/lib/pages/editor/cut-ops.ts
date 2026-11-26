@@ -7,7 +7,7 @@ import type { Cut } from "./types";
 /** A cut shorter than this (after clamping) is ignored — a stray click / tiny drag. */
 export const MIN_CUT_LENGTH_SEC = 0.1;
 /** Cuts whose gap is within this are merged — near-adjacent cuts become one. */
-export const MERGE_EPSILON_SEC = 0.01;
+const MERGE_EPSILON_SEC = 0.01;
 
 const clampToFile = (sec: number, duration: number): number =>
   Math.max(0, Math.min(duration, sec));

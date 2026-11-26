@@ -34,7 +34,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import {
-  coerceValue,
   planCommit,
   type ControlKind,
   type SettingValue,
@@ -269,7 +268,3 @@ export function useSetting<K extends ScalarSettingKey>(
     events: plan.events,
   };
 }
-
-/** Gjenbruk av kjernens coercion for en rå DOM-verdi, så en komponent slipper
- *  å importere to steder fra. */
-export { coerceValue };

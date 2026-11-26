@@ -85,11 +85,6 @@ export interface WeeklyPlan {
  */
 export const DEFAULT_PLAN: WeeklyPlan = { day: 6, start: "11:00", minutes: 90 };
 
-/** Varighetene siden tilbyr. `min` er det brukeren leser. */
-export const DURATION_CHOICES: readonly number[] = [
-  30, 45, 60, 75, 90, 105, 120, 150, 180,
-];
-
 const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 /** Er dette et klokkeslett bakenden kan arme en vekking på? */

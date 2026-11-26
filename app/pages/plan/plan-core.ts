@@ -49,20 +49,20 @@ import {
 import { withoutIndex, withSlot } from "./slots-core";
 
 /** Rutenettet snapper til kvarter. */
-export const SNAP = 15;
+const SNAP = 15;
 /** Kortest mulige opptak. */
 export const MIN_DURATION = 15;
 /** Lengst mulige: nesten et døgn (start = stopp er ugyldig). */
 export const MAX_DURATION = 1440 - SNAP;
 /** Et nytt opptak fra et klikk. Samme som `DEFAULT_PLAN`: en høymesse. */
-export const DEFAULT_DURATION = 90;
+const DEFAULT_DURATION = 90;
 export const DAY_MINUTES = 1440;
-export const WEEK_MINUTES = 7 * DAY_MINUTES;
+const WEEK_MINUTES = 7 * DAY_MINUTES;
 /** Høyden på én time i rutenettet. 15 min = 14 px, så en kvarters blokk er
  *  fortsatt et treffbart mål. */
 export const HOUR_PX = 56;
 /** Ruten åpner på dette klokkeslettet (06:00) — natta er et rull unna. */
-export const DEFAULT_TOP_MINUTES = 6 * 60;
+const DEFAULT_TOP_MINUTES = 6 * 60;
 /** Hvor mange piksler en peker må bevege seg før et trykk er en dra-gest. */
 export const DRAG_THRESHOLD_PX = 4;
 
@@ -120,7 +120,7 @@ export function ceilSnap(minutes: number, step: number = SNAP): number {
   return Math.ceil(minutes / step) * step;
 }
 
-export function wrapDay(day: number): Weekday {
+function wrapDay(day: number): Weekday {
   return (((Math.trunc(day) % 7) + 7) % 7) as Weekday;
 }
 
@@ -201,12 +201,6 @@ export function endOf(p: Pick<Placement, "start" | "duration">): number {
   return p.start + p.duration;
 }
 
-export function crossesMidnight(
-  p: Pick<Placement, "start" | "duration">,
-): boolean {
-  return endOf(p) > DAY_MINUTES;
-}
-
 /** Opptredenen som én eller to tegnede deler. */
 export function segmentsOf(occ: Occurrence): Segment[] {
   const base = `${occ.index}-${occ.day}`;
@@ -243,7 +237,7 @@ export function segmentsOf(occ: Occurrence): Segment[] {
   ];
 }
 
-export function segmentsOfAll(occs: readonly Occurrence[]): Segment[] {
+function segmentsOfAll(occs: readonly Occurrence[]): Segment[] {
   return occs.flatMap(segmentsOf);
 }
 
@@ -515,7 +509,7 @@ export function suggestPlacement(
 // ── Neste, savnet, nå ───────────────────────────────────────────────────────
 
 /** Dag og klokkeslett (minutter) for en lokal-ISO fra planleggeren. */
-export function dayAndMinutes(
+function dayAndMinutes(
   at: string | null | undefined,
 ): { day: Weekday; minutes: number } | null {
   if (!at) return null;

@@ -24,7 +24,7 @@ import type { Cut, Range } from "./model";
  * Legacys eget tall, og grunnen er legacys egen: et kutt
  * på under et halvsekund i hver ende er ikke et kutt, det er avrunding.
  */
-export const EDGE_EPSILON_SEC = 0.5;
+const EDGE_EPSILON_SEC = 0.5;
 
 /** Korteste vindu vi lar et håndtak dra til. Under dette er det ikke et
  *  utdrag lenger, det er et uhell. */

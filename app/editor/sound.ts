@@ -1,7 +1,7 @@
 /**
  * Steg 2 — LYD. Tilstanden, analysen og lyttingen.
  *
- * Det som sendes med eksporten (én bryter, «Podkastklar lyd») bor i `sound-profiles.ts` og er
+ * Det som sendes med eksporten (én bryter, «Podkastklar lyd») bor i `sound-recipe.ts` og er
  * ren. Her er alt som har en bivirkning: et signal per ting treet viser, ÉN
  * memoisert kanalanalyse per fil, og lyttingen på avspillingsmotoren.
  *
@@ -54,7 +54,7 @@ import {
   LISTEN_SPAN_SEC,
   listenStartSec,
   soundExportFields,
-} from "./sound-profiles";
+} from "./sound-recipe";
 
 // ── Valget ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ export function setPodcastAudio(on: boolean): void {
 
 // ── «Tale»-analysen ─────────────────────────────────────────────────────────
 
-export const analyzingSound = signal(false);
+const analyzingSound = signal(false);
 /** B3b: hva «Podkastklar lyd» gjorde med fila — kodene fra `editor_tale_said`, eller `null`
  *  før svaret er inne (og når analysen ikke kunne kjøres). */
 export const taleSaid = signal<EditorTaleSaid | null>(null);
@@ -134,7 +134,7 @@ export const listenStart = signal(0);
 /** Spillehodet slik motoren melder det (kildesekunder), eller `null` før første melding. */
 export const listenAt = signal<number | null>(null);
 /** Hull i lyden motoren har telt (ringen gikk tom mens det spilte). Til diagnose. */
-export const listenUnderruns = signal(0);
+const listenUnderruns = signal(0);
 
 /** Regn ut hvor lyttingen begynner, ut fra vinduet slik det står NÅ. */
 export function refreshListenStart(): void {
@@ -499,7 +499,7 @@ async function prepareNow(): Promise<void> {
 }
 
 /** Planlegg en måling om `delayMs`; en ny planlegging erstatter den forrige. */
-export function scheduleListenPrepare(delayMs: number): void {
+function scheduleListenPrepare(delayMs: number): void {
   cancelListenPrepare();
   if (isRecording.peek() || !E.sourceToken) return;
   prepareTimer = window.setTimeout(() => {
@@ -508,7 +508,7 @@ export function scheduleListenPrepare(delayMs: number): void {
   }, delayMs);
 }
 
-export function cancelListenPrepare(): void {
+function cancelListenPrepare(): void {
   window.clearTimeout(prepareTimer);
   prepareTimer = 0;
 }

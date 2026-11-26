@@ -11,7 +11,7 @@
  * tider.
  *
  * Fra F4 er det bare norsk og engelsk. Står det et språk i basen som ikke finnes lenger (en
- * profil fra før F4 med svensk, dansk, tysk, fransk eller polsk), viser boksen språket som
+ * profil fra før F4), viser boksen språket som
  * GJELDER — det `resolveStartupLocale` valgte etter systemregelen — og ikke den lagrede
  * strengen. Velger du et språk, skrives det over.
  */

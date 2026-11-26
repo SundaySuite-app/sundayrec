@@ -3,9 +3,7 @@
  *
  * ## F5: bare det man trenger idet man trykker
  *
- * Fram til F5 var dette et kontrollrom med fem kort (mappe, kvalitet, kamera,
- * automatisk opptak, varsling) og en utfoldbar lydskjerm. Eieren beskar det:
- * en frivillig skal trykke ÉN stor knapp. Det som står igjen:
+ * En frivillig skal trykke ÉN stor knapp. Det som står igjen:
  *
  *   **Venstre, sticky, LEVENDE.** Hvor kommer lyden fra, hører vi den, og den
  *   store knappen. Linja «neste planlagte opptak» står under, med en lenke til
