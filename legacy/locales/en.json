@@ -443,29 +443,19 @@
       "exWhere": "Where",
       "fmtDesc": {
         "mp3": "Small file. Good for the web and sharing.",
-        "flac": "Same quality as the recording, smaller file.",
-        "wav": "Uncompressed. Largest file."
+        "wav": "Uncompressed. Largest file.",
+        "mp4": "Video with sound. Good for the web and sharing."
       },
       "sameFolder": "Same folder as the recording",
       "pickFolder": "Choose folder …",
       "pickFolderDesc": "USB stick, Dropbox folder, anywhere.",
-      "includeVideo": "Include video (MP4)",
-      "includeVideoDesc": "The recording has a video track. Without this the export is audio only.",
-      "videoLocksFormat": "The format is MP4 while the video is included.",
-      "jingles": "Intro and outro",
-      "jinglesDesc": "Optional sound before and after the recording, such as a short tune. With \"Podcast-ready audio\" on it gets the same loudness as the speech.",
       "jingleIntro": "Intro",
       "jingleOutro": "Outro",
-      "jingleNone": "None",
-      "jinglePick": "Choose audio file …",
-      "jingleRemove": "Remove",
       "jinglePickLabel": "Choose an audio file for the {which}",
-      "jingleRemoveLabel": "Remove the {which}",
-      "jingleVideoNote": "Intro and outro are not added when the video is included. Turn off \"Include video (MP4)\" to use them.",
+      "jingleVideoNote": "Intro and outro are not included when the video is. Choose MP3 or WAV to use them.",
       "about": "about {mb} MB",
       "level": "Volume: right for the web",
       "levelCapped": "Volume: a little lower than intended (loud peaks in the sound)",
-      "exported": "Exported",
       "exportAgain": "Export in another format",
       "toLibrary": "Recordings",
       "exportFailed": "The export stopped. Try again.",
@@ -488,7 +478,19 @@
       "silenceNone": "No long silences found.",
       "markIn": "In",
       "markOut": "Out",
-      "videoLabel": "Video from the recording"
+      "videoLabel": "Video from the recording",
+      "fmtTag": {
+        "mp3": "Podcast",
+        "wav": "Archive",
+        "mp4": "Video"
+      },
+      "podcastTile": "Podcast",
+      "podcastLufs": "−16 LUFS",
+      "jingleChoose": "+ Choose file",
+      "jingleSwap": "Choose another file",
+      "jingleSwapLabel": "Choose another file for {which}",
+      "saveBtn": "Save",
+      "saved": "Saved"
     },
     "export": {
       "content": "Content",

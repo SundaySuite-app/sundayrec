@@ -143,11 +143,11 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::the_jingle_picker_accepts_the_common_audio_formats
 - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips
 - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_mastered_export_levels_the_sermon_not_the_jingles_or_skips
-- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti
+- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, slå av — og eksporten sender en bryter, ikke en sti
 - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro huskes til neste gang: etter en omlasting står de der
 - VERIFIED-BY: e2e/export-sheet.spec.ts::en fil Rust avviser blir en setning, og forrige valg står
 - VERIFIED-BY: e2e/export-sheet.spec.ts::en jingle som er borte når eksporten starter, sier det med egne ord
-- VERIFIED-BY: e2e/export-sheet.spec.ts::med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes
+- VERIFIED-BY: e2e/export-sheet.spec.ts::med MP4-kortet valgt er jingle-flisene dempet og sier hvorfor, og ingen bryter sendes
 - VERIFIED-BY: app/editor/jingles-core.test.ts::video får aldri jingler, selv med begge valgt
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_recording_round_trips_as_a_token_and_shows_its_name
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_source_token_is_refused_with_its_own_code

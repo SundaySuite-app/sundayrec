@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 
 import { t } from "../../i18n";
 import { Icon } from "../../ui/Icon/Icon";
+import { useSheetBehavior } from "../../ui/sheet-behavior";
 import styles from "./SourceSheet.module.css";
 
 export interface SourceSheetProps {
@@ -23,9 +24,6 @@ export interface SourceSheetProps {
   onClose: () => void;
   children?: ComponentChildren;
 }
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function SourceSheet({ open, onClose, children }: SourceSheetProps) {
   // Innholdet står bare i treet mens arket er åpent (og glir ut): målerne i det
@@ -41,46 +39,7 @@ export function SourceSheet({ open, onClose, children }: SourceSheetProps) {
   }, [open]);
   const sheet = useRef<HTMLElement | null>(null);
   const closeBtn = useRef<HTMLButtonElement | null>(null);
-  const opener = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    opener.current = document.activeElement as HTMLElement | null;
-    closeBtn.current?.focus();
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab" || !sheet.current) return;
-      const items = [
-        ...sheet.current.querySelectorAll<HTMLElement>(FOCUSABLE),
-      ].filter((el) => el.offsetParent !== null);
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      const active = document.activeElement;
-      if (
-        event.shiftKey &&
-        (active === first || !sheet.current.contains(active))
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (
-        !event.shiftKey &&
-        (active === last || !sheet.current.contains(active))
-      ) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      opener.current?.focus?.();
-    };
-  }, [open]);
+  useSheetBehavior({ open, onClose, sheet, initialFocus: closeBtn });
 
   return (
     <>

@@ -38,6 +38,14 @@
  * en FORUTSIGELSE av det navnet; kvitteringen viser stien bakenden faktisk
  * svarte med, og den er fasiten.
  *
+ * ## E7: et sidearks, ikke en modal midt på skjermen
+ *
+ * Samme ark som lydarket på Ta opp (440 px fra høyre, glid, slør, Esc, fokusfelle
+ * — `app/ui/sheet-behavior.ts`). Formatkort (MP3 «Podkast», WAV «Arkiv», MP4
+ * «Video» — bare når kilden HAR bilde; MP4 ER «ta med video»), tre fliser
+ * (Podkast, Intro, Outro), mappe-raden og en stor «Lagre». FLAC er ikke et valg
+ * i arket lenger (motoren kan det fortsatt; ingen av eierens formater er det).
+ *
  * ## Arket er `inert` bak seg
  *
  * Et `role="dialog"` med `aria-modal` i skallets eget tre (ikke
@@ -49,14 +57,13 @@
  */
 
 import { signal } from "@preact/signals";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import { exactSpan, keptSeconds } from "./editor-core";
 import { profileLabel, resultLine } from "./summary";
 import { t, tDyn, tf } from "../i18n";
 import { Banner } from "../ui/Banner/Banner";
 import { activeDialog } from "../ui/dialog";
-import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
 import { Card } from "../ui/Card/Card";
 import { ProgressBar } from "../ui/ProgressBar/ProgressBar";
@@ -64,7 +71,8 @@ import { RadioCards, type RadioOption } from "../ui/RadioCards/RadioCards";
 import { revealExport, revealLabel } from "../ui/reveal";
 import { TextArea } from "../ui/TextArea/TextArea";
 import { TextField } from "../ui/TextField/TextField";
-import { Toggle } from "../ui/Toggle/Toggle";
+import { Icon } from "../ui/Icon/Icon";
+import { useSheetBehavior } from "../ui/sheet-behavior";
 import { podcastAudio, setPodcastAudio } from "./sound";
 import {
   cancelExport,
@@ -90,8 +98,10 @@ import {
   exportSpeaker,
   exportTitle,
   includeVideo,
+  introOn,
   isVideoExport,
-  clearJingle,
+  outroOn,
+  jingleOnSignal,
   pickExportFolder,
   pickJingle,
   runExport,
@@ -101,7 +111,6 @@ import {
 import {
   bitrateKbps,
   estimatedBytes,
-  EXPORT_FORMATS,
   exportKbps,
   folderLabel,
   folderOf,
@@ -152,74 +161,102 @@ function closeExportSheet(): void {
   exportSheetOpen.value = false;
 }
 
-export function ExportSheet() {
-  const sheetRef = useRef<HTMLDivElement | null>(null);
+/** Hvor lenge arket står i treet etter at det er lukket: glidet ut. */
+const SLIDE_MS = 450;
 
+/**
+ * Arket. Alltid montert av arbeidsflaten; innholdet står i treet bare mens
+ * arket er åpent (og glir ut), så en lukket editor ikke bærer et helt skjema.
+ */
+export function ExportSheet({ open }: { open: boolean }) {
+  const [mounted, setMounted] = useState(open);
+  // Glidet inn trenger et frame med arket utenfor kanten først.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
-    sheetRef.current?.focus();
-    return () => {
-      // Etter at gjengivelsen er ferdig: editoren er fortsatt `inert` mens
-      // arket rives, og en inert knapp tar ikke imot fokus.
-      setTimeout(() => {
-        document
-          .querySelector<HTMLElement>('[data-testid="editor-export-open"]')
-          ?.focus();
-      }, 0);
-    };
-  }, []);
-
-  // Escape på vinduet og ikke på arket: når «Eksporter» (som hadde fokus) byttes
-  // ut med fremdriften, står fokus på `<body>`, og en lytter på arket ville
-  // aldri sett tasten. En åpen bekreftelsesdialog eier Escape selv.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key !== "Escape" || activeDialog.peek() !== null) return;
-      closeExportSheet();
+    if (open) {
+      setMounted(true);
+      const id = requestAnimationFrame(() =>
+        requestAnimationFrame(() => setEntered(true)),
+      );
+      return () => cancelAnimationFrame(id);
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    setEntered(false);
+    const id = setTimeout(() => setMounted(false), SLIDE_MS);
+    return () => clearTimeout(id);
+  }, [open]);
 
+  const sheetRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  // En åpen bekreftelsesdialog eier Escape selv.
+  useSheetBehavior({
+    open,
+    onClose: closeExportSheet,
+    sheet: sheetRef,
+    initialFocus: closeRef,
+    escapeBlocked: () => activeDialog.peek() !== null,
+    returnFocus: () =>
+      document.querySelector<HTMLElement>('[data-testid="editor-export-open"]'),
+  });
+
+  // Innholdet kommer i treet ETTER at arket er åpnet, så hooken over finner
+  // ikke lukkeknappen første gang: fokuset flyttes inn her.
+  useEffect(() => {
+    if (open && mounted) closeRef.current?.focus();
+  }, [open, mounted]);
+
+  if (!mounted) return null;
   return (
-    <div
-      class={styles.backdrop}
-      data-testid="export-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) closeExportSheet();
-      }}
-    >
-      <div
+    <>
+      <button
+        type="button"
+        class={`${styles.scrim} ${entered && open ? styles.scrimOn : ""}`}
+        data-testid="export-backdrop"
+        aria-label={t("app.export.close")}
+        tabIndex={-1}
+        onClick={closeExportSheet}
+      />
+      <section
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="export-sheet-title"
-        tabIndex={-1}
         data-testid="export-page"
         data-state={loadState.value}
-        class={styles.sheet}
+        data-open={open ? "true" : "false"}
+        inert={!open}
+        class={`${styles.sheet} ${entered && open ? styles.sheetOpen : ""}`}
       >
-        <div class={styles.sheetHead}>
-          <h2 id="export-sheet-title" class={styles.sheetTitle}>
-            {t("app.export.title")}
-          </h2>
-          <Button
-            variant="ghost"
-            testId="export-close"
+        <header class={styles.sheetHead}>
+          <span class={styles.sheetTitle}>
+            <Icon name="download" size={20} />
+            <h2 id="export-sheet-title" class={styles.sheetH}>
+              {t("app.export.title")}
+            </h2>
+          </span>
+          <button
+            ref={closeRef}
+            type="button"
+            class={styles.sheetClose}
+            data-testid="export-close"
+            aria-label={t("app.export.close")}
+            title={t("app.export.close")}
             onClick={closeExportSheet}
           >
-            {t("app.export.close")}
-          </Button>
+            <Icon name="x" size={20} strokeWidth={2} />
+          </button>
+        </header>
+        <div class={styles.sheetBody}>
+          <Head />
+          {exportedPath.value ? (
+            <Receipt />
+          ) : exporting.value ? (
+            <Running />
+          ) : (
+            <Choices />
+          )}
         </div>
-        <Head />
-        {exportedPath.value ? (
-          <Receipt />
-        ) : exporting.value ? (
-          <Running />
-        ) : (
-          <Choices />
-        )}
-      </div>
-    </div>
+      </section>
+    </>
   );
 }
 
@@ -237,6 +274,10 @@ function Head() {
 }
 
 // ── Valgene ─────────────────────────────────────────────────────────────────
+
+/** Formatkortene, i rekkefølge. MP4 bare når kilden har bilde. */
+const FORMAT_CARDS = ["mp3", "wav"] as const;
+type CardId = (typeof FORMAT_CARDS)[number] | "mp4";
 
 function Choices() {
   const video = isVideoExport();
@@ -265,14 +306,6 @@ function Choices() {
     ? picked.displayName
     : folderLabel(folderOf(E.filePath));
 
-  const formats: RadioOption[] = EXPORT_FORMATS.map((id) => ({
-    value: id,
-    // Formatnavnene er PRODUKTNAVN — «MP3» heter MP3 på begge språk.
-    title: id.toUpperCase(),
-    description: tDyn("app.editor.fmtDesc", id),
-    recommended: id === "mp3",
-  }));
-
   const destinations: RadioOption[] = [
     {
       value: "same",
@@ -290,129 +323,12 @@ function Choices() {
     <div data-testid="editor-export" class={styles.step}>
       <ExportProblem />
 
-      <span class={styles.label}>{t("app.editor.exFormat")}</span>
-      <RadioCards
-        testId="editor-format"
-        value={exportFormat.value}
-        options={formats}
-        disabled={video}
-        onChange={(next) => (exportFormat.value = next as ExportFormat)}
-      />
-      {video ? (
-        <p data-testid="editor-format-locked" class={styles.hint}>
-          {t("app.editor.videoLocksFormat")}
-        </p>
-      ) : null}
+      <FormatCards />
 
-      <Content />
-
-      <span class={styles.label}>{t("app.editor.exWhere")}</span>
-      <RadioCards
-        testId="editor-dest"
-        value={picked ? "pick" : "same"}
-        options={destinations}
-        columns={2}
-        onChange={(next) => {
-          if (next === "same") exportFolder.value = null;
-          else void pickExportFolder();
-        }}
-      />
-
-      <Card testId="export-podcast-card">
-        <div class={styles.autoRow}>
-          <div class={styles.autoGrow}>
-            <b id="export-podcast-label" class={styles.autoTitle}>
-              {t("app.editor.podcastAudio")}
-            </b>
-            <div id="export-podcast-desc" class={styles.hint}>
-              {t("app.editor.podcastAudioDesc")}
-            </div>
-          </div>
-          <Toggle
-            testId="export-podcast-toggle"
-            checked={podcastAudio.value}
-            labelId="export-podcast-label"
-            describedBy="export-podcast-desc"
-            onChange={setPodcastAudio}
-          />
-        </div>
-      </Card>
-
-      <Jingles video={video} />
-
-      {sourceHasVideo() ? (
-        <Card testId="editor-video-card">
-          <div class={styles.autoRow}>
-            <div class={styles.autoGrow}>
-              <b id="editor-video-label" class={styles.autoTitle}>
-                {t("app.editor.includeVideo")}
-              </b>
-              <div id="editor-video-desc" class={styles.hint}>
-                {t("app.editor.includeVideoDesc")}
-              </div>
-            </div>
-            <Toggle
-              testId="editor-video-toggle"
-              checked={includeVideo.value}
-              labelId="editor-video-label"
-              describedBy="editor-video-desc"
-              onChange={(next) => (includeVideo.value = next)}
-            />
-          </div>
-        </Card>
-      ) : null}
-
-      <ActionBar
-        hint={
-          <span data-testid="editor-export-preview">
-            {[
-              name,
-              mb === null ? "" : tf("app.editor.about", { mb }),
-              folderName,
-            ]
-              .filter(Boolean)
-              .join(DOT)}
-          </span>
-        }
-      >
-        <Button
-          variant="primary"
-          size="lg"
-          testId="editor-export-go"
-          onClick={() => void runExport(kept, bytes)}
-        >
-          {t("editor.save")}
-        </Button>
-      </ActionBar>
-    </div>
-  );
-}
-
-/**
- * «Intro og outro» — to valgfrie lydfiler som legges før og etter opptaket.
- *
- * Filen velges i et vindu RUST åpner (`settings_pick_editor_intro`/`_outro`),
- * og valget lagres i innstillingene, så det står der neste eksport også. Siden
- * viser bare filnavnet; ingen sti går fra siden til Rust. Med «Podkastklar
- * lyd» på får jinglene samme lydstyrke som talen. Med video er raden dempet
- * og sier hvorfor: motoren legger dem rundt lydsporet, ikke bildet.
- */
-function Jingles({ video }: { video: boolean }) {
-  return (
-    <div data-testid="export-jingles" class={styles.content}>
-      <span id="export-jingles-label" class={styles.label}>
-        {t("app.editor.jingles")}
-      </span>
-      <p id="export-jingles-desc" class={styles.hint}>
-        {t("app.editor.jinglesDesc")}
-      </p>
-      <div
-        role="group"
-        aria-labelledby="export-jingles-label"
-        class={styles.content}
-      >
+      <div class={styles.tiles}>
+        <PodcastTile />
         {JINGLE_SLOTS.map((slot) => (
-          <JingleRow key={slot} slot={slot} video={video} />
+          <JingleTile key={slot} slot={slot} video={video} />
         ))}
       </div>
       {video ? (
@@ -420,48 +336,190 @@ function Jingles({ video }: { video: boolean }) {
           {t("app.editor.jingleVideoNote")}
         </p>
       ) : null}
+
+      <div class={styles.field}>
+        <span class={styles.label}>{t("app.editor.exWhere")}</span>
+        <RadioCards
+          testId="editor-dest"
+          value={picked ? "pick" : "same"}
+          options={destinations}
+          columns={1}
+          onChange={(next) => {
+            if (next === "same") exportFolder.value = null;
+            else void pickExportFolder();
+          }}
+        />
+      </div>
+
+      <Content />
+
+      <div class={styles.foot}>
+        <span data-testid="editor-export-preview" class={styles.preview}>
+          {[name, mb === null ? "" : tf("app.editor.about", { mb }), folderName]
+            .filter(Boolean)
+            .join(DOT)}
+        </span>
+        <button
+          type="button"
+          class={styles.save}
+          data-testid="editor-export-go"
+          onClick={() => void runExport(kept, bytes)}
+        >
+          <span>{t("app.editor.saveBtn")}</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-function JingleRow({ slot, video }: { slot: JingleSlot; video: boolean }) {
+/**
+ * Formatkortene: MP3 «Podkast», WAV «Arkiv» og — bare når kilden har bilde —
+ * MP4 «Video». MP4-kortet ER «ta med video»: valgt ⇒ containeren er mp4 og
+ * jinglene er dempet (motoren legger dem rundt lydsporet, ikke bildet).
+ */
+function FormatCards() {
+  const withVideo = sourceHasVideo();
+  const selected: CardId | null = isVideoExport()
+    ? "mp4"
+    : (FORMAT_CARDS as readonly string[]).includes(exportFormat.value)
+      ? (exportFormat.value as CardId)
+      : null;
+  const cards: CardId[] = withVideo
+    ? [...FORMAT_CARDS, "mp4"]
+    : [...FORMAT_CARDS];
+
+  function pick(id: CardId): void {
+    if (id === "mp4") {
+      includeVideo.value = true;
+      return;
+    }
+    includeVideo.value = false;
+    exportFormat.value = id as ExportFormat;
+  }
+
+  return (
+    <div class={styles.field}>
+      <span id="export-format-label" class={styles.label}>
+        {t("app.editor.exFormat")}
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby="export-format-label"
+        data-testid="editor-format"
+        data-count={cards.length}
+        class={styles.formats}
+      >
+        {cards.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={selected === id}
+            data-testid={`editor-format-row-${id}`}
+            data-selected={selected === id ? "true" : undefined}
+            title={tDyn("app.editor.fmtDesc", id)}
+            class={`${styles.formatCard} ${selected === id ? styles.on : ""}`}
+            onClick={() => pick(id)}
+          >
+            {/* Formatnavnene er PRODUKTNAVN — «MP3» heter MP3 på begge språk. */}
+            <b class={styles.formatName}>{id.toUpperCase()}</b>
+            <span class={styles.formatTag}>
+              {tDyn("app.editor.fmtTag", id)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Podkast-flisen: samme valg som Lyd-steget (`podcastAudio`). */
+function PodcastTile() {
+  const on = podcastAudio.value;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={t("app.editor.podcastAudio")}
+      title={t("app.editor.podcastAudioDesc")}
+      data-testid="export-podcast-toggle"
+      class={`${styles.tile} ${on ? styles.on : ""}`}
+      onClick={() => setPodcastAudio(!on)}
+    >
+      <Icon name="wand" size={26} />
+      <span class={styles.tileWord}>{t("app.editor.podcastTile")}</span>
+      <span class={styles.tileValue}>{t("app.editor.podcastLufs")}</span>
+    </button>
+  );
+}
+
+/**
+ * Intro eller outro.
+ *
+ * Uten fil: «+ Velg fil», og trykk åpner velgeren (Rust åpner den, og lagrer
+ * valget i innstillingene — siden sender ingenting og får innstillingene
+ * tilbake). Med fil: flisen viser filnavnet og trykk slår den av og på, og en
+ * liten rund mappeknapp i hjørnet bytter fil. Med video er flisen dempet og
+ * forklaringen står under: motoren legger jinglene rundt lydsporet.
+ */
+function JingleTile({ slot, video }: { slot: JingleSlot; video: boolean }) {
   const name = jingleName(settings.value[jingleField(slot)]);
+  const onSignal = jingleOnSignal(slot);
+  const on = name !== null && onSignal.value && !video;
   const which =
     slot === "intro"
       ? t("app.editor.jingleIntro")
       : t("app.editor.jingleOutro");
   const reason = video ? t("app.editor.jingleVideoNote") : undefined;
+  void introOn.value;
+  void outroOn.value;
+
   return (
-    <div class={styles.autoRow} data-testid={`export-jingle-${slot}`}>
-      <div class={styles.autoGrow}>
-        <b class={styles.autoTitle}>{which}</b>
-        <div
-          class={styles.hint}
+    <div class={styles.tileWrap} data-testid={`export-jingle-${slot}`}>
+      <button
+        type="button"
+        aria-disabled={video ? "true" : undefined}
+        aria-pressed={name === null ? undefined : on}
+        aria-label={
+          name === null
+            ? tf("app.editor.jinglePickLabel", { which })
+            : `${which}: ${name}`
+        }
+        title={reason}
+        data-testid={`export-jingle-${slot}-tile`}
+        data-on={on ? "true" : "false"}
+        class={`${styles.tile} ${on ? styles.on : ""}`}
+        onClick={() => {
+          if (video) return;
+          if (name === null) void pickJingle(slot);
+          else onSignal.value = !onSignal.value;
+        }}
+      >
+        <Icon name="music" size={26} />
+        <span class={styles.tileWord}>{which}</span>
+        <span
+          class={styles.tileValue}
           data-testid={`export-jingle-${slot}-name`}
           data-chosen={name ? "true" : "false"}
         >
-          {name ?? t("app.editor.jingleNone")}
-        </div>
-      </div>
-      <Button
-        variant="secondary"
-        testId={`export-jingle-${slot}-pick`}
-        disabled={video}
-        disabledReason={reason}
-        ariaLabel={tf("app.editor.jinglePickLabel", { which })}
-        onClick={() => void pickJingle(slot)}
-      >
-        {t("app.editor.jinglePick")}
-      </Button>
-      {name ? (
-        <Button
-          variant="ghost"
-          testId={`export-jingle-${slot}-remove`}
-          ariaLabel={tf("app.editor.jingleRemoveLabel", { which })}
-          onClick={() => void clearJingle(slot)}
+          {name ?? t("app.editor.jingleChoose")}
+        </span>
+      </button>
+      {name !== null ? (
+        <button
+          type="button"
+          class={styles.swap}
+          aria-disabled={video ? "true" : undefined}
+          aria-label={tf("app.editor.jingleSwapLabel", { which })}
+          title={reason ?? t("app.editor.jingleSwap")}
+          data-testid={`export-jingle-${slot}-pick`}
+          onClick={() => {
+            if (!video) void pickJingle(slot);
+          }}
         >
-          {t("app.editor.jingleRemove")}
-        </Button>
+          <Icon name="folder" size={16} strokeWidth={2} />
+        </button>
       ) : null}
     </div>
   );
@@ -646,12 +704,14 @@ function ReceiptCard({
   meta: string;
 }) {
   return (
-    <Card
-      tone="good"
-      testId="editor-exported"
-      title={t("app.editor.exported")}
-      description={meta}
-    >
+    <Card tone="good" testId="editor-exported" description={meta}>
+      {/* «Lagret» med en hake som spretter inn (`pop`). */}
+      <div class={styles.saved} data-testid="editor-saved">
+        <span class={styles.savedCheck}>
+          <Icon name="check" size={22} strokeWidth={2.4} />
+        </span>
+        <b>{t("app.editor.saved")}</b>
+      </div>
       <div data-testid="editor-exported-file" class={styles.value}>
         {name}
       </div>

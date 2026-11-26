@@ -206,7 +206,7 @@ function Workspace() {
         {step === "cut" ? <CutStep /> : <SoundStep />}
         <NextStep step={step} />
       </div>
-      {sheet ? <ExportSheet /> : null}
+      <ExportSheet open={sheet} />
     </>
   );
 }

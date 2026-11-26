@@ -443,29 +443,19 @@
       "exWhere": "Hvor",
       "fmtDesc": {
         "mp3": "Liten fil. Passer for nett og deling.",
-        "flac": "Samme kvalitet som opptaket, mindre fil.",
-        "wav": "Ukomprimert. Størst fil."
+        "wav": "Ukomprimert. Størst fil.",
+        "mp4": "Video med lyd. Passer for nett og deling."
       },
       "sameFolder": "Samme mappe som opptaket",
       "pickFolder": "Velg mappe …",
       "pickFolderDesc": "Minnepinne, Dropbox-mappe, hvor som helst.",
-      "includeVideo": "Ta med video (MP4)",
-      "includeVideoDesc": "Opptaket har et videospor. Uten dette blir eksporten bare lyd.",
-      "videoLocksFormat": "Formatet er MP4 så lenge videoen er med.",
-      "jingles": "Intro og outro",
-      "jinglesDesc": "Valgfri lyd før og etter opptaket, for eksempel en kort melodi. Med «Podkastklar lyd» på får den samme lydstyrke som talen.",
       "jingleIntro": "Intro",
       "jingleOutro": "Outro",
-      "jingleNone": "Ingen",
-      "jinglePick": "Velg lydfil …",
-      "jingleRemove": "Fjern",
       "jinglePickLabel": "Velg lydfil for {which}",
-      "jingleRemoveLabel": "Fjern {which}",
-      "jingleVideoNote": "Intro og outro følger ikke med når videoen er med. Slå av «Ta med video (MP4)» for å bruke dem.",
+      "jingleVideoNote": "Intro og outro følger ikke med når videoen er med. Velg MP3 eller WAV for å bruke dem.",
       "about": "ca. {mb} MB",
       "level": "Lydstyrke: passe for nett",
       "levelCapped": "Lydstyrke: litt lavere enn ønsket (sterke topper i lyden)",
-      "exported": "Eksportert",
       "exportAgain": "Eksporter i annet format",
       "toLibrary": "Opptak",
       "exportFailed": "Eksporten stoppet. Prøv igjen.",
@@ -488,7 +478,19 @@
       "silenceNone": "Fant ingen lange stillheter.",
       "markIn": "Inn",
       "markOut": "Ut",
-      "videoLabel": "Bildet fra opptaket"
+      "videoLabel": "Bildet fra opptaket",
+      "fmtTag": {
+        "mp3": "Podkast",
+        "wav": "Arkiv",
+        "mp4": "Video"
+      },
+      "podcastTile": "Podkast",
+      "podcastLufs": "−16 LUFS",
+      "jingleChoose": "+ Velg fil",
+      "jingleSwap": "Velg en annen fil",
+      "jingleSwapLabel": "Velg en annen fil for {which}",
+      "saveBtn": "Lagre",
+      "saved": "Lagret"
     },
     "export": {
       "content": "Innhold",

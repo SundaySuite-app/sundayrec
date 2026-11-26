@@ -8,11 +8,12 @@
  * (`useIntro` / `useOutro`) — Rust leser klippet fra de lagrede innstillingene
  * og sjekker det på nytt idet eksporten starter.
  *
- * ## Hva en rad betyr
+ * ## Hva en flis betyr (E7)
  *
- * Et valgt klipp ER en «på»-bryter: finnes det, følger det med. «Fjern» er
- * veien til «uten». Det er ingen egen av/på ved siden av, for den kunne stått
- * på «av» med en fil valgt, og da måtte raden forklare en tredje tilstand.
+ * Uten fil er flisen «+ Velg fil». Med fil er den en av/på-bryter: trykk slår
+ * klippet av og på UTEN å glemme fila (`on`, bare for denne økta og aldri
+ * lagret), og en liten mappeknapp i hjørnet bytter fil. Et valgt klipp som er
+ * slått av sender ingen bryter — Rust får `useIntro: false` og lar det ligge.
  *
  * ## Video
  *
@@ -44,11 +45,12 @@ export interface JingleSettings {
 export function jingleFlags(
   video: boolean,
   s: JingleSettings,
+  on: Readonly<Record<JingleSlot, boolean>> = { intro: true, outro: true },
 ): { useIntro: boolean; useOutro: boolean } {
   if (video) return { useIntro: false, useOutro: false };
   return {
-    useIntro: jingleName(s.editorIntroPath) !== null,
-    useOutro: jingleName(s.editorOutroPath) !== null,
+    useIntro: on.intro && jingleName(s.editorIntroPath) !== null,
+    useOutro: on.outro && jingleName(s.editorOutroPath) !== null,
   };
 }
 

@@ -9,32 +9,52 @@
  * navn ville bundet to flater som skal kunne bevege seg fra hverandre.
  */
 
-/* Over siden, under opptaksoverlegget og bekreftelsesdialogene. */
-.backdrop {
+/*
+ * Sidearket (E7): 440 px fra høyre kant, under topplinja, med slør bak. Samme
+ * kontrakt som lydarket på Ta opp (`SourceSheet.module.css`): glid med
+ * `--ease-out`, trykk på sløret lukker. Fast posisjon og ikke absolutt:
+ * editoren er ikke en posisjonert forelder, og arket skal ligge over hele
+ * flaten uansett hvor langt siden er rullet.
+ */
+.scrim {
   position: fixed;
-  inset: 0;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: var(--z-header);
-  background: var(--scrim);
-  display: grid;
-  place-items: center;
-  padding: var(--sp-5);
+  padding: 0;
+  border: 0;
+  background: var(--scrim-sheet);
+  cursor: default;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.scrimOn {
+  opacity: 1;
 }
 
 .sheet {
-  /* ActionBar er sticky mot `<main>`s bunnpadding; arket har ingen. */
-  --pad-page-b: 0px;
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  z-index: calc(var(--z-header) + 1);
   display: flex;
   flex-direction: column;
-  gap: var(--gap-page);
-  width: min(var(--measure), 100%);
-  max-height: 100%;
-  overflow-y: auto;
+  width: 440px;
+  max-width: 100%;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  padding: var(--sp-6) var(--sp-7);
-  box-shadow: var(--shadow-dialog);
+  background: var(--surface);
+  border-left: 1px solid var(--line-2);
+  box-shadow: -24px 0 60px var(--scrim-sheet);
+  transform: translateX(110%);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.sheetOpen {
+  transform: none;
 }
 
 .sheet:focus {
@@ -45,14 +65,61 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-3);
+  flex: none;
+  height: 64px;
+  padding: 0 var(--sp-4) 0 var(--sp-6);
 }
 
 .sheetTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--gold);
+}
+
+.sheetH {
   margin: 0;
-  font-size: var(--fs-xl);
-  font-weight: 700;
-  line-height: 1.2;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.sheetClose {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.sheetClose:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.sheetClose:focus-visible,
+.formatCard:focus-visible,
+.tile:focus-visible,
+.swap:focus-visible,
+.save:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Innholdet ruller; «Lagre» står fast nederst (se `.foot`). */
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-6) 0;
 }
 
 /* ── Topplinja ─────────────────────────────────────────────────────────── */
@@ -72,7 +139,7 @@
 .step {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-page);
+  gap: var(--sp-4);
   flex: 1 0 auto;
 }
 
@@ -139,4 +206,169 @@
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--ink-2);
+}
+
+/* ── Formatkort, fliser og «Lagre» (E7) ────────────────────────────────── */
+
+.formats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+/* To kort (lydopptak): de deler bredden i to, ikke tre. */
+.formats[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.formatCard,
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.formatCard {
+  height: 84px;
+}
+
+.tile {
+  width: 100%;
+  height: 104px;
+}
+
+.tile[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.formatCard:hover,
+.tile:hover {
+  border-color: var(--line-2);
+}
+
+/* Valgt / på: gull ramme og gullmyk bunn. */
+.on {
+  border-color: var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.formatName {
+  font-size: var(--fs-val);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.formatTag {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.tileWrap {
+  position: relative;
+}
+
+.tileWord {
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.tileValue {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Den lille runde mappeknappen i hjørnet av en intro/outro-flis. */
+.swap {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--gold);
+  cursor: pointer;
+}
+
+.swap[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Lagre-feltet: forutsigelsen og den store gullknappen, fast nederst. */
+.foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: auto;
+  padding: var(--sp-4) 0 var(--sp-6);
+  background: var(--surface);
+}
+
+.preview {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  height: 56px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  font: inherit;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* «Lagret»: haken spretter inn. */
+.saved {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--good);
+  font-size: var(--fs-lg);
+}
+
+.savedCheck {
+  display: grid;
+  place-items: center;
+  animation: pop var(--dur-slow) var(--ease-out);
 }
