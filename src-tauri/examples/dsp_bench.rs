@@ -1,4 +1,4 @@
-//! B0c — repeats the DSP measurements in `docs/LYDMOTOR.md` §Vedlegg on the
+//! B0c — repeats the DSP measurements in `docs/archive/LYDMOTOR.md` §Vedlegg on the
 //! machine that runs it, against the bundled ffmpeg sidecar.
 //!
 //! ```text

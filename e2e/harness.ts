@@ -35,14 +35,12 @@ export interface BootOptions {
   /** Seeded settings, merged over the shim's defaults by `loadSettings`. */
   settings?: Record<string, unknown>;
   /**
-   * `?goto=<page>[:<tab>]`, in the OLD shell's vocabulary — `home`, `schedule`,
-   * `settings`, `search` (that is the library; there never was a `history`
-   * page), `editor`, and the `settings:<tab>` forms. Those ids are still the
-   * ones written here because they are still the ones out in the world (the
-   * tray, deep links, this suite); `PAGE_ALIASES` / `TAB_ALIASES` in
-   * `app/router/router.ts` translate every one of them to a destination in the
-   * new three-place navigation, and `app/router/router.test.ts` has a row per
-   * form that appears in this repo.
+   * `?goto=<page>[:<anchor-or-tab>]` in the F5 vocabulary — `record`,
+   * `recordings` (`recordings:trash` for the trash tab), `plan`, `settings`
+   * (`settings:sound`, `settings:camera`, … scroll to that section). The old
+   * aliases (`home`, `search`, `editor`, `settings:audio`, …) are gone; an
+   * unknown page lands on `record` with a console warning
+   * (`app/router/router.ts`, `app/router/router.test.ts`).
    *
    * ⚠️ `?goto=` also forces `onboardingDone` true so a deep-linked boot skips
    * first-run. Any spec that wants the first-run sequence must boot WITHOUT it
@@ -230,20 +228,6 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
         ((w.__settingsSaves ??= []) as unknown[]).push(s);
         return merged;
       };
-    if (!("settings_import" in map))
-      map.settings_import = (args?: Record<string, unknown>) => {
-        // Emulates the backend's merge-over-defaults (`Settings::from_json_merged`).
-        const merged = {
-          ...p.defaults,
-          ...(JSON.parse((args?.json as string) ?? "{}") as Record<
-            string,
-            unknown
-          >),
-        };
-        db.write(merged);
-        ((w.__settingsImports ??= []) as unknown[]).push(args?.json);
-        return merged;
-      };
 
     // Fixtures ARE re-installed every navigation: they stand in for a backend,
     // and a backend does not disappear because the page reloaded.
@@ -309,10 +293,6 @@ export const BOOT_FIXTURES: Fixtures = {
   recordings_list: [],
   trash_list: [],
   list_audio_devices: [],
-  // The one-time «E-postvarsler er fjernet» banner: not pending, so it stays
-  // out of every spec that is not about it.
-  notice_email_removed_pending: false,
-  notice_email_removed_dismiss: VOID,
   // Varsler er slått på i OS-et: kortet «Hvem får beskjed?» er grønt i
   // hver spec som ikke handler om det motsatte.
   notification_permission: "granted",
@@ -330,13 +310,6 @@ export const BOOT_FIXTURES: Fixtures = {
     needsPrompt: false,
     active: false,
   },
-  telemetry_queue_status: {
-    pending: 0,
-    failed: 0,
-    oldestAt: null,
-    lastError: null,
-  },
-  telemetry_count: VOID,
 };
 
 /**
@@ -372,15 +345,6 @@ export async function storedSettings(
         unknown
       >,
     SETTINGS_DB_KEY,
-  );
-}
-
-/** Every raw JSON string `settings_import` has received (the migration path). */
-export async function settingsImportPayloads(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () =>
-      (window as unknown as { __settingsImports?: string[] })
-        .__settingsImports ?? [],
   );
 }
 

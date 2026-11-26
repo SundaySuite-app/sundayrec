@@ -1,6 +1,6 @@
 //! The bounded frame queue between a camera callback and its consumer (C1c).
 //!
-//! The one rule of a camera callback (docs/VIDEOMOTOR.md §C1): **it puts the
+//! The one rule of a camera callback (docs/archive/VIDEOMOTOR.md §C1): **it puts the
 //! frame in a bounded queue and returns.** It never waits for the consumer,
 //! never allocates a growing buffer, never does I/O. A slow consumer costs the
 //! OLDEST frames — they are dropped, and counted — not the camera's thread, and

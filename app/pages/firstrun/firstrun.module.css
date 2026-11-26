@@ -1,0 +1,68 @@
+/* Første gang — linjalen og skjermen. Foten er `ActionBar`. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.stepLabel {
+  font-size: var(--label-fs);
+  font-weight: var(--label-fw);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Linjalen. En `<ol>` fordi det ER en ordnet liste — og prikkene er
+   dekorative, så tilstanden bor i attributtet og ikke i en tekst ingen ser. */
+.dots {
+  display: flex;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--line-2);
+}
+
+.dot[data-state="active"] {
+  background: var(--gold);
+  /* Bredere, ikke bare lysere: den som ikke skiller gull fra grått skal
+     fortsatt se hvor hun står. */
+  width: 22px;
+}
+
+.dot[data-state="done"] {
+  background: var(--good);
+}
+
+/* «Neste åpnes når vi hører lyd» — hintet i handlingslinja. */
+.gate {
+  margin: 0;
+}
+
+/* Steg 3: lede, bryterkort og ukevisning i en kolonne. */
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}

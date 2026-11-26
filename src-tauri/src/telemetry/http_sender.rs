@@ -398,8 +398,8 @@ mod live_endpoint {
     #![allow(clippy::await_holding_lock)]
 
     use super::*;
-    use sundayrec_core::diagnostics::DiagnosticSeverity;
     use sundayrec_core::selftest::SelfTestVerdict;
+    use sundayrec_core::telemetry::DiagnosticSeverity;
     use sundayrec_core::telemetry::{
         CounterName, CounterReport, CrashKind, CrashReport, FindingReport, QualityReason,
         QualityReport, TelemetryPayload, WakeFailureReport,

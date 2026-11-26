@@ -18,7 +18,7 @@ import {
 //
 // ⚠️ D2 flyttet FLATEN, ikke påstandene: de fem kortene bor i kontrollrommet på
 // OPPTAK nå, så `goto` er «home» og selektorene er kortenes. Hvordan selve
-// utfoldingen oppfører seg står i `e2e/control-room.spec.ts`; her er det
+// utfoldingen oppfører seg står i `e2e/settings-plan.spec.ts`; her er det
 // fortsatt reglene bak svarene.
 
 /** Én lydenhet, i den formen `list_audio_devices` svarer med. */
@@ -45,7 +45,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, list_audio_devices: [device()] },
       settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("record-no-source")).toBeVisible();
@@ -71,7 +71,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceId: "x32",
         deviceName: "Behringer X32",
       },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-source-missing")).toHaveAttribute(
       "data-tone",
@@ -93,7 +93,7 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceName: "Behringer X32",
         deviceChannels: { x32: { channelL: 14, channelR: 15 } },
       },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-source")).toBeVisible();
     // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
@@ -114,15 +114,11 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "mp3", bitrate: "320" },
-      goto: "home",
+      goto: "settings:folder",
     });
-    await expect(page.getByTestId("control-quality-summary")).toHaveText(
-      "Egendefinert · MP3 320",
-    );
 
-    // Og kortet står øverst på skjermen som eier valget — valgt, men ikke
+    // Kortet står øverst på skjermen som eier valget — valgt, men ikke
     // valgBART: det beskriver det lagrede, det er ikke et valg noen kan ta.
-    await page.getByTestId("control-quality-expand").click();
     const custom = page.getByTestId("quality-choices-row-custom");
     await expect(custom).toHaveAttribute("data-selected", "true");
     await expect(custom.locator("input")).toBeDisabled();
@@ -136,12 +132,10 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "flac", bitrate: "128" },
-      // Dyplenken folder ut mappe-kortet; kvaliteten er et annet kort, og de
-      // to kan stå åpne samtidig.
-      goto: "settings:files",
+      // Mappe og format står i samme seksjon på Innstillinger.
+      goto: "settings:folder",
     });
     await expect(page.getByTestId("setup-folder")).toBeVisible();
-    await page.getByTestId("control-quality-expand").click();
 
     await page.getByTestId("quality-choices-row-mp3").click();
     await expect(page.getByTestId("quality-receipt")).toHaveText("Lagret ✓");
@@ -155,49 +149,54 @@ test.describe("kvalitet", () => {
   });
 });
 
-test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
-  test("et lagret «de» starter appen på TYSK, og tysk er velgbart", async ({
-    page,
-  }) => {
-    // Migrert fra legacy: `settings.language` kan stå på hva som helst av de
-    // sju. Gjennom redesignet var bare norsk og engelsk aktive, og da mappet
-    // `resolveStartupLocale` «de» til engelsk mens basen beholdt «de» — som ga
-    // `<Select>` en `value` INGEN `<option>` hadde, og en `<select>` uten treff
-    // blant sine egne options viser stille den FØRSTE optionen.
-    //
-    // F2-S6 fjernet grunnen til mappingen: alle sju er aktive, så «de» brukes
-    // som det står. Påstanden er flyttet, ikke svekket — det som skal bevises
-    // er fortsatt at det lagrede valget er DET boksen viser.
-    await boot(page, {
-      fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, language: "de" },
-      goto: "settings",
+test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => {
+  test.describe("på et engelsk system", () => {
+    test.use({ locale: "en-US" });
+
+    test("et lagret «de» faller stille på systemregelen: engelsk på et engelsk system", async ({
+      page,
+    }) => {
+      // Migrert fra før F4: `settings.language` kan stå på et språk som ikke finnes lenger. Appen
+      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og boksen
+      // viser språket som GJELDER — ikke den lagrede strengen, som en `<select>` uten treff ville
+      // fortiet ved å vise den første optionen.
+      await boot(page, {
+        fixtures: BOOT_FIXTURES,
+        settings: { ...SETTLED_SETTINGS, language: "de" },
+        goto: "settings",
+      });
+
+      await expect(page.getByTestId("setup-language")).toBeVisible();
+      await expect(page.getByTestId("setup-language-lede")).toHaveText(
+        "The language the app uses.",
+      );
+      const select = page.getByTestId("language-control-input");
+      await expect(select).toHaveValue("en");
+      await expect(select.locator("option")).toHaveCount(2);
+      await expect(select.locator("option:disabled")).toHaveCount(0);
     });
-
-    // Appen SELV står på tysk nå — ikke på nærmeste nabospråk.
-    await expect(page.getByTestId("setup-church")).toBeVisible();
-    await expect(page.getByTestId("setup-church-lede")).toHaveText(
-      "Der Name und die Sprache, die die App verwendet.",
-    );
-
-    const select = page.getByTestId("church-language-control-input");
-    await expect(select).toHaveValue("de");
-
-    // Raden bærer det EKTE navnet — på tysk, siden det er appens språk — og er
-    // velgbar som alle de andre.
-    const german = select.locator('option[value="de"]');
-    await expect(german).toHaveText("Deutsch");
-    await expect(german).toBeEnabled();
-    await expect(select.locator("option")).toHaveCount(7);
-    for (const code of ["no", "en", "sv", "da", "fr", "pl"]) {
-      await expect(select.locator(`option[value="${code}"]`)).toBeEnabled();
-    }
-
-    // Og ingen linje under boksen unnskylder noe: ingenting er pauset.
-    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
   });
 
-  test("valgboksen tilbyr alle sju katalogene, ingen deaktivert", async ({
+  test.describe("på et norsk system", () => {
+    test.use({ locale: "nb-NO" });
+
+    test("et lagret «sv» faller stille på norsk", async ({ page }) => {
+      await boot(page, {
+        fixtures: BOOT_FIXTURES,
+        settings: { ...SETTLED_SETTINGS, language: "sv" },
+        goto: "settings",
+      });
+
+      await expect(page.getByTestId("setup-language-lede")).toHaveText(
+        "Språket appen bruker.",
+      );
+      await expect(page.getByTestId("language-control-input")).toHaveValue(
+        "no",
+      );
+    });
+  });
+
+  test("valgboksen tilbyr norsk og engelsk, ingen deaktivert", async ({
     page,
   }) => {
     await boot(page, {
@@ -206,33 +205,31 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
       goto: "settings",
     });
 
-    const select = page.getByTestId("church-language-control-input");
+    const select = page.getByTestId("language-control-input");
     await expect(select).toHaveValue("no");
-    await expect(select.locator("option")).toHaveCount(7);
+    await expect(select.locator("option")).toHaveCount(2);
     await expect(select.locator("option:disabled")).toHaveCount(0);
-    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
   });
 
-  test("et språkbytte til polsk maler skjermen om, og lagres", async ({
+  test("et språkbytte til engelsk maler skjermen om, og lagres", async ({
     page,
   }) => {
-    // Den nye halvdelen av S6: et av de fem språkene som var pauset er nå et
-    // valg en frivillig faktisk kan ta. Byttet skjer i samme frame (`setLocale`
-    // laster katalogen FØR signalet flippes), og verdien skrives.
+    // Byttet skjer i samme frame (`setLocale` laster katalogen FØR signalet flippes), og verdien
+    // skrives.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, language: "no" },
       goto: "settings",
     });
 
-    await page.getByTestId("church-language-control-input").selectOption("pl");
+    await page.getByTestId("language-control-input").selectOption("en");
 
-    await expect(page.getByTestId("setup-church-lede")).toHaveText(
-      "Nazwa i język, których używa aplikacja.",
+    await expect(page.getByTestId("setup-language-lede")).toHaveText(
+      "The language the app uses.",
     );
     await expect
       .poll(async () => (await storedSettings(page)).language)
-      .toBe("pl");
+      .toBe("en");
   });
 });
 
@@ -260,7 +257,7 @@ test.describe("en innstilling som ikke kunne lagres", () => {
         videoEnabled: true,
         keepSeparateAudio: true,
       },
-      goto: "home",
+      goto: "settings",
     });
 
     const toggle = page.getByTestId("camera-keep-audio-control-input");
@@ -289,11 +286,11 @@ test.describe("«Ta opp automatisk»", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, slots: [] },
-      goto: "home",
+      goto: "plan",
     });
 
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Sett en tid én gang. Maskinen vekkes og starter selv.",
+      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
     );
     await page.getByTestId("setup-auto-toggle").click();
 
@@ -328,7 +325,7 @@ test.describe("«Ta opp automatisk»", () => {
           { days: [2], start: "19:00", stop: "20:30", max: null },
         ],
       },
-      goto: "home",
+      goto: "plan",
     });
 
     await page.getByTestId("setup-auto-toggle").click();

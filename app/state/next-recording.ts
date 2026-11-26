@@ -38,7 +38,7 @@ import {
   type WakeRefreshReason,
 } from "@lib/status/next-recording-core";
 
-import { anythingScheduled } from "../pages/setup/schedule-core";
+import { anythingScheduled } from "../pages/plan/schedule-core";
 import { isRecording } from "./recording";
 import { settings } from "./settings";
 
@@ -79,8 +79,7 @@ let wakeArmed: boolean | null = null;
  */
 function derive(): void {
   const s = settings.value;
-  const specials = s.specialRecordings ?? [];
-  const next = buildNext(lastNextIso, specials);
+  const next = buildNext(lastNextIso);
   nextRecording.value = {
     ...nextRecording.peek(),
     next,
@@ -106,7 +105,7 @@ function derive(): void {
  * `shouldRefreshWake` i `@lib/status/next-recording-core` for hvor sjekken bor
  * nå, og `refreshWakeArmed` under for de fire stedene som faktisk kaller den.
  */
-export async function refreshNextRecording(): Promise<void> {
+async function refreshNextRecording(): Promise<void> {
   try {
     const next = await window.api.getNextRecording();
     lastNextIso = next?.date ?? null;

@@ -22,7 +22,7 @@
 //! read (docs/AVHENGIGHETER.md §Videoopptak). Cap builds on its own fork of
 //! `cidre`; this crate already speaks objc2, so the code is rewritten over
 //! `objc2-av-foundation` / `objc2-core-media` / `objc2-core-video` rather than
-//! taken in (docs/VIDEOMOTOR.md §Kildene).
+//! taken in (docs/archive/VIDEOMOTOR.md §Kildene).
 //!
 //! **Cap's seven production fixes** — every one is in here, marked `FIX n` at
 //! the place it lives:

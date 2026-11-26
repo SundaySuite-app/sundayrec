@@ -1,4 +1,4 @@
-//! The playback engine on the real sound card — the runner that proves B5a (`docs/LYDMOTOR.md`
+//! The playback engine on the real sound card — the runner that proves B5a (`docs/archive/LYDMOTOR.md`
 //! fase 5; RIG-DAY «Avspillingsmotoren»).
 //!
 //! ```text
@@ -7,8 +7,7 @@
 //! ```
 //!
 //! * `--cut A-B` cuts source seconds A to B (repeatable). Every interior join is crossfaded.
-//! * `--profile <id>` runs a preset through the chain: a master preset (`speech-clear`, …) or a
-//!   vocal chain (`voice-podcast`, …). Default: none (the file as it is, so what you hear at a
+//! * `--profile <id>` runs the podcast preset (`speech-clear`) through the chain. Default: none (the file as it is, so what you hear at a
 //!   join or a seek is the engine, not a filter).
 //! * `--at T:<action>` at T seconds of wall time: `seek=P` (programme seconds), `src=S` (source
 //!   seconds), `pause`, `play`, (B5c) `cuts=A-B+C-D@AT` (new cuts while it plays, continuing from
@@ -33,9 +32,8 @@ use std::time::{Duration, Instant};
 
 use sundayrec_core::chain::Chain;
 use sundayrec_core::editor::{CutRegion, build_keeps, ffprobe_load_args, parse_probe_output};
-use sundayrec_core::mastering::master_presets;
+use sundayrec_core::mastering::podcast_preset;
 use sundayrec_core::playback::CutPlan;
-use sundayrec_core::processing::vocal_chain_presets;
 use sundayrec_lib::playback::source::FfmpegOpener;
 use sundayrec_lib::playback::{PlaybackEvent, Player, Programme};
 
@@ -106,11 +104,9 @@ fn parse_action(s: &str) -> Result<(f64, Action), String> {
 }
 
 fn chain_for(id: &str) -> Result<Chain, String> {
-    if let Some(p) = master_presets().into_iter().find(|p| p.id == id) {
+    let p = podcast_preset();
+    if id == p.id {
         return Chain::from_master_preset(&p).map_err(|e| e.to_string());
-    }
-    if let Some(v) = vocal_chain_presets().into_iter().find(|v| v.id == id) {
-        return Ok(Chain::from_vocal_chain(&v.chain));
     }
     Err(format!("unknown profile {id}"))
 }

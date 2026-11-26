@@ -40,7 +40,6 @@ import { Card } from "./Card/Card";
 import { Chip } from "./Chip/Chip";
 import { ConsentCard } from "./ConsentCard/ConsentCard";
 import { ControlCard } from "./ControlCard/ControlCard";
-import { DecisionCard } from "./DecisionCard/DecisionCard";
 import { DialogHost } from "./DialogHost/DialogHost";
 import { EmptyState } from "./EmptyState/EmptyState";
 import { Gate } from "./Gate/Gate";
@@ -90,34 +89,6 @@ const LIBRARY: Array<{
         />,
       ),
     derived: ["probe-title", "probe-description", "probe-yes", "probe-no"],
-  },
-  {
-    name: "DecisionCard",
-    markup: () =>
-      render(
-        <DecisionCard
-          testId="probe"
-          number={1}
-          question="Q"
-          answer="A"
-          detail="D"
-          status="todo"
-          actionLabel="Sett opp"
-          collapseLabel="Lukk"
-          expanded
-          onExpand={() => {}}
-        >
-          x
-        </DecisionCard>,
-      ),
-    derived: [
-      "probe-number",
-      "probe-question",
-      "probe-answer",
-      "probe-detail",
-      "probe-action",
-      "probe-body",
-    ],
   },
   {
     name: "ControlCard",
@@ -312,7 +283,7 @@ const LIBRARY: Array<{
   {
     name: "BoundTextField",
     markup: () =>
-      render(<BoundTextField testId="probe" setting="churchName" label="L" />),
+      render(<BoundTextField testId="probe" setting="deviceName" label="L" />),
     derived: ["probe-control-input"],
   },
   {
@@ -349,7 +320,7 @@ describe("komponentbiblioteket", () => {
   it("dekker hele biblioteket — en komponent uten rad ville sluppet unna", () => {
     // Et tall å måtte oppdatere BEVISST. Legger noen til en komponent uten en
     // rad her, feiler denne i stedet for at dekningen stille blir mindre.
-    expect(LIBRARY.length).toBe(26);
+    expect(LIBRARY.length).toBe(25);
   });
 });
 
@@ -465,74 +436,6 @@ describe("en sperret knapp bærer grunnen sin", () => {
   });
 });
 
-// F2-T4: sjekklistas rader folder ut på stedet, akkurat som kontrollrommets
-// kort. Semantikken er ikke pynt — uten den er «kortet folder seg ut» en knapp
-// som «gjør noe» og en ny landmasse som dukket opp uten forklaring.
-describe("en sjekklistrad som folder ut", () => {
-  const row = (expanded: boolean) =>
-    render(
-      <DecisionCard
-        testId="r"
-        number={1}
-        question="Hvilken lyd?"
-        answer="Ikke satt opp"
-        status="todo"
-        actionLabel="Sett opp"
-        collapseLabel="Lukk"
-        expanded={expanded}
-        onExpand={() => {}}
-      >
-        {"skjermen"}
-      </DecisionCard>,
-    );
-
-  it("sier hva knappen styrer, og bytter etikett når den står åpen", () => {
-    const open = row(true);
-    expect(open).toContain('aria-expanded="true"');
-    expect(open).toContain('aria-controls="r-body"');
-    expect(open).toContain('id="r-body"');
-    expect(open).toContain("Lukk");
-  });
-
-  it("peker aldri på en kropp som ikke finnes", () => {
-    // Kollapset RIVES kroppen ut av treet (det er VU-regelen), og en
-    // `aria-controls` mot ingenting er en referanse en skjermleser ikke kan
-    // følge.
-    const shut = row(false);
-    expect(shut).toContain('aria-expanded="false"');
-    expect(shut).not.toContain("aria-controls");
-    expect(shut).not.toContain('id="r-body"');
-    expect(shut).toContain("Sett opp");
-  });
-
-  it("gir kroppen spørsmålets eget navn, ikke et nytt", () => {
-    // `aria-labelledby` mot raden som allerede står der: en etikett som ble
-    // skrevet en gang til er en etikett som kan si noe annet.
-    const open = row(true);
-    expect(open).toContain('aria-labelledby="r-question"');
-    expect(open).toContain('id="r-question"');
-    expect(open).toContain('tabindex="-1"');
-  });
-
-  it("er en vanlig navigerende rad uten `onExpand`", () => {
-    const plain = render(
-      <DecisionCard
-        testId="r"
-        number={1}
-        question="Q"
-        answer="A"
-        status="done"
-        actionLabel="Endre"
-        onAction={() => {}}
-      >
-        {"aldri rendret"}
-      </DecisionCard>,
-    );
-    expect(plain).not.toContain("aria-expanded");
-    expect(plain).not.toContain("aldri rendret");
-  });
-});
-
 describe("ToastHost", () => {
   // ⚠️ Denne het en gang «er ingenting når køen er tom». Det VAR den, og det
   // var feilen: en `aria-live`-region som opprettes i samme oppdatering som sin
@@ -576,9 +479,8 @@ describe("PageShell", () => {
     // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes. D3 flyttet
     // det fra skinnens rot til topplinjas; formen er den samme.
     expect(html).toContain("data-tauri-drag-region");
-    // Tre destinasjoner (D3: Opptak · Redigering · Eksportering) pluss
-    // tannhjulet, som teller som `nav-*` men ikke er en destinasjon.
-    for (const page of ["record", "edit", "export", "setup"]) {
+    // F5: fire sider i bunnlinja.
+    for (const page of ["record", "recordings", "plan", "settings"]) {
       expect(html).toContain(`data-testid="nav-${page}"`);
     }
     expect(html).toContain('data-testid="status-line"');

@@ -53,7 +53,7 @@
 //! `AppHandle` on the main thread), so this file is compiled and reasoned about,
 //! never clicked headless. The decision it routes to is unit-tested in
 //! `sundayrec_core::window`; the menu itself is on the rig list in
-//! `docs/APP-SHELL.md`.
+//! `docs/archive/APP-SHELL.md`.
 
 use tauri::menu::{
     AboutMetadata, HELP_SUBMENU_ID, Menu, MenuItem, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID,

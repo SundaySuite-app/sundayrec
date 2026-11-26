@@ -168,53 +168,12 @@ har satt opp. Aldri ukedager, kanalnavn eller navnet du har gitt et opptak.
 Selve tidspunktet opptaket ble avsluttet følger med, sammen med varigheten. Se
 «Om tidspunktene» for hva vi mener om det.
 
-### Korrigeringene du gjør i redigeringsverktøyet
-
-Det finnes to måter å rette appens gjetning på, og begge telles. Den ene er å
-**flytte på grensene** — appen fant riktig del av opptaket, men begynte eller
-sluttet litt feil. Den andre er å **velge en annen del av opptaket** — appen
-trodde noe annet var prekenen, for eksempel et leseinnslag eller en sang, og du
-pekte på den riktige blokka. De to rapporteres hver for seg, fordi de forteller
-oss to ulike ting om hva som gikk galt.
-
-For begge sendes det samme: **hvor ofte** det skjedde og **omtrent hvor mye**
-grensen flyttet seg — oppgitt som et grovt intervall, for eksempel
-«prekenstarten ble flyttet 30–60 sekunder tidligere».
-
-Intervallene er med vilje grove. Hensikten er å se mønstre på tvers av mange
-opptak — at forslaget for eksempel systematisk kommer litt for sent — ikke å
-kunne rekonstruere ett enkelt opptak.
-
-Det som **aldri** sendes: hva prekenen handlet om, hva som ble sagt, når den
-fant sted, hva du har kalt opptaket, eller tekst av noe slag.
-
-En korrigering er den ene tingen vi samler inn som **ikke er tidfestet i det
-hele tatt**. Den består av tre valg fra faste lister — hvilket punkt, hvilken
-retning, hvilket intervall — og et antall. Det er med vilje: en korrigering
-forteller oss noe om gjetningen vår, og trenger ikke å si når den ble gjort.
-
-Grunnen til at vi ber om dette: den automatiske prekengjenkjenningen skal bli
-bedre for alle som bruker den, og et menneske som retter opp en dårlig gjetning
-er det eneste signalet som forteller den hva som var galt.
-
 ### Funksjonsbruk
 
 Navngitte tellere for hvilke funksjoner som brukes, fra en fast, forhåndsdefinert
 liste — for eksempel «eksport til MP3» eller «opptak startet».
 
 Kun **antall** ganger. Aldri hva som ble eksportert eller tatt opp.
-
-### Resultatet av en diagnose du selv har kjørt
-
-Kjører du **Kjør diagnose** i appen, sendes hvilke funn den kom fram til — som
-en fast kode og et alvorlighetsnivå, for eksempel `SR-AUDIO-02` og «advarsel».
-
-Kun koden. Aldri forklaringen som hører til, for det er der detaljene ligger:
-hvilken enhet som manglet, hvilken mappe som var full, hvor mye plass som var
-igjen. Koden alene er nok til å telle hvor ofte hver situasjon oppstår, og det
-er det eneste spørsmålet en anonym statistikk kan svare ærlig på.
-
-En diagnose du kjører mens diagnostikken er slått av, legger ikke igjen noe.
 
 ### Planlagte opptak som ikke startet
 
@@ -341,8 +300,8 @@ ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
 
 **Så snart maskinen har nett:** SundayRec ber serveren slette alt som ligger der
 under den gamle ID-en. Alle enkeltrapporter fjernes — krasjrapporter,
-kvalitetsdata, diagnosefunn, planlagte opptak som ikke startet, korrigeringer,
-bruksmål, alt. Også den tekniske raden som teller hvor mange
+kvalitetsdata, planlagte opptak som ikke startet, bruksmål — og det eldre
+versjoner sendte, som diagnosefunn og korrigeringer. Alt. Også den tekniske raden som teller hvor mange
 rapporter ID-en har sendt, blir borte.
 
 Er maskinen offline når du trykker, sendes forespørselen neste gang den er på
@@ -387,11 +346,15 @@ aldri til et «ja» på veien.
 Omfanget denne erklæringen beskriver, er **versjon 2**.
 
 Omfanget kan også bli **mindre** uten at vi spør på nytt — et samtykke til mer
-dekker mindre. Det har skjedd én gang: fram til v0.15 kunne appen også
+dekker mindre. Det har skjedd flere ganger: fram til v0.15 kunne appen også
 rapportere hvilke typer automatiske forslag (tittel, sammendrag, kapittelmerker)
-du tok i bruk. Den funksjonen finnes ikke lenger i SundayRec, og feltet sendes
-ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen.
+du tok i bruk. Senere ble også to ting fjernet fra pakken: korrigeringene du
+gjorde i redigeringsverktøyet (som grove intervaller) og funnene fra
+diagnosesiden. De funksjonene finnes ikke lenger i SundayRec, og feltene sendes
+ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen:
+krasjrapporter, kvalitetsdata om opptakene, funksjonstellere og planlagte
+opptak som ikke startet.
 
 ---
 
-_Sist oppdatert: 2026-08-23._
+_Sist oppdatert: 2026-11-24._

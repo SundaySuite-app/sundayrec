@@ -3,7 +3,59 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt
+## v0.31.0 — rent bord
+
+SundayRec er skåret ned til det en frivillig bruker på en søndag: ta opp, rediger,
+eksporter og planlegg. Alt annet er borte, og det er gjort med vilje.
+
+- **Fire sider: Ta opp, Opptak, Plan og Innstillinger.** Ta opp har bare den store
+  knappen, kilden og nivået, kameraet og linja om neste planlagte opptak. Opptak er lista
+  over opptakene; et klikk åpner redigeringen på samme side (pila tilbake går til lista),
+  «Eksporter» åpner eksporten som et ark i redigeringen, og papirkurven er en fane. Plan
+  er ukevisningen (under). Lyd og kanaler, kamera, lagringsmappe, varsler, språk,
+  oppdatering, personvern og logg ligger samlet under Innstillinger. Eksportsiden og
+  «Sist redigert»-kortet er borte.
+- **Første gang er tre steg:** lydkort og kanaler (med målerlinje; «Neste» åpnes først
+  når SundayRec hører lyd, og «Fortsett uten lyd» er nødutgangen), lagringsmappe, og
+  første faste opptak i ukevisningen. Den første tiden du legger inn slår på «Ta opp
+  automatisk» og «Start automatisk med maskinen»; «Senere» hopper over steget. Språk
+  følger maskinen og velges under Innstillinger.
+- **Plan er en ukevisning.** Mandag til søndag som kolonner, tid nedover, og hvert faste
+  opptak som en blokk. Dra i en tom flate for å legge til en tid, dra blokken for å flytte
+  den (også til en annen dag), og dra i kanten for å endre start eller slutt, alt i
+  kvarter. Et trykk på blokken åpner en liten redigering med eksakte klokkeslett og
+  «Slett». Med tastatur flytter piltastene blokken, Skift + pil strekker den, Enter
+  redigerer og Delete fjerner. Neste opptak er fremhevet, et opptak som ikke ble tatt opp
+  denne uka er merket, dagens kolonne og «nå» er markert, og en tid over midnatt tegnes i
+  to kolonner. To tider kan ikke overlappe. Erstatter skjemaet med én tid og lista «Flere
+  tider». Bryterne «Ta opp automatisk» og «Start automatisk med maskinen» står over uka,
+  og vekkingen av maskinen står under.
+- **Én fast lydoppskrift: «Podkastklar lyd».** Lyd-steget i redigeringen har én bryter, på
+  som standard: tydeligere stemme, jevnere lyd og riktig volum for podkast (−16 LUFS, uten
+  at toppene går over taket). Av betyr lyden slik den ble tatt opp.
+- **Intro og outro i eksportvinduet.** Under «Podkastklar lyd» kan du velge en lydfil som
+  legges først og en som legges sist i eksporten (wav, flac, mp3, m4a, ogg eller aiff).
+  Valget huskes til neste gang, og med «Podkastklar lyd» på får de samme lydstyrke som
+  talen. Er en valgt fil borte når du eksporterer, starter ikke eksporten, og du får
+  beskjed. Med «Ta med video» på legges ikke intro og outro til.
+- **Varsel om død kanal i editoren.** Er en av kanalene i opptaket stille, sier
+  redigeringen fra.
+- **Redigeringen er enklere.** SundayRec leter ikke lenger etter prekenen. Du ser
+  bølgeformen med to håndtak, flytter dem dit det du vil beholde begynner og slutter, og
+  klipper bort resten. Ingenting læres av det du retter, og korreksjonene deles ikke.
+- **Bare norsk og engelsk.** Svensk, dansk, tysk, fransk og polsk er fjernet. Har du
+  valgt et av dem fra før, starter SundayRec på norsk hvis maskinen er norsk, ellers på
+  engelsk.
+- **Borte:** Diagnose med testopptak og målebenk, «Legg ut» på eksportkvitteringen,
+  kirkeprofilen og kirkekalenderen, spesialopptak, eksport og import av
+  innstillingsprofil, overføringen fra den gamle Electron-appen, bannerboksen om fjernede
+  e-postvarsler, «Sjekk maskinen» i menylinjen og den avanserte mikseren og
+  kanalreparasjonen. Gamle verdier i innstillingene leses og ignoreres uten feilmelding;
+  et lagret filnavnmønster «church» leses som dato.
+- **Personvernteksten sier bare det som faktisk samles inn:** krasj, kvalitetsdata om
+  opptakene, funksjonstellere og planlagte opptak som ikke startet.
+- **Under panseret:** seks kommandoer uten kaller, ubrukte tekster og én ubrukt
+  avhengighet er fjernet, og dokumentasjonen er skrevet om til den nye kjernen.
 
 ## v0.30.1 — tryggere lange og planlagte opptak
 
@@ -672,7 +724,7 @@ byttet, resten er vedlikehold du ikke ser.
   det funnet en panikk som ville rammet første nettkall: reqwest 0.13 bygger
   ingen klient uten en installert kryptoleverandør. `http_client()` installerer
   den nå, og en test vokter det.
-- **TypeScript 7** via `@typescript/native` (se `docs/TYPESCRIPT-7.md`).
+- **TypeScript 7** via `@typescript/native` (se `docs/archive/TYPESCRIPT-7.md`).
 - **Avhengigheter.** Nyeste minor/patch i npm og cargo, vitest 5.0.1. Rust 1.98.1
   i CI, og Tauri-pakkene bumpes nå i én Dependabot-PR på tvers av npm og cargo.
 
@@ -882,7 +934,7 @@ hoppe stille over sin egen kjerneassert) er tettet.
 
 «Kopier full rapport» i Diagnose har nå en linje under som sier hvor den skal
 sendes — et GitHub-issue eller support-e-posten, aldri sikkerhetsproblemer på
-e-post. Ny `docs/FRIVILLIG.md` er en norsk driftsguide for den som står ved
+e-post. Ny `docs/archive/FRIVILLIG.md` er en norsk driftsguide for den som står ved
 skjermen uten en utvikler i rommet: installere, gi tilgang, ta opp, lese
 bannerfarger, og hvem man kontakter. Et par docs-referanser som hadde driftet
 ut av sync med koden er også rettet.
@@ -904,7 +956,7 @@ knapp i appen peker hit ennå.
 
 ### Småting
 
-En linje i `docs/APP-SHELL.md` påsto fortsatt at overleggets «du kan lukke
+En linje i `docs/archive/APP-SHELL.md` påsto fortsatt at overleggets «du kan lukke
 vinduet»-hint ikke var lagt tilbake på skjermen; det ble det i denne runden,
 og linja er rettet.
 

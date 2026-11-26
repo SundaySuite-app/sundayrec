@@ -51,7 +51,7 @@
 //! The `prevent_close`/`hide` pair, the Dock-reopen path, and every quit path
 //! below need a real desktop session; they are compiled and reasoned about,
 //! never clicked headless. The decisions and the notification wording above them
-//! are unit-tested, and `docs/APP-SHELL.md` carries the rig steps.
+//! are unit-tested, and `docs/archive/APP-SHELL.md` carries the rig steps.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};

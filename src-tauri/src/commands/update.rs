@@ -9,7 +9,7 @@
 //! feature; in the default build those commands return a clear `feature_disabled`
 //! error so the panel shows a calm "auto-update isn't built into this build"
 //! hint. NETWORK/GUI-UNVERIFIED behind `--features updater` (needs a signed
-//! release + the updater public key — see docs/NEEDS-RICHARD.md).
+//! release + the updater public key — see docs/archive/NEEDS-RICHARD.md).
 
 use tauri::{AppHandle, State};
 

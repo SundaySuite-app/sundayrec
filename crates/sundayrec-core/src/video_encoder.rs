@@ -50,9 +50,6 @@
 //! golden-tester her; at de faktisk virker, og hva de koster i CPU, er
 //! RIG-DAY-punktet «Maskinvarekoding på Windows».
 
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
 use crate::editor::VideoCodec;
 use crate::ffmpeg::Platform;
 
@@ -350,46 +347,6 @@ pub fn resolve_encoder(
             Some(e) if e.is_windows_hardware() && video_codec == VideoCodec::H264 => e,
             _ => VideoEncoder::Software,
         },
-    }
-}
-
-/// Ett prøveutfall slik diagnoserapporten viser det.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "VideoEncoderProbeResult.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct VideoEncoderProbeResult {
-    /// ffmpeg-navnet, f.eks. `h264_nvenc`.
-    pub encoder: String,
-    /// Om prøve-opptaket gikk gjennom.
-    pub ok: bool,
-}
-
-/// Det diagnosen sier om videokoderen på denne maskinen.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "VideoEncoderSummary.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct VideoEncoderSummary {
-    /// ffmpeg-navnet på koderen opptak får nå.
-    pub chosen: String,
-    /// Prøvene som ble kjørt i denne diagnosen, i rekkefølge. Tom når ingen
-    /// prøve ble kjørt (macOS/Linux, eller et opptak pågikk).
-    pub probes: Vec<VideoEncoderProbeResult>,
-}
-
-impl VideoEncoderSummary {
-    /// Fra et prøveresultat.
-    pub fn from_selection(selection: &EncoderSelection) -> Self {
-        Self {
-            chosen: selection.chosen.h264_name().to_string(),
-            probes: selection
-                .tried
-                .iter()
-                .map(|(e, ok)| VideoEncoderProbeResult {
-                    encoder: e.h264_name().to_string(),
-                    ok: *ok,
-                })
-                .collect(),
-        }
     }
 }
 
@@ -743,19 +700,5 @@ mod tests {
             false,
         );
         assert_eq!(b, s(&["-c:v", "libx265", "-preset", "veryfast"]));
-    }
-
-    #[test]
-    fn summary_lists_probes_in_order() {
-        let sel = select_encoder(Platform::Windows, |e| e == VideoEncoder::Qsv);
-        let sum = VideoEncoderSummary::from_selection(&sel);
-        assert_eq!(sum.chosen, "h264_qsv");
-        assert_eq!(
-            sum.probes
-                .iter()
-                .map(|p| (p.encoder.as_str(), p.ok))
-                .collect::<Vec<_>>(),
-            [("h264_nvenc", false), ("h264_qsv", true)]
-        );
     }
 }

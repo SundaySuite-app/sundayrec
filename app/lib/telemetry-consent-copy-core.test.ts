@@ -26,7 +26,7 @@ describe("consent prompt copy", () => {
     expect(RE_ASK.descFallback).not.toBe(FIRST_ASK.descFallback);
   });
 
-  it("says it is asking again, names what was added, and disclaims the old answer", () => {
+  it("says it is asking again, states what is shared, and disclaims the old answer", () => {
     // The three things the re-ask has to do. Asserted on the Norwegian source
     // of truth; the other six locales are held to the same key set by
     // legacy/locales/parity.test.ts, and translated from this text.
@@ -34,17 +34,21 @@ describe("consent prompt copy", () => {
     expect(d, "must acknowledge the earlier answer").toMatch(
       /svart på dette før/,
     );
-    expect(d, "must say the scope was widened").toMatch(/utvidet/);
-    expect(d, "must name the addition concretely").toMatch(/30–60 sekunder/);
-    // v2 widened twice before shipping — the banded corrections and then the
-    // companion outcomes. The companion left in v0.15 and its outcomes with
-    // it, so the card names ONE addition now; naming data that is not
-    // collected would be the over-telling twin of under-telling.
+    expect(
+      d,
+      "must say what is shared now: counters and technical numbers",
+    ).toMatch(/bare anonyme tellere og tekniske tall/);
+    // The banded editor corrections left the wire in F1 (the learning loop was
+    // removed), as did the companion outcomes in v0.15. Naming data that is
+    // not collected would be the over-telling twin of under-telling.
+    expect(d, "must not name the removed corrections").not.toMatch(
+      /korrigering|30–60 sekunder/,
+    );
     expect(d, "must not name the retired companion addition").not.toMatch(
       /kapittelmerker/,
     );
-    expect(d, "must say the suggestion text itself is not sent").toMatch(
-      /[Ss]elve teksten sendes aldri/,
+    expect(d, "must say what is never sent").toMatch(
+      /aldri lyd, navn, filer eller tekst/,
     );
     expect(d, "must disclaim carrying the old answer over").toMatch(
       /ikke lagt til grunn, verken som ja eller som nei/,

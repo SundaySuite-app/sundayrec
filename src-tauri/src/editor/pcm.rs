@@ -3,7 +3,7 @@
 //! the work runs on a blocking thread.
 //!
 //! A mastered export is three steps (the decision between "stage the processed PCM on disk" and
-//! "run the chain twice" is in docs/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
+//! "run the chain twice" is in docs/archive/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
 //!
 //! 1. [`run_blocking`] over a [`Program`]: the cut recording is read as the playback engine plays
 //!    it (M4R #6); Rust runs the audio chain over it ([`ChainReader`], B2b), meters it and copies
@@ -531,6 +531,93 @@ where
         frames,
         target_lufs: preset.target_lufs,
         levelled: true,
+    })
+}
+
+/// A jingle levelled by the SAME preset as the programme, parked as raw f32 PCM in the OS temp
+/// dir. Deleted when dropped; a crash leaves it for the startup sweep (it carries
+/// [`STAGED_PREFIX`] and the `.f32` suffix).
+pub(super) struct MasteredClip {
+    staged: StagedPcm,
+    pub(super) fmt: PcmFormat,
+    /// Frames in the parked copy.
+    frames: u64,
+}
+
+impl MasteredClip {
+    pub(super) fn path(&self) -> &Path {
+        self.staged.path()
+    }
+
+    pub(super) fn seconds(&self) -> f64 {
+        self.frames as f64 / f64::from(self.fmt.sample_rate)
+    }
+}
+
+/// The sentence-carrying refusal for a jingle ffprobe or the decoder cannot make sense of.
+/// Same code a stored-but-gone clip gets (`commands::editor::export_clip_error`).
+fn clip_unusable() -> AppError {
+    AppError::Validation(
+        "export_clip_unusable: the saved intro or outro clip cannot be used".into(),
+    )
+}
+
+/// Level one jingle with the programme's mastering preset (no speech chain: a jingle is
+/// music, the chain's de-essing and compression are for a voice). Same measure, same gain
+/// plan, same true-peak limiter as the sermon, so intro, sermon and outro all sit at the
+/// preset's target and the finished file measures at it too. The levelled clip is parked as
+/// raw f32 PCM at the clip's own rate and layout; the concat graph pins it to the source's.
+pub(super) async fn master_clip(
+    engine: &ExportEngine,
+    clip: &str,
+    preset: &MasterPreset,
+    stall_ms: u64,
+) -> AppResult<MasteredClip> {
+    let info = super::load_recording(clip)
+        .await
+        .map_err(|_| clip_unusable())?;
+    if !info.has_audio || !(info.duration_sec.is_finite() && info.duration_sec > 0.0) {
+        return Err(clip_unusable());
+    }
+    let fmt = pcm_format(info.sample_rate, info.channels);
+    let keeps = [sundayrec_core::editor::KeepSegment {
+        start: 0.0,
+        end: info.duration_sec,
+    }];
+    let m = measure_and_plan(
+        engine,
+        clip,
+        &Chain::default(),
+        Some(preset),
+        &keeps,
+        info.duration_sec,
+        fmt,
+        stall_ms,
+        &|_, _| {},
+    )
+    .await?;
+    let out = StagedPcm::new();
+    let (src, dst, fmt, plan) = (
+        m.staged.path().to_path_buf(),
+        out.path().to_path_buf(),
+        m.fmt,
+        m.plan,
+    );
+    let frames = tokio::task::spawn_blocking(move || -> io::Result<u64> {
+        let mut r = io::BufReader::with_capacity(1 << 20, std::fs::File::open(src)?);
+        let mut w = io::BufWriter::with_capacity(1 << 20, std::fs::File::create(dst)?);
+        let (_, frames) = pcm_stream::render(&mut r, fmt, &plan, Some(&mut w), false, |_| {})?;
+        w.flush()?;
+        Ok(frames)
+    })
+    .await
+    .map_err(|e| AppError::Recording(format!("jingle level: {e}")))?
+    .map_err(|e| AppError::Recording(format!("jingle level: {e}")))?;
+    drop(m);
+    Ok(MasteredClip {
+        staged: out,
+        fmt,
+        frames,
     })
 }
 

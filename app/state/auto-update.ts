@@ -42,7 +42,7 @@
  *
  * ## Én lytter, ikke to
  *
- * De sju `update-*`-kanalene shimmen syntetiserer abonneres her, ÉN gang, og
+ * De to `update-*`-kanalene shimmen syntetiserer abonneres her, ÉN gang, og
  * fasen bor i et signal. `UpdateRow` leser det signalet i stedet for å
  * abonnere selv: to lyttere på det samme løpet som hver holder sin egen
  * tilstand er skjøtefeilen `reference-seam-bugs` handler om, og her ville den
@@ -83,7 +83,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
  * en andre timer. To timere er dobbelt så mye trafikk som eieren fikk vite om,
  * og ingenting på skjermen ville noensinne vist det.
  */
-export function applyAutoUpdateSchedule(): void {
+function applyAutoUpdateSchedule(): void {
   // En innstilling vi ikke fikk lest er IKKE «på»: signalet holder da
   // standardverdiene (`autoUpdate: true`), ikke eierens valg, og en eier som
   // har slått sjekken av skal ikke få kontakt med serveren fordi basen hakket.

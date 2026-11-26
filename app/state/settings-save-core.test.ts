@@ -91,11 +91,11 @@ describe("patchFor — only what changed crosses", () => {
     const base = { ...SETTINGS_DEFAULTS };
     const now: typeof SETTINGS_DEFAULTS = {
       ...base,
-      churchName: "Domkirken",
+      deviceName: "Domkirken",
       deviceChannels: { x: { channelL: 1, channelR: 2 } },
     };
     expect(patchFor(now, base)).toEqual({
-      churchName: "Domkirken",
+      deviceName: "Domkirken",
       deviceChannels: { x: { channelL: 1, channelR: 2 } },
     });
     // An equal-by-content copy is not a change.
@@ -119,9 +119,9 @@ describe("patchFor — only what changed crosses", () => {
   });
 
   it("is a copy, so a change made while the IPC is in flight cannot follow it", () => {
-    const now = { ...SETTINGS_DEFAULTS, churchName: "A" };
+    const now = { ...SETTINGS_DEFAULTS, bitrate: "A" };
     const sent = patchFor(now, SETTINGS_DEFAULTS);
-    now.churchName = "endret etterpå";
-    expect(sent.churchName).toBe("A");
+    now.bitrate = "endret etterpå";
+    expect(sent.bitrate).toBe("A");
   });
 });

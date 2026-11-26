@@ -10,7 +10,7 @@
  */
 
 /** Målerens absolutte port (BS.1770): under dette er det ingenting å måle. */
-export const LUFS_GATE = -70;
+const LUFS_GATE = -70;
 
 /** Er verdien et brukbart tall? `null`/`undefined`/NaN/±∞ er «ikke målt». */
 export function isMeasuredLufs(v: unknown): v is number {

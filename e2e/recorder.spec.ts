@@ -79,7 +79,7 @@ test.describe("recorder", () => {
     await boot(page, {
       fixtures: RECORDER_FIXTURES,
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
 
     await startFromHome(page);
@@ -109,7 +109,7 @@ test.describe("recorder", () => {
         start_recording: fn(`() => { throw new Error("no_save_folder"); }`),
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
 
     await startFromHome(page);
@@ -152,7 +152,7 @@ test.describe("recorder", () => {
     await boot(page, {
       fixtures: RECORDER_FIXTURES,
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await startFromHome(page);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();

@@ -1,4 +1,4 @@
-//! The playback engine's pure half (B5a, `docs/LYDMOTOR.md` fase 5): the cut plan, its
+//! The playback engine's pure half (B5a, `docs/archive/LYDMOTOR.md` fase 5): the cut plan, its
 //! constant-power joins, and the reader that turns a recording plus a list of kept segments into
 //! one continuous programme.
 //!

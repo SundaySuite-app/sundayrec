@@ -4,40 +4,29 @@
  * ## Skinnen er borte, og hvorfor
  *
  * Fram til D3 lå navigasjonen i en 208 px bred venstreskinne. Den kostet en
- * sjettedel av bredden på en 1180 px skjerm for å holde tre knapper, et navn og
- * én setning — plass som kontrollrommet (D2) trenger til kort som faktisk sier
- * noe. Eieren så det med én gang: «mye luft».
+ * sjettedel av bredden på en 1180 px skjerm — plass sidene trenger til
+ * innhold som faktisk sier noe. Det som var i skinnen bor nå i to bånd som til
+ * sammen er hundre piksler høye i stedet for to hundre piksler brede:
  *
- * Så D3 river den. Det som var i skinnen bor nå i to bånd som til sammen er
- * hundre piksler høye i stedet for to hundre piksler brede:
+ *   TOPPLINJEN  (44 px) merket og produktnavnet — og dra-sonen.
+ *   BUNNLINJEN  (56 px) statuslinjen til venstre, de fire sidene sentrert,
+ *               versjonen til høyre.
  *
- *   TOPPLINJEN  (44 px) merket, produktnavnet og kirken — og dra-sonen.
- *   BUNNLINJEN  (56 px) statuslinjen til venstre, de tre destinasjonene
- *               sentrert, versjonen og tannhjulet til høyre.
+ * ## Fire sider (F5)
  *
- * Rekkefølgen nederst er venstre→høyre slik man GJØR det — Opptak ·
- * Redigering · Eksportering — som i Resolve, og som i eierens egen bestilling.
+ * Ta opp · Opptak · Plan · Innstillinger, venstre→høyre. Innstillinger er
+ * ikke lenger et eget tannhjul ytterst til høyre — den er den fjerde knappen i
+ * samme gruppe, med tannhjulet som ikon. Ruten heter `settings`;
+ * `data-testid="nav-<side>"` og `aria-current` står på knappen for siden, så
+ * alt som spør skallet «hvor er jeg?» får svar fra samme sted som før.
  *
- * ## Tre steder og et tannhjul, ikke fem sider og åtte faner
+ * ## Rutebytte flytter fokus
  *
- * Legacy har `home`, `schedule`, `search`, `settings` og `editor`, pluss fem
- * faner inne i innstillinger. En frivillig som aldri har sett appen skal ikke
- * måtte vite hvilken av dem «filnavn» bor på. Bunnlinja har tre knapper, i den
- * rekkefølgen man gjør dem, og ruteren (`app/router/router.ts`) oversetter alt
- * det gamle til dem.
- *
- * ## Hvorfor Innstillinger IKKE er en av dem (D2)
- *
- * Fram til D2 sto Oppsett som destinasjon nummer tre. Det gjorde innstillinger
- * til et LIKEVERDIG sted — noe man går til like ofte som man tar opp — og det
- * er ikke sant: en frivillig setter opp appen én gang og tar opp hver søndag.
- * Tannhjulet står derfor for seg selv, ytterst til høyre i bunnlinja, der et
- * tannhjul står i alt annet en frivillig bruker.
- *
- * RUTEN `setup` lever videre uendret. Det er bare plasseringen som har flyttet
- * — to ganger nå: `data-testid="nav-setup"` og `aria-current` står fortsatt på
- * tannhjulet, så alt som spør skallet «hvor er jeg?» får samme svar som før, og
- * `[data-testid^="nav-"]` teller fortsatt fire.
+ * Ny side ⇒ `#main` rulles til topp og fokus settes på `<h1>`. Uten det blir en
+ * tastaturbruker stående i navigasjonen og må tabbe gjennom hele den på nytt
+ * for hver side, og en skjermleserbruker får ingen beskjed om at siden skiftet
+ * i det hele tatt. `tabIndex={-1}` på overskriften er det som gjør den
+ * fokuserbar uten å legge seg i tabrekkefølgen.
  *
  * ## `data-tauri-drag-region` — attributtet flyttet, kontrakten ikke
  *
@@ -69,7 +58,7 @@
  * er ordrett den samme.
  *
  * ⚠️ Katalognøklene heter fortsatt `app.rail.*`. Nøkler er identiteter, ikke
- * beskrivelser: å døpe dem om ville kostet sju språkfiler og paritetslista for
+ * beskrivelser: å døpe dem om ville kostet to språkfiler og paritetslista for
  * å endre et ord ingen bruker ser.
  */
 
@@ -89,16 +78,12 @@ import { AppLogo } from "../AppLogo/AppLogo";
 import { StatusDot } from "../StatusDot/StatusDot";
 import styles from "./PageShell.module.css";
 
-/**
- * Destinasjonene i navigasjonen, venstre→høyre slik man gjør dem. `setup` er
- * IKKE med — den har tannhjulet ytterst til høyre, se toppen av fila. Ruten
- * finnes fortsatt; det er bare knappen som har flyttet.
- */
-const PAGES: readonly Page[] = ["record", "edit", "export"];
+/** Sidene i navigasjonen, venstre→høyre. */
+const PAGES: readonly Page[] = ["record", "recordings", "plan", "settings"];
 
 /**
  * Produktnavnet. En KONSTANT og ikke tekst i treet: navnet oversettes ikke —
- * det heter SundayRec på alle sju språk — men en gate som må vurdere hver
+ * det heter SundayRec på begge språk — men en gate som må vurdere hver
  * bokstavsekvens i JSX kan ikke vite det, og skal ikke måtte gjette. Ett navn,
  * ett sted.
  */
@@ -118,23 +103,18 @@ const ICONS: Record<Page, ComponentChildren> = {
     </svg>
   ),
   /*
-   * REDIGERING: to spor over en linje — tidslinja man klipper i, og ikke en
-   * saks. En saks tegner HANDLINGEN å fjerne noe; sporene tegner STEDET, og
-   * det er stedet destinasjonen er.
+   * OPPTAK: to spor over en linje — lista over det man har tatt opp, og
+   * tidslinja man klipper i.
    */
-  edit: (
+  recordings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="3" y="4" width="18" height="5" rx="1.5" />
       <rect x="3" y="11" width="18" height="5" rx="1.5" />
       <path d="M6 20h12" />
     </svg>
   ),
-  /*
-   * EKSPORTERING: en pil UT av en boks. Ikke en diskett og ikke en sky —
-   * eksporten skriver en ny fil ved siden av opptaket, og pilen ut er det ene
-   * tegnet som betyr det samme i alle programmene en frivillig ellers bruker.
-   */
-  export: (
+  /* PLAN: en kalender — en uke med en markert dag. */
+  plan: (
     <svg
       viewBox="0 0 24 24"
       fill="none"
@@ -143,22 +123,20 @@ const ICONS: Record<Page, ComponentChildren> = {
       stroke-linecap="round"
       stroke-linejoin="round"
     >
-      <path d="M12 3v11" />
-      <path d="M8.5 6.5 12 3l3.5 3.5" />
-      <path d="M4 14v5a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-5" />
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+      <circle cx="8.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
     </svg>
   ),
   /*
-   * Et EKTE tannhjul, ikke skyvekontrollene fra før D2. Skyvekontroller er et
-   * mikserbord for den som allerede vet hva de gjør; tannhjulet er tegnet
-   * ingen trenger å lære — og det er det som står i den gamle appen, i
+   * Et EKTE tannhjul: tegnet ingen trenger å lære — og det som står i
    * menylinjen og i alt annet en frivillig bruker.
    *
    * Geometrien er regnet ut, ikke lånt: senter (12,12), nav r 2,6, ring r 6,4
    * og åtte tenner fra r 6,4 til r 9,2 for hver 45°. Diagonalene er
    * 6,4·cos45° ≈ 4,5 og 9,2·cos45° ≈ 6,5 — derav 7,5/16,5 og 5,5/18,5.
    */
-  setup: (
+  settings: (
     <svg
       viewBox="0 0 24 24"
       fill="none"
@@ -203,7 +181,6 @@ export function PageShell({ children, heading }: PageShellProps) {
     headingRef.current?.focus();
   }, [current.page, current.tab]);
 
-  const church = (s.churchName ?? "").trim();
   const next = nextRecording.value.next;
   const status = statusLine({
     isRecording: isRecording.value,
@@ -227,12 +204,6 @@ export function PageShell({ children, heading }: PageShellProps) {
       >
         <AppLogo size={22} />
         <b class={styles.logoText}>{PRODUCT}</b>
-        <div
-          data-testid="shell-church"
-          class={`${styles.church} ${church ? "" : styles.churchUnset}`}
-        >
-          {church || t("app.rail.churchUnset")}
-        </div>
       </header>
 
       {/*
@@ -305,23 +276,6 @@ export function PageShell({ children, heading }: PageShellProps) {
               {PRODUCT} {appVersion.value}
             </div>
           ) : null}
-          {/*
-            Tannhjulet. Samme knappeform som destinasjonene (samme høyde, samme
-            hover, samme `.on`); det er PLASSERINGEN — utenfor gruppen, i den
-            andre enden av båndet — som sier at det ikke er en destinasjon.
-          */}
-          <button
-            type="button"
-            data-testid="nav-setup"
-            aria-current={current.page === "setup" ? "page" : undefined}
-            class={`${styles.navItem} ${current.page === "setup" ? styles.on : ""}`}
-            onClick={() => navigate("setup")}
-          >
-            <span aria-hidden="true" class={styles.navIcon}>
-              {ICONS.setup}
-            </span>
-            <span>{t("app.page.setup")}</span>
-          </button>
         </div>
       </footer>
     </div>

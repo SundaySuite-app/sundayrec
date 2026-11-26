@@ -8,14 +8,11 @@
 //    naming the same placeholder twice shipped a raw `{n}` to the operator.
 //
 // 2. PLURALS. The catalogue carried ONE form per count string, picked in
-//    caller code with `=== 1`. That is enough for Norwegian, English, Swedish,
-//    Danish and German (two forms) and nearly enough for French — and simply
-//    wrong for Polish, which has four categories: «2 nagrania» (few) is not
-//    «5 nagrań» (many), and 22–24 go back to `few`. Polish users read the
-//    wrong noun form for 2–4, 22–24, 32–34 … in every count string the app has.
-//
-// The per-language expectations below are written out in full rather than
-// derived, so changing a Polish form to the wrong one turns a test red.
+//    caller code with `=== 1`. That is enough for Norwegian and English (two
+//    forms) — but the selector is generic (`Intl.PluralRules`), and the tests
+//    below still exercise it on Polish/French/German category boundaries with
+//    inline fixtures, since the machinery must not quietly regress to `=== 1`.
+//    F4 removed the catalogues for those languages; the selector stayed.
 import { describe, expect, it } from "vitest";
 import {
   interpolate,
@@ -27,22 +24,12 @@ import {
 } from "./i18n";
 import no from "../../legacy/locales/no.json";
 import en from "../../legacy/locales/en.json";
-import sv from "../../legacy/locales/sv.json";
-import da from "../../legacy/locales/da.json";
-import de from "../../legacy/locales/de.json";
-import fr from "../../legacy/locales/fr.json";
-import pl from "../../legacy/locales/pl.json";
 
 type Tree = Record<string, unknown>;
 
 const TREES: Record<string, Tree> = {
   no: no as Tree,
   en: en as Tree,
-  sv: sv as Tree,
-  da: da as Tree,
-  de: de as Tree,
-  fr: fr as Tree,
-  pl: pl as Tree,
 };
 
 const lookup = (tree: Tree, key: string): unknown =>
@@ -150,27 +137,25 @@ describe("selectPluralForm — fallback chain", () => {
   });
 });
 
-// The repair this pins is the same one it always pinned: before it, ONE Polish
-// string served every count, so 1 and 2–4 and 22–24 all read the wrong noun
-// form. The KEY moved in fase B — `trash.moved` was legacy copy nothing paints
-// any more and the catalogue prune took it — so the demonstration now runs on
-// a group the shell actually renders (`missed.banner`, the missed-recording
-// banner on OPPTAK). Same four Polish categories, same boundaries.
-describe("the Polish repair — missed.banner across the category boundaries", () => {
+// The selector's category boundaries on a Polish-shaped FIXTURE (the Polish catalogue is
+// gone since F4): ONE string used to serve every count, so 1 and 2–4 and 22–24 all read the
+// wrong noun form. Same four categories, same boundaries.
+describe("the plural selector across Polish category boundaries (fixture)", () => {
+  const group = { one: "ONE", few: "FEW", many: "MANY", other: "OTHER" };
   const cases: Array<[number, string]> = [
-    [0, "0 zaplanowanych nagrań nie zostało wykonanych"],
-    [1, "1 zaplanowane nagranie nie zostało wykonane"],
-    [2, "2 zaplanowane nagrania nie zostały wykonane"],
-    [3, "3 zaplanowane nagrania nie zostały wykonane"],
-    [4, "4 zaplanowane nagrania nie zostały wykonane"],
-    [5, "5 zaplanowanych nagrań nie zostało wykonanych"],
-    [21, "21 zaplanowanych nagrań nie zostało wykonanych"],
-    [22, "22 zaplanowane nagrania nie zostały wykonane"],
-    [24, "24 zaplanowane nagrania nie zostały wykonane"],
-    [25, "25 zaplanowanych nagrań nie zostało wykonanych"],
+    [0, "MANY"],
+    [1, "ONE"],
+    [2, "FEW"],
+    [3, "FEW"],
+    [4, "FEW"],
+    [5, "MANY"],
+    [21, "MANY"],
+    [22, "FEW"],
+    [24, "FEW"],
+    [25, "MANY"],
   ];
   for (const [n, want] of cases) {
-    it(`n=${n}`, () => expect(render("pl", "missed.banner", n)).toBe(want));
+    it(`n=${n}`, () => expect(selectPluralForm(group, n, "pl")).toBe(want));
   }
 });
 
@@ -178,11 +163,6 @@ describe("every language gets its own singular", () => {
   const expected: Record<string, [string, string]> = {
     no: ["1 dag siden", "5 dager siden"],
     en: ["1 day ago", "5 days ago"],
-    sv: ["1 dag sedan", "5 dagar sedan"],
-    da: ["1 dag siden", "5 dage siden"],
-    de: ["vor 1 Tag", "vor 5 Tagen"],
-    fr: ["il y a 1 jour", "il y a 5 jours"],
-    pl: ["1 dzień temu", "5 dni temu"],
   };
   for (const [lang, [one, many]] of Object.entries(expected)) {
     it(lang, () => {
@@ -193,7 +173,8 @@ describe("every language gets its own singular", () => {
 
   it("French treats zero as singular, which is the whole point of not using === 1", () => {
     // `n === 1 ? one : other` gets «0 jours»; CLDR French wants «0 jour».
-    expect(render("fr", "trash.daysAgo", 0)).toBe("il y a 0 jour");
+    const group = { one: "jour", other: "jours" };
+    expect(selectPluralForm(group, 0, "fr")).toBe("jour");
     // …and Norwegian genuinely wants the plural at zero.
     expect(render("no", "trash.daysAgo", 0)).toBe("0 dager siden");
   });

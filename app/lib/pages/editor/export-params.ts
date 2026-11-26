@@ -17,8 +17,6 @@
 
 import { VIDEO_EXTS } from "./types";
 import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
-import type { EditorChannelRepair } from "@legacy/bindings/EditorChannelRepair";
-import type { EditorProcessing } from "@legacy/bindings/EditorProcessing";
 
 // ── Export progress phases (wire constants) ─────────────────────────────────
 //
@@ -78,23 +76,13 @@ export interface ExportCutRegion {
   end: number;
 }
 
-/** Channel-repair settings as the backend's `EditorChannelRepair` expects
- *  them — literally that GENERATED binding (not a hand-typed mirror), so a
- *  Rust rename of `mode`/`leftDb`/`rightDb` fails `npm run typecheck` at
- *  every one of this alias's call sites instead of leaving a stale copy
- *  looking green. */
-export type ExportChannelRepair = EditorChannelRepair;
-
 /**
- * What «Etter»-lyttingen ber bakenden gjengi (`editor_master_preview`). Lydfeltene
- * (`presetId`, `processing`, `channelRepair`) er de SAMME som eksportforespørselen
- * bærer (`masterPreset`, `processing`, `channelRepair`), og kutt og lengde er de
+ * What «Etter»-lyttingen ber bakenden gjengi (`editor_master_preview`). Lydfeltet
+ * (`podcastAudio`) er det SAMME som eksportforespørselen bærer, og kutt og lengde er de
  * samme som eksportens: nivået utsnittet får er nivået programmet får (M2R #3).
  */
 export interface MasterPreviewParams {
-  presetId?: string;
-  processing?: unknown;
-  channelRepair?: ExportChannelRepair;
+  podcastAudio: boolean;
   cutRegions: readonly ExportCutRegion[];
   fullLengthSec: number;
   startSec: number;
@@ -130,16 +118,8 @@ export interface ExportRequestInput {
   useIntro?: boolean;
   useOutro?: boolean;
   metadata?: unknown;
-  masterPreset?: string;
-  vocalChainPreset?: string;
-  processing?: unknown;
-  channelRepair?: ExportChannelRepair;
-}
-
-/** Drop an empty string / 0 so the backend sees `undefined` (→ `null`) rather
- *  than a falsy value it would have to special-case. */
-function orUndefined<T>(value: T | undefined | ""): T | undefined {
-  return value === "" || value === undefined ? undefined : value;
+  /** «Podkastklar lyd»: the one fixed `speech-clear` recipe. Absent = as recorded. */
+  podcastAudio?: boolean;
 }
 
 /**
@@ -161,10 +141,7 @@ export function buildExportRequest(
     useIntro: input.useIntro ? true : undefined,
     useOutro: input.useOutro ? true : undefined,
     metadata: input.metadata,
-    masterPreset: orUndefined(input.masterPreset),
-    vocalChainPreset: orUndefined(input.vocalChainPreset),
-    processing: input.processing,
-    channelRepair: input.channelRepair,
+    podcastAudio: input.podcastAudio ? true : undefined,
   };
 
   if (input.kind === "video") {
@@ -193,16 +170,8 @@ export function buildExportRequest(
  *
  * The return type is the GENERATED `EditorExportRequest` binding, so a Rust
  * rename of any field fails `npm run typecheck` right here — the same class
- * of bug a `kind`/`type` split was for `EditorSegment` (see e2e/editor-
- * fixtures.ts): the shim would go on building a payload the backend can no
+ * of bug a `kind`/`type` split once was for a wire struct: the shim would go on building a payload the backend can no
  * longer parse, quietly, with every other gate green.
- *
- * `processing.channelRepair` is always sent as `null`: the app never
- * populates a repair there — a repair always rides the TOP-LEVEL
- * `channelRepair` field below, which `EditorExportRequest`'s own doc comment
- * says overrides whatever `processing` carries. Sending `null` explicitly
- * here is the true, honest wire value, rather than an omitted key riding on
- * Rust's struct-level `#[serde(default)]` for `EditorProcessing`.
  */
 export function toEditorExportRequest(
   kind: "audio" | "video",
@@ -210,11 +179,6 @@ export function toEditorExportRequest(
 ): EditorExportRequest {
   const o = params;
   const m = (o.metadata ?? {}) as Record<string, unknown>;
-  const processingIn = o.processing;
-  const processing: EditorProcessing | null =
-    processingIn == null
-      ? null
-      : { ...(processingIn as EditorProcessing), channelRepair: null };
 
   return {
     sourceToken: o.sourceToken as string,
@@ -229,7 +193,7 @@ export function toEditorExportRequest(
       kind === "video" ? null : ((o.outputBitrate ?? null) as number | null),
     bitDepth:
       kind === "video" ? null : ((o.outputBitDepth ?? null) as number | null),
-    masterPreset: (o.masterPreset as string) || null,
+    podcastAudio: o.podcastAudio === true,
     useIntro: o.useIntro === true,
     useOutro: o.useOutro === true,
     gainDb: (o.gainDb ?? null) as number | null,
@@ -238,9 +202,6 @@ export function toEditorExportRequest(
     description: (m.description as string) || null,
     album: (m.album as string) || null,
     date: (m.date as string) || null,
-    vocalChainPreset: (o.vocalChainPreset as string) || null,
-    processing,
-    channelRepair: (o.channelRepair ?? null) as EditorChannelRepair | null,
     videoCodec: kind === "video" ? (o.videoCodec as string) || null : null,
   };
 }
@@ -250,8 +211,8 @@ export function toEditorExportRequest(
 /**
  * What the export modal's processing row should state about the output LEVEL.
  *
- * The honest answer depends on the mastering preset, because the backend skips
- * the peak-normalize `volume=` filter whenever a preset is active: the preset's
+ * The honest answer depends on «Podkastklar lyd», because the backend skips
+ * the peak-normalize `volume=` filter whenever it is on: the preset's
  * level step sets the delivery loudness, so a gain shift in front of it changes
  * nothing in the finished file. The modal used to claim "Normalisert (+4.2 dB)" anyway —
  * a promise about the export that the export did not keep.
@@ -265,10 +226,10 @@ export type ExportLevelSummary =
   | { kind: "normalized"; gainDb: number };
 
 export function exportLevelSummary(
-  masterPreset: string | undefined,
+  podcastAudio: boolean,
   gainDb: number,
 ): ExportLevelSummary {
-  if (masterPreset) return { kind: "masterOwnsLevel" };
+  if (podcastAudio) return { kind: "masterOwnsLevel" };
   if (Number.isFinite(gainDb) && gainDb !== 0)
     return { kind: "normalized", gainDb };
   return { kind: "hidden" };

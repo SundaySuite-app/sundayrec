@@ -30,14 +30,12 @@ import { signal } from "@preact/signals";
 import {
   dragWindow,
   E,
-  manualMode,
   markDirty,
   syncCuts,
-  syncSuggestion,
   type Cut,
   type Range,
 } from "./model";
-import { sermonCutRegions, windowToCuts } from "./editor-core";
+import { windowToCuts } from "./editor-core";
 import { scheduleDraw } from "./waveform";
 
 /** Debouncevinduet for utkast-skrivingen. Legacys eget tall: langt nok til at
@@ -99,7 +97,7 @@ function syncHistory(): void {
 }
 
 /** Registrer et øyeblikksbilde ETTER en mutasjon. */
-export function pushCutHistory(): void {
+function pushCutHistory(): void {
   const next = pushSnapshot(
     {
       history: E.cutHistory,
@@ -115,35 +113,11 @@ export function pushCutHistory(): void {
   scheduleDraftSave();
 }
 
-/**
- * Invarianten: null kutt betyr at ingenting av «Behold bare prekenen» står
- * igjen, og da er den ikke ANVENDT.
- *
- * ## ⚠️ Hvorfor den er en egen funksjon og ikke tre kopier
- *
- * `E.applied` styrer om forslagskortet vises (`applied || dismissed ⇒ borte`).
- * Den ble satt av `applySermon` og — tilbake til null kutt — nullstilt av
- * `undoCut`. Ingen andre. Så alle de andre veiene til en tom kuttliste lot den
- * stå: sletter man kuttene ett for ett fra lista, eller gjør om TIL den tomme
- * versjonen, blir `applied` stående `true` over en fil der ingenting er
- * trimmet — og kortet som ville tilbudt trimmingen på nytt kommer aldri
- * tilbake. Ingenting feiler; tilbudet er bare borte.
- *
- * `commit` er den ene veien en mutasjon setter kuttlista, og angre/gjør om er
- * de to som setter `E.cuts` direkte. Alle tre går gjennom denne.
- */
-function reconcileApplied(): void {
-  if (E.cuts.length > 0 || !E.applied) return;
-  E.applied = false;
-  syncSuggestion();
-}
-
 /** Sett kuttlista, registrer den og speil den. Den ENE veien inn. */
 function commit(next: Cut[]): void {
   E.cuts = mergeCuts(next);
   pushCutHistory();
   markDirty();
-  reconcileApplied();
   syncCuts();
   scheduleDraw();
 }
@@ -177,21 +151,9 @@ export function deleteCut(index: number): void {
   commit(E.cuts.filter((_, i) => i !== index));
 }
 
-/**
- * «Fjern alle kutt».
- *
- * ⚠️ Den nullstilte `applied` og lot `dismissed` stå. Halve svaret: kortets to
- * svar er ETT svar på ETT tilbud, og `undoCut` tilbake til null kutt har hele
- * tiden nullstilt begge — med en kommentar om at «da skal kortet komme
- * tilbake». To veier til nøyaktig samme tilstand (ingen kutt, fila urørt) ga
- * to forskjellige skjermer, og den ene av dem hadde ingen vei tilbake til
- * tilbudet i det hele tatt.
- */
+/** «Fjern alle kutt». */
 export function clearCuts(): void {
   if (E.cuts.length === 0) return;
-  E.applied = false;
-  E.dismissed = false;
-  syncSuggestion();
   commit([]);
 }
 
@@ -215,7 +177,7 @@ export function clearCuts(): void {
 export function undoCut(): void {
   // Aldri bytt ut lista under et pågående drag — det foreldreløser dragets
   // endringer og korrumperer historikken ved museslipp. Legacys egen regel.
-  // Et preken-håndtak i bevegelse (mus eller tastatur) går gjennom
+  // Et vindushåndtak i bevegelse (mus eller tastatur) går gjennom
   // `dragWindow` og registrerer seg når det slippes — et angre midt i ville
   // blitt skrevet over av den registreringen (review av #433: ⌘Z under drag).
   if (E.handleDrag || E.isDragging || dragWindow.peek() !== null) return;
@@ -230,16 +192,6 @@ export function undoCut(): void {
   if (!r) return;
   E.cutHistoryIdx = r.idx;
   E.cuts = r.cuts;
-  // Angre TILBAKE til ingen kutt betyr at forslaget ikke er anvendt lenger, og
-  // da skal kortet komme tilbake — det er dét «angre» betyr her. `dismissed`
-  // hører til denne grenen og ikke til invarianten: «Behold alt» er et svar
-  // brukeren ga, og bare en handling som eksplisitt går tilbake til utgangs-
-  // punktet (angre, eller «Fjern alle kutt») tar det tilbake.
-  if (E.cuts.length === 0) {
-    E.dismissed = false;
-    syncSuggestion();
-  }
-  reconcileApplied();
   markDirty();
   syncHistory();
   syncCuts();
@@ -249,7 +201,7 @@ export function undoCut(): void {
 
 /** Gjør om. Samme `markDirty`-historie som `undoCut` — se den. */
 export function redoCut(): void {
-  // Et preken-håndtak i bevegelse (mus eller tastatur) går gjennom
+  // Et vindushåndtak i bevegelse (mus eller tastatur) går gjennom
   // `dragWindow` og registrerer seg når det slippes — et angre midt i ville
   // blitt skrevet over av den registreringen (review av #433: ⌘Z under drag).
   if (E.handleDrag || E.isDragging || dragWindow.peek() !== null) return;
@@ -257,9 +209,6 @@ export function redoCut(): void {
   if (!r) return;
   E.cutHistoryIdx = r.idx;
   E.cuts = r.cuts;
-  if (E.cuts.length > 0 && E.suggestion) E.applied = true;
-  reconcileApplied();
-  syncSuggestion();
   markDirty();
   syncHistory();
   syncCuts();
@@ -268,44 +217,12 @@ export function redoCut(): void {
 }
 
 /**
- * «Behold bare prekenen» — ETT klikk.
- *
- * Kuttene er `sermonCutRegions` sine, altså legacys `applySermonTrim`, altså
- * Rustens `sermon_cut_regions`. Angre gjenoppretter, fordi mutasjonen går
- * gjennom `commit` som alle andre.
- */
-export function applySermon(): void {
-  if (!E.suggestion || E.duration <= 0) return;
-  E.applied = true;
-  E.dismissed = false;
-  syncSuggestion();
-  commit(sermonCutRegions(E.suggestion, E.segments, E.duration));
-  // Kuttlista åpnes: det man nettopp fjernet skal være synlig, og ANGRE skal
-  // være innen rekkevidde uten å måtte lete etter «Klipp manuelt» først. Ett
-  // klikk skal kunne tas tilbake med ett klikk.
-  manualMode.value = true;
-}
-
-/** «Behold alt» — legg kortet bort. Ingen kutt, ingen endring å angre. */
-export function keepAll(): void {
-  E.dismissed = true;
-  syncSuggestion();
-}
-
-/**
  * Et håndtak ble sluppet.
  *
- * Før «Behold bare prekenen» flytter det FORSLAGET og rører ingen kutt. Etterpå
- * flytter det kuttgrensene, og alt som lå inne i vinduet blir med videre.
+ * Det flytter kuttgrensene, og alt som lå inne i vinduet blir med videre.
  */
-export function setSermonWindow(next: Range, applied: boolean): void {
-  E.suggestion = { ...next };
-  if (!applied) {
-    syncSuggestion();
-    return;
-  }
+export function setKeepWindow(next: Range): void {
   commit(windowToCuts(next, E.duration, E.cuts));
-  syncSuggestion();
 }
 
 /**
@@ -337,14 +254,8 @@ export function restoreDraftCuts(list: Cut[]): void {
   E.cutHistory = [E.cuts.map((c) => ({ ...c }))];
   E.cutHistoryIdx = 0;
   E.cutHistoryTruncated = false;
-  E.applied = E.cuts.length > 0;
-  // Og de VISES: hele poenget med gjenopprettingen er at man ser hva forrige
-  // økt rakk før den ble avbrutt. Legacy gjorde det stille (den gamle «Fant
-  // lagrede kutt»-stripa er borte), og stille er greit — usynlig er det ikke.
-  if (E.cuts.length > 0) manualMode.value = true;
   syncHistory();
   syncCuts();
-  syncSuggestion();
 }
 
 /** Nullstill angrestabelens speil. Kalles når en ny fil åpnes. */

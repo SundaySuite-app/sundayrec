@@ -32,11 +32,9 @@ import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
 import { confirmAbandonExport } from "./discard";
 import { isMissingFileFailure } from "./loader-core";
 import {
-  analyzing,
   E,
   fileName,
   filePath,
-  lastEdited,
   loadError,
   loadPhase,
   loadProgress,
@@ -46,10 +44,10 @@ import {
   startedAtMs,
   duration as durationSignal,
 } from "./model";
+import { checkChannels } from "./channel-check";
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import { seekTo, teardownPlayback } from "./playback";
-import { runAnalysis } from "./sermon";
 import { fitAll } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
@@ -115,8 +113,8 @@ export async function closeFile(): Promise<boolean> {
  */
 function closeFileNow(): void {
   // Å LUKKE er like mye et generasjonsskifte som å åpne. Uten bumpen sto hver
-  // `seq !== E.loadSeq`-vakt (her, i `export.ts`, i `sermon.ts`) igjen som sann
-  // etter en lukking, og en `runExport`/`runAnalysis` som fortsatt hang i en
+  // `seq !== E.loadSeq`-vakt (her og i `export.ts`) igjen som sann
+  // etter en lukking, og en `runExport` som fortsatt hang i en
   // await fortsatte som om fila var åpen — inn i en `E.filePath` som `resetFileState`
   // nettopp hadde tømt.
   E.loadSeq += 1;
@@ -242,7 +240,6 @@ async function openFileNow(
   }
   // Fra nå av er stien bare til visning og avspilling; lappen er det ALLE
   // Rust-kommandoene får, sidevognene (A3) med.
-  const path = E.filePath;
   const token = E.sourceToken;
 
   // 1. Varigheten — og de tre andre tingene den samme probingen allerede vet.
@@ -332,37 +329,16 @@ async function openFileNow(
   // 3b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
   // navn på en helligdag. To raske oppslag, og EKSPORTERING skal ha dem før
   // noen rekker å se feltene. Vokter selv på `seq`.
-  await loadExportContent(token, E.startedAtMs, seq);
+  await loadExportContent(token, seq);
   if (seq !== E.loadSeq) return;
 
   loadPhase.value = null;
   loadProgress.value = null;
   loadState.value = "ready";
-  // HER, og ingen andre steder: en fil er «sist redigert» når den faktisk ble
-  // åpnet ferdig. En åpning som feilet er ikke noe man har redigert, og
-  // EKSPORTERING ville tilbudt et ett-klikks «Gjør klar» på en fil som ikke
-  // lot seg lese. Se `lastEdited` i `model.ts` for hvorfor den overlever
-  // lukkingen.
-  lastEdited.value = {
-    opened: { token, path, name: E.fileName },
-    path: E.filePath,
-    fileName: E.fileName,
-    startedAtMs: E.startedAtMs,
-  };
+  // Kanalvarselet leser måleren åpne-runden alt har kjørt; det venter ingen på.
+  void checkChannels(token);
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
-
-  // Analysen kjører alltid ved åpning, men etter første maling: den er nok en
-  // full ffmpeg-passering over opptaket, og å starte den før arbeidsflaten er
-  // på skjermen ville latt to dekodinger av den samme filen konkurrere.
-  //
-  // Flagget settes HER og ikke inne i `runAnalysis`: mellom «klar» og «analysen
-  // begynner» er det et opphold, og i det oppholdet ville skjermen sagt «vi
-  // fant ingen preken» — som er usant, for vi har ikke lett ennå.
-  analyzing.value = true;
-  whenIdle(() => {
-    if (seq === E.loadSeq) void runAnalysis(seq);
-  });
 }
 
 // ── Fremdriften ─────────────────────────────────────────────────────────────
@@ -395,23 +371,4 @@ async function withPhase<T>(
     unsub?.();
     loadProgress.value = null;
   }
-}
-
-/**
- * Kjør `fn` når hovedtråden neste gang er ledig, så den ikke konkurrerer med
- * arbeidsflatens første maling. Faller tilbake på en vanlig timer der
- * `requestIdleCallback` mangler (Safari/WKWebView, altså hver macOS-bygging) —
- * fristen er den samme uansett; dette er en utsettelse, ikke en scheduler.
- */
-function whenIdle(fn: () => void): void {
-  const ric = (
-    window as unknown as {
-      requestIdleCallback?: (
-        cb: () => void,
-        opts?: { timeout: number },
-      ) => number;
-    }
-  ).requestIdleCallback;
-  if (typeof ric === "function") ric(fn, { timeout: 1500 });
-  else window.setTimeout(fn, 1500);
 }

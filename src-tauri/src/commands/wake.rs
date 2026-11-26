@@ -2,9 +2,6 @@
 //!
 //! The renderer:
 //!   - reads `wake_capabilities` to show what this machine can/can't do,
-//!   - reads `wake_get_sleep_config` to surface sleep settings that sabotage
-//!     wake (the admin-prompting fix, `wake_fix_sleep`, has no UI and is not
-//!     registered — audit 2026-10),
 //!   - calls `wake_verify` to compare the OS-scheduled wakes against what we
 //!     expect from the current schedule,
 //!   - calls `wake_reschedule` (user-initiated, may prompt for admin) to (re)
@@ -25,8 +22,7 @@ use crate::db::store;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    TestWakeResult, WakeEngine, WakeResult, WakeStatus, current_platform, get_sleep_config,
-    verify_scheduled_wakes,
+    TestWakeResult, WakeEngine, WakeResult, WakeStatus, current_platform, verify_scheduled_wakes,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -48,12 +44,6 @@ pub fn wake_capabilities() -> WakeCapabilities {
         tracing::info!(target: "wake", platform = ?caps.platform, "{}", issue.as_str());
     }
     caps
-}
-
-/// The OS sleep/power configuration (mac standby/autopoweroff, win wake-timers).
-#[tauri::command]
-pub async fn wake_get_sleep_config() -> sundayrec_core::wake::SleepConfig {
-    get_sleep_config().await
 }
 
 /// Compare the OS-scheduled wakes against what the current schedule expects.
@@ -142,12 +132,7 @@ fn upcoming_for_wake(
     s: &sundayrec_core::settings::Settings,
     now: chrono::NaiveDateTime,
 ) -> Vec<chrono::NaiveDateTime> {
-    upcoming_dates(
-        s.active_slots(),
-        &s.special_recordings,
-        now,
-        WAKE_HORIZON_DAYS,
-    )
+    upcoming_dates(s.active_slots(), now, WAKE_HORIZON_DAYS)
 }
 
 /// The wake points we expect the OS to have scheduled, derived from the current
@@ -227,29 +212,6 @@ mod tests {
                 WAKE_LEAD_MINUTES
             )
             .is_empty()
-        );
-    }
-
-    #[test]
-    fn a_dated_special_still_wakes_a_disarmed_profile() {
-        // `active_slots` gates the WEEKLY plan only: a concert somebody entered
-        // by hand is not covered by «Ta opp automatisk», so the machine must
-        // still get out of bed for it — and the button must not claim the plan
-        // is switched off when it just armed one.
-        let mut s = sunday_profile(false);
-        s.special_recordings = vec![sundayrec_core::schedule::SpecialRecording {
-            id: None,
-            date: "2026-08-21".to_string(),
-            name: "Konsert".to_string(),
-            start: "19:00".to_string(),
-            stop: "20:30".to_string(),
-            device_id: None,
-        }];
-        let upcoming = upcoming_for_wake(&s, now());
-        assert_eq!(upcoming.len(), 1);
-        assert_eq!(
-            wake_idle_reason(s.auto_record_enabled, upcoming.len()),
-            None
         );
     }
 

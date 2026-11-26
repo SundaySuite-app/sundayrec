@@ -78,10 +78,6 @@ describe("docs-truth", () => {
     expect(text).not.toContain("is the newest tag");
   });
 
-  it("NEEDS-RICHARD.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
-    expect(readDoc("docs/NEEDS-RICHARD.md")).not.toMatch(/release\.yml:\d+/);
-  });
-
   it("RELEASE-CHECKLIST.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
     expect(readDoc("docs/RELEASE-CHECKLIST.md")).not.toMatch(
       /release\.yml:\d+/,
@@ -137,14 +133,12 @@ describe("docs-truth", () => {
     );
   });
 
-  it("APP-SHELL.md lister ikke recording_status/recording_scheduled_stop_ms som uleste gettere (F2-DOCS-1) — F2-T1/#236 slettet den første og koblet opp den andre", () => {
-    const text = readDoc("docs/APP-SHELL.md");
-    const uleseGettere = text.match(
-      /\*\*Gettere uten leser ennå:\*\*[\s\S]*?(?=\n- )/,
-    )?.[0];
-    expect(uleseGettere).toBeDefined();
-    expect(uleseGettere).not.toContain("recording_status");
-    expect(uleseGettere).not.toContain("recording_scheduled_stop_ms");
+  // Rent bord (F7): PLAN.md er registeret, og det skal fortelle både hva som er
+  // fjernet (så ingen legger det inn igjen) og at appen ikke laster opp noe.
+  it("PLAN.md lister det som er bevisst fjernet, og at appen ikke laster opp noe sted", () => {
+    const text = readDoc("docs/PLAN.md").replace(/\s+/g, " ");
+    expect(text).toContain("Bevisst fjernet i «rent bord»");
+    expect(text).toContain("appen laster ikke opp noe sted");
   });
 
   // F2-T4: runbooken beskrev «Sett opp» i sjekklista som en knapp som TAR DEG
@@ -152,33 +146,12 @@ describe("docs-truth", () => {
   // ingen steder — og nettopp denne setningen er den slags som blir stående i
   // en runbook lenge etter at skjermen sluttet å gjøre det den sier, fordi
   // ingen leser runbooken før neste riggdag.
-  it("SMOKE-TEST.md sier at sjekklistas rader folder ut på stedet (F2-T4)", () => {
+  it("SMOKE-TEST.md beskriver første gang som tre steg (F7)", () => {
     // Linjeskiftene er prettiers, ikke forfatterens: en påstand som brakk
     // fordi en setning ble ombrutt ville vært en gate om tekstbredde.
     const text = readDoc("docs/SMOKE-TEST.md").replace(/\s+/g, " ");
-    expect(text).toContain("opens the screen in place, in the row");
-    expect(text).not.toMatch(/checklist[^.]*takes you to the control room/i);
-  });
-
-  // «Legg ut» (2026-09): FRIVILLIG.md fikk en seksjon om å legge ut prekenen,
-  // og den hviler på to ting som begge kan bli usanne i stillhet. Den ene er
-  // løftet — appen laster fortsatt ikke opp noe selv — som den gamle «Viktig:
-  // sikkerhetskopi er IKKE en funksjon»-seksjonen også gir. Den andre er
-  // stien til innstillingen: «Innstillinger → Legg ut» er TO
-  // navn fra katalogen, og et omdøpt kort gjør en frivillig-veiledning feil
-  // uten at en eneste test merker det. Så stien leses av katalogen her.
-  it("FRIVILLIG.md: «Legg ut» laster ikke opp noe, og stien til innstillingen heter det katalogen kaller den", () => {
-    const text = readDoc("docs/FRIVILLIG.md").replace(/\s+/g, " ");
-    expect(text).toContain("SundayRec laster ikke opp noe selv");
-    expect(text).toContain("SundayRec laster ikke opp noe sted");
-    const no = JSON.parse(readDoc("legacy/locales/no.json")) as {
-      app: {
-        page: { setup: string };
-        setup: { sections: { publish: string } };
-      };
-    };
-    const path = [no.app.page.setup, no.app.setup.sections.publish].join(" → ");
-    expect(text).toContain(`**${path}**`);
+    expect(text).toContain("three-step first-run sequence");
+    expect(text).not.toMatch(/five real question screens/i);
   });
 
   // A2, 2026-10: fetch-ffmpeg.mjs gikk til 9.0.1 i v0.21.0 (2026-09-28), men

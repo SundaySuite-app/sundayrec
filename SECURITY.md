@@ -58,10 +58,9 @@ Trust boundaries the app has to defend at:
 - (The `sundayrec://` deep-link scheme, the chat webhook and the integration
   API endpoints were removed in R1 of «Frivilligen først», and the SMTP host
   the operator typed in went with e-mail alerts after that — fewer boundaries
-  to defend. The app no longer talks to any endpoint the user configures.
-  «Legg ut»'s own-page link is no exception: the app never fetches it, it
-  hands it to the system browser after vetting — see the «Legg ut» bullet
-  below.)
+  to defend. The app no longer talks to any endpoint the user configures. The
+  «Legg ut» own-page link went in F2 — nothing is handed to the system browser
+  from a stored setting any more.)
 - **The update feed** — a **first-party Cloudflare Worker** at
   `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
   auto-updater polls, plus the signed artifact it downloads and installs.
@@ -147,7 +146,7 @@ So a future auditor doesn't have to re-derive these from scratch:
   the native dialog is opened by the process, never by the webview — a path
   the webview sends is only a claim that a dialog was shown, and with no
   per-command ACL a compromised webview can send any path with no dialog at
-  all. Where the pick and its use are one step (the settings profile, below),
+  all. Where the pick and its use are one step (the settings profile, until F2),
   the command simply acts on the dialog's answer. Where they are separate
   clicks, Rust keeps the picked place and hands the webview an opaque session
   token for it
@@ -217,7 +216,7 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   the RESOLVED source. The intro and outro clips are not in the request at all:
   `use_intro`/`use_outro` are switches, Rust reads the clip from the SAVED
   settings and vets it again at use (`export_clip_unusable`), and
-  `settings_save` (and the localStorage hand-over) keeps the stored clips
+  `settings_save` keeps the stored clips
   whatever the webview sends — they change only through `settings_pick_editor_intro`/
   `_outro`, which open a dialog in Rust, and the clears. The refusals have codes
   and no paths: `source_unknown`, `source_missing`, `source_refused`. Old-shape
@@ -265,7 +264,7 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   (`crates/sundayrec-core/src/redact.rs`).
 - (**Whisper model integrity** — the SHA-256-verified model download — left
   with transcription in R2 of «Frivilligen først». The app downloads no
-  models any more; the VAD model is vendored and verified at build + load.)
+  models any more; the neural VAD and its vendored model left in F1.)
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
@@ -291,15 +290,6 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   dependency. The Google Drive/YouTube/Gmail OAuth client that followed the
   same pattern left with cloud backup in R1 of «Frivilligen først». SundayRec
   now holds no OAuth client and mints no token.
-- **«Legg ut» opens one page, never one the webview names.** The export
-  receipt's button calls `publish_open_upload_page`, which takes no argument:
-  it reads the stored channel and asks `sundayrec_core::publish::upload_page_url`,
-  which answers with a fixed `https://` address (SoundCloud, YouTube, Spotify
-  for Creators) or the church's own link after `custom_upload_url` has vetted
-  it (`https://` only, no userinfo, one line, at most 2048 characters). The
-  webview holds no `opener` permission at all (next bullet), and nothing is
-  uploaded — the volunteer drags the file in, logged in to the church's own
-  account in their own browser.
 - **The webview cannot reach the OS opener.** `capabilities/default.json`
   grants no `opener:` permission, and a Rust test
   (`commands::recordings_open::tests::the_webview_holds_no_opener_permission`)
@@ -345,31 +335,16 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   network path) is compared by name only; and a network share that stops
   answering still leaves the click waiting until the OS gives up, now on a
   blocking-pool thread rather than a runtime worker.
-- **A settings file's location comes from a dialog Rust opens.** The settings
-  profile («Innstillingsprofil») is exported and imported by
-  `settings_export_profile` and `settings_import_profile`, which take no
-  argument: each opens the native save/open dialog from Rust and touches only
-  the file that dialog answered. Until the review of #302 found it (A1), the
-  webview opened the dialog itself and passed the picked path to
-  `settings_export_to_file(path)` — and with no per-command ACL a compromised
-  webview could pass any path with no dialog at all, so the export was an
-  arbitrary file create/overwrite with content it shaped (every free-text
-  setting lands in the JSON): a `.cmd` in the Windows Startup folder, an
-  overwritten `~/.zshrc`. Its guard only knew the protected home folders. The dialog's
-  filter names now come from Rust too, in the stored UI language. The path the
-  dialog answers still meets the `UserChosenWrite`/`UserChosenRead` guard
-  (absolute, no `..`, not in a protected folder) as defence in depth. A
-  profile never carries this machine's own settings — its sound card and
-  routing, camera, save folder, start-at-login, wake and updates
-  (`settings::profile::MACHINE_LOCAL`): they are left out of the export and
-  ignored by the import, so a file cannot move where this machine records or
-  stop it starting. Nor can an import switch automatic deletion on or shorten
-  it. The import reads at most 1 MiB, refuses a file that
-  is not a settings profile (`profile_not_settings`) without writing anything,
-  and lays the profile over the stored settings rather than over the defaults
-  — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
-  path-taking twin of either command comes back, or if one of them grows a
-  path parameter.
+- **A settings file's location comes from a dialog Rust opens — and there is
+  none now.** The settings profile («Innstillingsprofil»: export and import of
+  the whole settings object as a JSON file) was removed in F2, with the
+  commands `settings_export_profile`/`settings_import_profile` and the
+  `settings::profile` module. The rule it taught stays: a path the settings keep
+  (the recordings folder, the editor's clips) comes from a dialog Rust opens,
+  never from a string the webview sends (`settings_pick_save_folder`,
+  `settings_pick_editor_intro`/`_outro`). `commands::path_ratchet` still holds
+  the shape (the old `settings_export_to_file`/`settings_import_from_file`
+  twins left its `REPLACED` list only because neither name exists any more).
   **A3/A4, the B-family and B1: closed (PR-D).** The last commands that took a
   path from the webview — the editor's sidecars and sermon pick, «Vis i
   Finder» and the papirkurv — were held only by `path_guard`, which judges a
@@ -433,41 +408,15 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   still receives paths — `OpenedRecording.path`, the export's `outputPath`, the
   history rows' `file_path` — for DISPLAY and for `<audio src>`, whose
   `asset://` address needs one over a scope Rust widened to exactly that file;
-  no command accepts one back. One door still takes a save folder the webview
-  names, and it is counted by Rust: `settings_import`, the one-shot
-  localStorage hand-over for an upgrade from the old app. It takes JSON and not
-  a path parameter, and the ratchet holds that shape to a closed list
-  (`PARSED_PLACE_STRUCTS`: a command that parses `Settings` — or a struct with
-  a place in it — out of a `String`/`Value` must be listed with its reason).
-  Until the #314 review (B1) its «only once» was a flag in the webview's own
-  localStorage, which a compromised page ignores, so it could move the recordings
-  folder whenever it liked — the review's proof moved it to `<app-data>/recovery`,
-  the first link of a chain that ended in deleted files. Now:
-  - **Rust counts it.** `import` claims the `legacy_import_done` row in the SAME
-    transaction that writes the settings; a second call is refused with
-    `settings_import_done` and writes nothing, and a failed write rolls the
-    claim back so the retry at the next launch still has its chance. The gate is
-    this flag and not «a settings row exists»: a build older than R4 bridged a
-    subset into sqlite and kept the full blob in localStorage, so a row can sit
-    next to a hand-over that is still due. (Nothing in `setup` writes the row
-    before the page does — `email_cleanup` and the scheduler's prune only
-    rewrite a row that exists.)
-  - **The first `settings_get` closes it** (`settings::close_legacy_import`), for
-    the installs that never needed a hand-over — a fresh one, or one that did it
-    years ago and has no flag. The page awaits its migration before it reads its
-    settings, so a hand-over that was due has happened by then. The cost: an
-    import that failed and is retried after the page was already read is
-    answered `settings_import_done` and dropped; the page treats that as done
-    (`app/lib/migrate-legacy-settings.ts`).
-  - **The folder in it is held to more than a dialog's folder**
-    (`vet_handover_save_folder`): the usual vet, and it must EXIST, be a folder
-    and take a probe file — and no save folder at all (dialog or hand-over) may be
-    the app's own data folder, inside it or above it (`save_folder_app_data`).
-    A refusal keeps the stored folder and imports the rest. The intro and outro
-    clips are never carried.
-    What remains: on an install where the hand-over has not been closed yet — from
-    process start until the page's first read — one call can still name an existing,
-    writable folder outside the protected and app folders.
+  no command accepts one back. No door takes a save folder the webview names
+  any more: the one-shot localStorage hand-over for an upgrade from the old
+  Electron app (`settings_import`, counted by Rust in `legacy_import_done`) was
+  removed in F2 together with the renderer-side migration, and the path
+  ratchet's closed list of commands that parse `Settings` out of a
+  `String`/`Value` (`PARSED_PLACE_STRUCTS`) is now EMPTY — a new one has to be
+  listed with its reason. The recordings folder changes only through
+  `settings_pick_save_folder`, and may never be the app's own data folder, inside
+  it or above it (`save_folder_app_data`).
 
   **The `updater:` lock (#314, S2).** The webview holds no updater permission.
   `build.rs` used to generate `capabilities/updater.generated.json`

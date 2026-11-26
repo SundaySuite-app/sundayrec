@@ -60,7 +60,7 @@ test.describe("app shell boot", () => {
     // at level 1 and read «Oppsett» (the destination D2 renamed to
     // «Innstillinger» and moved onto the gear).
     await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvilken lydkilde?",
+      "Lydkort og kanaler",
     );
 
     const violations = await page.evaluate(
@@ -93,59 +93,49 @@ test.describe("app shell boot", () => {
 // a different shell on a different port is itself the point: one seam, two
 // shells.
 test.describe("app shell foundation", () => {
-  test("?goto=settings:audio lands on OPPSETT / sound", async ({ page }) => {
-    // The alias table, end to end: `parseGoto` qualifies the bare tab id,
-    // `resolveRoute` translates the retired settings-* namespace into the new
-    // one, and the shell paints it. Ten e2e specs and every screenshot pass
-    // write this URL.
+  test("?goto=settings:sound lands on INNSTILLINGER at Lyd og kanaler", async ({
+    page,
+  }) => {
+    // `parseGoto` qualifies the bare tab id, `resolveRoute` turns it into an
+    // anchor on the two anchor pages, and the shell paints it. Many e2e specs
+    // and every screenshot pass write this URL.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:audio",
+      goto: "settings:sound",
     });
-    // D2: «sound» er ikke en fane lenger, det er et KORT i kontrollrommet — og
-    // dyplenken folder det ut i stedet for å bytte skjerm. Destinasjonen er
-    // derfor OPPTAK, og skjermen bak kortet er den samme «Hvilken lyd?».
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
-    await expect(page.getByTestId("nav-record")).toHaveAttribute(
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
+    await expect(page.getByTestId("nav-settings")).toHaveAttribute(
       "aria-current",
       "page",
     );
-    // Ruten som ATTRIBUTT: S1a viste den som synlig tekst fordi det ikke fantes
-    // noe annet å se. Nå står den der bare e2e ser den.
+    // Ruten som ATTRIBUTT: den står der bare e2e ser den.
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
       "sound",
     );
-    await expect(page.getByTestId("control-sound")).toHaveAttribute(
-      "data-expanded",
-      "true",
-    );
     await expect(page.getByTestId("setup-sound")).toBeVisible();
   });
 
-  test("a retired tab id still lands somewhere real", async ({ page }) => {
-    // `settings:notifications` was retired in the 7→5 fold; legacy maps it
-    // onward and so must we. A deep link that silently opens the wrong screen
-    // is worse than one that fails loudly.
-    //
-    // P1a rettet målet: etter #139 inneholder den gamle Deling-fanen BARE
-    // «Varsler», altså spørsmål 5. Plassholderen `advanced`/`sharing` som S1a
-    // satte pekte på en fane ingen bygger.
+  test("a retired page id lands on TA OPP, loudly", async ({ page }) => {
+    // The F5 alias tables are gone. An id the router does not know (here the
+    // retired `search`) lands on the first page and says so in the console —
+    // a blank page is the one answer that tells nobody anything.
+    const warnings: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "warning") warnings.push(msg.text());
+    });
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:notifications",
+      goto: "search",
     });
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-anchor",
-      "notify",
+      "data-page",
+      "record",
     );
-    await expect(page.getByTestId("control-notify")).toHaveAttribute(
-      "data-expanded",
-      "true",
-    );
-    await expect(page.getByTestId("setup-notify")).toBeVisible();
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
+    expect(warnings.some((w) => w.includes("ukjent side «search»"))).toBe(true);
   });
 
   test("the seeded language decides what the volunteer reads", async ({
@@ -157,7 +147,7 @@ test.describe("app shell foundation", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, language: "en" },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
     // …and nothing claims the settings could not be read.
@@ -178,11 +168,11 @@ test.describe("app shell foundation", () => {
     // screen — but the heading is the first QUESTION, because that is what the
     // sequence shows. The shell stays on OPPSETT the whole way.
     await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvilken lydkilde?",
+      "Lydkort og kanaler",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "setup",
+      "settings",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-first-run",
@@ -211,7 +201,7 @@ test.describe("app shell foundation", () => {
 
   test("a settled app opens on TA OPP", async ({ page }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SETTLED_SETTINGS });
-    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
     await expect(page.getByTestId("main")).not.toHaveAttribute(
       "data-first-run",
       "true",

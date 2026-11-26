@@ -7,18 +7,17 @@
 //! helpers already take `now: Date` for exactly this reason).
 //!
 //! What lives here (pure):
-//!   - the [`ScheduleSlot`] / [`SpecialRecording`] types (serde-compatible with
+//!   - the [`ScheduleSlot`] type (serde-compatible with
 //!     the Electron `types/index.ts` interfaces, so stored/exported profiles
 //!     keep their meaning),
 //!   - `HH:MM` / `YYYY-MM-DD` parsing with the Electron fallback defaults,
-//!   - "is this slot/special active right now?" (the late-start window),
+//!   - "is this slot active right now?" (the late-start window),
 //!   - midnight-crossing and degenerate-slot detection,
 //!   - the reminder / preflight *lead-time offset* math (with previous-day
 //!     wrap-around),
 //!   - "next occurrence" / "most-recent occurrence" of a weekly (weekday, time),
 //!   - the upcoming-dates / next-recording selection used to drive wake
 //!     scheduling and the tray tooltip,
-//!   - special-recording pruning,
 //!   - the missed-recording look-back decision (what to late-start, what to log).
 //!
 //! What stays in the `src-tauri` shell (impure): reading `Local::now()`, the
@@ -57,7 +56,7 @@ pub const DEFAULT_WINDOW_MS: i64 = 5 * 60_000;
 /// (`scheduler.ts` `MISSED_WINDOW_MS`.)
 pub const MISSED_WINDOW_MS: i64 = 60 * 60_000;
 
-/// How far back a missed-check looks for slots/specials that never ran (ms).
+/// How far back a missed-check looks for slots that never ran (ms).
 ///
 /// 7 days. The Electron build (and this one until runde 2 of `docs/VARSLING.md`)
 /// looked back 24 h, so a machine that was switched off from Sunday until
@@ -108,6 +107,21 @@ pub fn supervisor_should_fire(wait_ms: u64) -> bool {
 /// Longer than any realistic service; the user's chosen slot max wins when set.
 pub const SCHEDULED_MAX_BACKSTOP_MINUTES: u32 = 240;
 
+/// Absolute ceiling (24 h) for a slot's own recording: the slot's stop is the
+/// deadline, so the cap is the slot's real length — never the flat 240-min
+/// backstop, which silently cut long blocks from the week view.
+pub const SCHEDULED_MAX_CEILING_MINUTES: u32 = 24 * 60;
+
+/// The cap for a slot's own recording: its `max` when set (> 0), else the
+/// 24 h ceiling (the stop time itself is the real deadline).
+fn slot_cap_minutes(slot_max: u32) -> u32 {
+    if slot_max > 0 {
+        slot_max.min(SCHEDULED_MAX_CEILING_MINUTES)
+    } else {
+        SCHEDULED_MAX_CEILING_MINUTES
+    }
+}
+
 /// The manual-max a scheduled recording is started with: the user's slot `max`
 /// when they set one (> 0), else the [`SCHEDULED_MAX_BACKSTOP_MINUTES`] safety net
 /// so a missed Stop can never leave a recording running indefinitely.
@@ -122,7 +136,7 @@ pub fn scheduled_max_minutes(slot_max: u32) -> u32 {
 /// The auto-stop a scheduled recording is started with: whole minutes from
 /// `now` to the next wall-clock `stop` ("HH:MM" — tomorrow's when today's has
 /// passed, which is what a past-midnight stop is), rounded UP and at least 1,
-/// capped by [`scheduled_max_minutes`].
+/// capped by the slot's `max` when set, else the 24 h ceiling.
 ///
 /// Armed as the engine's own deadline, so the countdown the volunteer sees, the
 /// «+15 min» / «Avbryt auto-stop» buttons and the slot's stop are ONE clock —
@@ -135,12 +149,12 @@ pub fn minutes_until_stop(stop: &str, now: NaiveDateTime, slot_max: u32) -> u32 
         at += Duration::days(1);
     }
     let secs = (at - now).num_seconds().max(1) as u32;
-    secs.div_ceil(60).clamp(1, scheduled_max_minutes(slot_max))
+    secs.div_ceil(60).clamp(1, slot_cap_minutes(slot_max))
 }
 
 /// How long a scheduled recording is PLANNED to run, in minutes: start → stop
 /// (past midnight when the stop is earlier), capped by the same max the start
-/// is armed with ([`scheduled_max_minutes`]). `None` for a degenerate
+/// is armed with (the slot's `max`, else the real length). `None` for a degenerate
 /// start == stop, which is never scheduled. What the preflight disk check
 /// sizes the free space against.
 pub fn planned_duration_minutes(start: &str, stop: &str, slot_max: u32) -> Option<u32> {
@@ -153,7 +167,7 @@ pub fn planned_duration_minutes(start: &str, stop: &str, slot_max: u32) -> Optio
     if span <= 0 {
         span += 24 * 60;
     }
-    Some((span as u32).min(scheduled_max_minutes(slot_max)))
+    Some((span as u32).min(slot_cap_minutes(slot_max)))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,32 +192,6 @@ pub struct ScheduleSlot {
     /// Optional hard cap in minutes for this slot's recording length.
     #[serde(default)]
     pub max: Option<i32>,
-}
-
-/// A one-off dated recording. Mirrors the Electron `SpecialRecording`
-/// (`types/index.ts:25`): `{ id?; date; name; start; stop; deviceId? }`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "SpecialRecording.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct SpecialRecording {
-    /// Stable id (UI-generated), optional for older stored entries.
-    #[serde(default)]
-    pub id: Option<String>,
-    /// Calendar date `YYYY-MM-DD`.
-    #[serde(default)]
-    pub date: String,
-    /// Human-readable label shown in history / notifications.
-    #[serde(default)]
-    pub name: String,
-    /// Start time `HH:MM`.
-    #[serde(default = "default_start")]
-    pub start: String,
-    /// Stop time `HH:MM`.
-    #[serde(default = "default_stop")]
-    pub stop: String,
-    /// Optional capture-device override for this recording.
-    #[serde(default)]
-    pub device_id: Option<String>,
 }
 
 fn default_start() -> String {
@@ -299,36 +287,6 @@ pub fn slot_active_now(
         }
     }
     false
-}
-
-/// True if `now` falls within `[start, start + window]` for a dated special and
-/// is still before `stop`. Direct port of `scheduler.ts` `specialActiveNow`.
-pub fn special_active_now(
-    date: &str,
-    start: &str,
-    stop: &str,
-    now: NaiveDateTime,
-    window_ms: i64,
-) -> bool {
-    // Same rule as for slots: start == stop is rejected, not read as 24 h.
-    if is_degenerate(start, stop) {
-        return false;
-    }
-    let (Some(start_dt), Some(stop_dt)) = (
-        parse_date_time(date, start, (11, 0)),
-        parse_date_time(date, stop, (12, 0)),
-    ) else {
-        return false;
-    };
-    // A stop at-or-before the start means the special runs past midnight — the
-    // stop belongs to the NEXT day (same rule the slot event builder applies).
-    let stop_dt = if stop_dt <= start_dt {
-        stop_dt + Duration::days(1)
-    } else {
-        stop_dt
-    };
-    let late = (now - start_dt).num_milliseconds();
-    late >= 0 && late <= window_ms && now < stop_dt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -432,7 +390,6 @@ pub fn most_recent_occurrence(
 /// per recurrence job (its single next invocation), bounded by the cutoff.
 pub fn upcoming_dates(
     slots: &[ScheduleSlot],
-    specials: &[SpecialRecording],
     now: NaiveDateTime,
     days_ahead: i64,
 ) -> Vec<NaiveDateTime> {
@@ -453,28 +410,13 @@ pub fn upcoming_dates(
             }
         }
     }
-    for sp in specials {
-        if is_degenerate(&sp.start, &sp.stop) {
-            continue;
-        }
-        if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0))
-            && start > now
-            && start < cutoff
-        {
-            out.push(start);
-        }
-    }
     out.sort();
     out
 }
 
-/// The single nearest future START across all slots and specials, or `None` if
+/// The single nearest future START across all slots, or `None` if
 /// nothing is scheduled ahead. Port of `getNextRecording` (minus the job key).
-pub fn next_recording(
-    slots: &[ScheduleSlot],
-    specials: &[SpecialRecording],
-    now: NaiveDateTime,
-) -> Option<NaiveDateTime> {
+pub fn next_recording(slots: &[ScheduleSlot], now: NaiveDateTime) -> Option<NaiveDateTime> {
     let mut best: Option<NaiveDateTime> = None;
     let mut consider = |dt: NaiveDateTime| {
         if dt > now && best.map(|b| dt < b).unwrap_or(true) {
@@ -492,14 +434,6 @@ pub fn next_recording(
             }
         }
     }
-    for sp in specials {
-        if is_degenerate(&sp.start, &sp.stop) {
-            continue;
-        }
-        if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) {
-            consider(start);
-        }
-    }
     best
 }
 
@@ -510,7 +444,7 @@ pub fn next_recording(
 /// What a [`ScheduledEvent`] tells the supervisor to do when its time arrives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledEventKind {
-    /// Begin recording the source slot/special.
+    /// Begin recording the source slot.
     Start,
     /// Stop the current recording.
     Stop,
@@ -545,7 +479,7 @@ pub struct ScheduledEvent {
     pub at: NaiveDateTime,
     /// What to do.
     pub kind: ScheduledEventKind,
-    /// Which slot/special this came from (index into the input slices).
+    /// Which slot this came from (index into the input slices).
     pub source: TriggerKind,
 }
 
@@ -561,13 +495,12 @@ pub struct ScheduledEvent {
 ///
 /// - Degenerate slots (start == stop) contribute nothing (Electron skips them).
 /// - `reminder_min == 0` suppresses REMINDER events (the Electron `reminderMin > 0` guard).
-/// - STOP events are emitted for the slot/special's stop time even when the
+/// - STOP events are emitted for the slot's stop time even when the
 ///   matching start has already passed, exactly like the Electron stop job —
 ///   so an app launched mid-service still stops on time. `STOP` is idempotent
 ///   in the shell (a no-op when nothing is recording).
 pub fn upcoming_events(
     slots: &[ScheduleSlot],
-    specials: &[SpecialRecording],
     now: NaiveDateTime,
     reminder_min: i32,
     horizon_days: i64,
@@ -621,42 +554,8 @@ pub fn upcoming_events(
         }
     }
 
-    for (i, sp) in specials.iter().enumerate() {
-        // start == stop: rejected like a degenerate slot — otherwise the
-        // past-midnight rule below turns it into a 24 h recording.
-        if is_degenerate(&sp.start, &sp.stop) {
-            continue;
-        }
-        let src = TriggerKind::Special(i);
-        let start = parse_date_time(&sp.date, &sp.start, (11, 0));
-        push(start, ScheduledEventKind::Start, src);
-        // A stop at-or-before the start crosses midnight → next day. Slots
-        // already shift their stop weekday; specials parsed the stop onto the
-        // SAME date, which put it before the start (an idempotent no-op) — a
-        // 23:00–00:30 special ran to the 240-min backstop instead of 1.5 h.
-        let stop = parse_date_time(&sp.date, &sp.stop, (12, 0)).map(|t| match start {
-            Some(s) if t <= s => t + Duration::days(1),
-            _ => t,
-        });
-        push(stop, ScheduledEventKind::Stop, src);
-        if let Some(start) = start {
-            if reminder_min > 0 {
-                push(
-                    Some(start - Duration::minutes(reminder_min as i64)),
-                    ScheduledEventKind::Reminder,
-                    src,
-                );
-            }
-            push(
-                Some(start - Duration::minutes(PREFLIGHT_LEAD_MIN as i64)),
-                ScheduledEventKind::Preflight,
-                src,
-            );
-        }
-    }
-
     // Stable and total: events at the same instant fire in a fixed order,
-    // whatever order the slots/specials happened to be listed in.
+    // whatever order the slots happened to be listed in.
     out.sort_by_key(|e| (e.at, e.kind.fire_rank()));
     out
 }
@@ -725,37 +624,6 @@ pub fn enumeration_base(now: NaiveDateTime, fired_through: Option<NaiveDateTime>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//   Special pruning
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Drop specials whose stop time ended more than 7 days before `now`, so the
-/// stored list doesn't grow unbounded. Port of the prune pass at
-/// `scheduler.ts:154`.
-///
-/// Deviation from Electron (intentional): a special whose `date`/`stop` can't be
-/// parsed is **kept**, not silently dropped. The Electron `new Date('…')`
-/// produces an `Invalid Date` that fails the `>=` test and is pruned; we'd
-/// rather not delete a user's entry over a parse hiccup. The UI/validation keeps
-/// malformed entries from being created in the first place.
-pub fn prune_specials(
-    specials: &[SpecialRecording],
-    now: NaiveDateTime,
-) -> (Vec<SpecialRecording>, usize) {
-    let threshold = now - Duration::days(7);
-    let kept: Vec<SpecialRecording> = specials
-        .iter()
-        .filter(|s| {
-            parse_date_time(&s.date, &s.stop, (12, 0))
-                .map(|stop| stop >= threshold)
-                .unwrap_or(true)
-        })
-        .cloned()
-        .collect();
-    let pruned = specials.len() - kept.len();
-    (kept, pruned)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //   Missed-recording look-back + active-trigger detection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -763,17 +631,16 @@ pub fn prune_specials(
 /// key the [`missed_recordings`] pass uses to avoid double-counting it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveTrigger {
-    /// Index into the originating slots/specials slice.
+    /// Index into the originating slots slice.
     pub kind: TriggerKind,
     /// Stable dedup key shared with [`missed_recordings`].
     pub key: String,
 }
 
-/// Whether an [`ActiveTrigger`] came from a weekly slot or a dated special.
+/// What an [`ActiveTrigger`] came from: a weekly slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerKind {
     Slot(usize),
-    Special(usize),
 }
 
 /// Dedup key for a slot occurrence — `slot:<weekday>:<start>-<stop>`. Internal
@@ -783,11 +650,7 @@ fn slot_key(slot: &ScheduleSlot, when: NaiveDateTime) -> String {
     format!("slot:{}:{}-{}", weekday_mon0(when), slot.start, slot.stop)
 }
 
-fn special_key(sp: &SpecialRecording) -> String {
-    format!("special:{}:{}", sp.date, sp.start)
-}
-
-/// Slots/specials whose start time is within the late-start `window_ms` of
+/// Slots whose start time is within the late-start `window_ms` of
 /// `now`. ALL of them, deliberately: every occurrence in here has been *handled*
 /// by this pass and must therefore be fed to [`missed_recordings`] as
 /// `triggered`, whether or not it is the one that got the microphone.
@@ -797,7 +660,6 @@ fn special_key(sp: &SpecialRecording) -> String {
 /// Mirrors the trigger half of `checkMissedRecordings`.
 pub fn active_within(
     slots: &[ScheduleSlot],
-    specials: &[SpecialRecording],
     now: NaiveDateTime,
     window_ms: i64,
 ) -> Vec<ActiveTrigger> {
@@ -807,14 +669,6 @@ pub fn active_within(
             out.push(ActiveTrigger {
                 kind: TriggerKind::Slot(i),
                 key: slot_key(slot, now),
-            });
-        }
-    }
-    for (i, sp) in specials.iter().enumerate() {
-        if special_active_now(&sp.date, &sp.start, &sp.stop, now, window_ms) {
-            out.push(ActiveTrigger {
-                kind: TriggerKind::Special(i),
-                key: special_key(sp),
             });
         }
     }
@@ -927,11 +781,9 @@ pub struct MissedRecording {
 pub enum MissedKind {
     /// A weekly slot, by its own start/stop (`"11:00"`, `"13:00"`).
     Weekly { start: String, stop: String },
-    /// A dated special recording; `None` when it was never given a name.
-    Special { name: Option<String> },
 }
 
-/// Decide which slots/specials in the last 24 h should be logged as *missed*:
+/// Decide which slots in the last 24 h should be logged as *missed*:
 /// their start time is older than the late-start window (can't be run now) but
 /// recent enough to matter, isn't already covered by a `triggered` late-start,
 /// isn't already present in `history` (within ±30 min), and isn't inside a
@@ -961,7 +813,6 @@ pub enum MissedKind {
 /// every comparison here is tz-free.
 pub fn missed_recordings(
     slots: &[ScheduleSlot],
-    specials: &[SpecialRecording],
     now: NaiveDateTime,
     history: &[NaiveDateTime],
     covered: &[CoveredWindow],
@@ -1008,44 +859,6 @@ pub fn missed_recordings(
         }
     }
 
-    for sp in specials {
-        if is_degenerate(&sp.start, &sp.stop) {
-            continue;
-        }
-        let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) else {
-            continue;
-        };
-        let age = (now - start).num_milliseconds();
-        if age <= MISSED_WINDOW_MS {
-            continue;
-        }
-        if start < start_cutoff {
-            continue;
-        }
-        if triggered.contains(&special_key(sp)) {
-            continue;
-        }
-        if history_covers(history, start) {
-            continue;
-        }
-        if windows_cover(covered, start) {
-            continue;
-        }
-        let named = !sp.name.trim().is_empty();
-        let label = if named {
-            sp.name.clone()
-        } else {
-            "Spesialopptak".to_string()
-        };
-        out.push(MissedRecording {
-            when: start,
-            label,
-            kind: MissedKind::Special {
-                name: named.then(|| sp.name.clone()),
-            },
-        });
-    }
-
     out
 }
 
@@ -1054,110 +867,6 @@ fn history_covers(history: &[NaiveDateTime], when: NaiveDateTime) -> bool {
     history
         .iter()
         .any(|&h| (h - when).num_milliseconds().abs() < HISTORY_COVER_MS)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   Special device override
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// A special recording may name its own capture device (a wedding on a USB mic
-// while the weekly service records from the mixer). The special stores the id
-// the renderer's device picker uses; the recorder opens devices by NAME. These
-// are the pure halves of turning one into the other — the enumeration itself
-// and the operator warning live in the `src-tauri` scheduler.
-//
-// The Sunday-critical rule is the shape of every function below: a weekly slot,
-// or a special WITHOUT a device, never reaches any of this beyond
-// [`special_device_wanted`] answering `None`, so its recording is composed from
-// exactly the settings it always was.
-
-/// The device a trigger wants on top of the global settings: the special's own
-/// `device_id`, when the trigger is a special that has a non-blank one.
-///
-/// `None` for every weekly slot, for a special without a device (the renderer
-/// wrote `deviceId: null` for years), for a blank one, and for an index that
-/// points past the list — the global device in all four cases.
-pub fn special_device_wanted(specials: &[SpecialRecording], kind: TriggerKind) -> Option<&str> {
-    match kind {
-        TriggerKind::Slot(_) => None,
-        TriggerKind::Special(i) => specials
-            .get(i)
-            .and_then(|sp| sp.device_id.as_deref())
-            .filter(|id| !id.trim().is_empty()),
-    }
-}
-
-/// What a special recording records from, decided against the inputs that are
-/// enumerated right now.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpecialDevice {
-    /// No device of its own: the global settings decide, unchanged.
-    Global,
-    /// Its device is present. `id` is the picker id (what `device_channels` is
-    /// keyed by), `name` what the recorder opens.
-    Use { id: String, name: String },
-    /// It asked for a device nothing answers to. The caller records on the
-    /// global device instead — and says so.
-    Missing { wanted: String },
-}
-
-/// Resolve a special's stored device against the enumerated inputs, given as
-/// `(id, name)` pairs in the picker's id space.
-///
-/// Match on the id first — that is what the picker stored — then on the name,
-/// for a profile that carries a backend name instead of a picker id. Both
-/// matches are EXACT. The recorder's own lookup is fuzzy (substring, word
-/// overlap) because a stored label from an older build may not be the OS name;
-/// here a fuzzy hit would be a silent guess at a DIFFERENT device, while a miss
-/// costs a recording on the usual device plus a warning that names the one that
-/// was not there. The second is the one an operator can act on.
-pub fn resolve_special_device(wanted: Option<&str>, inputs: &[(String, String)]) -> SpecialDevice {
-    let Some(wanted) = wanted.filter(|w| !w.trim().is_empty()) else {
-        return SpecialDevice::Global;
-    };
-    let hit = inputs
-        .iter()
-        .find(|(id, _)| id == wanted)
-        .or_else(|| inputs.iter().find(|(_, name)| name == wanted));
-    match hit {
-        Some((id, name)) => SpecialDevice::Use {
-            id: id.clone(),
-            name: name.clone(),
-        },
-        None => SpecialDevice::Missing {
-            wanted: wanted.to_string(),
-        },
-    }
-}
-
-/// The settings a special with its own (present) device records with: the
-/// global settings, pointed at that device.
-///
-/// `device_id` + `device_name` follow the device, and [`Settings::validate`]
-/// then derives the channel pair from `device_channels[id]` — the pair the
-/// operator chose for THAT device in the device picker, or default routing when
-/// it has none. One case `validate` leaves alone on purpose (an EMPTY map keeps
-/// the flat pair, for profiles older than the map) is closed here: switching to
-/// a different device whose pair nobody chose must not inherit the global
-/// device's channels — channel 16/17 of a mixer means nothing on a USB mic.
-///
-/// Everything else — format, folder, silence, split, video — stays the global
-/// settings'. A special changes WHERE the sound comes from, nothing more.
-pub fn settings_for_special_device(
-    global: &crate::settings::Settings,
-    id: &str,
-    name: &str,
-) -> crate::settings::Settings {
-    let mut s = global.clone();
-    let switching = s.device_id.as_deref() != Some(id);
-    s.device_id = Some(id.to_string());
-    s.device_name = Some(name.to_string());
-    if switching && !s.device_channels.contains_key(id) {
-        s.input_channel_l = None;
-        s.input_channel_r = None;
-    }
-    s.validate();
-    s
 }
 
 #[cfg(test)]
@@ -1329,73 +1038,6 @@ mod tests {
     }
 
     #[test]
-    fn special_active_now_handles_midnight_crossing() {
-        // A 23:00–00:30 special: the stop belongs to the next day. The old
-        // same-date parse put the stop BEFORE the start → never active.
-        assert!(special_active_now(
-            "2026-12-31",
-            "23:00",
-            "00:30",
-            dt("2026-12-31 23:20"),
-            MISSED_WINDOW_MS
-        ));
-        // Past the (next-day) stop → inactive.
-        assert!(!special_active_now(
-            "2026-12-31",
-            "23:00",
-            "00:30",
-            dt("2027-01-01 00:35"),
-            MISSED_WINDOW_MS
-        ));
-    }
-
-    #[test]
-    fn special_stop_event_crosses_midnight() {
-        // The event builder must schedule the 23:00–00:30 special's STOP on the
-        // next day — the same-date parse made it a pre-start no-op, so the
-        // recording ran to the 240-min backstop instead of 1.5 h.
-        let sp = SpecialRecording {
-            id: None,
-            date: "2026-12-31".into(),
-            name: "Nyttårsgudstjeneste".into(),
-            start: "23:00".into(),
-            stop: "00:30".into(),
-            device_id: None,
-        };
-        let events = upcoming_events(&[], std::slice::from_ref(&sp), dt("2026-12-31 20:00"), 0, 7);
-        let stop = events
-            .iter()
-            .find(|e| matches!(e.kind, ScheduledEventKind::Stop))
-            .expect("a stop event must exist");
-        assert_eq!(stop.at, dt("2027-01-01 00:30"));
-    }
-
-    #[test]
-    fn special_active_now_matches_dated_window() {
-        assert!(special_active_now(
-            "2026-06-07",
-            "11:00",
-            "12:00",
-            dt("2026-06-07 11:02"),
-            DEFAULT_WINDOW_MS
-        ));
-        assert!(!special_active_now(
-            "2026-06-07",
-            "11:00",
-            "12:00",
-            dt("2026-06-08 11:02"), // wrong day
-            DEFAULT_WINDOW_MS
-        ));
-        assert!(!special_active_now(
-            "bad-date",
-            "11:00",
-            "12:00",
-            dt("2026-06-07 11:02"),
-            DEFAULT_WINDOW_MS
-        ));
-    }
-
-    #[test]
     fn crosses_midnight_and_degenerate() {
         assert!(!crosses_midnight("11:00", "12:00"));
         assert!(crosses_midnight("23:00", "01:00"));
@@ -1485,47 +1127,9 @@ mod tests {
     }
 
     #[test]
-    fn next_recording_picks_nearest() {
-        let slots = vec![sunday_slot()];
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-09".to_string(), // Tuesday, sooner than next Sunday
-            name: "Konsert".to_string(),
-            start: "19:00".to_string(),
-            stop: "21:00".to_string(),
-            device_id: None,
-        }];
-        // now = Monday 2026-06-08 09:00 → nearest is Tuesday's special.
-        assert_eq!(
-            next_recording(&slots, &specials, dt("2026-06-08 09:00")),
-            Some(dt("2026-06-09 19:00"))
-        );
-    }
-
-    #[test]
-    fn next_recording_picks_slot_when_it_beats_a_later_special() {
-        // The mirror of next_recording_picks_nearest: a slot sooner than a
-        // special wins (cross-source nearest, the other direction).
-        let slots = vec![sunday_slot()]; // Sun 11:00
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-20".to_string(), // far-off Saturday
-            name: "Konsert".to_string(),
-            start: "19:00".to_string(),
-            stop: "21:00".to_string(),
-            device_id: None,
-        }];
-        // now = Saturday 2026-06-06 09:00 → tomorrow's Sunday slot is nearest.
-        assert_eq!(
-            next_recording(&slots, &specials, dt("2026-06-06 09:00")),
-            Some(dt("2026-06-07 11:00"))
-        );
-    }
-
-    #[test]
     fn next_recording_is_none_when_nothing_future_or_all_degenerate() {
-        // No slots, no specials → nothing to fire.
-        assert!(next_recording(&[], &[], dt("2026-06-07 09:00")).is_none());
+        // No slots → nothing to fire.
+        assert!(next_recording(&[], dt("2026-06-07 09:00")).is_none());
         // A degenerate slot is skipped, leaving nothing.
         let deg = vec![ScheduleSlot {
             days: vec![6],
@@ -1533,17 +1137,7 @@ mod tests {
             stop: "11:00".to_string(),
             max: None,
         }];
-        assert!(next_recording(&deg, &[], dt("2026-06-07 09:00")).is_none());
-        // A special entirely in the past contributes no future fire.
-        let past = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-01".to_string(),
-            name: "Forbi".to_string(),
-            start: "11:00".to_string(),
-            stop: "12:00".to_string(),
-            device_id: None,
-        }];
-        assert!(next_recording(&[], &past, dt("2026-06-07 09:00")).is_none());
+        assert!(next_recording(&deg, dt("2026-06-07 09:00")).is_none());
     }
 
     #[test]
@@ -1552,38 +1146,9 @@ mod tests {
         // future (strict `> now`), so the next fire rolls a week forward.
         let slots = vec![sunday_slot()];
         assert_eq!(
-            next_recording(&slots, &[], dt("2026-06-07 11:00")),
+            next_recording(&slots, dt("2026-06-07 11:00")),
             Some(dt("2026-06-14 11:00"))
         );
-    }
-
-    #[test]
-    fn missed_recordings_catches_up_a_slot_and_a_special_together() {
-        // now = Monday 2026-06-08 09:00. Sunday's 11:00 slot occurred ~22h ago
-        // (past the late-start window, inside 24h) and was never recorded, and a
-        // Saturday special also went un-run — both should surface as catch-up.
-        let slots = vec![sunday_slot()];
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-07".to_string(), // Sunday too, 14:00 — distinct from slot
-            name: "Dåp".to_string(),
-            start: "14:00".to_string(),
-            stop: "15:00".to_string(),
-            device_id: None,
-        }];
-        let now = dt("2026-06-08 09:00");
-        let missed = missed_recordings(&slots, &specials, now, &[], &[], &HashSet::new());
-        let labels: Vec<_> = missed.iter().map(|m| m.label.as_str()).collect();
-        assert!(labels.iter().any(|l| l.contains("Ukentlig")));
-        assert!(labels.contains(&"Dåp"));
-        assert_eq!(missed.len(), 2);
-
-        // A history row covering the slot occurrence removes it from catch-up;
-        // the un-covered special still surfaces.
-        let history = vec![dt("2026-06-07 11:00")];
-        let missed2 = missed_recordings(&slots, &specials, now, &history, &[], &HashSet::new());
-        assert_eq!(missed2.len(), 1);
-        assert_eq!(missed2[0].label, "Dåp");
     }
 
     #[test]
@@ -1595,7 +1160,7 @@ mod tests {
             max: None,
         }];
         // now = Sunday 2026-06-07 09:00, window 14 days.
-        let up = upcoming_dates(&slots, &[], dt("2026-06-07 09:00"), 14);
+        let up = upcoming_dates(&slots, dt("2026-06-07 09:00"), 14);
         // Sun 11:00 today, Mon 11:00 tomorrow (next occurrences of each job).
         assert_eq!(up, vec![dt("2026-06-07 11:00"), dt("2026-06-08 11:00")]);
         // Degenerate slot contributes nothing.
@@ -1605,51 +1170,13 @@ mod tests {
             stop: "11:00".to_string(),
             max: None,
         }];
-        assert!(upcoming_dates(&deg, &[], dt("2026-06-07 09:00"), 14).is_empty());
-    }
-
-    #[test]
-    fn prune_specials_drops_old_keeps_recent_and_malformed() {
-        let now = dt("2026-06-30 12:00");
-        let specials = vec![
-            // ended 10 days ago → pruned
-            SpecialRecording {
-                id: None,
-                date: "2026-06-20".to_string(),
-                name: "Gammel".to_string(),
-                start: "11:00".to_string(),
-                stop: "12:00".to_string(),
-                device_id: None,
-            },
-            // ended 2 days ago → kept
-            SpecialRecording {
-                id: None,
-                date: "2026-06-28".to_string(),
-                name: "Nylig".to_string(),
-                start: "11:00".to_string(),
-                stop: "12:00".to_string(),
-                device_id: None,
-            },
-            // malformed date → kept (deviation from Electron, documented)
-            SpecialRecording {
-                id: None,
-                date: "garbage".to_string(),
-                name: "Rar".to_string(),
-                start: "11:00".to_string(),
-                stop: "12:00".to_string(),
-                device_id: None,
-            },
-        ];
-        let (kept, pruned) = prune_specials(&specials, now);
-        assert_eq!(pruned, 1);
-        let names: Vec<_> = kept.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, vec!["Nylig", "Rar"]);
+        assert!(upcoming_dates(&deg, dt("2026-06-07 09:00"), 14).is_empty());
     }
 
     #[test]
     fn active_within_finds_current_slot_with_key() {
         let slots = vec![sunday_slot()];
-        let triggers = active_within(&slots, &[], dt("2026-06-07 11:03"), DEFAULT_WINDOW_MS);
+        let triggers = active_within(&slots, dt("2026-06-07 11:03"), DEFAULT_WINDOW_MS);
         assert_eq!(triggers.len(), 1);
         assert_eq!(triggers[0].kind, TriggerKind::Slot(0));
         assert_eq!(triggers[0].key, "slot:6:11:00-12:00");
@@ -1661,13 +1188,13 @@ mod tests {
         // now = Sunday 13:00 → 11:00 start is 2 h ago: older than the 60-min
         // late-start window, within 24 h, not triggered, not in history → missed.
         let now = dt("2026-06-07 13:00");
-        let missed = missed_recordings(&slots, &[], now, &[], &[], &HashSet::new());
+        let missed = missed_recordings(&slots, now, &[], &[], &HashSet::new());
         assert_eq!(missed.len(), 1);
         assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
         assert_eq!(missed[0].label, "Ukentlig opptak (11:00–12:00)");
     }
 
-    /// start == stop is rejected for slots and specials alike: it must not be
+    /// start == stop is rejected: it must not be
     /// scheduled, late-started, or reported as «missed» every week.
     #[test]
     fn minutes_until_stop_counts_to_the_stop_across_midnight_and_caps() {
@@ -1685,59 +1212,42 @@ mod tests {
             minutes_until_stop("14:00", dt("2026-06-07 11:00"), 120),
             120
         );
-        assert_eq!(
-            minutes_until_stop("23:00", dt("2026-06-07 08:00"), 0),
-            SCHEDULED_MAX_BACKSTOP_MINUTES
-        );
+        // A long slot is NOT cut at the 240-min backstop: 08:00 → 23:00 = 15 h.
+        assert_eq!(minutes_until_stop("23:00", dt("2026-06-07 08:00"), 0), 900);
+        // 8 h slot → stop deadline is exactly 8 h.
+        assert_eq!(minutes_until_stop("16:00", dt("2026-06-07 08:00"), 0), 480);
+        // Midnight-crossing long slot: 20:00 → 06:00 = 10 h.
+        assert_eq!(minutes_until_stop("06:00", dt("2026-06-07 20:00"), 0), 600);
     }
 
     #[test]
     fn planned_duration_spans_midnight_and_is_capped_by_the_max() {
         assert_eq!(planned_duration_minutes("11:00", "12:30", 0), Some(90));
         assert_eq!(planned_duration_minutes("23:00", "00:30", 0), Some(90));
-        // Capped by the slot max, and by the backstop when none is set.
+        // Capped by the slot max; else the real length.
         assert_eq!(planned_duration_minutes("11:00", "14:00", 120), Some(120));
-        assert_eq!(
-            planned_duration_minutes("08:00", "20:00", 0),
-            Some(SCHEDULED_MAX_BACKSTOP_MINUTES)
-        );
+        assert_eq!(planned_duration_minutes("08:00", "20:00", 0), Some(720));
+        assert_eq!(planned_duration_minutes("20:00", "06:00", 0), Some(600));
+        assert_eq!(planned_duration_minutes("08:00", "20:00", 90), Some(90));
         assert_eq!(planned_duration_minutes("11:00", "11:00", 0), None);
     }
 
     #[test]
-    fn degenerate_slot_and_special_are_never_scheduled_or_reported_missed() {
+    fn degenerate_slot_is_never_scheduled_or_reported_missed() {
         let deg_slot = vec![ScheduleSlot {
             days: vec![6],
             start: "11:00".to_string(),
             stop: "11:00".to_string(),
             max: None,
         }];
-        let deg_special = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-07".to_string(),
-            name: "Konsert".to_string(),
-            start: "11:00".to_string(),
-            stop: "11:00".to_string(),
-            device_id: None,
-        }];
         // Two hours after the 11:00 start: well past the late-start window.
         let now = dt("2026-06-07 13:00");
-        assert!(
-            missed_recordings(&deg_slot, &deg_special, now, &[], &[], &HashSet::new()).is_empty()
-        );
+        assert!(missed_recordings(&deg_slot, now, &[], &[], &HashSet::new()).is_empty());
         // Not scheduled: no events, not the next recording, no wake date.
         let early = dt("2026-06-06 09:00");
-        assert!(upcoming_events(&[], &deg_special, early, 15, 3).is_empty());
-        assert_eq!(next_recording(&[], &deg_special, early), None);
-        assert!(upcoming_dates(&[], &deg_special, early, 3).is_empty());
-        // …and not late-started as a 24 h recording.
-        assert!(!special_active_now(
-            "2026-06-07",
-            "11:00",
-            "11:00",
-            dt("2026-06-07 11:10"),
-            MISSED_WINDOW_MS
-        ));
+        assert!(upcoming_events(&deg_slot, early, 15, 3).is_empty());
+        assert_eq!(next_recording(&deg_slot, early), None);
+        assert!(upcoming_dates(&deg_slot, early, 3).is_empty());
     }
 
     #[test]
@@ -1747,24 +1257,16 @@ mod tests {
 
         // Covered by a history entry within ±30 min of 11:00 → suppressed.
         let history = vec![dt("2026-06-07 11:10")];
-        assert!(missed_recordings(&slots, &[], now, &history, &[], &HashSet::new()).is_empty());
+        assert!(missed_recordings(&slots, now, &history, &[], &HashSet::new()).is_empty());
 
         // Triggered this pass → suppressed.
         let mut triggered = HashSet::new();
         triggered.insert("slot:6:11:00-12:00".to_string());
-        assert!(missed_recordings(&slots, &[], now, &[], &[], &triggered).is_empty());
+        assert!(missed_recordings(&slots, now, &[], &[], &triggered).is_empty());
 
         // Still inside the 60-min late-start window (11:30) → not yet "missed".
         assert!(
-            missed_recordings(
-                &slots,
-                &[],
-                dt("2026-06-07 11:30"),
-                &[],
-                &[],
-                &HashSet::new()
-            )
-            .is_empty()
+            missed_recordings(&slots, dt("2026-06-07 11:30"), &[], &[], &HashSet::new()).is_empty()
         );
     }
 
@@ -1774,7 +1276,7 @@ mod tests {
         // now = Tuesday 14:00. Sunday 7 June (two days back) is reported;
         // Sunday 31 May (nine days back) is outside the window.
         let now = dt("2026-06-09 14:00");
-        let missed = missed_recordings(&slots, &[], now, &[], &[], &HashSet::new());
+        let missed = missed_recordings(&slots, now, &[], &[], &HashSet::new());
         assert_eq!(missed.len(), 1);
         assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
     }
@@ -1784,20 +1286,14 @@ mod tests {
     #[test]
     fn late_start_choice_starts_exactly_one_of_two_simultaneous_triggers() {
         // The Sunday this finding is named after: a weekly 11:00 slot AND a
-        // hand-entered special at the same minute, app launched at 11:20.
-        let slots = vec![sunday_slot()];
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-07".to_string(),
-            name: "Konfirmasjon".to_string(),
-            start: "11:00".to_string(),
-            stop: "12:00".to_string(),
-            device_id: None,
-        }];
-        let active = active_within(&slots, &specials, dt("2026-06-07 11:20"), MISSED_WINDOW_MS);
+        // second slot at the same minute, app launched at 11:20.
+        // Two entries for one service — a schedule mistake, but one the app
+        // must survive without destroying a take.
+        let slots = vec![sunday_slot(), sunday_slot()];
+        let active = active_within(&slots, dt("2026-06-07 11:20"), MISSED_WINDOW_MS);
         // BOTH are active — that half is deliberate, because both keys have to
         // reach `missed_recordings` as handled.
-        assert_eq!(active.len(), 2, "slot + special both inside the window");
+        assert_eq!(active.len(), 2, "both slots inside the window");
 
         // …but the recorder gets ONE, and it is the same one `fire()` would have
         // picked on time (slots sort first in `upcoming_events`).
@@ -1876,7 +1372,7 @@ mod tests {
         let slots = vec![sunday_slot()];
         let now = dt("2026-06-07 12:30");
         assert_eq!(
-            missed_recordings(&slots, &[], now, &[], &[], &HashSet::new()).len(),
+            missed_recordings(&slots, now, &[], &[], &HashSet::new()).len(),
             1,
             "precondition: without the manifest this is a (false) missed report"
         );
@@ -1886,7 +1382,7 @@ mod tests {
             last_seen: dt("2026-06-07 11:35"),
         }];
         assert!(
-            missed_recordings(&slots, &[], now, &[], &pending, &HashSet::new()).is_empty(),
+            missed_recordings(&slots, now, &[], &pending, &HashSet::new()).is_empty(),
             "a manifest on disk says it DID record — recovery just has not written \
              the row yet"
         );
@@ -1901,7 +1397,6 @@ mod tests {
         }];
         let missed = missed_recordings(
             &evening,
-            &[],
             dt("2026-06-07 20:00"),
             &[],
             &pending,
@@ -1915,65 +1410,11 @@ mod tests {
     }
 
     #[test]
-    fn a_special_inside_a_longer_interrupted_recording_is_not_missed() {
-        // A special at 11:30 while the weekly take (11:00 →) was still running:
-        // covered by the STRETCH clause, not by the ±30 min start clause.
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-07".to_string(),
-            name: "Dåp".to_string(),
-            start: "11:30".to_string(),
-            stop: "12:00".to_string(),
-            device_id: None,
-        }];
-        let pending = [CoveredWindow {
-            start: dt("2026-06-07 11:00"),
-            last_seen: dt("2026-06-07 12:30"),
-        }];
-        assert!(
-            missed_recordings(
-                &[],
-                &specials,
-                dt("2026-06-07 13:00"),
-                &[],
-                &pending,
-                &HashSet::new()
-            )
-            .is_empty(),
-            "something WAS recording at 11:30"
-        );
-    }
-
-    #[test]
-    fn special_recording_serde_matches_electron_camel_case() {
-        let sp = SpecialRecording {
-            id: Some("x1".to_string()),
-            date: "2026-06-07".to_string(),
-            name: "Konsert".to_string(),
-            start: "19:00".to_string(),
-            stop: "21:00".to_string(),
-            device_id: Some("dev-2".to_string()),
-        };
-        let json = serde_json::to_value(&sp).unwrap();
-        let obj = json.as_object().unwrap();
-        assert!(obj.contains_key("deviceId"));
-        assert!(!obj.contains_key("device_id"));
-        // Round-trips from a partial Electron blob (missing id/deviceId).
-        let back: SpecialRecording = serde_json::from_str(
-            r#"{ "date": "2026-06-07", "name": "X", "start": "10:00", "stop": "11:00" }"#,
-        )
-        .unwrap();
-        assert_eq!(back.id, None);
-        assert_eq!(back.device_id, None);
-        assert_eq!(back.start, "10:00");
-    }
-
-    #[test]
     fn upcoming_events_enumerates_start_stop_reminder_preflight() {
         let slots = vec![sunday_slot()];
         // now = Sunday 09:00; reminder 15 min; horizon 2 days.
         let now = dt("2026-06-07 09:00");
-        let ev = upcoming_events(&slots, &[], now, 15, 2);
+        let ev = upcoming_events(&slots, now, 15, 2);
         // Expect today: preflight 10:30, reminder 10:45, start 11:00, stop 12:00.
         let want = [
             (dt("2026-06-07 10:30"), ScheduledEventKind::Preflight),
@@ -1993,63 +1434,50 @@ mod tests {
     /// again from the anchored base. Returns (kind, source) of what fired.
     fn fire_and_reenumerate(
         slots: &[ScheduleSlot],
-        specials: &[SpecialRecording],
         now: NaiveDateTime,
         fire_at: NaiveDateTime,
     ) -> (Vec<(ScheduledEventKind, TriggerKind)>, Vec<ScheduledEvent>) {
-        let events = upcoming_events(slots, specials, now, 0, 2);
+        let events = upcoming_events(slots, now, 0, 2);
         let fired: Vec<_> = events_due(&events, fire_at)
             .iter()
             .map(|e| (e.kind, e.source))
             .collect();
         // The next pass runs a little after the fire, so `now` has moved on.
         let later = fire_at + Duration::seconds(2);
-        let next = upcoming_events(
-            slots,
-            specials,
-            enumeration_base(later, Some(fire_at)),
-            0,
-            2,
-        );
+        let next = upcoming_events(slots, enumeration_base(later, Some(fire_at)), 0, 2);
         (fired, next)
     }
 
     #[test]
     fn back_to_back_recordings_fire_stop_then_start_at_the_shared_instant() {
-        // Weekly 11:00–12:30 service, and a special 12:30–13:30 the same Sunday.
-        let slots = vec![ScheduleSlot {
+        // Weekly 11:00–12:30 service, and a 12:30–13:30 slot the same Sunday.
+        let mut slots = vec![ScheduleSlot {
             days: vec![6],
             start: "11:00".to_string(),
             stop: "12:30".to_string(),
             max: None,
         }];
-        let specials = vec![SpecialRecording {
-            id: None,
-            date: "2026-06-07".to_string(),
-            name: "Dåp".to_string(),
+        slots.push(ScheduleSlot {
+            days: vec![6],
             start: "12:30".to_string(),
             stop: "13:30".to_string(),
-            device_id: None,
-        }];
-        let (fired, next) = fire_and_reenumerate(
-            &slots,
-            &specials,
-            dt("2026-06-07 12:00"),
-            dt("2026-06-07 12:30"),
-        );
-        // BOTH events at 12:30 fire — Stop first, so the special's Start finds a
+            max: None,
+        });
+        let (fired, next) =
+            fire_and_reenumerate(&slots, dt("2026-06-07 12:00"), dt("2026-06-07 12:30"));
+        // BOTH events at 12:30 fire — Stop first, so the second Start finds a
         // free recorder — in one group.
         assert_eq!(
             fired,
             vec![
                 (ScheduledEventKind::Stop, TriggerKind::Slot(0)),
-                (ScheduledEventKind::Start, TriggerKind::Special(0)),
+                (ScheduledEventKind::Start, TriggerKind::Slot(1)),
             ]
         );
         // …and the next enumeration neither repeats them nor skips ahead past
-        // the special's own Stop.
+        // the second slot's own Stop.
         assert_eq!(next[0].kind, ScheduledEventKind::Stop);
-        assert_eq!(next[0].source, TriggerKind::Special(0));
+        assert_eq!(next[0].source, TriggerKind::Slot(1));
         assert_eq!(next[0].at, dt("2026-06-07 13:30"));
     }
 
@@ -2069,7 +1497,7 @@ mod tests {
         };
         for slots in [vec![a.clone(), b.clone()], vec![b.clone(), a.clone()]] {
             let (fired, _) =
-                fire_and_reenumerate(&slots, &[], dt("2026-06-07 09:30"), dt("2026-06-07 10:00"));
+                fire_and_reenumerate(&slots, dt("2026-06-07 09:30"), dt("2026-06-07 10:00"));
             let kinds: Vec<_> = fired.iter().map(|f| f.0).collect();
             assert_eq!(
                 kinds,
@@ -2096,7 +1524,7 @@ mod tests {
                 max: None,
             },
         ];
-        let events = upcoming_events(&slots, &[], dt("2026-06-07 11:10"), 30, 1);
+        let events = upcoming_events(&slots, dt("2026-06-07 11:10"), 30, 1);
         let due = events_due(&events, dt("2026-06-07 11:30"));
         assert_eq!(due.len(), 3); // Stop, Reminder, Preflight (12:00 − 30 min)
         assert_eq!(due[0].kind, ScheduledEventKind::Stop);
@@ -2160,7 +1588,7 @@ mod tests {
         // Clock stepped back: 02:00 again, 30 min before the recorded fire.
         let now = dt("2026-10-25 02:00");
         let base = enumeration_base(now, Some(fired));
-        let ev = upcoming_events(&slots, &[], base, 0, 1);
+        let ev = upcoming_events(&slots, base, 0, 1);
         assert!(
             !ev.iter()
                 .any(|e| e.kind == ScheduledEventKind::Start && e.at <= fired),
@@ -2173,7 +1601,7 @@ mod tests {
         let slots = vec![sunday_slot()];
         let now = dt("2026-06-07 09:00");
         // reminder_min = 0 → no Reminder events.
-        let ev = upcoming_events(&slots, &[], now, 0, 2);
+        let ev = upcoming_events(&slots, now, 0, 2);
         assert!(!ev.iter().any(|e| e.kind == ScheduledEventKind::Reminder));
         assert!(ev.iter().any(|e| e.kind == ScheduledEventKind::Start));
 
@@ -2184,7 +1612,7 @@ mod tests {
             stop: "11:00".to_string(),
             max: None,
         }];
-        assert!(upcoming_events(&deg, &[], now, 15, 7).is_empty());
+        assert!(upcoming_events(&deg, now, 15, 7).is_empty());
     }
 
     #[test]
@@ -2193,7 +1621,7 @@ mod tests {
         // start rolls to next week but the stop is still today → emitted, so an
         // app launched mid-service still stops on time.
         let slots = vec![sunday_slot()];
-        let ev = upcoming_events(&slots, &[], dt("2026-06-07 11:30"), 0, 1);
+        let ev = upcoming_events(&slots, dt("2026-06-07 11:30"), 0, 1);
         let stops: Vec<_> = ev
             .iter()
             .filter(|e| e.kind == ScheduledEventKind::Stop)
@@ -2212,7 +1640,7 @@ mod tests {
             max: None,
         }];
         let now = dt("2026-06-06 22:00"); // Sat
-        let ev = upcoming_events(&slots, &[], now, 0, 2);
+        let ev = upcoming_events(&slots, now, 0, 2);
         let start = ev
             .iter()
             .find(|e| e.kind == ScheduledEventKind::Start)
@@ -2233,266 +1661,5 @@ mod tests {
         assert_eq!(s.start, "11:00");
         assert_eq!(s.stop, "12:00");
         assert_eq!(s.max, None);
-    }
-
-    // ── Special device override ─────────────────────────────────────────────
-
-    fn special_with(device_id: Option<&str>) -> SpecialRecording {
-        SpecialRecording {
-            id: None,
-            date: "2026-12-24".into(),
-            name: "Julekonsert".into(),
-            start: "16:00".into(),
-            stop: "17:30".into(),
-            device_id: device_id.map(str::to_string),
-        }
-    }
-
-    /// The picker-id space the scheduler hands over: host devices by name,
-    /// ASIO devices with the renderer's `asio::` prefix.
-    fn inputs() -> Vec<(String, String)> {
-        [
-            ("asio::Focusrite USB ASIO", "Focusrite USB ASIO"),
-            ("Behringer X32", "Behringer X32"),
-            ("Rode NT-USB", "Rode NT-USB"),
-        ]
-        .iter()
-        .map(|(id, name)| (id.to_string(), name.to_string()))
-        .collect()
-    }
-
-    #[test]
-    fn only_a_special_with_a_non_blank_device_wants_one() {
-        let specials = vec![
-            special_with(None),
-            special_with(Some("")),
-            special_with(Some("   ")),
-            special_with(Some("Rode NT-USB")),
-        ];
-        // A weekly slot NEVER wants a device — whatever the specials say.
-        for i in 0..specials.len() {
-            assert_eq!(special_device_wanted(&specials, TriggerKind::Slot(i)), None);
-        }
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(0)),
-            None
-        );
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(1)),
-            None
-        );
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(2)),
-            None
-        );
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(3)),
-            Some("Rode NT-USB")
-        );
-        // An index past the list is the global device, not a panic.
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(9)),
-            None
-        );
-    }
-
-    #[test]
-    fn the_renderers_special_json_reaches_the_resolver_intact() {
-        // Byte-for-byte what `withSpecial` (app/pages/setup/advanced/
-        // specials-core.ts) writes — the picker id, `asio::` prefix and all,
-        // and `null` for «Samme som vanlig opptak».
-        let specials: Vec<SpecialRecording> = serde_json::from_str(
-            r#"[
-                {"id":null,"date":"2099-06-20","name":"Bryllup","start":"14:00",
-                 "stop":"15:30","deviceId":"asio::Focusrite USB ASIO"},
-                {"id":null,"date":"2099-06-21","name":"Konsert","start":"19:00",
-                 "stop":"20:30","deviceId":null}
-            ]"#,
-        )
-        .unwrap();
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(0)),
-            Some("asio::Focusrite USB ASIO")
-        );
-        assert_eq!(
-            special_device_wanted(&specials, TriggerKind::Special(1)),
-            None
-        );
-        assert_eq!(
-            resolve_special_device(
-                special_device_wanted(&specials, TriggerKind::Special(0)),
-                &inputs()
-            ),
-            SpecialDevice::Use {
-                id: "asio::Focusrite USB ASIO".into(),
-                name: "Focusrite USB ASIO".into()
-            }
-        );
-        // …and back out again unchanged, so a settings save does not lose it.
-        let back = serde_json::to_value(&specials[0]).unwrap();
-        assert_eq!(back["deviceId"], "asio::Focusrite USB ASIO");
-    }
-
-    #[test]
-    fn resolve_special_device_table() {
-        let list = inputs();
-        let cases: Vec<(Option<&str>, SpecialDevice)> = vec![
-            // No device of its own → the global settings, untouched.
-            (None, SpecialDevice::Global),
-            (Some(""), SpecialDevice::Global),
-            (Some("  "), SpecialDevice::Global),
-            // The picker id, exactly — host device.
-            (
-                Some("Rode NT-USB"),
-                SpecialDevice::Use {
-                    id: "Rode NT-USB".into(),
-                    name: "Rode NT-USB".into(),
-                },
-            ),
-            // The picker id, exactly — ASIO device: the id keeps its prefix
-            // (it keys `device_channels`), the name is what the recorder opens.
-            (
-                Some("asio::Focusrite USB ASIO"),
-                SpecialDevice::Use {
-                    id: "asio::Focusrite USB ASIO".into(),
-                    name: "Focusrite USB ASIO".into(),
-                },
-            ),
-            // Name-only match: a profile that stored the backend name of an
-            // ASIO device rather than the picker id still finds it.
-            (
-                Some("Focusrite USB ASIO"),
-                SpecialDevice::Use {
-                    id: "asio::Focusrite USB ASIO".into(),
-                    name: "Focusrite USB ASIO".into(),
-                },
-            ),
-            // Not there → Missing, carrying what was asked for.
-            (
-                Some("Zoom H6"),
-                SpecialDevice::Missing {
-                    wanted: "Zoom H6".into(),
-                },
-            ),
-            // Exact means exact: no fuzzy hit on a different device.
-            (
-                Some("Behringer"),
-                SpecialDevice::Missing {
-                    wanted: "Behringer".into(),
-                },
-            ),
-            (
-                Some("rode nt-usb"),
-                SpecialDevice::Missing {
-                    wanted: "rode nt-usb".into(),
-                },
-            ),
-        ];
-        for (wanted, expected) in cases {
-            assert_eq!(
-                resolve_special_device(wanted, &list),
-                expected,
-                "wanted = {wanted:?}"
-            );
-        }
-        // An empty enumeration answers Missing, never Use.
-        assert_eq!(
-            resolve_special_device(Some("Behringer X32"), &[]),
-            SpecialDevice::Missing {
-                wanted: "Behringer X32".into()
-            }
-        );
-    }
-
-    #[test]
-    fn the_id_wins_over_a_name_that_happens_to_match_another_entry() {
-        // Contrived, but it pins the ORDER: the stored id is the operator's
-        // choice; a name match is only the fallback.
-        let list = vec![
-            ("Mic A".to_string(), "Mic B".to_string()),
-            ("Mic B".to_string(), "Mic B (2)".to_string()),
-        ];
-        assert_eq!(
-            resolve_special_device(Some("Mic B"), &list),
-            SpecialDevice::Use {
-                id: "Mic B".into(),
-                name: "Mic B (2)".into()
-            }
-        );
-    }
-
-    #[test]
-    fn a_special_device_carries_its_own_channel_pair() {
-        use crate::settings::{DeviceChannels, Settings};
-        let mut map = std::collections::HashMap::new();
-        map.insert(
-            "Behringer X32".to_string(),
-            DeviceChannels {
-                channel_l: 16,
-                channel_r: 17,
-            },
-        );
-        map.insert(
-            "asio::Focusrite USB ASIO".to_string(),
-            DeviceChannels {
-                channel_l: 2,
-                channel_r: 3,
-            },
-        );
-        let global = Settings {
-            device_id: Some("Behringer X32".into()),
-            device_name: Some("Behringer X32".into()),
-            device_channels: map,
-            ..Settings::default()
-        }
-        .validated();
-        assert_eq!(
-            (global.input_channel_l, global.input_channel_r),
-            (Some(16), Some(17))
-        );
-
-        // A device with its own pair → that pair.
-        let s =
-            settings_for_special_device(&global, "asio::Focusrite USB ASIO", "Focusrite USB ASIO");
-        assert_eq!(s.device_id.as_deref(), Some("asio::Focusrite USB ASIO"));
-        assert_eq!(s.device_name.as_deref(), Some("Focusrite USB ASIO"));
-        assert_eq!((s.input_channel_l, s.input_channel_r), (Some(2), Some(3)));
-
-        // A device nobody chose a pair for → default routing, not 16/17.
-        let s = settings_for_special_device(&global, "Rode NT-USB", "Rode NT-USB");
-        assert_eq!((s.input_channel_l, s.input_channel_r), (None, None));
-
-        // Everything that is not the device stays the global settings'.
-        assert_eq!(
-            Settings {
-                device_id: global.device_id.clone(),
-                device_name: global.device_name.clone(),
-                input_channel_l: global.input_channel_l,
-                input_channel_r: global.input_channel_r,
-                ..s
-            },
-            global
-        );
-    }
-
-    #[test]
-    fn an_old_profile_without_a_channel_map_does_not_leak_its_pair_to_another_device() {
-        use crate::settings::Settings;
-        // An empty map keeps the flat pair (profiles older than the map) —
-        // `validate` alone would hand the mixer's 16/17 to the USB mic.
-        let global = Settings {
-            device_id: Some("Behringer X32".into()),
-            device_name: Some("Behringer X32".into()),
-            input_channel_l: Some(16),
-            input_channel_r: Some(17),
-            ..Settings::default()
-        }
-        .validated();
-        let other = settings_for_special_device(&global, "Rode NT-USB", "Rode NT-USB");
-        assert_eq!((other.input_channel_l, other.input_channel_r), (None, None));
-
-        // …while naming the SAME device the global settings use changes nothing.
-        let same = settings_for_special_device(&global, "Behringer X32", "Behringer X32");
-        assert_eq!(same, global);
     }
 }

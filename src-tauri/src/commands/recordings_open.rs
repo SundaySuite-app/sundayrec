@@ -312,58 +312,6 @@ fn app_folders() -> Vec<PathBuf> {
     .collect()
 }
 
-/// [`vet_new_save_folder`] for the one place a folder is NOT the answer of a
-/// dialog: the localStorage hand-over (`settings_import`). On top of the vet it
-/// has to be a folder that EXISTS and that this process can write into.
-///
-/// The hand-over carries a folder an old installation recorded into, so it was
-/// there when that installation last ran; one that is gone (an unplugged disk,
-/// a deleted folder) is not worth taking on the webview's word — the stored
-/// folder is kept (see `settings::import`) and the operator picks the folder
-/// again, in a dialog. The probe is a real file, created and removed: the mode
-/// bits of a share or a sandboxed folder say nothing about what is writable.
-pub(crate) fn vet_handover_save_folder(raw: &str) -> AppResult<()> {
-    vet_handover_in(raw, path_guard::home_dir().as_deref(), &app_folders())
-}
-
-/// [`vet_handover_save_folder`] with the home folder and the app's own folders
-/// passed in, so the tests can give it ones that exist.
-fn vet_handover_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult<()> {
-    vet_save_folder_in(raw, home, app)?;
-    let path = Path::new(raw);
-    match std::fs::metadata(path) {
-        Ok(meta) if meta.is_dir() => {}
-        Ok(_) => return Err(save_folder_invalid()),
-        Err(_) => {
-            return Err(AppError::Validation(
-                "handover_folder_missing: the recordings folder does not exist".into(),
-            ));
-        }
-    }
-    let probe = path.join(format!(
-        ".sundayrec-handover-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    let created = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&probe);
-    match created {
-        Ok(file) => {
-            drop(file);
-            let _ = std::fs::remove_file(&probe);
-            Ok(())
-        }
-        Err(_) => Err(AppError::Validation(
-            "handover_folder_unwritable: the recordings folder cannot be written to".into(),
-        )),
-    }
-}
-
 /// [`vet_new_save_folder`] with the home folder passed in, so the tests can
 /// give it one without touching the process environment other tests read.
 #[cfg(test)]
@@ -1184,7 +1132,7 @@ mod tests {
         assert_refused(vet(&link.join("2026"), &home), "save_folder_invalid");
     }
 
-    // ── The app's own folders, and the hand-over's stricter vet (#314) ───────
+    // ── The app's own folders (#314) ─────────────────────────────────────────
 
     /// A fake `<app-data>` with its `recovery` folder, both existing, next to
     /// the fake home.
@@ -1234,63 +1182,6 @@ mod tests {
             !app_folders().is_empty(),
             "the premise: the platform has an app-data folder"
         );
-    }
-
-    #[test]
-    fn the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data() {
-        // Everything else about it is fine — it exists and can be written to —
-        // so only the app-folder rule can refuse it.
-        let (dir, home) = fake_home();
-        let app = fake_app_data(&dir);
-        assert_refused(
-            vet_handover_in(app.join("recovery").to_str().unwrap(), Some(&home), &[app]),
-            "save_folder_app_data",
-        );
-    }
-
-    #[test]
-    fn the_hand_over_vet_takes_an_existing_writable_folder_and_leaves_no_probe_behind() {
-        let (dir, home) = fake_home();
-        let app = fake_app_data(&dir);
-        let rig = dir.path().join("Rig").join("Opptak");
-        std::fs::create_dir_all(&rig).unwrap();
-        vet_handover_in(rig.to_str().unwrap(), Some(&home), &[app]).unwrap();
-        assert_eq!(std::fs::read_dir(&rig).unwrap().count(), 0);
-    }
-
-    #[test]
-    fn the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file() {
-        let (dir, home) = fake_home();
-        let missing = dir.path().join("Disk-ute").join("Opptak");
-        assert_refused(
-            vet_handover_in(missing.to_str().unwrap(), Some(&home), &[]),
-            "handover_folder_missing",
-        );
-        // The ordinary vet takes it: the dialog's folder may be created later.
-        vet_save_folder_in(missing.to_str().unwrap(), Some(&home), &[]).unwrap();
-        let file = dir.path().join("fil.txt");
-        std::fs::write(&file, b"x").unwrap();
-        assert_refused(
-            vet_handover_in(file.to_str().unwrap(), Some(&home), &[]),
-            "save_folder_invalid",
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn the_hand_over_vet_refuses_a_folder_it_cannot_write_to() {
-        use std::os::unix::fs::PermissionsExt;
-        let (dir, home) = fake_home();
-        let locked = dir.path().join("Laast");
-        std::fs::create_dir_all(&locked).unwrap();
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let result = vet_handover_in(locked.to_str().unwrap(), Some(&home), &[]);
-        let root = std::fs::File::create(locked.join("probe")).is_ok();
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
-        if root {
-            return; // running as root: the mode bits say nothing, so neither can this test
-        }
-        assert_refused(result, "handover_folder_unwritable");
     }
 
     #[test]

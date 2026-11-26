@@ -129,8 +129,15 @@ async function seedTrash(
 }
 
 async function openLibrary(page: Page, fixtures: Fixtures): Promise<void> {
-  await boot(page, { fixtures, settings: SETTLED_SETTINGS, goto: "search" });
-  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+  await boot(page, {
+    fixtures,
+    settings: SETTLED_SETTINGS,
+    goto: "recordings",
+  });
+  await expect(page.getByTestId("main")).toHaveAttribute(
+    "data-page",
+    "recordings",
+  );
 }
 
 test.describe("bibliotek — lista", () => {
@@ -250,30 +257,30 @@ test.describe("bibliotek — lista", () => {
   });
 });
 
-test.describe("bibliotek — papirkurvens inngang", () => {
+test.describe("opptak — papirkurvfanen", () => {
   test("står der også når kurven er tom", async ({ page }) => {
     // Atlaset §5, funn 9: `refreshTrashButton()` i legacy setter
     // `display:none` på «Papirkurv» når `trash_list` er tom, og lukker
     // visningen hvis den står åpen. En frivillig som slettet noe i går og leter
     // etter det i dag finner da ingen dør.
     //
-    // MUTASJONSPRØVEN: gjør lenken betinget av `inTrash > 0` i `Foot`
-    // (`LibraryPage.tsx`) og denne blir rød.
+    // MUTASJONSPRØVEN: gjør fanen betinget av `inTrash > 0` i
+    // `RecordingsTabs` (`LibraryPage.tsx`) og denne blir rød.
     await openLibrary(page, {
       ...BOOT_FIXTURES,
       recordings_list: ROWS,
       trash_list: [],
     });
-    const link = page.getByTestId("library-trash-open");
+    const link = page.getByTestId("recordings-tabs-row-trash");
     await expect(link).toBeVisible();
-    await expect(link).toHaveText("Papirkurven er tom");
+    await expect(link).toContainText("Papirkurv");
 
     await link.click();
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
     await expect(page.getByTestId("trash-empty")).toBeVisible();
-    // Skinnen står fortsatt på BIBLIOTEK — papirkurven er et sted INNE i
-    // biblioteket, ikke et fjerde sted i appen.
-    await expect(page.getByTestId("nav-edit")).toHaveAttribute(
+    // Bunnlinja står fortsatt på OPPTAK — papirkurven er en fane inne i
+    // Opptak, ikke et femte sted i appen.
+    await expect(page.getByTestId("nav-recordings")).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -285,7 +292,7 @@ test.describe("bibliotek — papirkurvens inngang", () => {
       recordings_list: ROWS,
       trash_list: [trashEntry(), trashEntry({ id: "t2" })],
     });
-    await expect(page.getByTestId("library-trash-open")).toHaveText(
+    await expect(page.getByTestId("recordings-tabs-row-trash")).toContainText(
       "Papirkurv (2)",
     );
   });
@@ -299,7 +306,7 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("library-trash-open").click();
+    await page.getByTestId("recordings-tabs-row-trash").click();
 
     await expect(page.getByTestId("trash-row")).toHaveCount(1);
     // 30 dagers frist minus sju dager i kurven.
@@ -323,7 +330,7 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("library-trash-open").click();
+    await page.getByTestId("recordings-tabs-row-trash").click();
     await page.getByTestId("trash-row-purge").click();
 
     const dialog = page.getByTestId("dialog");
@@ -368,7 +375,7 @@ test.describe("papirkurven", () => {
       ...TRASH_STORE,
       recordings_list: ROWS,
     });
-    await page.getByTestId("library-trash-open").click();
+    await page.getByTestId("recordings-tabs-row-trash").click();
     await expect(page.getByTestId("trash-row")).toHaveCount(2);
 
     await page.getByTestId("trash-empty-all").click();
@@ -389,15 +396,15 @@ test.describe("papirkurven", () => {
     await expect(page.getByTestId("trash-empty-all")).toHaveCount(0);
   });
 
-  test("«Tilbake til biblioteket» går tilbake dit", async ({ page }) => {
+  test("fanen «Opptak» går tilbake til lista", async ({ page }) => {
     await openLibrary(page, {
       ...BOOT_FIXTURES,
       recordings_list: ROWS,
       trash_list: [],
     });
-    await page.getByTestId("library-trash-open").click();
+    await page.getByTestId("recordings-tabs-row-trash").click();
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
-    await page.getByTestId("trash-back").click();
+    await page.getByTestId("recordings-tabs-row-all").click();
     await expect(page.getByTestId("main")).not.toHaveAttribute(
       "data-tab",
       "trash",
@@ -539,7 +546,10 @@ test.describe("F2-A-F: en slettet rad overlever en omstart", () => {
     await page.waitForFunction(
       () => typeof (window as any).showPage === "function",
     );
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
 
     // Raden er FORTSATT borte — historikkraden består (F1-M2), men den skal
     // ikke tilby «Rediger» mot en fil som ligger i papirkurven.
@@ -548,13 +558,13 @@ test.describe("F2-A-F: en slettet rad overlever en omstart", () => {
 
     // Angre, fra papirkurv-visningen inne i biblioteket — raden kommer
     // tilbake med en gang.
-    await page.getByTestId("library-trash-open").click();
+    await page.getByTestId("recordings-tabs-row-trash").click();
     await expect(page.getByTestId("trash-row")).toHaveCount(1);
     await page.getByTestId("trash-row-restore").click();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_RESTORED__))
       .toEqual(["t0"]);
-    await page.getByTestId("trash-back").click();
+    await page.getByTestId("recordings-tabs-row-all").click();
     await expect(page.getByTestId("library-row")).toHaveCount(2);
     await expect(page.getByTestId("main")).toContainText("Bønnemøte");
 
@@ -629,7 +639,10 @@ test.describe("REDIGERING på en fil som ikke lenger er der", () => {
     // Den nye handlingen går til papirkurven, samme mål som retensjonens
     // toast (`retention.spec.ts`) navigerer til.
     await page.getByTestId("editor-load-error-trash").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
   });
 

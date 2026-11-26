@@ -11,11 +11,8 @@ import {
 // by `path::title`.
 //
 // ⚠️ ONE describe from the legacy file is NOT here: «diagnose». The Diagnose
-// modal (`#btn-audio-diagnose` → `run_diagnostics`) has no home in the new
-// information architecture yet — canvas set 5.4 does not list it, and P1b's
-// row list does not either. Porting a spec for a screen that does not exist
-// would mean inventing the screen inside a test file. The legacy spec still
-// covers it, and `docs/SMOKE-TEST.md` §219 still points there.
+// screen was removed with the rent-bord pruning (F2), so there is nothing left
+// to spec.
 //
 // What did move: the log buttons are two rows in Avansert. (The e-mail card
 // moved to question 5 and was then removed with e-mail alerts.)
@@ -41,7 +38,7 @@ test.describe("log file", () => {
     await boot(page, {
       fixtures,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
   }
 
@@ -94,7 +91,7 @@ test.describe("licenses", () => {
           "<!doctype html><h2>FFmpeg (GPL)</h2><p>source: https://ffmpeg.org</p>",
       },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await expect(page.getByTestId("adv-licenses")).toContainText("Lisenser");
@@ -117,7 +114,7 @@ test.describe("licenses", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await page.getByTestId("adv-licenses-open").click();

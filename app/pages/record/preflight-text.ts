@@ -23,18 +23,6 @@ import { interpolate } from "../../state/backend-warning";
  * Har funnet en kode, er katalogen fasiten. `{gb}` og `{device}` fylles med
  * motorens egne `params` — tallet er et FAKTUM målt i det øyeblikket sjekken
  * kjørte, og skallets egen diskmåling er en annen måling til en annen tid.
- *
- * ## Spesialopptakets egen lydenhet
- *
- * `deviceMissing` peker på «lydenheten som er valgt i innstillingene», som er
- * FEIL enhet å lete etter når det er spesialopptakets egen som mangler.
- * Planleggeren sender da `specialDeviceMissing`, med enhetens navn som DATA i
- * `params.device` — samme kode slås opp i OS-varselet
- * (`AlertText::PreflightSpecialDeviceMissing`). De to katalogene er to kopier av
- * én setning, og det som holder dem til de samme ordene på alle sju språk er
- * Rust-testen `the_card_and_the_notification_say_the_same_words`
- * (`sundayrec-core`), ikke dette oppslaget. Navnet leses aldri ut av `message`:
- * en kode skal slås opp, ikke en setning parses.
  */
 export function preflightText(f: PreflightFinding): string {
   if (!f.code) return f.message;

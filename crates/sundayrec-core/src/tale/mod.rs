@@ -1,4 +1,4 @@
-//! «Tale» renser av seg selv (B3a, `docs/LYDMOTOR.md` fase 3): analysen som
+//! «Tale» renser av seg selv (B3a, `docs/archive/LYDMOTOR.md` fase 3): analysen som
 //! avgjør hva profilen «Tale» tar med, og hvordan støy- og romklangfjerningen
 //! holdes unna musikk.
 //!
@@ -27,7 +27,7 @@
 //! does the same, scaled. An organ chord, a held pad or an accompaniment is
 //! exactly such a signal, and a service has plenty of them.
 //!
-//! The three ways out, as measured (`tale` tests and `docs/LYDMOTOR.md`
+//! The three ways out, as measured (`tale` tests and `docs/archive/LYDMOTOR.md`
 //! «B3a»):
 //!
 //! * **(b) a targeted `afftdn`** (no `tn=1`, `nf` measured) took 13.5 dB of the

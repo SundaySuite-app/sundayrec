@@ -28,7 +28,7 @@ use crate::error::{AppError, AppResult};
 pub async fn logs_reveal(app: tauri::AppHandle) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
-    // ENGLISH, not one of `sundayrec_core::alerts`' seven languages, and that is
+    // ENGLISH, not one of `sundayrec_core::alerts`' two languages, and that is
     // the honest call: `api-shim.ts` (`logsReveal`) catches this rejection,
     // `console.warn`s it and returns `false`. It never becomes a sentence a
     // volunteer reads — it is a developer diagnostic, and this codebase's

@@ -1,5 +1,5 @@
 //! When a camera has dropped out and when to open it again (C5a,
-//! docs/VIDEOMOTOR.md §C5): the pure decisions behind the camera session's
+//! docs/archive/VIDEOMOTOR.md §C5): the pure decisions behind the camera session's
 //! reconnect.
 //!
 //! **The sound never takes part.** A recording's audio is written by another

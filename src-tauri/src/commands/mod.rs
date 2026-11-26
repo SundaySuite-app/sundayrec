@@ -12,9 +12,7 @@ pub mod camera_preview;
 // webview as opaque session tokens (the editor's export folder). No path in.
 pub mod chosen_paths;
 pub mod db;
-pub mod diagnostics;
 pub mod editor;
-pub mod haptics;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
 pub mod licenses;
@@ -23,16 +21,13 @@ pub mod media;
 pub mod media_filters;
 // OS notifications: permission, test, settings page. No path.
 pub mod notification;
-// One-time notices (the "e-mail alerts were removed" banner). No path.
-pub mod notice;
 pub mod path_guard;
-// «Legg ut» — open the chosen upload page. Takes nothing from the renderer;
-// the URL comes from the stored setting via `sundayrec_core::publish`.
-pub mod publish;
 // E1.3 — a TEST-only module: the coverage ratchet that makes it impossible to
 // land a new path-taking command without classifying it as guarded or exempt.
 // Compiled out of every non-test build by its own inner `#![cfg(test)]`.
 mod path_ratchet;
+// The ready-to-record preflight check.
+pub mod preflight;
 pub mod recorder;
 // The tray's «Åpne opptaksmappen» and «Vis i Finder»: the webview holds no
 // `opener:` permission, so these two decide what may be shown. Only

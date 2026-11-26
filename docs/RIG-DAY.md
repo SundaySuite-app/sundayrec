@@ -1,7 +1,7 @@
 # Riggdag — sjekkliste
 
 En sittende gjennomgang av det som `npm run check` strukturelt ikke kan se:
-ekte maskinvare, ekte krasj, ekte klokketid. `docs/NEEDS-RICHARD.md`s
+ekte maskinvare, ekte krasj, ekte klokketid. `docs/archive/NEEDS-RICHARD.md`s
 **HARDWARE-UNVERIFIED**-liste sier HVA som mangler rigg-bevis; denne sida er
 HVORDAN — én økt, i denne rekkefølgen, så dagen ikke blir å finne opp
 punktene på nytt hver gang. Sett av en hel dag: flere av punktene krever
@@ -86,59 +86,19 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       på mikseren merker det. Endres den, noter det — det er et funn å vurdere,
       ikke nødvendigvis en feil.
 - [ ] **(c) `kill -9` midt i et planlagt opptak.** Legg inn et planlagt
-      opptak («Ta opp automatisk» eller et spesialopptak) et par minutter
+      opptak («Ta opp automatisk») et par minutter
       fram i tid. Når det har startet, finn prosessen med `ps aux` og drep
       den hardt: `kill -9 <pid>`. Start appen på nytt.
       **Forventet:** en gjenopprettet fil dukker opp i **Redigering**s
       historikk ved neste oppstart — IKKE et «gikk glipp av»-varsel for det
       samme slotet. Et slot dekket av en gjenopprettingsrunde er ikke det
       samme som et slot ingen prøvde.
-- [ ] **(c, fortsettelse) Slot og spesialopptak på samme tid.** Sett opp den
-      faste ukentlige tiden OG et spesialopptak til å begynne i samme minutt.
+- [ ] **(c, fortsettelse) To slotter på samme tid.** Sett opp to faste ukentlige
+      tider som begynner i samme minutt (spesialopptak finnes ikke lenger).
       **Forventet:** appen starter ÉTT opptak, ikke to som kjemper om samme
-      enhet. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `a_slot_and_a_special_in_the_same_minute_start_exactly_one_recording`, `back_to_back_slots_stop_one_and_start_the_next_in_the_same_minute` og `a_slot_and_a_special_at_the_same_time_produce_exactly_one_late_start` (`src-tauri/src/scheduler/mod.rs`). Viser at planleggeren, kjørt mot en virtuell klokke, starter ÉTT opptak, og at Stopp kommer før Start i samme minutt. > **Beviser IKKE:** at en ekte opptaksmotor og et ekte lydkort får enheten i hendene i samme minutt (testene bruker en simulert motor og en virtuell klokke), at Windows slipper enheten raskt nok mellom to slotter, og at et spesialopptak som viker for en slot ikke gir varselet «Planlagt opptak hoppet over» (det gjør det fortsatt, se PLAN.md).
-- [ ] **(c, fortsettelse) Spesialopptak med eget lydkort.** La den vanlige
-      lydenheten (Lyd-siden) være mikseren, og koble i tillegg til en
-      USB-mikrofon. Gearikonet → Avansert → «Flere tider og spesialopptak»:
-      legg inn et spesialopptak et par minutter fram, og velg USB-mikrofonen
-      i den nye enhetsvelgeren (ikke «Samme som vanlig opptak»). Raden viser
-      dato · tid · mikrofonens navn.
-      **Forventet:** opptaket starter av seg selv og tar opp fra
-      USB-mikrofonen (VU-en følger mikrofonen, ikke mikseren), med
-      kanalparet Lyd-siden har for DEN enheten (standard 1/2 hvis du aldri
-      valgte et) — ikke mikserens par. Neste ukentlige opptak tar fortsatt
-      opp fra mikseren.
-      **Deretter — trekk den ut:** legg inn et nytt spesialopptak på
-      USB-mikrofonen, og trekk ut mikrofonen før det starter.
-      **Forventet:** ved start tar appen opp fra mikseren — opptaket GÅR —
-      og et systemvarsel sier «Lydenheten «‹navn›» for spesialopptaket var
-      ikke tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.»
-      Varselet kommer også med «Varsle når opptak starter» slått av. Raden
-      i lista viser «(ikke tilkoblet nå)» mens mikrofonen er ute. (Legger du
-      det inn mer enn 30 min fram, skal også sjekken før opptak — en
-      halvtime før start — si at lydenheten med mikrofonens navn ikke er
-      tilkoblet.)
-      **På Windows-boksen i tillegg** (enhetslista leses inne i den
-      planlagte starten, med 5 s tak): 1) Med en ASIO-driver installert og
-      en WASAPI-mikrofon valgt på spesialopptaket skal ingen
-      ASIO-driverpanel poppe opp ved start, heller ikke når mikrofonen er
-      trukket ut (samme regel som w14). 2) Med en ASIO-enhet valgt på
-      spesialopptaket starter det på ASIO (diagnose:
-      `set_audio_engine: asio`) — og loggen har INGEN linje «own audio
-      device is unavailable» med `reason=Timeout` (det ville betydd at
-      ASIO-sveipet tok over 5 s, og at opptaket falt tilbake til mikseren). 3) Ingen krasj i den planlagte starten (enumereringen går gjennom
-      COM-ankeret, #282). 4) **ASIO til ASIO:** la den vanlige lydenheten
-      være et ASIO-grensesnitt, og legg spesialopptaket på et ANNET
-      ASIO-grensesnitt. Ha Opptak-siden åpen med VU-en i gang (eller
-      forhåndsopptaket på) når det starter. **Forventet:** asio-sys laster
-      bare ÉN ASIO-driver per prosess, så det andre grensesnittet ser ut som
-      borte mens det første holdes — opptaket tar opp fra det VANLIGE
-      ASIO-grensesnittet, og varselet om at spesialopptakets lydenhet ikke
-      var tilgjengelig kommer. Sjekken før opptak (en halvtime før, mens VU
-      eller forhåndsopptak holder driveren) skal derimot IKKE si at
-      spesialopptakets enhet mangler — den sjekker den vanlige enheten,
-      fordi «mangler» ikke kan fastslås da. Noter om varselet kom, og om
-      opptaket faktisk gikk på det vanlige grensesnittet.
+      enhet. > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `two_starts_at_one_instant_never_start_two_recordings_whatever_they_are` og `back_to_back_slots_stop_one_and_start_the_next_in_the_same_minute` (`src-tauri/src/scheduler/mod.rs`) og `late_start_choice_starts_exactly_one_of_two_simultaneous_triggers` (`crates/sundayrec-core/src/schedule.rs`). Viser at planleggeren, kjørt mot en virtuell klokke, starter ÉTT opptak, og at Stopp kommer før Start i samme minutt. > **Beviser IKKE:** at en ekte opptaksmotor og et ekte lydkort får enheten i hendene i samme minutt, og at Windows slipper enheten raskt nok mellom to slotter.
+- [x] ~~**(c, fortsettelse) Spesialopptak med eget lydkort.**~~ Fjernet i F2
+      (spesialopptak og enhetsvalget per spesialopptak finnes ikke lenger).
 - [ ] **(d) WAL-sjekk på en ekte database.** Kjør appen mot en KOPI av en
       ekte `sundayrec.sqlite` (ikke en tom testdatabase) og ta opp normalt.
       **Forventet:** `sundayrec.sqlite-wal` og `sundayrec.sqlite-shm` finnes
@@ -146,8 +106,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       opptakshistorikken er intakt og lesbar i **Redigering** etterpå — WAL
       har ikke mistet noe som lå der fra før.
 - [ ] **(e) Vekketest.** Skru på «Vekk maskinen fra dvale» (gearikonet →
-      Avansert), og bruk **«Test vekking om 2 min»** på kortet «Flere tider
-      og spesialopptak». La maskinen sovne (eller sovne den selv). Rett
+      Avansert), og bruk **«Test vekking om 2 min»** på kortet «Vekking» (Plan). La maskinen sovne (eller sovne den selv). Rett
       etter at testen har løst ut (eller du har trykket «Avbryt»), kjør
       `pmset -g sched` i Terminal.
       **Forventet FØR fiksen:** «Test vekking»/«Avbryt» gikk rett på pmset og
@@ -172,7 +131,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       `SundayRec`-oppføringer forsvinner), kansellerer ALT uansett eier (også
       testens `Test`-oppføring), eller feiler stille. Svaret avgjør om den
       gamle, delte-eier-modellen noensinne var trygg på denne maskinen.
-      Noter resultatet i `docs/NEEDS-RICHARD.md`.
+      Noter resultatet i `docs/archive/NEEDS-RICHARD.md`.
 - [ ] **(e, varsling — runde 3) Et tapt opptak sier fra tre steder.** Med
       «Vekk maskinen fra dvale» PÅ: legg inn en slot 5 minutter fram, avslutt
       SundayRec, og start den igjen godt over en time etter slot-starten.
@@ -220,7 +179,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       intervallene, ingen fil er tom eller korrupt, og loggen roterer som
       forventet uten å miste noe — bekreft at de roterte filene
       (`sundayrec.1.log` … `.4.log`) er intakte og i riktig rekkefølge
-      etterpå. **Xruns (A3c):** diagnoserapporten skal vise antall xruns for
+      etterpå. **Xruns (A3c):** `last-recording.json` skal vise antall xruns for
       opptaket. Det er tallet lydsystemet selv melder (CoreAudio/WASAPI via
       cpal), ikke noe lest ut av en logg. Noter det per maskin: 0 på en
       rolig maskin er det vanlige, og et tall over 0 skal stemme med
@@ -339,7 +298,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       lydstyrken i overlegget går tilbake til normalt nivå.
       **Rødt funn:** varsel før 5 minutter, flere varsler i ett opptak, varsel
       på et normalt opptak, lydstyrketall som står stille mens du snakker, eller
-      xrun-tall over null i loggen/diagnosen som ikke var der uten D3
+      xrun-tall over null i loggen/`last-recording.json` som ikke var der uten D3
       (`native_xruns`; måleren går på skrivertråden og skal ikke røre det). > **Automatisk test, ikke en avkrysning (ingen har sett dette på ekte maskinvare):** `segment::tests::a_muted_mixer_is_told_once_after_five_minutes_and_xruns_are_untouched` og `a_short_quiet_stretch_or_a_normal_level_is_never_told` (`src-tauri/src/recorder/native_capture/segment.rs`, `start_paused`), og `lufs::tests::a_normal_level_reads_normal_and_a_muted_mixer_reads_weak`. Beviser varselet etter 5 min, bare ÉN gang, og at xrun-tallet ikke røres. > **Beviser IKKE:** at systemvarselet faktisk vises og er hørbart/synlig når vinduet ikke har fokus, at terskelen på −40 LUFS passer en ekte mikser (punkt 1 og 3 i (d3-rigg)), eller at 5 minutter på veggklokka oppleves riktig. Tiden er virtuell og signalet syntetisk.
 
 - [ ] **(d3-rigg) Dempet mikser på flerkanalskortet (D3, riggen).** Dette er
@@ -363,7 +322,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       bare ca. 3 LU; vi varsler altså IKKE på en enkelt død kanal, og det er
       slik det skal være (kanalfeil er A3s og kanaldiagnosens jobb). 4. **Kortvarig nedtrekk.** Trekk faderen ned i 3–4 minutter midt i et
       opptak og skru opp igjen. **Forventet:** ingen varsel. 5. **xrun-tall.** Ta opp 60 minutter med flerkanalskortet på vanlig
-      kanalvalg. Sammenlign `native_xruns` i diagnosen med et tidligere opptak
+      kanalvalg. Sammenlign `native_xruns` i `last-recording.json` med et tidligere opptak
       på samme oppsett (A3c). **Forventet:** ikke høyere. Måleren er bevist
       ikke å påvirke xrun-tallet i CI (se PR-en); her beviser vi det på kortet.
       **Rødt funn:** ingen varsel på et dempet opptak, varsel på et normalt
@@ -432,11 +391,9 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       slutt). (e) Bitraten er rimelig: `ffprobe` viser rundt 12 Mbit/s
       (alle fire koderne får `-b:v 12000k`; AMF og MF styrer bitrate etter
       egne regler, så les av faktisk verdi og noter den).
-      **Test også:** (f) **Diagnose** (Innstillinger → Avansert) har seksjonen
-      «Video encoder» med «In use» og én «Probe»-linje per koder som ble
-      prøvd; den kjører prøven på nytt og oppdaterer `video-encoder.json`.
-      Under et pågående opptak sier den bare hva som er i bruk («Probe: not
-      run»). (g) **Feilende koder:** erstatt innholdet i `video-encoder.json`
+      **Test også:** (f) ~~Diagnose-seksjonen «Video encoder»~~ finnes ikke
+      lenger (F2); koderen som er i bruk står i `video-encoder.json` og loggen.
+      (g) **Feilende koder:** erstatt innholdet i `video-encoder.json`
       med en koder maskinen IKKE har (f.eks. `h264_nvenc` på en AMD-boks) og
       start et opptak. **Forventet:** opptaket faller til
       `libx264` ved første gjenkobling (loggen sier «falling back to libx264»), filen blir hel, og
@@ -582,11 +539,10 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       fra klikk til at teller/VU løper, og sammenlign med v0.18.0-beta.1 —
       startforsinkelsen skal være borte. 2) Driverpanelet popper ikke opp ved
       opptaksstart lenger. 3) ASIO-stien er fortsatt intakt: velg
-      ASIO-enheten i velgeren og trykk opptak innen 30 s — diagnose viser
+      ASIO-enheten i velgeren og trykk opptak innen 30 s — loggen viser
       `set_audio_engine: asio`, og alle kanalene er der. 4) Ferskhet: plugg
       inn et ASIO-grensesnitt mens appen står åpen, vent over 30 s, åpne
-      velgeren igjen — det skal dukke opp; kjør diagnose og den ser det med
-      én gang (den dropper 30 s-memoet først).
+      velgeren igjen — det skal dukke opp (30 s-memoet er utløpt).
 
 - [ ] **(we1) Det samme på Windows: manuelt opptak lagres som før
       (navn/mappe).** Som (e1) på Mac-boksen, med en WASAPI-enhet og — har
@@ -736,7 +692,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
 
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
-respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+respektive PR-ene er merget; se `docs/archive/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## (v) Videomotor
 
@@ -1037,7 +993,7 @@ riggdagen lenger.
 
 _(v–ix hører til resten av lydkjede-gjennomgangen (rapport C) — ingen av dem
 endte som en kodefiks i den runden. De ble eierspørsmål, og står i
-`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)».
+`docs/archive/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)».
 Eier avgjorde 2026-10-04: `-realtime 1` for VideoToolbox-opptaket er
 gjennomført (se (e2) i Mac-boksen over), mens den egne «Kirke»-mastringsprofilen
 og automatisk monolevering venter på en lyttetest. De to siste har ingenting
@@ -1207,7 +1163,7 @@ konstant-effekt-overganger. Ca. 30 min + selve gudstjenesten. Hodetelefoner.
 ## (x) Etter sømgjennomgangen (nov. 2026)
 
 Det bevisrunden (#451) og etterprøvingen ikke kunne bevise uten maskinvare.
-Bakgrunn og funn: [SOMMER-2026-11.md](SOMMER-2026-11.md). Alt under er ikke
+Bakgrunn og funn: [SOMMER-2026-11.md](archive/SOMMER-2026-11.md). Alt under er ikke
 sett på ekte maskin ennå.
 
 - [ ] **(x1) Sen kamera-synk (S1-C).** Mac og Windows, ekte kamera (FaceTime,
@@ -1259,7 +1215,7 @@ sett på ekte maskin ennå.
 
 ## Etterpå
 
-- [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
+- [ ] Oppdater `docs/archive/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
       som nettopp ble bevist, eller noter et nytt funn mot punktet det hører
       til.
       **Forventet:** bare de reelt fortsatt-uverifiserte tingene er igjen.

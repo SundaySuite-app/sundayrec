@@ -58,7 +58,7 @@ pub enum PreflightCategory {
 /// Was six hardcoded Norwegian sentences (F2-I18N-R2). The findings are
 /// rendered verbatim in the app's preflight card AND in the native
 /// notification the scheduler fires half an hour before a service, so the
-/// prose was the app's own voice in exactly one of its seven languages.
+/// prose was the app's own voice in exactly one of its two languages.
 ///
 /// The code is the contract now, and it has TWO catalogues because it has two
 /// surfaces — which is the rule, not an exception to it:
@@ -89,14 +89,6 @@ pub enum PreflightCode {
     CameraDenied,
     /// F2-W9: the resolved save folder sits inside a OneDrive-synced tree.
     SaveFolderSynced,
-    /// A ONE-OFF recording's own audio device is not connected. Carries
-    /// `{device}`: [`Self::DeviceMissing`] points at "the device selected in
-    /// settings", which is the WRONG device to go and find when it is the
-    /// special's own that is missing. A separate code rather than a `device`
-    /// param on `DeviceMissing`, because each surface looks its sentence up BY
-    /// code (see above) — a param that silently switched the sentence would be a
-    /// second, invisible way for the two catalogues to disagree.
-    SpecialDeviceMissing,
 }
 
 impl PreflightCode {
@@ -119,13 +111,10 @@ impl PreflightCode {
             Self::SaveFolderSynced => {
                 "The save folder is synced by OneDrive, which can interfere with a recording in progress."
             }
-            Self::SpecialDeviceMissing => {
-                "The audio device \"{device}\" for the one-off recording is not connected. If it is not connected before the start, the usual audio device is used."
-            }
         }
     }
 
-    /// The native notification's sentence for this code — the seven-language
+    /// The native notification's sentence for this code — the two-language
     /// catalogue Rust CAN reach.
     pub fn alert(self) -> AlertText {
         match self {
@@ -136,7 +125,6 @@ impl PreflightCode {
             Self::MicDenied => AlertText::PreflightMicDenied,
             Self::CameraDenied => AlertText::PreflightCameraDenied,
             Self::SaveFolderSynced => AlertText::PreflightSaveFolderSynced,
-            Self::SpecialDeviceMissing => AlertText::PreflightSpecialDeviceMissing,
         }
     }
 }
@@ -392,8 +380,7 @@ pub struct PreflightFacts {
     /// [`Self::video_active`]).
     pub cam_denied: bool,
     /// The audio device the recording will use was found among the enumerated
-    /// inputs — the one named in settings, or a one-off recording's own when
-    /// [`assemble_findings_for`] is told which it is.
+    /// inputs — the one named in settings.
     ///
     /// **`true` also means "nothing to check"** — no device configured, or the
     /// enumeration itself failed. The shell can only ever positively establish
@@ -428,45 +415,6 @@ pub struct PreflightFacts {
 /// later phases; they are deliberately NOT synthesised here so the function
 /// stays a pure decision over the facts we actually have in F2.2.
 pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
-    assemble_findings_for(facts, None)
-}
-
-/// The device-missing finding, NAMED when the device is a one-off recording's
-/// own and generic (the settings device) otherwise.
-///
-/// A blank name is not a name: «Lydenheten «» for spesialopptaket …» would send
-/// a volunteer looking for nothing, so it falls back to the generic finding.
-/// That sentence points at the device in SETTINGS, which is not necessarily the
-/// one that is missing — so this is a guard for a case that should not occur
-/// (a special's device id is never blank: `asio::<name>` or a picker id, and the
-/// scheduler only asks for a special's device when one is set), not a claim that
-/// the generic sentence is right for it.
-fn device_missing_finding(special_device: Option<&str>) -> PreflightFinding {
-    match special_device {
-        Some(name) if !name.trim().is_empty() => PreflightFinding::error(
-            PreflightCategory::Device,
-            PreflightCode::SpecialDeviceMissing,
-        )
-        .param("device", name),
-        _ => PreflightFinding::error(PreflightCategory::Device, PreflightCode::DeviceMissing),
-    }
-}
-
-/// [`assemble_findings`], for a check whose device is a ONE-OFF recording's own
-/// rather than the one in settings: `special_device` is that device's name.
-///
-/// Only the device-missing finding differs — it becomes
-/// [`PreflightCode::SpecialDeviceMissing`], carrying the name as the `device`
-/// param, so the Record page's card says WHICH device to go and find. Both
-/// surfaces look the code up in their own catalogue, and
-/// `the_card_and_the_notification_say_the_same_words` holds the two catalogues
-/// to the same words. Same place in the list, same severity and category. `None` is [`assemble_findings`]
-/// exactly: a weekly slot, and a special without a device of its own, emit
-/// byte-identical findings to before.
-pub fn assemble_findings_for(
-    facts: PreflightFacts,
-    special_device: Option<&str>,
-) -> Vec<PreflightFinding> {
     let mut findings = Vec::new();
 
     if facts.ffmpeg_missing {
@@ -483,7 +431,10 @@ pub fn assemble_findings_for(
     // job — it carries the name as a parameter. Full mismatch synthesis (did the
     // user mean this other, similarly-named input?) is still deferred.
     if !facts.device_present {
-        findings.push(device_missing_finding(special_device));
+        findings.push(PreflightFinding::error(
+            PreflightCategory::Device,
+            PreflightCode::DeviceMissing,
+        ));
     }
 
     if !facts.folder_writable {
@@ -968,7 +919,6 @@ mod tests {
             PreflightCode::DiskLow,
             PreflightCode::MicDenied,
             PreflightCode::CameraDenied,
-            PreflightCode::SpecialDeviceMissing,
         ];
         let texts: Vec<&str> = all.iter().map(|c| c.as_str()).collect();
         assert!(texts.iter().all(|t| !t.trim().is_empty()));
@@ -1022,7 +972,7 @@ mod tests {
         assert_eq!(f.severity, PreflightSeverity::Warn);
     }
 
-    // ── a one-off recording's own device is named ────────────────────────────
+    // ── the missing device is a generic finding ──────────────────────────────
 
     fn device_gone() -> PreflightFacts {
         PreflightFacts {
@@ -1031,32 +981,9 @@ mod tests {
         }
     }
 
-    /// The Record page's card and the native notification look the SAME code
-    /// up, so the card names the device too. The name is DATA on the finding
-    /// (`params.device`), not something a reader has to parse out of `message`.
     #[test]
-    fn a_missing_special_device_is_a_named_finding() {
-        let findings = assemble_findings_for(device_gone(), Some("Zoom H6"));
-        assert_eq!(findings.len(), 1);
-        let f = &findings[0];
-        assert_eq!(f.code, Some(PreflightCode::SpecialDeviceMissing));
-        // Same severity and category as the generic one — only the sentence
-        // (and the name that fills it) differs.
-        assert_eq!(f.severity, PreflightSeverity::Error);
-        assert_eq!(f.category, PreflightCategory::Device);
-        assert_eq!(f.params.get("device").map(String::as_str), Some("Zoom H6"));
-        // The English reserve is a finished sentence, not a template with a hole.
-        assert!(f.message.contains("\"Zoom H6\""), "{}", f.message);
-        assert!(!f.message.contains('{'), "{}", f.message);
-    }
-
-    /// The Sunday invariant: a weekly slot (and a special with no device of its
-    /// own) checks the settings device, and its finding is exactly what it was
-    /// — same code, EMPTY params, same wire bytes.
-    #[test]
-    fn the_global_device_finding_is_untouched_by_the_named_variant() {
+    fn the_missing_device_finding_is_generic_with_no_params() {
         let plain = assemble_findings(device_gone());
-        assert_eq!(plain, assemble_findings_for(device_gone(), None));
         assert_eq!(plain.len(), 1);
         assert_eq!(plain[0].code, Some(PreflightCode::DeviceMissing));
         assert!(plain[0].params.is_empty());
@@ -1069,85 +996,6 @@ mod tests {
         assert_eq!(wire["params"], serde_json::json!({}));
     }
 
-    /// A blank name cannot be handed to a volunteer as «Lydenheten «» …».
-    /// The generic finding is at least true.
-    #[test]
-    fn a_blank_special_device_name_falls_back_to_the_generic_finding() {
-        for blank in ["", "   ", "\t"] {
-            let findings = assemble_findings_for(device_gone(), Some(blank));
-            assert_eq!(findings.len(), 1, "{blank:?}");
-            assert_eq!(findings[0].code, Some(PreflightCode::DeviceMissing));
-            assert!(findings[0].params.is_empty(), "{blank:?}");
-        }
-    }
-
-    /// The name only matters when the device is missing — a present special
-    /// device raises nothing, however it is named.
-    #[test]
-    fn a_present_special_device_raises_nothing() {
-        assert!(assemble_findings_for(all_clear(), Some("Zoom H6")).is_empty());
-    }
-
-    /// Naming the device must not move it in the list: ffmpeg → device →
-    /// folder → disk → mic → cam is what the card (and the native alert's
-    /// "first error") read from.
-    #[test]
-    fn the_named_finding_keeps_the_device_finding_s_place_in_the_list() {
-        let facts = PreflightFacts {
-            ffmpeg_missing: true,
-            folder_writable: false,
-            device_present: false,
-            ..all_clear()
-        };
-        let codes: Vec<_> = assemble_findings_for(facts, Some("Zoom H6"))
-            .iter()
-            .map(|f| f.code)
-            .collect();
-        assert_eq!(
-            codes,
-            vec![
-                Some(PreflightCode::FfmpegMissing),
-                Some(PreflightCode::SpecialDeviceMissing),
-                Some(PreflightCode::FolderNotWritable),
-            ]
-        );
-    }
-
-    /// What the renderer receives: the code as a plain camelCase string, and
-    /// the name under `params.device` — the keys `status.preflightCode` and
-    /// `AlertText::PreflightSpecialDeviceMissing` both interpolate.
-    #[test]
-    fn the_named_finding_serialises_its_code_and_device_for_the_renderer() {
-        let f = &assemble_findings_for(device_gone(), Some("Zoom H6"))[0];
-        let v = serde_json::to_value(f).unwrap();
-        assert_eq!(v["code"], "specialDeviceMissing");
-        assert_eq!(v["params"], serde_json::json!({ "device": "Zoom H6" }));
-        // …and the wire reads back as the same finding.
-        let round: PreflightFinding = serde_json::from_value(v).unwrap();
-        assert_eq!(&round, f);
-    }
-
-    /// The code's native sentence takes exactly the param the finding carries —
-    /// a mismatch would print the literal `{device}` on a Sunday morning.
-    #[test]
-    fn the_named_finding_carries_every_param_its_native_sentence_needs() {
-        let f = &assemble_findings_for(device_gone(), Some("Zoom H6"))[0];
-        let code = f.code.expect("coded");
-        for param in code.alert().params() {
-            assert!(f.params.contains_key(*param), "missing {param}");
-        }
-        // The notification reads the same name the card does.
-        let vars: Vec<(&str, &str)> = code
-            .alert()
-            .params()
-            .iter()
-            .map(|p| (*p, f.params[*p].as_str()))
-            .collect();
-        let text = code.alert().fill(crate::lang::Lang::No, &vars);
-        assert!(text.contains("«Zoom H6»"), "{text}");
-        assert!(!text.contains("innstillingene"), "{text}");
-    }
-
     /// The card (`legacy/locales/*.json`, `status.preflightCode.<code>`) and the
     /// native notification ([`AlertText`]) are TWO catalogues for one code, and
     /// nothing but this test makes them agree. Seven languages, the same words:
@@ -1156,8 +1004,7 @@ mod tests {
     ///
     /// Compared up to the quote and apostrophe GLYPHS: the catalogue is typeset
     /// (“…”, ’) where the notification is plain text ("…", '), and that is the
-    /// only difference allowed. Only the two device codes — the ones whose
-    /// wording the named finding is about; the other codes' sentences
+    /// only difference allowed. Only the device code; the other codes' sentences
     /// legitimately differ in typography beyond the glyphs (e.g. the OneDrive
     /// quotes) and are not this test's claim.
     #[test]
@@ -1166,20 +1013,12 @@ mod tests {
         let catalogues = [
             (Lang::No, include_str!("../../../legacy/locales/no.json")),
             (Lang::En, include_str!("../../../legacy/locales/en.json")),
-            (Lang::De, include_str!("../../../legacy/locales/de.json")),
-            (Lang::Sv, include_str!("../../../legacy/locales/sv.json")),
-            (Lang::Da, include_str!("../../../legacy/locales/da.json")),
-            (Lang::Pl, include_str!("../../../legacy/locales/pl.json")),
-            (Lang::Fr, include_str!("../../../legacy/locales/fr.json")),
         ];
         let glyphs = |s: &str| {
             s.replace(['\u{201C}', '\u{201D}'], "\"")
                 .replace('\u{2019}', "'")
         };
-        let pairs = [
-            (PreflightCode::DeviceMissing, "deviceMissing"),
-            (PreflightCode::SpecialDeviceMissing, "specialDeviceMissing"),
-        ];
+        let pairs = [(PreflightCode::DeviceMissing, "deviceMissing")];
         assert_eq!(catalogues.len(), Lang::ALL.len(), "a language is missing");
         for (lang, raw) in catalogues {
             let json: serde_json::Value = serde_json::from_str(raw).expect("locale parses");

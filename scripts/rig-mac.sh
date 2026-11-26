@@ -144,8 +144,6 @@ done
   echo "et kryss betyr at et menneske har sjekket på ekte maskinvare."
   echo
   echo "Trenger eieren i egen terminal (mikrofon, kamera, nettverk eller ekstern fil; ikke kjørt her):"
-  echo "  (a/d) mikrofon, 60 s:           cargo test -p sundayrec --lib test_recording::tests::native_bench_60s_machine_proof -- --ignored --exact --nocapture"
-  echo "  (a) mikrofon, soak:             cargo test -p sundayrec --lib soak::tests::soak_native_device -- --ignored --exact --nocapture   (SUNDAYREC_SOAK_ITERATIONS / SUNDAYREC_SOAK_SECS styrer lengden)"
   echo "  (mikrofon) rate-bytte i strøm:  cargo test -p sundayrec --lib recorder::native_capture::stream::tests::rate_change_under_a_running_stream_is_a_stream_fault -- --ignored --exact --nocapture"
   echo "  (v) alle kameraer:              cargo test -p sundayrec --lib camera::avfoundation::tests::captures_from_every_camera_on_this_mac -- --ignored --exact --nocapture"
   echo "  (v) kamera trekkes ut:          SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib camera::reconnect::tests::real_camera_comes_back_on_the_same_id -- --ignored --exact --nocapture"

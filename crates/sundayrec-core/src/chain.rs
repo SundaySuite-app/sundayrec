@@ -1,11 +1,10 @@
-//! The audio chain in Rust — the vocal chain and the mastering presets as a
-//! list of filmcraft effects (B2a, `docs/LYDMOTOR.md` phase 2).
+//! The audio chain in Rust — the one mastering recipe and «Tale»'s clean-up as a
+//! list of filmcraft effects (B2a, `docs/archive/LYDMOTOR.md` phase 2; the advanced vocal chain
+//! and the channel repair were removed in F3).
 //!
-//! The chain is built from the SAME preset tables as today
-//! ([`crate::processing::vocal_chain_presets`] and [`crate::mastering::master_presets`]).
-//! There is no new table: [`Chain::from_vocal_chain`] reads a [`VocalChain`],
-//! [`Chain::from_filter_string`] reads the `filters` string a [`MasterPreset`]
-//! already carries (that string is now only a compact way to write the preset table;
+//! The chain is built from the preset table ([`crate::mastering::podcast_preset`]).
+//! There is no second table: [`Chain::from_filter_string`] reads the `filters` string a
+//! [`MasterPreset`] already carries (that string is now only a compact way to write the preset table;
 //! no ffmpeg ever sees it). The ffmpeg filter-string builders were deleted in B2c.
 //!
 //! A [`Chain`] is a plain description (a `Vec<Stage>`), so it can be compared and
@@ -36,7 +35,7 @@
 //! ### A faithful translation is not a faithful result
 //!
 //! Read the denoise row twice. Measured with ffmpeg 9.0.1 in B0c
-//! (`docs/LYDMOTOR.md`, «Gjentatt på Macen»), today's `afftdn ... tn=1` takes
+//! (`docs/archive/LYDMOTOR.md`, «Gjentatt på Macen»), today's `afftdn ... tn=1` takes
 //! about 1.7 dB of a stationary noise floor whatever `nr` and `nf` are, so
 //! "voice-podcast" and "voice-noisy-room" clean next to nothing today. Carrying
 //! `nr = 10` and `nr = 20` over as filmcraft `reduction = 10` and `20` makes
@@ -84,14 +83,12 @@
 //!   the same chord is taken down 9.6 dB at `reduction = 10`, after about
 //!   1.5 s (the minimum-statistics window), while a note shorter than that
 //!   passes untouched. This cannot be tuned away with the parameters the
-//!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
-//!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
-//!   always on, has to deal with it (for example by gating on speech: it did,
+//!   effect has. It is why de-noise stayed an opt-in stage in B2b; B3a, which
+//!   wants a mild de-noise always on, had to deal with it (for example by gating on speech: it did,
 //!   see "What B3a decided").
-//!   Capped at [`DENOISE_MAX_DB`] = 12 dB for that reason: "voice-noisy-room"
-//!   asks for 20 and the held chord then came out 30 dB under the speech (the
-//!   gate and the de-reverb add to it), where the old chain left it alone. At 12
-//!   the floor still comes down about 11 dB (the old chain took 1.7).
+//!   The old mixer capped it at 12 dB for that reason (an ask of 20 left the
+//!   held chord 30 dB under the speech); «Tale» uses a mild 9 dB. At 12 the floor
+//!   still came down about 11 dB (the old chain took 1.7).
 //!
 //! ## What B3a decided: «Tale» cleans by itself, and music is protected
 //!
@@ -119,15 +116,15 @@
 //!   comes through `Chain::speech_clean` at **+0.00 dB**; the same `denoise` at
 //!   9 dB without the gate takes it down **9.00 dB**; the floor in a 1.4 s pause
 //!   between phrases falls **8.8 dB**. The de-reverb at 70 %, rt60 0.4 s: see
-//!   `docs/LYDMOTOR.md` «Gjort (B3a)». The tests
+//!   `docs/archive/LYDMOTOR.md` «Gjort (B3a)». The tests
 //!   `a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it` and
 //!   `the_dereverb_leaves_the_same_chord_alone_too` hold the numbers.
 //! * **Known limit.** A signal whose level moves like speech (drums, a strummed
 //!   guitar) opens the gate, and a pad held under it meets the de-noiser at up
-//!   to 9 dB. «Tale og musikk» (`music-speech`) does not use this at all.
+//!   to 9 dB.
 //!
-//! The two compressors of "speech-punchy" and the like are translated one by
-//! one, in order, exactly as the filter string lists them.
+//! The compressors of a preset string are translated one by one, in order, exactly as
+//! the filter string lists them.
 //!
 //! ## What is not here
 //!
@@ -142,10 +139,6 @@ use filmcraft_audio_dsp::{AudioEffect, create_effect};
 
 use crate::loudness::GainPlan;
 use crate::mastering::MasterPreset;
-use crate::processing::{
-    COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB, ChannelRepair, GATE_MAX_THRESHOLD_DB,
-    LIMITER_MIN_CEILING_DB, VocalChain, finite_or,
-};
 use crate::tale::{DENOISE_TALE_DB, Mains, SpeechClean, SpeechGate};
 
 /// The DSP crate, re-exported so a shell that builds a chain can reach the
@@ -153,22 +146,16 @@ use crate::tale::{DENOISE_TALE_DB, Mains, SpeechClean, SpeechGate};
 pub use filmcraft_audio_dsp as dsp;
 
 /// Frames per processing block in [`BuiltChain::process_offline`].
-/// The floor the mixer's gated de-noiser assumes for its first seconds, dBFS (M2R #11).
-const MIXER_DENOISE_FLOOR_PRIOR_DB: f32 = -60.0;
 const BLOCK: usize = 4096;
 
-/// `agate`'s default `range` (0.06125 linear) in dB: how far it closes.
-const AGATE_DEFAULT_RANGE_DB: f32 = 24.2;
+/// Largest compressor makeup a preset string may carry (`acompressor:makeup` accepted
+/// `[0, 36.12] dB`).
+const COMP_MAX_MAKEUP_DB: f64 = 36.0;
+/// Lowest compressor threshold a preset string may carry (`acompressor:threshold` floor,
+/// −60.2 dB).
+const COMP_MIN_THRESHOLD_DB: f64 = -60.2;
 /// `acompressor`'s default knee (2.82843 linear) in dB.
 const ACOMPRESSOR_DEFAULT_KNEE_DB: f32 = 9.03;
-/// `alimiter`'s default release, ms.
-const ALIMITER_DEFAULT_RELEASE_MS: f32 = 50.0;
-/// The de-esser's centre, Hz: the sibilance region, and filmcraft's default.
-const DEESSER_FREQ_HZ: f32 = 6000.0;
-/// The de-esser's threshold, dB: filmcraft's default.
-const DEESSER_THRESHOLD_DB: f32 = -12.0;
-/// Maximum de-ess reduction at intensity 1.0, dB. 0.4 lands on filmcraft's 8 dB.
-const DEESSER_REDUCTION_AT_FULL_DB: f64 = 20.0;
 /// B2b: how much lower filmcraft's compressor threshold is set than the
 /// `acompressor` threshold it translates. ffmpeg's detector follows the squared
 /// signal with the attack time, so it reads close to the peak of the signal;
@@ -199,11 +186,6 @@ pub enum Stage {
         id: &'static str,
         params: Vec<(String, f32)>,
     },
-    /// `0.5*(L+R)` to both channels (needs stereo; ignored on mono).
-    MonoMix,
-    /// Left channel to both outputs. On mono input this upmixes to stereo
-    /// (what `pan=stereo|c0=c0|c1=c0` does); on stereo it is `fill_right`.
-    DuplicateLeft,
     /// B3a: an `Fx` stage that only counts where the signal is speech-like or
     /// down at the measured floor (`floor_db`, dBFS). The effect runs on the
     /// whole signal; its output is mixed in by [`SpeechGate`]. Used for the
@@ -223,8 +205,6 @@ impl Stage {
     pub fn id(&self) -> &str {
         match self {
             Stage::Fx { id, .. } => id,
-            Stage::MonoMix => "mono_mix",
-            Stage::DuplicateLeft => "duplicate_left",
             Stage::SpeechGated { inner, .. } => inner.id(),
         }
     }
@@ -234,7 +214,6 @@ impl Stage {
         match self {
             Stage::Fx { params, .. } => params.iter().find(|(k, _)| k == key).map(|(_, v)| *v),
             Stage::SpeechGated { inner, .. } => inner.param(key),
-            _ => None,
         }
     }
 }
@@ -296,8 +275,8 @@ impl Chain {
         self.stages.is_empty()
     }
 
-    /// This chain followed by `next` (the vocal chain, then the mastering
-    /// preset's chain: the order the export has always had).
+    /// This chain followed by `next` («Tale»'s clean-up, then the mastering
+    /// preset's chain: the order the export has).
     pub fn then(mut self, next: Chain) -> Chain {
         self.stages.extend(next.stages);
         self
@@ -337,117 +316,6 @@ impl Chain {
             ));
         }
         self
-    }
-
-    /// The stage order of the mixer's vocal chain: channel repair,
-    /// high-pass, denoise, dereverb, gate, EQ, compressor, de-esser, limiter,
-    /// makeup gain. The clamps are the ones ffmpeg's filters needed.
-    pub fn from_vocal_chain(v: &VocalChain) -> Chain {
-        let mut stages = Vec::new();
-
-        match v.channel_repair {
-            ChannelRepair::None => {}
-            ChannelRepair::SwapLr => stages.push(Stage::fx("swap_channels", &[])),
-            ChannelRepair::DuplicateLeft => stages.push(Stage::DuplicateLeft),
-            ChannelRepair::DuplicateRight => stages.push(Stage::fx("fill_left", &[])),
-            ChannelRepair::MonoMix => stages.push(Stage::MonoMix),
-            ChannelRepair::GainDb { left_db, right_db } => {
-                let l = left_db.clamp(-24.0, 24.0) as f32;
-                let r = right_db.clamp(-24.0, 24.0) as f32;
-                if l.abs() > 1e-3 || r.abs() > 1e-3 {
-                    stages.push(Stage::fx("channel_volume", &[("left", l), ("right", r)]));
-                }
-            }
-        }
-
-        if v.highpass.enabled {
-            stages.push(highpass_stage(f64::from(v.highpass.freq_hz)));
-        }
-
-        if v.denoise.enabled {
-            // `nr` -> `reduction`. `nf` has no counterpart and is dropped on
-            // purpose (module docs). The same clamp the ffmpeg filters needed.
-            let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, DENOISE_MAX_DB);
-            // M2R #11: gated like «Tale»'s. The same `denoise` ungated takes a held chord
-            // down by the whole reduction (B2b: -9.6 dB at 10); behind the speech gate the
-            // chord passes at its dry level. The gate reads the floor off the signal it
-            // sees; the prior only covers its first 2 s (the mixer has no analysis).
-            stages.push(Stage::SpeechGated {
-                inner: Box::new(Stage::fx("denoise", &[("reduction", nr as f32)])),
-                floor_db: MIXER_DENOISE_FLOOR_PRIOR_DB,
-            });
-        }
-
-        if v.dereverb.enabled {
-            let s = v.dereverb.strength.clamp(0.0, 1.0);
-            stages.push(Stage::fx(
-                "dereverb",
-                &[("amount", (100.0 * s) as f32), ("rt60", DEREVERB_RT60_S)],
-            ));
-        }
-
-        if v.gate.enabled {
-            stages.push(Stage::fx(
-                "gate",
-                &[
-                    (
-                        "threshold",
-                        v.gate.threshold_db.min(GATE_MAX_THRESHOLD_DB) as f32,
-                    ),
-                    ("ratio", v.gate.ratio as f32),
-                    ("range", AGATE_DEFAULT_RANGE_DB),
-                    ("attack", v.gate.attack_ms as f32),
-                    ("hold", 0.0),
-                    ("release", v.gate.release_ms as f32),
-                ],
-            ));
-        }
-
-        for band in &v.eq {
-            stages.push(peaking_stage(f64::from(band.freq_hz), band.q, band.gain_db));
-        }
-
-        if v.compressor.enabled {
-            stages.push(compressor_stage(
-                v.compressor.threshold_db.clamp(COMP_MIN_THRESHOLD_DB, 0.0),
-                v.compressor.ratio,
-                v.compressor.attack_ms,
-                v.compressor.release_ms,
-                v.compressor.makeup_db.clamp(0.0, COMP_MAX_MAKEUP_DB),
-            ));
-        }
-
-        if v.deesser.enabled {
-            let i = v.deesser.intensity.clamp(0.0, 1.0);
-            stages.push(Stage::fx(
-                "deesser",
-                &[
-                    ("frequency", DEESSER_FREQ_HZ),
-                    ("threshold", DEESSER_THRESHOLD_DB),
-                    ("reduction", (DEESSER_REDUCTION_AT_FULL_DB * i) as f32),
-                ],
-            ));
-        }
-
-        if v.limiter.enabled {
-            stages.push(Stage::fx(
-                "limiter",
-                &[
-                    (
-                        "ceiling",
-                        v.limiter.limit_db.clamp(LIMITER_MIN_CEILING_DB, 0.0) as f32,
-                    ),
-                    ("release", ALIMITER_DEFAULT_RELEASE_MS),
-                    ("true_peak", 1.0),
-                ],
-            ));
-        }
-
-        if v.gain_db.abs() > 1e-3 {
-            stages.push(Stage::fx("amplify", &[("gain", v.gain_db as f32)]));
-        }
-
-        Chain { stages }
     }
 
     /// B3a: the stages «Tale» adds in front of the `speech-clear` chain for one
@@ -535,24 +403,11 @@ impl Chain {
 
     /// Instantiate the effects for `sample_rate` and `channels`.
     pub fn build(&self, sample_rate: f32, channels: usize) -> Result<BuiltChain, ChainError> {
-        let mut ch = channels.max(1);
+        let ch = channels.max(1);
         let mut nodes = Vec::with_capacity(self.stages.len());
         let mut latency = 0usize;
         for st in &self.stages {
             match st {
-                Stage::MonoMix => {
-                    if ch >= 2 {
-                        nodes.push(Node::MonoMix);
-                    }
-                }
-                Stage::DuplicateLeft => {
-                    if ch == 1 {
-                        nodes.push(Node::UpmixMono);
-                        ch = 2;
-                    } else {
-                        nodes.push(Node::Fx(make_fx("fill_right", &[], sample_rate, ch)?));
-                    }
-                }
                 Stage::SpeechGated { inner, floor_db } => {
                     let Stage::Fx { id, params } = inner.as_ref() else {
                         return Err(ChainError::UnknownEffect("speech_gated"));
@@ -566,11 +421,6 @@ impl Chain {
                     ))));
                 }
                 Stage::Fx { id, params } => {
-                    // The channel-repair fx read a second channel; ffmpeg drops
-                    // that term silently on mono, so on mono they are skipped.
-                    if ch < 2 && matches!(*id, "swap_channels" | "fill_left" | "channel_volume") {
-                        continue;
-                    }
                     let fx = make_fx(id, params, sample_rate, ch)?;
                     latency += fx.latency();
                     nodes.push(Node::Fx(fx));
@@ -682,8 +532,6 @@ fn make_fx(
 enum Node {
     Fx(Box<dyn AudioEffect>),
     Gated(Box<GatedFx>),
-    MonoMix,
-    UpmixMono,
 }
 
 /// An effect whose output is mixed with its own (delayed) input by a
@@ -761,7 +609,7 @@ impl BuiltChain {
         self.in_channels
     }
 
-    /// Channels it produces (2 when a mono input is upmixed by channel repair).
+    /// Channels it produces (always the channels it expects: no stage changes the layout).
     pub fn out_channels(&self) -> usize {
         self.out_channels
     }
@@ -772,9 +620,8 @@ impl BuiltChain {
         self.latency
     }
 
-    /// Process one planar block in place. A mono-to-stereo stage appends a
-    /// channel, which is why this takes a `Vec`.
-    pub fn process_block(&mut self, block: &mut Vec<Vec<f32>>) {
+    /// Process one planar block in place.
+    pub fn process_block(&mut self, block: &mut [Vec<f32>]) {
         for node in &mut self.nodes {
             match node {
                 Node::Fx(fx) => {
@@ -783,22 +630,6 @@ impl BuiltChain {
                     fx.process(&mut refs);
                 }
                 Node::Gated(g) => g.process(block),
-                Node::MonoMix => {
-                    if block.len() >= 2 {
-                        let (a, b) = block.split_at_mut(1);
-                        for (l, r) in a[0].iter_mut().zip(b[0].iter_mut()) {
-                            let m = 0.5 * (*l + *r);
-                            *l = m;
-                            *r = m;
-                        }
-                    }
-                }
-                Node::UpmixMono => {
-                    if block.len() == 1 {
-                        let copy = block[0].clone();
-                        block.push(copy);
-                    }
-                }
             }
         }
     }
@@ -977,11 +808,7 @@ impl<R: Read> Read for ChainReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mastering::master_presets;
-    use crate::processing::{COMP_MAX_MAKEUP_DB, GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB};
-    use crate::processing::{
-        DenoiseStage, EqBand, HighpassStage, LimiterStage, vocal_chain_presets,
-    };
+    use crate::mastering::podcast_preset;
     use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
@@ -1072,36 +899,39 @@ mod tests {
             .collect()
     }
 
+    fn podcast_chain() -> Chain {
+        Chain::from_master_preset(&podcast_preset()).expect("the podcast preset builds")
+    }
+
+    /// A chain that adds latency (de-noise STFT + limiter look-ahead) in front of the podcast
+    /// recipe — what a long recording through the export actually meets.
+    fn latent_chain() -> Chain {
+        Chain::from_stages(vec![
+            Stage::fx("denoise", &[("reduction", 12.0)]),
+            Stage::fx("limiter", &[("ceiling", -1.0), ("true_peak", 1.0)]),
+        ])
+        .then(podcast_chain())
+    }
+
     #[test]
-    fn every_vocal_preset_has_a_chain_that_builds_in_mono_and_stereo() {
-        for p in vocal_chain_presets() {
-            let chain = Chain::from_vocal_chain(&p.chain);
-            assert!(!chain.is_empty(), "{} is empty", p.id);
-            for ch in [1usize, 2] {
-                let built = chain
-                    .build(SR, ch)
-                    .unwrap_or_else(|e| panic!("{}: {e}", p.id));
-                assert_eq!(built.out_channels(), ch);
-            }
+    fn the_podcast_chain_builds_in_mono_and_stereo() {
+        for ch in [1usize, 2] {
+            let built = podcast_chain().build(SR, ch).expect("build");
+            assert_eq!(built.out_channels(), ch);
         }
     }
 
     #[test]
-    fn every_master_preset_has_a_chain_that_builds() {
-        for p in master_presets() {
-            let chain = Chain::from_master_preset(&p).unwrap_or_else(|e| panic!("{}: {e}", p.id));
-            assert!(!chain.is_empty(), "{} is empty", p.id);
-            chain
-                .build(SR, 2)
-                .unwrap_or_else(|e| panic!("{}: {e}", p.id));
-        }
+    fn the_podcast_preset_has_a_chain_that_builds() {
+        let chain = podcast_chain();
+        assert!(!chain.is_empty());
+        chain.build(SR, 2).expect("build");
     }
 
     #[test]
     fn preset_stage_counts_follow_the_preset_text() {
-        // speech-punchy: highpass + 3 equalizers + 2 compressors.
-        let p = crate::mastering::get_preset_by_id("speech-punchy").expect("preset");
-        let c = Chain::from_master_preset(&p).expect("chain");
+        // speech-clear: highpass + 3 equalizers + 1 compressor.
+        let c = podcast_chain();
         let ids: Vec<&str> = c.stages().iter().map(Stage::id).collect();
         assert_eq!(
             ids,
@@ -1110,20 +940,15 @@ mod tests {
                 "parametric_eq",
                 "parametric_eq",
                 "parametric_eq",
-                "compressor",
                 "compressor"
             ]
         );
-        // The preset's -24 / -12 dB, each lowered by the detector offset (B2b).
+        // The preset's -18 dB, lowered by the detector offset (B2b).
         assert_eq!(
             c.stages()[4].param("threshold"),
-            Some(-24.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+            Some(-18.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
         );
-        assert_eq!(
-            c.stages()[5].param("threshold"),
-            Some(-12.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
-        );
-        assert_eq!(c.stages()[5].param("makeup"), Some(1.0));
+        assert_eq!(c.stages()[4].param("makeup"), Some(1.5));
     }
 
     #[test]
@@ -1135,67 +960,8 @@ mod tests {
     }
 
     #[test]
-    fn vocal_denoise_carries_nr_over_up_to_the_cap_and_drops_nf() {
-        let p = vocal_chain_presets()
-            .into_iter()
-            .find(|p| p.id == "voice-noisy-room")
-            .expect("preset");
-        let c = Chain::from_vocal_chain(&p.chain);
-        let dn = c
-            .stages()
-            .iter()
-            .find(|s| s.id() == "denoise")
-            .expect("denoise");
-        // The preset asks for 20 dB; the stage is capped (B2b, module docs).
-        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
-        // nf (-25) is not a parameter of the filmcraft stage.
-        assert_eq!(dn.param("noise_floor"), None);
-        let dr = c
-            .stages()
-            .iter()
-            .find(|s| s.id() == "dereverb")
-            .expect("dereverb");
-        assert_eq!(dr.param("amount"), Some(50.0));
-    }
-
-    #[test]
-    fn mixer_stage_order_is_the_canonical_one() {
-        let p = vocal_chain_presets()
-            .into_iter()
-            .find(|p| p.id == "voice-noisy-room")
-            .expect("preset");
-        let chain = Chain::from_vocal_chain(&p.chain);
-        let ids: Vec<&str> = chain.stages().iter().map(Stage::id).collect();
-        assert_eq!(
-            ids,
-            [
-                "parametric_eq", // highpass
-                "denoise",
-                "dereverb",
-                "gate",
-                "parametric_eq", // eq 300
-                "parametric_eq", // eq 3000
-                "compressor",
-                "deesser",
-                "limiter"
-            ]
-        );
-    }
-
-    #[test]
     fn highpass_cuts_below_and_leaves_the_voice_band_alone() {
-        let v = VocalChain {
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            highpass: HighpassStage {
-                enabled: true,
-                freq_hz: 100,
-            },
-            ..VocalChain::default()
-        };
-        let chain = Chain::from_vocal_chain(&v);
+        let chain = Chain::from_stages(vec![highpass_stage(100.0)]);
         let run = |f: f64| {
             let x = sine(f, 1.0, 0.1);
             let y = chain
@@ -1212,24 +978,8 @@ mod tests {
 
     #[test]
     fn eq_peak_gives_its_gain_at_the_centre() {
-        let v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            eq: vec![EqBand {
-                freq_hz: 3000,
-                gain_db: 3.0,
-                q: 1.0,
-            }],
-            ..VocalChain::default()
-        };
         let x = sine(3000.0, 1.0, 0.1);
-        let y = Chain::from_vocal_chain(&v)
+        let y = Chain::from_stages(vec![peaking_stage(3000.0, 1.0, 3.0)])
             .build(SR, 1)
             .expect("build")
             .process_offline(std::slice::from_ref(&x));
@@ -1241,24 +991,8 @@ mod tests {
     fn denoise_takes_a_real_bite_of_a_stationary_floor() {
         // The old `afftdn ... tn=1` took ~1.7 dB of this (B0c). The point of
         // the test is the opposite: carried over as `reduction`, it cleans.
-        let v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            denoise: DenoiseStage {
-                enabled: true,
-                reduction_db: 12.0,
-                noise_floor_db: -25.0,
-            },
-            ..VocalChain::default()
-        };
         let x = noise(4.0, -45.0, 7);
-        let y = Chain::from_vocal_chain(&v)
+        let y = Chain::from_stages(vec![Stage::fx("denoise", &[("reduction", 12.0)])])
             .build(SR, 1)
             .expect("build")
             .process_offline(std::slice::from_ref(&x));
@@ -1268,27 +1002,12 @@ mod tests {
 
     #[test]
     fn latency_is_removed_so_a_burst_stays_where_it_was() {
-        let v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            denoise: DenoiseStage {
-                enabled: true,
-                reduction_db: 12.0,
-                noise_floor_db: -25.0,
-            },
-            limiter: LimiterStage {
-                enabled: true,
-                limit_db: -1.0,
-            },
-            ..VocalChain::default()
-        };
-        let mut built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+        let mut built = Chain::from_stages(vec![
+            Stage::fx("denoise", &[("reduction", 12.0)]),
+            Stage::fx("limiter", &[("ceiling", -1.0), ("true_peak", 1.0)]),
+        ])
+        .build(SR, 1)
+        .expect("build");
         assert!(built.latency() > 0);
         // Silence, a 0.2 s burst at 0.1 s .. 0.3 s, silence.
         let mut x = vec![0.0f32; SR as usize];
@@ -1312,84 +1031,22 @@ mod tests {
 
     #[test]
     fn limiter_holds_the_ceiling() {
-        let v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            limiter: LimiterStage {
-                enabled: true,
-                limit_db: -1.0,
-            },
-            gain_db: 0.0,
-            ..VocalChain::default()
-        };
         let x = sine(440.0, 1.0, 1.0);
-        let y = Chain::from_vocal_chain(&v)
-            .build(SR, 1)
-            .expect("build")
-            .process_offline(&[x]);
+        let y = Chain::from_stages(vec![Stage::fx(
+            "limiter",
+            &[("ceiling", -1.0), ("true_peak", 1.0)],
+        )])
+        .build(SR, 1)
+        .expect("build")
+        .process_offline(&[x]);
         let peak = y[0].iter().fold(0.0f32, |m, v| m.max(v.abs()));
         assert!(peak <= 10f32.powf(-1.0 / 20.0) + 0.002, "peak {peak}");
     }
 
     #[test]
-    fn channel_repair_stages() {
-        let mut v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            ..VocalChain::default()
-        };
-        let l = sine(500.0, 0.1, 0.5);
-        let r = vec![0.0f32; l.len()];
-
-        v.channel_repair = ChannelRepair::DuplicateLeft;
-        let y = Chain::from_vocal_chain(&v)
-            .build(SR, 2)
-            .expect("build")
-            .process_offline(&[l.clone(), r.clone()]);
-        assert_eq!(y[0], y[1]);
-        assert!(rms_db(&y[1]) > -12.0);
-
-        v.channel_repair = ChannelRepair::SwapLr;
-        let y = Chain::from_vocal_chain(&v)
-            .build(SR, 2)
-            .expect("build")
-            .process_offline(&[l.clone(), r.clone()]);
-        assert!(rms_db(&y[0]) < -100.0 && rms_db(&y[1]) > -12.0);
-
-        v.channel_repair = ChannelRepair::MonoMix;
-        let y = Chain::from_vocal_chain(&v)
-            .build(SR, 2)
-            .expect("build")
-            .process_offline(&[l.clone(), r]);
-        assert_eq!(y[0], y[1]);
-        assert!((rms_db(&y[0]) - (rms_db(&l) - 6.02)).abs() < 0.05);
-
-        // Mono in, duplicate-left out: stereo.
-        v.channel_repair = ChannelRepair::DuplicateLeft;
-        let built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
-        assert_eq!(built.out_channels(), 2);
-    }
-
-    #[test]
     fn block_size_does_not_change_the_result() {
         // process_offline cuts at BLOCK; compare with one giant block.
-        let p = vocal_chain_presets()
-            .into_iter()
-            .find(|p| p.id == "voice-podcast")
-            .expect("preset");
-        let chain = Chain::from_vocal_chain(&p.chain);
+        let chain = latent_chain();
         let x = noise(1.0, -30.0, 3);
         let a = chain
             .build(SR, 1)
@@ -1423,11 +1080,7 @@ mod tests {
     fn chain_reader_matches_process_offline_and_keeps_the_length() {
         // A stream that is not a multiple of any block, through a chain with
         // latency (denoise + limiter), read in awkward slices.
-        let p = vocal_chain_presets()
-            .into_iter()
-            .find(|p| p.id == "voice-podcast")
-            .expect("preset");
-        let chain = Chain::from_vocal_chain(&p.chain);
+        let chain = latent_chain();
         let l = noise(1.7, -30.0, 5);
         let r = noise(1.7, -32.0, 9);
         let want = chain
@@ -1540,22 +1193,16 @@ mod tests {
     }
 
     #[test]
-    fn chain_reader_upmixes_mono_and_drops_a_partial_frame() {
-        let mut v = VocalChain {
-            channel_repair: ChannelRepair::DuplicateLeft,
-            ..VocalChain::default()
-        };
-        v.highpass.enabled = false;
-        v.compressor.enabled = false;
+    fn chain_reader_drops_a_partial_frame() {
         let x = sine(1000.0, 0.5, 0.3);
         let mut bytes = interleave(std::slice::from_ref(&x));
         bytes.extend_from_slice(&[1, 2]); // half a sample
-        let built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+        let built = podcast_chain().build(SR, 1).expect("build");
         let mut rd = ChainReader::new(bytes.as_slice(), built);
-        assert_eq!(rd.out_channels(), 2);
+        assert_eq!(rd.out_channels(), 1);
         let mut got = Vec::new();
         rd.read_to_end(&mut got).unwrap();
-        assert_eq!(got.len(), x.len() * 2 * 4);
+        assert_eq!(got.len(), x.len() * 4);
     }
 
     #[test]
@@ -1581,23 +1228,6 @@ mod tests {
         assert_eq!(c.stages()[0].param("threshold"), Some(-60.0));
     }
 
-    #[test]
-    fn de_noise_is_capped_and_de_reverb_assumes_a_short_decay() {
-        let mut v = VocalChain::default();
-        v.highpass.enabled = false;
-        v.compressor.enabled = false;
-        v.denoise.enabled = true;
-        v.denoise.reduction_db = 80.0; // a mixer value far out of range
-        v.dereverb.enabled = true;
-        v.dereverb.strength = 0.6;
-        let c = Chain::from_vocal_chain(&v);
-        let dn = c.stages().iter().find(|s| s.id() == "denoise").unwrap();
-        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
-        let dr = c.stages().iter().find(|s| s.id() == "dereverb").unwrap();
-        assert_eq!(dr.param("amount"), Some(60.0));
-        assert_eq!(dr.param("rt60"), Some(DEREVERB_RT60_S));
-    }
-
     /// B2b: a lone pure tone is the worst case for the de-reverb (it is the
     /// most "reverb-tail-like" signal there is). At `rt60 = 0.4 s` it loses 2.2 /
     /// 2.4 / 3.3 dB at strength 0.4 / 0.5 / 1.0; at filmcraft's default 0.8 s it
@@ -1605,13 +1235,12 @@ mod tests {
     #[test]
     fn de_reverb_leaves_a_held_note_alone_across_the_slider() {
         let note = sine(392.0, 6.0, 0.2);
-        for strength in [0.4, 0.5, 1.0] {
-            let mut v = VocalChain::default();
-            v.highpass.enabled = false;
-            v.compressor.enabled = false;
-            v.dereverb.enabled = true;
-            v.dereverb.strength = strength;
-            let mut built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+        for strength in [0.4f32, 0.5, 1.0] {
+            let c = Chain::from_stages(vec![Stage::fx(
+                "dereverb",
+                &[("amount", 100.0 * strength), ("rt60", DEREVERB_RT60_S)],
+            )]);
+            let mut built = c.build(SR, 1).expect("build");
             let y = built.process_offline(std::slice::from_ref(&note));
             let tail = |x: &[f32]| rms_db(&x[(SR as usize * 3)..]);
             let lost = tail(&note) - tail(&y[0]);
@@ -1622,104 +1251,36 @@ mod tests {
         }
     }
 
-    // ── the mixer clamps (what a hand-rolled/legacy DTO is held to) ─────────────
-
-    fn only_stage(f: impl FnOnce(&mut VocalChain)) -> Stage {
-        let mut v = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: crate::processing::CompressorStage {
-                enabled: false,
-                ..Default::default()
-            },
-            ..VocalChain::default()
-        };
-        f(&mut v);
-        let c = Chain::from_vocal_chain(&v);
-        assert_eq!(c.stages().len(), 1, "expected exactly one stage");
-        c.stages()[0].clone()
-    }
-
-    fn comp(threshold_db: f64, makeup_db: f64) -> Stage {
-        only_stage(|v| {
-            v.compressor = crate::processing::CompressorStage {
-                enabled: true,
-                threshold_db,
-                makeup_db,
-                ..Default::default()
-            }
-        })
-    }
-
     #[test]
     fn compressor_makeup_is_db_and_clamped_to_zero_through_the_max() {
+        let comp = |makeup: &str| {
+            Chain::from_filter_string(&format!(
+                "acompressor=threshold=-18dB:ratio=2:attack=5:release=50:makeup={makeup}dB"
+            ))
+            .unwrap()
+            .stages()[0]
+                .param("makeup")
+        };
         // T2: 2 dB is 2, not the 6.02 dB (x2) a linear reading gave.
-        assert_eq!(comp(-18.0, 2.0).param("makeup"), Some(2.0));
-        assert_eq!(
-            comp(-18.0, 100.0).param("makeup"),
-            Some(COMP_MAX_MAKEUP_DB as f32)
-        );
-        assert_eq!(comp(-18.0, -5.0).param("makeup"), Some(0.0));
+        assert_eq!(comp("2"), Some(2.0));
+        assert_eq!(comp("100"), Some(COMP_MAX_MAKEUP_DB as f32));
+        assert_eq!(comp("-5"), Some(0.0));
     }
 
     #[test]
     fn compressor_threshold_cannot_sink_below_the_floor() {
-        // The stage floor (FILMCRAFT_COMP_MIN_DB) is what bites first; the
-        // COMP_MIN_THRESHOLD_DB clamp upstream of it is masked by it today.
+        let thr = |db: &str| {
+            Chain::from_filter_string(&format!(
+                "acompressor=threshold={db}dB:ratio=2:attack=5:release=50:makeup=0dB"
+            ))
+            .unwrap()
+            .stages()[0]
+                .param("threshold")
+        };
+        assert_eq!(thr("-200"), Some(FILMCRAFT_COMP_MIN_DB as f32));
         assert_eq!(
-            comp(-200.0, 0.0).param("threshold"),
-            Some(FILMCRAFT_COMP_MIN_DB as f32)
-        );
-        assert_eq!(
-            comp(-18.0, 0.0).param("threshold"),
+            thr("-18"),
             Some(-18.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
         );
-    }
-
-    #[test]
-    fn limiter_ceiling_is_clamped_to_minus_24_through_zero() {
-        let lim = |db: f64| {
-            only_stage(|v| {
-                v.limiter = LimiterStage {
-                    enabled: true,
-                    limit_db: db,
-                }
-            })
-            .param("ceiling")
-        };
-        assert_eq!(lim(-100.0), Some(LIMITER_MIN_CEILING_DB as f32));
-        assert_eq!(lim(5.0), Some(0.0));
-        assert_eq!(lim(-1.0), Some(-1.0));
-    }
-
-    #[test]
-    fn gate_threshold_never_goes_above_zero_dbfs() {
-        // T6: a threshold above 0 dBFS would make the gate shut on everything.
-        let gate = |db: f64| {
-            only_stage(|v| {
-                v.gate = crate::processing::GateStage {
-                    enabled: true,
-                    threshold_db: db,
-                    ..Default::default()
-                }
-            })
-            .param("threshold")
-        };
-        assert_eq!(gate(10.0), Some(GATE_MAX_THRESHOLD_DB as f32));
-        assert_eq!(gate(-70.0), Some(-70.0));
-    }
-
-    #[test]
-    fn a_nan_denoise_slider_falls_back_to_the_preset_reduction() {
-        let dn = only_stage(|v| {
-            v.denoise = DenoiseStage {
-                enabled: true,
-                reduction_db: f64::NAN,
-                noise_floor_db: f64::NAN,
-            }
-        });
-        assert_eq!(dn.param("reduction"), Some(12.0));
     }
 }

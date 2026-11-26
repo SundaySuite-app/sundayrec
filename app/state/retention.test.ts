@@ -77,7 +77,7 @@ describe("retensjonspasset", () => {
     const action = toasts.value[0]?.action;
     expect(action?.label).toBe("Vis papirkurven");
     action?.onClick();
-    expect(route.value).toMatchObject({ page: "edit", tab: "trash" });
+    expect(route.value).toMatchObject({ page: "recordings", tab: "trash" });
   });
 
   it("et pass uten flytting er stille", async () => {

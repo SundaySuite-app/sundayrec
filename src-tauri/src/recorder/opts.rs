@@ -4,9 +4,8 @@
 //! `start_recording`) and the scheduler.
 //! `RecordingOpts` are not `Deserialize`, so the renderer cannot hand the
 //! engine a set of its own (security finding E1 — see
-//! `recorder/engine/payloads.rs`); outside this module only in-process tools
-//! (the test recording and its capture bench) build them, for their own temp
-//! files.
+//! `recorder/engine/payloads.rs`); outside this module only in-process code
+//! builds them.
 //!
 //! It lived in `scheduler/mod.rs` until v0.15, which made the manual recording
 //! path depend on the scheduler module for something that has nothing to do
@@ -110,9 +109,6 @@ pub(crate) fn build_opts_in(
         format: main_ext,
         pattern: settings.filename_pattern,
         custom_name,
-        // No override: `build_filename` resolves the liturgical day itself
-        // (`sundayrec_core::church_calendar`) and falls back to the plain wording on ordinary days.
-        church_name: None,
         split_timestamp: None,
         now,
     });
@@ -157,8 +153,7 @@ pub(crate) fn build_opts_in(
         // engine reader drains stderr, so the astats lines don't back-pressure the
         // capture. Always on (v0.15): the `showLiveLevels` setting had a reader
         // but no control, so nobody could turn the meters off — the constant
-        // says so honestly. The engine's `live_levels` switch itself stays: the
-        // test recording and the soak turn it off on purpose.
+        // says so honestly. The engine's `live_levels` switch itself stays.
         live_levels: true,
         keep_separate_audio: settings.keep_separate_audio,
         // The separate audio sidecar follows the ONE audio format the app lets

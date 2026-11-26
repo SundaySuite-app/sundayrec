@@ -29,8 +29,6 @@ import {
   OLD_SUNDAY_MS,
   PREV_SUNDAY_MS,
   settleVu,
-  SPECIAL_DATE,
-  stubClipboard,
 } from "./harness";
 import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
 
@@ -49,7 +47,7 @@ import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
  * seam. Command names are the RUST names (snake_case); their payloads are
  * camelCase, except `recordings_list`, which answers snake_case rows.
  * `boot.settings` — a partial settings object merged over the defaults.
- * `boot.goto` — a deep link in the OLD vocabulary; the router translates it.
+ * `boot.goto` — a deep link in the F5 vocabulary (`record`, `recordings`, `plan`, `settings`).
  * `act` drives clicks and backend events; `pre` installs anything that has to
  * exist before the renderer's first line runs.
  *
@@ -67,10 +65,9 @@ import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
  *    there is one recording engine now): it gates on `currentOs() === "win"`,
  *    and `navigator.userAgentData.platform` beats any user-agent override, so
  *    Desktop Chrome can never be Windows here.
- *  - **Native pickers** («Åpne fil…», «Velg mappe», profil-import/-eksport).
+ *  - **Native pickers** («Åpne fil…», «Velg mappe»).
  *    All of them are opened by Rust itself (`editor_open_recording`,
- *    `settings_pick_save_folder`, `settings_export_profile`/
- *    `settings_import_profile`), which no fixture answers. The state
+ *    `settings_pick_save_folder`), which no fixture answers. The state
  *    BEFORE the click is photographed; the state after does not exist out here.
  *  - **Playback.** `asset://` is dead outside Tauri, so the editor's playback
  *    notice is always the honest «ikke tilgjengelig» one and the play button
@@ -168,7 +165,6 @@ const CHOSEN = {
   ...SETTLED_SETTINGS,
   deviceId: "x32",
   deviceName: "Behringer X32",
-  churchName: "Bryn menighet",
   saveFolder: "/Users/frivillig/Opptak",
 };
 
@@ -276,42 +272,10 @@ async function openEditor(page: Page): Promise<void> {
   );
 }
 
-// ── Diagnose fixtures ───────────────────────────────────────────────────────
-
-function report(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    markdown: "# SundayRec-diagnose\n\nAlt vel.\n",
-    findings: [],
-    savedTo:
-      "/Users/frivillig/Library/Application Support/SundayRec/diagnose.md",
-    captureOk: true,
-    videoOk: null,
-    captureProbeSkipped: null,
-    ...over,
-  };
-}
-
-function finding(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    code: "SR-AUDIO-01",
-    severity: "critical",
-    title: "Ingen lydenhet funnet",
-    detail: "Verken Windows-lyd, ASIO eller ffmpeg fant en mikrofon/lydkort.",
-    hint: "Sjekk at lydkortet er tilkoblet og driveren installert.",
-    ...over,
-  };
-}
-
-/** The four commands one diagnose run makes, answered by a healthy machine. */
+/** The commands a healthy machine answers (devices, permissions, ffmpeg, wake). */
 const HEALTHY: Fixtures = {
   ...BASE,
   ...DEVICES,
-  run_diagnostics: report(),
-  diagnose_audio: {
-    dshow: ["Behringer X32", "MacBook Pro-mikrofon"],
-    wasapi: [],
-    wasapiAvailable: false,
-  },
   media_permissions: { camera: "authorized", microphone: "authorized" },
   ffmpeg_health: { available: true, version: "ffmpeg version 7.1", path: "/x" },
   // F2-I18N-R2: `satisfies` er poenget. `platform` sto på `"macos"` — ikke en
@@ -333,7 +297,7 @@ function settingsScene(
   settings: Record<string, unknown>,
   fixtures: Fixtures = HEALTHY,
 ): BootOptions {
-  return { fixtures, settings, goto: "settings:general" };
+  return { fixtures, settings, goto: "settings" };
 }
 
 // ── First run ───────────────────────────────────────────────────────────────
@@ -379,7 +343,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-no-source",
     full: true,
@@ -402,7 +366,7 @@ export const SCENES: Scene[] = [
         autoRecordEnabled: true,
         slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
       },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -419,24 +383,24 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, list_audio_devices: [BUILT_IN] },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source-missing",
     full: true,
   },
 
-  // ── De seks kortene, foldet ut på stedet ──────────────────────────────────
+  // ── Det som bodde som kort på Ta opp, nå på Innstillinger og Plan ──────────
   {
     id: "opptak--kort-lyd",
     page: "Opptak",
-    state: "Kilde-kortet foldet ut — hele «Hvilken lydkilde?» på stedet",
-    recipe: "`?goto=settings:audio` → anker `sound`",
+    state: "Innstillinger › Lyd og kanaler — hele «Hvilken lydkilde?»",
+    recipe: "`?goto=settings:sound` → seksjonen `sec-sound`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:audio",
+      goto: "settings:sound",
     },
-    wait: "control-sound-body",
+    wait: "setup-sound",
     act: async (page) => {
       await settleVu(page);
     },
@@ -445,31 +409,27 @@ export const SCENES: Scene[] = [
   {
     id: "opptak--kort-mappe",
     page: "Opptak",
-    state: "«Hvor lagres opptakene?» foldet ut",
-    recipe: "`?goto=settings:files` → anker `folder`",
+    state: "Innstillinger › Lagringsmappe",
+    recipe: "`?goto=settings:folder` → seksjonen `sec-folder`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:files",
+      goto: "settings:folder",
     },
-    wait: "control-folder-body",
+    wait: "setup-folder",
     full: true,
   },
   {
     id: "opptak--kort-kvalitet",
     page: "Opptak",
-    state: "«Hvilken kvalitet?» foldet ut",
-    recipe: "klikk `control-quality-expand` (ingen gammel fane peker hit)",
+    state: "Innstillinger › opptaksformat (under Lagringsmappe)",
+    recipe: "`?goto=settings:folder` → `setup-quality` står under mappevalget",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "home",
+      goto: "settings:folder",
     },
-    wait: "control-quality",
-    act: async (page) => {
-      await page.getByTestId("control-quality-expand").click();
-      await expect(page.getByTestId("control-quality-body")).toBeVisible();
-    },
+    wait: "setup-quality",
     full: true,
   },
   {
@@ -481,7 +441,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "settings:video",
+      goto: "settings:camera",
     },
     // ⚠️ `setup-camera-*`, ikke `control-camera-*`: CameraCard gir ControlCard
     // sin egen testId. Samme for auto-kortet.
@@ -497,10 +457,12 @@ export const SCENES: Scene[] = [
     full: true,
   },
   {
-    id: "opptak--kort-auto",
-    page: "Opptak",
-    state: "«Ta opp automatisk» foldet ut, med to faste tider",
-    recipe: "`?goto=schedule` → anker `auto`; to slots i innstillingene",
+    id: "plan--ukevisning",
+    page: "Plan",
+    state:
+      "Ukevisningen — tre faste tider, «Neste» fremhevet, ett opptak denne uka ikke tatt opp",
+    recipe:
+      "`?goto=plan:auto`; tre slots, `scheduler_status.next` på søndagen, `emitEvent('scheduler://missed')`",
     boot: {
       fixtures: {
         ...BASE,
@@ -511,26 +473,97 @@ export const SCENES: Scene[] = [
         ...CHOSEN,
         autoRecordEnabled: true,
         slots: [
-          { days: [0], start: "11:00", stop: "12:30", max: null },
+          { days: [6], start: "11:00", stop: "12:30", max: null },
+          { days: [2], start: "19:00", stop: "20:30", max: null },
+          { days: [4], start: "09:30", stop: "10:30", max: null },
+        ],
+      },
+      goto: "plan:auto",
+    },
+    wait: "plan-week",
+    act: async (page) => {
+      // ATLAS_NOW er søndag 23. august 2026: fredagen i samme uke er 21.
+      await emitEventAt(page, "scheduler://missed", [
+        { at: "2026-08-21T09:30:00", label: "Bibeltime" },
+      ]);
+      await expect(
+        page.locator('[data-testid="plan-block"][data-missed="true"]'),
+      ).toHaveCount(1);
+    },
+    full: true,
+  },
+  {
+    id: "plan--popover",
+    page: "Plan",
+    state: "Ukevisningen — redigeringen åpen ved siden av blokken",
+    recipe: "som over, så et trykk på søndagsblokka",
+    boot: {
+      fixtures: {
+        ...BASE,
+        ...DEVICES,
+        scheduler_status: { next: NEXT_SERVICE_ISO },
+      },
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: [
+          { days: [6], start: "11:00", stop: "12:30", max: null },
           { days: [2], start: "19:00", stop: "20:30", max: null },
         ],
       },
-      goto: "schedule",
+      goto: "plan",
     },
-    wait: "setup-auto-body",
+    wait: "plan-week",
+    act: async (page) => {
+      await page.locator('[data-testid="plan-block"][data-day="6"]').click();
+      await expect(page.getByTestId("plan-editor")).toBeVisible();
+    },
+    full: true,
+  },
+  {
+    id: "plan--tom",
+    page: "Plan",
+    state: "Ukevisningen — ingen faste tider ennå",
+    recipe: "`slots: []`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, slots: [] },
+      goto: "plan",
+    },
+    wait: "plan-empty",
+    full: true,
+  },
+  {
+    id: "plan--vekking",
+    page: "Plan",
+    state: "Vekking av maskinen under uka",
+    recipe: "`wake_capabilities`; rullet ned til vekke-kortet",
+    boot: {
+      fixtures: HEALTHY,
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
+      },
+      goto: "plan",
+    },
+    wait: "plan-wake",
+    act: async (page) => {
+      await page.getByTestId("plan-wake").scrollIntoViewIfNeeded();
+    },
     full: true,
   },
   {
     id: "opptak--kort-varsling",
     page: "Opptak",
-    state: "«Varsling» foldet ut",
-    recipe: "`?goto=settings:sharing` → anker `notify`",
+    state: "Innstillinger › Varsler",
+    recipe: "`?goto=settings:notify` → seksjonen `sec-notify`",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
-      goto: "settings:sharing",
+      goto: "settings:notify",
     },
-    wait: "control-notify-body",
+    wait: "setup-notify",
     full: true,
   },
 
@@ -544,7 +577,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -567,7 +600,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("denied") },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -586,7 +619,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: CAMERA_FIXTURES,
       settings: { ...WITH_CAMERA, videoDeviceName: "Sony HandyCam" },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-camera-preview",
     act: async (page) => {
@@ -603,7 +636,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Banner: opptaket ble avbrutt, med grunnen i klartekst",
     recipe: "`emit('recording-error', { code: 'device_disconnected' })`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitAt(page, "recording-error", {
@@ -628,7 +665,7 @@ export const SCENES: Scene[] = [
         get_disk_space: { freeBytes: 200_000_000, totalBytes: 500e9 },
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "banner-low-disk",
     act: async (page) => {
@@ -641,7 +678,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Banner: et planlagt opptak ble aldri tatt",
     recipe: "`emitEvent('scheduler://missed', [{ at, label }])`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitEventAt(page, "scheduler://missed", [
@@ -673,7 +714,7 @@ export const SCENES: Scene[] = [
         ],
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "banner-preflight",
     act: async (page) => {
@@ -700,7 +741,7 @@ export const SCENES: Scene[] = [
         },
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "consent-card",
     act: async (page) => {
@@ -713,7 +754,11 @@ export const SCENES: Scene[] = [
     page: "Opptak",
     state: "Kvitteringen etter et ferdig opptak",
     recipe: "`emit('recording-finished', { path })`",
-    boot: { fixtures: { ...BASE, ...DEVICES }, settings: CHOSEN, goto: "home" },
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
     wait: "record-source",
     act: async (page) => {
       await emitAt(page, "recording-finished", {
@@ -742,7 +787,7 @@ export const SCENES: Scene[] = [
         ...cameraFixtures(),
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -785,7 +830,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, stop_recording: true },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -818,7 +863,7 @@ export const SCENES: Scene[] = [
         recording_cancel_autostop: true,
       },
       settings: { ...CHOSEN, manualMaxMinutes: 60 },
-      goto: "home",
+      goto: "record",
     },
     wait: "record-source",
     act: async (page) => {
@@ -847,7 +892,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     full: true,
@@ -861,7 +906,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: [] },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-empty",
     full: true,
@@ -874,7 +919,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     act: async (page) => {
@@ -887,7 +932,7 @@ export const SCENES: Scene[] = [
     page: "Bibliotek og redigering",
     state: "Papirkurven — med «slettes om N dager»",
     recipe:
-      "to rader i `trash_list`, så klikk `library-trash-open` (ikke nåbar via `?goto=`)",
+      "to rader i `trash_list`, så klikk fanen `recordings-tabs-row-trash`",
     boot: {
       fixtures: {
         ...BASE,
@@ -905,11 +950,11 @@ export const SCENES: Scene[] = [
         ],
       },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
-    wait: "library-trash-open",
+    wait: "recordings-tabs",
     act: async (page) => {
-      await page.getByTestId("library-trash-open").click();
+      await page.getByTestId("recordings-tabs-row-trash").click();
       await expect(page.getByTestId("trash-row").first()).toBeVisible();
     },
     full: true,
@@ -918,7 +963,7 @@ export const SCENES: Scene[] = [
     id: "redigering--papirkurv-tom",
     page: "Bibliotek og redigering",
     state: "Papirkurven er tom",
-    recipe: "`trash_list: []`, så klikk `library-trash-open`",
+    recipe: "`trash_list: []`, så klikk fanen `recordings-tabs-row-trash`",
     boot: {
       fixtures: {
         ...BASE,
@@ -927,55 +972,43 @@ export const SCENES: Scene[] = [
         trash_list: [],
       },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
-    wait: "library-trash-open",
+    wait: "recordings-tabs",
     act: async (page) => {
-      await page.getByTestId("library-trash-open").click();
+      await page.getByTestId("recordings-tabs-row-trash").click();
       await expect(page.getByTestId("trash-empty")).toBeVisible();
     },
   },
   {
     id: "redigering--klipp",
     page: "Bibliotek og redigering",
-    state: "Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag",
+    state: "Arbeidsflaten, steget «Klipp» — bølgeform og de to håndtakene",
     recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
     },
     full: true,
     narrow: true,
   },
   {
-    id: "redigering--klipp-leter",
-    page: "Bibliotek og redigering",
-    state: "«Leter etter prekenen …» — analysen er ikke ferdig",
-    recipe: "`editor_segments` som aldri svarer",
-    boot: {
-      fixtures: editorScene({
-        editor_segments: fn("() => new Promise(() => {})"),
-      }),
-      settings: CHOSEN,
-      goto: "editor",
-    },
-    act: async (page) => {
-      await openEditor(page);
-      await expect(page.getByTestId("editor-searching")).toBeVisible();
-    },
-    full: true,
-  },
-  {
     id: "redigering--kuttliste",
     page: "Bibliotek og redigering",
     state: "Kuttlista — det som blir borte, som rader man kan angre",
-    recipe: "åpne, så klikk `editor-keep-sermon`",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    recipe: "åpne, så flytt startshåndtaket 3:30 inn med PageUp",
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
-      await page.getByTestId("editor-keep-sermon").click();
+      const start = page.getByTestId("editor-handle-start");
+      await expect(start).toBeVisible();
+      await start.focus();
+      for (let i = 0; i < 7; i++) await page.keyboard.down("PageUp");
+      await page.keyboard.up("PageUp");
+      await page.evaluate(() =>
+        (document.activeElement as HTMLElement)?.blur(),
+      );
       await expect(page.getByTestId("editor-cut-list")).toBeVisible();
     },
     full: true,
@@ -983,41 +1016,14 @@ export const SCENES: Scene[] = [
   {
     id: "redigering--lyd",
     page: "Bibliotek og redigering",
-    state: "Steget «Lyd» — profilene og hva de gjør",
+    state: "Steget «Lyd» — bryteren «Podkastklar lyd»",
     recipe: "åpne, så klikk `editor-steps-row-sound`",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
-      // ⚠️ VENT PÅ ANALYSEN FØRST. «Hør et utsnitt» starter der prekenen er
-      // (`refreshListenStart` → `sermonWindow`), og prekenvinduet fylles av et
-      // ASYNKRONT `editor_segments`-svar. Bytter man steg før det har landet,
-      // står tidspunktet på 0:04:50 (midten av opptaket); etterpå står det på
-      // 0:05:05 (midten av prekenen). Uten denne ventingen fotograferte
-      // scenen tilfeldig det ene eller det andre.
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+      await expect(page.getByTestId("editor-handle-start")).toBeVisible();
       await page.getByTestId("editor-steps-row-sound").click();
       await expect(page.getByTestId("editor-sound")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "redigering--mikser",
-    page: "Bibliotek og redigering",
-    state: "Mikseren åpen — de sju trinnene bak profilen",
-    recipe: "steget «Lyd», så `editor-mixer-open` + `editor-mixer-toggle`",
-    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
-    act: async (page) => {
-      await openEditor(page);
-      // Se `redigering--lyd`: prekenvinduet må ha landet før steget byttes.
-      await expect(page.getByTestId("editor-suggestion")).toBeVisible();
-      await page.getByTestId("editor-steps-row-sound").click();
-      await page.getByTestId("editor-mixer-open").click();
-      await expect(page.getByTestId("editor-mixer-stages")).toBeVisible();
-      await page.getByTestId("editor-mixer-toggle").click();
-      await expect(page.getByTestId("editor-mixer-toggle")).toHaveAttribute(
-        "aria-checked",
-        "true",
-      );
     },
     full: true,
   },
@@ -1031,7 +1037,7 @@ export const SCENES: Scene[] = [
         editor_load_recording: fn("() => new Promise(() => {})"),
       }),
       settings: CHOSEN,
-      goto: "editor",
+      goto: "recordings",
     },
     act: async (page) => {
       await openFile(page);
@@ -1050,7 +1056,7 @@ export const SCENES: Scene[] = [
         editor_peaks: null,
       }),
       settings: CHOSEN,
-      goto: "editor",
+      goto: "recordings",
     },
     act: async (page) => {
       await openFile(page);
@@ -1058,49 +1064,50 @@ export const SCENES: Scene[] = [
     },
   },
 
-  // ══ EKSPORTERING ══════════════════════════════════════════════════════════
-  {
-    id: "eksport--tom",
-    page: "Eksport",
-    state: "Ingen fil åpen — siste opptak med én knapp, og en velger",
-    recipe: "`?goto=export` med tre opptak i lista",
-    boot: {
-      fixtures: editorScene({ recordings_list: LIBRARY_ROWS }),
-      settings: CHOSEN,
-      goto: "export",
-    },
-    wait: "export-last",
-    full: true,
-    narrow: true,
-  },
-  {
-    id: "eksport--ingenting",
-    page: "Eksport",
-    state: "Ingen opptak i det hele tatt",
-    recipe: "`recordings_list: []`",
-    boot: {
-      fixtures: editorScene({ recordings_list: [] }),
-      settings: CHOSEN,
-      goto: "export",
-    },
-    wait: "export-empty",
-  },
+  // ══ EKSPORT (arket inne i editoren) ═══════════════════════════════════════
   {
     id: "eksport--valg",
     page: "Eksport",
-    state: "Valgene — format, hvor, og hva som blir laget",
-    recipe: "`export-pick-use` på første rad i velgeren",
+    state: "Eksportarket — format, hvor, podkastklar lyd og hva som blir laget",
+    recipe: "åpne opptaket, så klikk `editor-export-open`",
     boot: {
       fixtures: editorScene({
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await expect(page.getByTestId("editor-export")).toBeVisible();
+    },
+    full: true,
+  },
+  {
+    id: "eksport--jingler",
+    page: "Eksport",
+    state:
+      "Eksportarket med intro og outro valgt — filnavn og «Fjern» på hver rad",
+    recipe:
+      "innstillingene har `editorIntroPath` og `editorOutroPath`; åpne opptaket, så klikk `editor-export-open`",
+    boot: {
+      fixtures: editorScene({
+        recordings_list: [recordingRow({ file_path: FILE })],
+      }),
+      settings: {
+        ...CHOSEN,
+        editorIntroPath: "/Users/frivillig/Musikk/Velkommen.wav",
+        editorOutroPath: "/Users/frivillig/Musikk/Utgang.mp3",
+      },
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
+      await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+        "Velkommen.wav",
+      );
     },
     full: true,
   },
@@ -1116,11 +1123,11 @@ export const SCENES: Scene[] = [
         editor_export: EXPORT_HELD,
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await page.getByTestId("editor-export-go").click();
       await expect(page.getByTestId("editor-exporting")).toBeVisible();
       await emitAt(page, "editor-export-progress", {
@@ -1142,11 +1149,11 @@ export const SCENES: Scene[] = [
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: CHOSEN,
-      goto: "export",
+      goto: "recordings",
     },
-    wait: "export-last",
     act: async (page) => {
-      await page.getByTestId("export-last-open").click();
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
       await page.getByTestId("editor-export-go").click();
       await expect(page.getByTestId("editor-exported-file")).toBeVisible();
     },
@@ -1158,9 +1165,9 @@ export const SCENES: Scene[] = [
     id: "innstillinger--landing",
     page: "Innstillinger",
     state: "Hele flaten — kirkeprofil øverst, Avansert under",
-    recipe: "`?goto=settings:general` på en frisk maskin",
+    recipe: "`?goto=settings` på en frisk maskin",
     boot: settingsScene(CHOSEN),
-    wait: "setup-church",
+    wait: "setup-language",
     full: true,
     narrow: true,
   },
@@ -1187,7 +1194,7 @@ export const SCENES: Scene[] = [
     id: "innstillinger--systemkortet",
     page: "Innstillinger",
     state:
-      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg, profil, diagnose",
+      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg",
     recipe: "rull til `advanced-help`",
     boot: settingsScene(CHOSEN, {
       ...HEALTHY,
@@ -1260,248 +1267,12 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("dialog-pre")).toBeVisible();
     },
   },
-  {
-    id: "innstillinger--tidsplan",
-    page: "Innstillinger",
-    state: "Tidsplanen — to faste tider, ett spesialopptak, vekking",
-    recipe: "`slots` + `specialRecordings` + `wake_capabilities`",
-    boot: settingsScene({
-      ...CHOSEN,
-      autoRecordEnabled: true,
-      slots: [
-        { days: [0], start: "11:00", stop: "12:30", max: null },
-        { days: [2], start: "19:00", stop: "20:30", max: null },
-      ],
-      specialRecordings: [
-        {
-          id: null,
-          date: SPECIAL_DATE,
-          name: "Julaften",
-          start: "16:00",
-          stop: "17:30",
-          deviceId: null,
-        },
-      ],
-    }),
-    wait: "advanced-schedule",
-    act: async (page) => {
-      await page.getByTestId("advanced-schedule").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "innstillinger--tidsplan-tom",
-    page: "Innstillinger",
-    state: "Tidsplanen — ingen faste tider ennå",
-    recipe: "`slots: []`, `specialRecordings: []`",
-    boot: settingsScene({
-      ...CHOSEN,
-      slots: [],
-      specialRecordings: [],
-    }),
-    wait: "advanced-schedule",
-    act: async (page) => {
-      await page.getByTestId("advanced-schedule").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-
-  // ── Diagnoseraden (V1/PR2) ────────────────────────────────────────────────
-  {
-    id: "diagnose--hvile",
-    page: "Innstillinger › Diagnose",
-    state: "I hvile — «Kjør» og «Test-opptak», ingenting annet",
-    recipe: "diagnosen åpner en enhet, så den kjører aldri av seg selv",
-    boot: settingsScene({ ...CHOSEN, deviceName: "Behringer X32" }),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-      await expect(page.getByTestId("adv-diagnose-result")).toHaveCount(0);
-    },
-  },
-  {
-    id: "diagnose--resultat",
-    page: "Innstillinger › Diagnose",
-    state: "Resultatet — fem statusrader, funn, enhetsliste, kopiknapp",
-    recipe: "`run_diagnostics` med tre funn, så klikk `adv-diagnose-run`",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: report({
-          findings: [
-            finding({
-              code: "SR-DISK-01",
-              severity: "warning",
-              title: "Marsboere oppdaget",
-              hint: "Ikke få panikk.",
-              detail: "Bare 4,2 GB ledig på /Users/frivillig/Opptak.",
-            }),
-            finding({
-              code: "SR-PERM-01",
-              severity: "critical",
-              detail: "macOS nekter mikrofontilgang for SundayRec.",
-            }),
-            finding({
-              // UKJENT kode ⇒ motorens egen prosa står, som den skal.
-              code: "SR-FRA-FRAMTIDEN-01",
-              severity: "warning",
-              title: "Noe helt nytt fra en nyere bakende",
-              detail: "En detalj bare motoren kjenner.",
-              hint: "Motorens eget råd.",
-            }),
-          ],
-        }),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-result")).toBeVisible();
-      // Enhetslista er en `<details>` og står lukket — den er halve poenget
-      // med raden, så den åpnes før lukkeren går.
-      await page.getByTestId("adv-diagnose-devices").locator("summary").click();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--proven-hoppet-over",
-    page: "Innstillinger › Diagnose",
-    state: "Lydprøven ble ikke kjørt — den tredje tilstanden, ærlig",
-    recipe: "`captureOk: null` + `captureProbeSkipped` med motorens egen grunn",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: report({
-          captureOk: null,
-          captureProbeSkipped: "en annen klient holder enheten",
-        }),
-        diagnose_audio: {
-          dshow: ["MacBook Pro-mikrofon"],
-          wasapi: [],
-          wasapiAvailable: false,
-        },
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(
-        page.getByTestId("adv-diagnose-probe-skipped"),
-      ).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--ipc-ring",
-    page: "Innstillinger › Diagnose",
-    state: "Kommandoer som ikke svarte denne økten",
-    recipe: "la `get_disk_space` og `recordings_list` kaste, så kjør",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        get_disk_space: fn(`() => { throw new Error("disken svarte ikke") }`),
-        recordings_list: fn(`() => { throw new Error("basen er låst") }`),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-ipc")).toBeVisible();
-      await page.getByTestId("adv-diagnose-ipc").locator("summary").click();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "diagnose--feilet",
-    page: "Innstillinger › Diagnose",
-    state: "Diagnosen kunne ikke kjøres",
-    recipe: "`run_diagnostics` kaster — den går utenom `call()`s fallback",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_diagnostics: fn(`() => { throw new Error("basen svarte ikke") }`),
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await expect(page.getByTestId("adv-diagnose-failed")).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--testopptak",
-    page: "Innstillinger › Diagnose",
-    state: "Test-opptaket ble gjennomført",
-    recipe: "`run_test_recording` → `{ ok: true, signal: 'normal' }`",
-    boot: settingsScene(
-      { ...CHOSEN, deviceName: "Behringer X32" },
-      {
-        ...HEALTHY,
-        run_test_recording: {
-          ok: true,
-          error: null,
-          sizeBytes: 1_000_000,
-          signal: "normal",
-        },
-      },
-    ),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-test").click();
-      await expect(page.getByTestId("adv-diagnose-test-result")).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--kopiert",
-    page: "Innstillinger › Diagnose",
-    state: "«Kopier full rapport» — kvitteringen som forsvinner av seg selv",
-    recipe: "stubbet utklippstavle + klikk `adv-diagnose-copy`",
-    boot: settingsScene({ ...CHOSEN, deviceName: "Behringer X32" }),
-    pre: (page) => stubClipboard(page),
-    wait: "adv-diagnose",
-    act: async (page) => {
-      await page.getByTestId("adv-diagnose-run").click();
-      await page.getByTestId("adv-diagnose-copy").click();
-      // Aldri på ORDET: scenen fotograferes på begge språk, og en assertion på
-      // norsk tekst gjør den engelske kjøringen rød uten at noe er galt.
-      await expect(
-        page.locator('[data-testid^="toast-"][data-testid$="-message"]'),
-      ).toBeVisible();
-      await page.getByTestId("adv-diagnose").scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "diagnose--fra-menylinjen",
-    page: "Innstillinger › Diagnose",
-    state: "Menylinjens «Kjør diagnose» — bytter skjerm OG kjører",
-    recipe: "start på OPPTAK, `emitEvent('tray://action', 'run-diagnostics')`",
-    boot: {
-      fixtures: HEALTHY,
-      settings: { ...CHOSEN, deviceName: "Behringer X32" },
-      goto: "home",
-    },
-    wait: "record-source",
-    act: async (page) => {
-      await emitEventAt(page, "tray://action", "run-diagnostics");
-      await expect(page.getByTestId("adv-diagnose-result")).toBeVisible();
-    },
-    full: true,
-  },
 
   // ══ FØRSTE GANG ═══════════════════════════════════════════════════════════
   {
     id: "forste-gang--1-lyd-lukket",
     page: "Første gang",
-    state: "Steg 1 av 5 — lydporten er LUKKET: «Neste» venter på lyd",
+    state: "Steg 1 av 3 — lydporten er LUKKET: «Neste» venter på lyd",
     recipe: "`onboardingDone:false`, ingen VU-pakker",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1511,7 +1282,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--1-lyd-apen",
     page: "Første gang",
-    state: "Steg 1 av 5 — lydporten er ÅPEN: vi hører noe",
+    state: "Steg 1 av 3 — lydporten er ÅPEN: vi hører noe",
     recipe: "`emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1527,7 +1298,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--2-mappe",
     page: "Første gang",
-    state: "Steg 2 av 5 — hvor skal opptakene?",
+    state: "Steg 2 av 3 — hvor skal opptakene?",
     recipe: "«Fortsett uten lyd», så ett steg fram",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1538,68 +1309,22 @@ export const SCENES: Scene[] = [
     full: true,
   },
   {
-    id: "forste-gang--3-kvalitet",
+    id: "forste-gang--3-plan",
     page: "Første gang",
-    state: "Steg 3 av 5 — hvilken kvalitet?",
+    state: "Steg 3 av 3 — første faste opptak, i ukevisningen fra Plan",
     recipe: "«Fortsett uten lyd», så to steg fram",
-    boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 1);
-      await expect(page.getByTestId("setup-quality")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--4-kirke",
-    page: "Første gang",
-    state: "Steg 4 av 5 — hva heter menigheten?",
-    recipe: "«Fortsett uten lyd», så tre steg fram",
-    boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 2);
-      await expect(page.getByTestId("setup-church")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--5-varsling",
-    page: "Første gang",
-    state: "Steg 5 av 5 — hvem skal få beskjed?",
-    recipe: "«Fortsett uten lyd», så fire steg fram",
-    boot: {
-      fixtures: FIRST_RUN_FIXTURES,
-      settings: FIRST_RUN_SETTINGS,
-    },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 3);
-      await expect(page.getByTestId("setup-notify")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--6-sjekkliste",
-    page: "Første gang",
-    state: "«Klar til søndag» — de fem svarene, med det som mangler i gult",
-    recipe: "«Fortsett uten lyd» + fire steg; `notify` er ikke satt opp",
     boot: {
       fixtures: FIRST_RUN_FIXTURES,
       settings: {
         ...FIRST_RUN_SETTINGS,
         saveFolder: "/Users/frivillig/Opptak",
-        churchName: "Bryn menighet",
       },
     },
     wait: "first-run",
     act: async (page) => {
       await skipGate(page);
-      await nextSteps(page, 4);
-      await expect(page.getByTestId("first-run-open")).toBeVisible();
+      await nextSteps(page, 1);
+      await expect(page.getByTestId("first-run-plan")).toBeVisible();
     },
     full: true,
     narrow: true,
@@ -1617,7 +1342,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1640,7 +1365,7 @@ export const SCENES: Scene[] = [
         get_disk_space: { freeBytes: 200_000_000, totalBytes: 500e9 },
       },
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1667,7 +1392,7 @@ export const SCENES: Scene[] = [
         autoRecordEnabled: true,
         slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
       },
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1685,7 +1410,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     },
     wait: "status-line",
     act: async (page) => {
@@ -1703,7 +1428,7 @@ export const SCENES: Scene[] = [
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: { ...CHOSEN, autoUpdate: true },
-      goto: "search",
+      goto: "recordings",
     },
     wait: "library-row",
     act: async (page) => {
@@ -1723,7 +1448,7 @@ export const SCENES: Scene[] = [
         settings_get: fn(`() => { throw new Error("store_unreadable") }`),
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     },
     wait: "hydrate-error",
     full: true,

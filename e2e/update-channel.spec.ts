@@ -15,7 +15,7 @@ import {
 // file stays where it is and stays green.
 //
 // What changed is the DOM only — `#opt-update-channel` is
-// `adv-update-channel-control-input` in `app/pages/setup/advanced/UpdateRow.tsx`,
+// `adv-update-channel-control-input` in `app/pages/settings/advanced/UpdateRow.tsx`,
 // and the dialog is the shared `DialogHost`. The assertion that matters is
 // unchanged: the beta opt-in must reach the STORE, because the backend is the
 // only reader that counts (`update/mod.rs::current_channel` reads
@@ -28,7 +28,7 @@ test.describe("update channel", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // The owner's exact journey: pick Beta …
@@ -62,7 +62,7 @@ test.describe("update channel", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, updateChannel: "beta" },
-      goto: "settings:general",
+      goto: "settings",
     });
     const select = page.getByTestId("adv-update-channel-control-input");
     await expect(select).toHaveValue("beta");

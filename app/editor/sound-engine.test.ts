@@ -1,6 +1,6 @@
 /**
- * Lyd-steget på avspillingsmotoren (B5b): Før/Etter er en melding, ikke en gjengivelse; en ny
- * profil midt i avspilling setter inn en ny kjede uten pause; spillehodet er det motoren sier.
+ * Lyd-steget på avspillingsmotoren (B5b): Før/Etter er en melding, ikke en gjengivelse; en endret
+ * kuttliste midt i avspilling setter inn en ny kjede uten pause; spillehodet er det motoren sier.
  *
  * Motoren er `fakeListen()`: det den ble bedt om, i rekkefølge, og det den ville sagt tilbake.
  *
@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isRecording } from "../state/recording";
-import { E, resetFileState } from "./model";
+import { cuts, E, resetFileState } from "./model";
 import {
   PREPARE_DEBOUNCE_MS,
   listenAt,
@@ -24,10 +24,9 @@ import {
   listenStart,
   resetSound,
   setListenSide,
-  soundProfile,
+  podcastAudio,
   stopListen,
   toggleListen,
-  useMixer,
   watchListenPrepare,
 } from "./sound";
 import { fakeListen, type FakeListen } from "./test-support/fake-listen-api";
@@ -53,7 +52,6 @@ beforeEach(() => {
     clearTimeout: (id: number) => clearTimeout(id),
     api: {
       ...engine.api,
-      editorAutoProcess: () => Promise.resolve({ diagnosis: null }),
       editorTaleSaid: () => Promise.resolve(null),
       prepareListen: () => Promise.resolve(true),
     },
@@ -65,8 +63,7 @@ beforeEach(() => {
   E.cuts = [] as typeof E.cuts;
   listenSide.value = "after";
   listenStart.value = 1800;
-  soundProfile.value = "speech";
-  useMixer.value = false;
+  podcastAudio.value = true;
 });
 
 afterEach(() => {
@@ -142,15 +139,21 @@ describe("Før og Etter er et bytte", () => {
   });
 });
 
-describe("profilbytte midt i avspilling", () => {
+/** Nye kutt er et nytt program: kjeden må måles på nytt mens den gamle spiller. */
+const setCuts = (start: number): void => {
+  E.cuts = [{ start, end: start + 10 }] as typeof E.cuts;
+  cuts.value = E.cuts.slice();
+};
+
+describe("endret program midt i avspilling", () => {
   it("setter inn den nye kjeden når den er målt — uten pause, uten ny åpning", async () => {
     await playingAfter();
     const first = engine.chains();
     expect(first).toHaveLength(1);
-    expect(first[0].presetId).toBe("speech-clear");
+    expect(first[0].podcastAudio).toBe(true);
     const before = engine.log.length;
 
-    soundProfile.value = "mixed";
+    setCuts(100);
     // Kortet venter på den nye kjeden mens den gamle spiller.
     await settle(1);
     expect(listenPreparing.value).toBe(true);
@@ -158,7 +161,7 @@ describe("profilbytte midt i avspilling", () => {
 
     const chains = engine.chains();
     expect(chains).toHaveLength(2);
-    expect(chains[1].presetId).not.toBe("speech-clear");
+    expect(chains[1].cutRegions).toEqual([{ start: 100, end: 110 }]);
     expect(listenPreparing.value).toBe(false);
     const after = engine.log.slice(before);
     expect(after.some((c) => c.cmd === "open" || c.cmd === "close")).toBe(
@@ -170,16 +173,16 @@ describe("profilbytte midt i avspilling", () => {
     expect(listenPlaying.value).toBe(true);
   });
 
-  it("hurtige profilbytter gir én kjede, og en forsinket eldre overstyrer ikke en nyere", async () => {
+  it("hurtige endringer gir én kjede, og en forsinket eldre overstyrer ikke en nyere", async () => {
     await playingAfter();
     const slow = engine.holdChain();
-    soundProfile.value = "mixed";
+    setCuts(100);
     await settle(PREPARE_DEBOUNCE_MS);
     expect(engine.chains()).toHaveLength(2);
 
     // Mens den treige måles, velger brukeren en tredje.
     const fast = engine.holdChain();
-    soundProfile.value = "speech";
+    setCuts(200);
     await settle(PREPARE_DEBOUNCE_MS);
     expect(engine.chains()).toHaveLength(3);
     const sidesBefore = engine
@@ -200,9 +203,9 @@ describe("profilbytte midt i avspilling", () => {
     );
   });
 
-  it("«Ingen» stopper lyttingen: kortet er borte, og lyden med det", async () => {
+  it("av stopper lyttingen: kortet er borte, og lyden med det", async () => {
     await playingAfter();
-    soundProfile.value = "none";
+    podcastAudio.value = false;
     await settle(PREPARE_DEBOUNCE_MS);
     expect(listenPlaying.value).toBe(false);
     expect(engine.log.at(-1)).toEqual({ cmd: "close" });

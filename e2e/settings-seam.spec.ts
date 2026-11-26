@@ -28,7 +28,7 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
     // Give the module-load path room to misbehave before asserting silence.
     // (`settings:general` lands on the Innstillinger surface — church profile
@@ -60,7 +60,7 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
         protectRecording: false,
         updateChannel: "beta",
         reminderMinutes: 15,
-        churchName: "Domkirken",
+        deviceName: "Domkirken",
         // P1b's new key. Legacy has NO control for it, which is exactly why it
         // belongs here: the shell saves the whole stored object, so a field it
         // never renders must still survive the round trip. A key that only the
@@ -68,9 +68,8 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
         autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
-      // D2: kamera-kortet bor i kontrollrommet på OPPTAK. Ren re-pek —
-      // kontrollen, kvitteringen og hver eneste assertion er de samme.
-      goto: "home",
+      // F5: kamera-kortet bor under Kamera i Innstillinger.
+      goto: "settings",
     });
 
     // The one change: slå på «Ta med kamera» (seeded av).
@@ -95,7 +94,7 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
     expect(stored.launchAtLogin).toBe(true);
     expect(stored.protectRecording).toBe(false);
     expect(stored.reminderMinutes).toBe(15);
-    expect(stored.churchName).toBe("Domkirken");
+    expect(stored.deviceName).toBe("Domkirken");
     expect(stored.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });

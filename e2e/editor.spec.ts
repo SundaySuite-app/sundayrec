@@ -7,9 +7,7 @@ import {
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
-import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 import {
-  AUTO_PROCESS_DEAD_LEFT,
   DURATION,
   editorFixtures,
   EXPORT_HELD,
@@ -21,25 +19,10 @@ import {
 } from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
-/**
- * Fang korreksjonene `editor_record_sermon_pick` får.
- *
- * Nyttelasten er det E8 faktisk lagrer, og den ene tingen den ALDRI skal si er
- * at detektoren pekte på den blokka mennesket pekte på. Derfor er det ikke nok
- * at kallet skjedde — innholdet må sees.
- */
-const RECORD_PICKS: Fixtures = {
-  editor_record_sermon_pick: fn(`(args) => {
-    (window.__E2E_PICKS__ ||= []).push(args.request);
-    return true;
-  }`),
-};
-
 // REDIGER — alle tre stegene, sett utenfra.
 //
-// NI titler er ORDRETT legacys (`e2e/editor.spec.ts`), fordi de beskriver den
-// samme oppførselen på en ny flate: åpningen, forslaget, korreksjonen,
-// kuttlista, de to regresjonene — og, siden P4b, «the three tabs switch, and
+// Titlene er ORDRETT legacys (`e2e/editor.spec.ts`) der de beskriver den
+// samme oppførselen på en ny flate: åpningen, kuttlista — og, siden P4b, «the three tabs switch, and
 // switching does not redo the work», som ble sann igjen i det stegstripa fikk
 // alle tre. `docs/SMOKE-TEST.md` peker på to av dem som `sti::tittel`, så
 // titlene er ikke våre å pusse på.
@@ -49,7 +32,7 @@ const RECORD_PICKS: Fixtures = {
 //
 //   «the chosen tab is remembered across a reopen» — det gjør den ikke lenger,
 //   med vilje. Legacy husket fanen i innstillingene; her begynner hver åpning
-//   på steg 1, fordi «er dette prekenen?» er spørsmålet et opptak åpner med.
+//   på steg 1, Klipp.
 //   «the export modal is honest about destination and level» — modalen finnes
 //   ikke, og halve tittelen er ikke lenger sann: NIVÅ-raden («Volum styres av
 //   mastring») fantes fordi normaliseringen og mastringen kunne love hver sin
@@ -62,8 +45,7 @@ const RECORD_PICKS: Fixtures = {
 //   påstanden lever videre under sitt sanne navn — «stegene og eksportsiden
 //   bytter uten å gjøre arbeidet på nytt».
 //
-// Resten er nye: P4as fire (ett-klikks-anvendelsen, de to inngangene,
-// lukkingen) og P4bs egne — mappingen fra de tre ordene til nyttelasten,
+// Resten er nye: P4as (håndtakene, de to inngangene, lukkingen) og P4bs egne — mappingen fra de tre ordene til nyttelasten,
 // mikseren som overstyrer, video-bryteren, avbrytingen og kvitteringen.
 
 /** Åpne editoren med den fikstureide innspillingen. */
@@ -71,7 +53,7 @@ async function openEditor(page: Page, over: Fixtures = {}) {
   await boot(page, {
     fixtures: editorFixtures(over),
     settings: SETTLED_SETTINGS,
-    goto: "editor",
+    goto: "recordings",
   });
   await page.evaluate(
     (f) =>
@@ -87,26 +69,52 @@ async function openEditor(page: Page, over: Fixtures = {}) {
   await expect(page.getByTestId("app-heading")).toContainText("Gudstjeneste");
 }
 
-/** Vent til analysen er ferdig — forslagskortet er beviset på at den er det. */
-async function waitForSuggestion(page: Page) {
-  await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+/** Vent til arbeidsflaten er tegnet: bølgeformen og de to håndtakene står der. */
+async function waitForEditor(page: Page) {
+  await expect(page.getByTestId("editor-canvas")).toBeVisible();
+  await expect(page.getByTestId("editor-handle-start")).toBeVisible();
 }
 
 /**
- * Gå til EKSPORTERING med fila åpen.
+ * Behold 3:30–7:00 (210–420 s) — det deterministiske kuttet resten av fila
+ * trenger. Håndtakene flyttes med tastaturet, som i appen: PageUp/PageDown er
+ * 30 sekunder, og et HOLD (alle `down` før ett `up`) er ETT angre-steg per
+ * håndtak. Fokus slippes til slutt, så piltastene igjen flytter spillehodet.
+ */
+async function keepMiddle(page: Page) {
+  const start = page.getByTestId("editor-handle-start");
+  await start.focus();
+  for (let i = 0; i < 7; i++) await page.keyboard.down("PageUp");
+  await page.keyboard.up("PageUp");
+  await expect(start).toHaveAttribute("aria-valuenow", "210");
+  const end = page.getByTestId("editor-handle-end");
+  await end.focus();
+  for (let i = 0; i < 6; i++) await page.keyboard.down("PageDown");
+  await page.keyboard.up("PageDown");
+  await expect(end).toHaveAttribute("aria-valuenow", "420");
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+}
+
+/**
+ * Åpne eksportarket med fila åpen.
  *
- * Etter D3 er det en DESTINASJON og ikke et steg: veien dit er skinnen (eller
- * «Neste: Eksporter» nederst på steg 2, som `stegene har en vei videre …`
- * dekker). Fila følger med av seg selv — signalene bak eksporten bor på
- * modulnivå, og det er hele grunnen til at flyttingen var mulig.
+ * Etter F5 er eksporten et ARK inne i editoren: «Eksporter» nederst åpner det,
+ * og fila blir stående åpen bak det. Signalene bak eksporten bor på modulnivå,
+ * så en kjøring overlever at arket lukkes.
  */
 async function goToExport(page: Page) {
-  await page.getByTestId("nav-export").click();
-  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "export");
+  await page.getByTestId("editor-export-open").click();
   await expect(page.getByTestId("export-page")).toHaveAttribute(
     "data-state",
     "ready",
   );
+}
+
+/** Lukk eksportarket igjen (Escape), og la editoren stå. */
+async function closeExportSheet(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("export-page")).toHaveCount(0);
 }
 
 test.describe("editor", () => {
@@ -124,82 +132,17 @@ test.describe("editor", () => {
     );
   });
 
-  test("the sermon picker offers every plausible block, marking the current one", async ({
-    page,
-  }) => {
-    await openEditor(page);
-    await waitForSuggestion(page);
-
-    const picker = page.getByTestId("editor-picker");
-    await expect(picker).toBeVisible();
-
-    // Tre tale-lignende blokker er ≥ 1 min; de 30 sekundene med musikk og
-    // stillhet er ikke kandidater og skal ikke tilbys.
-    const options = picker.locator("option");
-    await expect(options).toHaveCount(3);
-    // Auto-valget er stjernemerket og valgt. Verdiene er indekser inn i
-    // SEGMENTS, så de tre tilbudene er 1, 3 og 4 — den stjernemerkede er
-    // SEGMENTS[3].
-    await expect(options.nth(1)).toHaveText(/^★ /);
-    await expect(picker).toHaveValue("3");
-  });
-
-  test("correcting the sermon pick sticks", async ({ page }) => {
-    await openEditor(page, RECORD_PICKS);
-    await waitForSuggestion(page);
-
-    const picker = page.getByTestId("editor-picker");
-    await expect(picker).toHaveValue("3"); // = SEGMENTS[3], auto-valget
-
-    // «Den tredje blokka er prekenen, ikke den andre.» — SEGMENTS[4].
-    await picker.selectOption("4");
-
-    const options = picker.locator("option");
-    // Stjerna FLYTTET seg — det gamle valget ble degradert, ikke bare fulgt.
-    await expect(options.nth(2)).toHaveText(/^★ /);
-    await expect(options.nth(1)).not.toHaveText(/^★ /);
-    await expect(options.nth(0)).not.toHaveText(/^★ /);
-    await expect(picker).toHaveValue("4");
-
-    // Korreksjonen er RAPPORTERT — det er hele E8-kontrakten. Nyttelasten er
-    // bygget FØR forfremmelsen, så `autoIndex` peker fortsatt på detektorens
-    // egen blokk og ikke på den mennesket valgte.
-    const recorded = await page.evaluate(
-      () => (window as unknown as { __E2E_PICKS__?: unknown[] }).__E2E_PICKS__,
-    );
-    expect(recorded).toHaveLength(1);
-    expect(recorded?.[0]).toMatchObject({ autoIndex: 3, chosenIndex: 4 });
-
-    // …og forslaget flyttet seg med den: vinduet er nå den nye blokka.
-    await expect(
-      page.getByTestId("editor-suggestion-description"),
-    ).toContainText("0:07:00");
-  });
-
-  test("one plausible block means no picker — there is nothing to choose", async ({
-    page,
-  }) => {
-    await openEditor(page, {
-      editor_segments: [
-        { start: 0, end: 60, duration: 60, label: "Stillhet", type: "silence" },
-        { start: 60, end: 600, duration: 540, label: "Preken", type: "sermon" },
-      ] satisfies EditorSegment[],
-    });
-    await waitForSuggestion(page);
-    await expect(page.getByTestId("editor-picker")).toHaveCount(0);
-  });
-
   test("a cut row shows its range and the ✕ really removes it", async ({
     page,
   }) => {
-    // SMOKE-TEST §12.3 — kuttene tegnes ved drag eller av «Behold bare
-    // prekenen»; ett klikk på forslaget er den deterministiske veien hit.
+    // SMOKE-TEST §12.3 — kuttene tegnes ved drag eller med håndtakene;
+    // tastaturet på håndtakene er den deterministiske veien hit.
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
 
     const rows = page.getByTestId("editor-cut-row");
-    await expect(rows).toHaveCount(2); // alt rundt SEGMENTS[3]
+    await expect(rows).toHaveCount(2); // hodet og halen rundt 3:30–7:00
     await expect(rows.first().getByTestId("editor-cut-range")).toHaveText(
       "0:00:00 – 0:03:30",
     );
@@ -215,15 +158,11 @@ test.describe("editor", () => {
   test("fokus går ikke tapt når knappen man sto på forsvinner", async ({
     page,
   }) => {
-    // Audit 2026-11-11: forslagskortet og kuttradenes «Fjern» tok fokuset
-    // med seg til <body>. Tastaturet brukes her med vilje — Enter på knappen.
+    // Audit 2026-11-11: kuttradenes «Fjern» tok fokuset med seg til <body>.
+    // Tastaturet brukes her med vilje — Enter på knappen.
     await openEditor(page);
-    await waitForSuggestion(page);
-
-    await page.getByTestId("editor-keep-sermon").focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
-    await expect(page.getByTestId("editor-play")).toBeFocused();
+    await waitForEditor(page);
+    await keepMiddle(page);
 
     const rows = page.getByTestId("editor-cut-row");
     await expect(rows).toHaveCount(2);
@@ -236,17 +175,6 @@ test.describe("editor", () => {
     await page.keyboard.press("Enter");
     await expect(rows).toHaveCount(0);
     await expect(page.getByTestId("editor-clear-cuts")).toBeFocused();
-  });
-
-  test("«Behold alt» med tastaturet lander på spill-knappen", async ({
-    page,
-  }) => {
-    await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-all").focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
-    await expect(page.getByTestId("editor-play")).toBeFocused();
   });
 
   test("unsaved cuts from a previous session come back on reopen", async ({
@@ -273,123 +201,47 @@ test.describe("editor", () => {
     );
   });
 
-  // ── Regresjoner ────────────────────────────────────────────────────────────
-  //
-  // Begge var ekte produksjonsfeil som ikke ga en eneste feilmelding. De hører
-  // med hit fordi den nye flaten arver den samme koden for begge: `type`-feltet
-  // kommer fra den genererte bindingen, og kandidatlista er den samme
-  // `@lib/…/sermon-candidates`.
-
-  test("the segment shape the backend really sends drives the whole sermon UI", async ({
-    page,
-  }) => {
-    // `EditorSegment` serialiserte `type` som `kind` mens hver eneste leser i
-    // renderer-en leste `.type`. Mot den EKTE bakenden var hvert segments type
-    // `undefined`, så prekenvelgeren, «Marker preken automatisk»,
-    // forslagsbanneret og tidslinjelagene var alle død kode i den utsendte
-    // appen. `SEGMENTS` er typet som den genererte bindingen, så denne testen
-    // fôres med den sanne formen fra ledningen.
-    await openEditor(page);
-    await waitForSuggestion(page);
-
-    // Hver flate mismatchen hadde slått av:
-    await expect(page.getByTestId("editor-picker")).toBeVisible();
-    await expect(page.getByTestId("editor-keep-sermon")).toBeVisible();
-    await expect(page.getByTestId("editor-keep")).toBeVisible();
-    // …og teksten som leste 0 for hvert eneste opptak. 3 min 30 s preken.
-    await expect(
-      page.getByTestId("editor-suggestion-description"),
-    ).toContainText("3 min 30 s");
-  });
-
-  test("a too-short block ahead of the candidates does not shift the correction", async ({
-    page,
-  }) => {
-    // `renderSermonPicker` bygget alternativene fra
-    //   suggestions.filter(speech|sermon).filter(duration >= 60).sort(by start)
-    // mens `setSermonSegment(i)` indekserte inn i
-    //   suggestions.filter(speech|sermon)
-    // — uten varighetsgulv og uten sortering. ÉN kort taleblokk foran
-    // kandidatene forskjøv de to listene med én, så å velge «blokk 3»
-    // forfremmet blokk 2: stille, og med feil trimming ved eksport.
-    await openEditor(page, {
-      editor_segments: [
-        { start: 0, end: 20, duration: 20, label: "Tale", type: "speech" }, // < 60 s: tilbys ikke
-        { start: 20, end: 200, duration: 180, label: "Preken", type: "sermon" },
-        { start: 200, end: 400, duration: 200, label: "Tale", type: "speech" },
-        { start: 400, end: 600, duration: 200, label: "Tale", type: "speech" },
-      ] satisfies EditorSegment[],
-    });
-    await waitForSuggestion(page);
-
-    const picker = page.getByTestId("editor-picker");
-    const options = picker.locator("option");
-    await expect(options).toHaveCount(3);
-    await expect(options.nth(0)).toHaveText(/^★ /);
-
-    // Den SISTE blokka som tilbys — segment 3, den som begynner 6:40. Under
-    // den gamle nummereringen var dette alternativ «2» og forfremmet segment 2.
-    await picker.selectOption({ index: 2 });
-    await expect(picker).toHaveValue("3");
-    await expect(options.nth(2)).toHaveText(/^★ /);
-    await expect(options.nth(0)).not.toHaveText(/^★ /);
-    await expect(options.nth(1)).not.toHaveText(/^★ /);
-    // Den stjernemerkede er 6:40-blokka: den brukeren faktisk valgte.
-    await expect(options.nth(2)).toHaveText(/0:06:40/);
-
-    // Og trimmingen som følger beholder DEN blokka — eksport-konsekvensen, og
-    // grunnen til at dette betydde noe utover en vandrende stjerne. Ett kutt,
-    // alt før 6:40. Den gamle nummereringen forfremmet segment 2 og ville gitt
-    // to kutt (0:00–3:20 og 6:40–10:00) og beholdt feil 200 sekunder.
-    await page.getByTestId("editor-keep-sermon").click();
-    const rows = page.getByTestId("editor-cut-row");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("0:00:00 – 0:06:40");
-  });
-
   // ── Nytt i P4a ─────────────────────────────────────────────────────────────
 
-  test("«Behold bare prekenen» er ett klikk — og Angre setter det tilbake", async ({
+  test("håndtakene setter kuttene — og Angre setter det tilbake", async ({
     page,
   }) => {
-    // MUTASJONSPRØVEN: slutter knappen å anvende forslaget, går denne rød.
+    // MUTASJONSPRØVEN: slutter håndtakene å lage kutt, går denne rød.
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
 
     const result = page.getByTestId("editor-result");
     await expect(result).toHaveText("Ferdig lengde: 10 min 0 s av 10 min 0 s");
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
-
-    await page.getByTestId("editor-keep-sermon").click();
-
-    // Ett klikk: kuttene er satt, resultatlinja sier hva som blir igjen, og
-    // kortet er borte fordi spørsmålet er besvart.
-    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
-    await expect(result).toHaveText("Ferdig lengde: 3 min 30 s av 10 min 0 s");
-    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
-    // Gullvinduet står igjen på prekenen, nå som kuttgrenser.
-    await expect(page.getByTestId("editor-keep")).toHaveAttribute(
-      "data-applied",
-      "true",
+    // Uten kutt står vinduet på hele opptaket.
+    await expect(page.getByTestId("editor-handle-start")).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+    await expect(page.getByTestId("editor-handle-end")).toHaveAttribute(
+      "aria-valuenow",
+      String(DURATION),
     );
 
-    // …og ett klikk tar det tilbake.
+    await keepMiddle(page);
+
+    // Kuttene er satt, og resultatlinja sier hva som blir igjen.
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+    await expect(result).toHaveText("Ferdig lengde: 3 min 30 s av 10 min 0 s");
+
+    // …og Angre tar det tilbake, ett håndtak om gangen.
+    await page.getByTestId("editor-undo").click();
     await page.getByTestId("editor-undo").click();
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
     await expect(result).toHaveText("Ferdig lengde: 10 min 0 s av 10 min 0 s");
-    await expect(page.getByTestId("editor-suggestion")).toBeVisible();
   });
 
-  test("et holdt piltrykk på et preken-håndtak er ETT angre-steg", async ({
+  test("et holdt piltrykk på et vindushåndtak er ETT angre-steg", async ({
     page,
   }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
-    // Klikket flytter fokus til spill-knappen ett bilde senere (focus.ts).
-    // Vent på det, ellers kan det ta fokuset tilbake fra håndtaket.
-    await expect(page.getByTestId("editor-play")).toBeFocused();
-    await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
+    await waitForEditor(page);
+    await keepMiddle(page);
 
     const handle = page.getByTestId("editor-handle-start");
     const before = Number(await handle.getAttribute("aria-valuenow"));
@@ -402,39 +254,30 @@ test.describe("editor", () => {
     // ETT klikk på Angre tar hele holdet tilbake — ikke ett sekund.
     await page.getByTestId("editor-undo").click();
     await expect(handle).toHaveAttribute("aria-valuenow", String(before));
-    // …og ett til tar bort «Behold bare prekenen».
-    await page.getByTestId("editor-undo").click();
-    await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
   });
 
   test("Home på startshåndtaket flytter det til begynnelsen", async ({
     page,
   }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
-    // Klikket flytter fokus til spill-knappen ett bilde senere (focus.ts).
-    // Vent på det, ellers kan det ta fokuset tilbake fra håndtaket.
-    await expect(page.getByTestId("editor-play")).toBeFocused();
+    await waitForEditor(page);
+    await keepMiddle(page);
     const handle = page.getByTestId("editor-handle-start");
     await handle.focus();
     await page.keyboard.press("Home");
     await expect(handle).toHaveAttribute("aria-valuenow", "0");
   });
 
-  test("«Behold alt» legger kortet bort uten å røre opptaket", async ({
+  test("et opptak uten kutt er urørt: ingen ulagrede endringer å bekrefte", async ({
     page,
   }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-all").click();
+    await waitForEditor(page);
 
-    await expect(page.getByTestId("editor-suggestion")).toHaveCount(0);
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
     await expect(page.getByTestId("editor-result")).toHaveText(
       "Ferdig lengde: 10 min 0 s av 10 min 0 s",
     );
-    // Ingenting er endret, så det er ingenting å bekrefte ved lukking.
     await expect(page.getByTestId("editor-dirty")).toHaveCount(0);
   });
 
@@ -444,13 +287,16 @@ test.describe("editor", () => {
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     });
 
     await page.getByTestId("library-row-edit").first().click();
     // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
     // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
@@ -495,7 +341,7 @@ test.describe("editor", () => {
         editor_load_recording: SLOW_LOAD,
       }),
       settings: SETTLED_SETTINGS,
-      goto: "search",
+      goto: "recordings",
     });
     await expect(page.getByTestId("library-row")).toHaveCount(1);
 
@@ -561,7 +407,7 @@ test.describe("editor", () => {
         recordings_list: [recordingRow({ file_path: FILE })],
       }),
       settings: SETTLED_SETTINGS,
-      goto: "home",
+      goto: "record",
     });
 
     await emit(page, "recording-finished", {
@@ -574,7 +420,10 @@ test.describe("editor", () => {
     await page.getByTestId("record-done-edit").click();
     // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
     // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
@@ -585,8 +434,8 @@ test.describe("editor", () => {
 
   test("lukking med ulagrede kutt spør først", async ({ page }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await expect(page.getByTestId("editor-dirty")).toBeVisible();
 
     // Avbryt: editoren står der den var.
@@ -604,7 +453,10 @@ test.describe("editor", () => {
     // stedet man allerede var, med fokusflytting og rulling som følge.
     await page.getByTestId("editor-close").click();
     await page.locator('[data-dialog-button="ok"]').click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("editor")).toHaveCount(0);
     // Fiksturens bibliotek er tomt, så det er tomtilstanden som står — men den
     // står, og det er poenget: siden byttet visning uten å bytte rute.
@@ -634,7 +486,7 @@ test.describe("editor", () => {
   }) => {
     await spyEvents(page);
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
 
     // Spill: økta åpnes der spillehodet står, og motoren får «spill». Ingen mp3, ingen proxy.
     await page.getByTestId("editor-play").click();
@@ -663,8 +515,12 @@ test.describe("editor", () => {
     });
     await expect(page.getByTestId("editor-time")).toHaveText("0:02:05");
 
-    // Et nytt kutt mens det spiller går til motoren, fra samme sted.
-    await page.getByTestId("editor-keep-sermon").click();
+    // Nye kutt mens det spiller går til motoren, fra samme sted — ett
+    // håndtak, ett kutt, én melding.
+    const startHandle = page.getByTestId("editor-handle-start");
+    await startHandle.focus();
+    for (let i = 0; i < 7; i++) await page.keyboard.down("PageUp");
+    await page.keyboard.up("PageUp");
     await expect
       .poll(() =>
         listenCalls(page).then((c) =>
@@ -699,7 +555,7 @@ test.describe("editor", () => {
     // en knapp, ble den knappen trykket i stedet.
     await spyEvents(page);
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
 
     await page.keyboard.press(" ");
     await expect
@@ -714,8 +570,8 @@ test.describe("editor", () => {
       .poll(() => listenCalls(page).then((c) => c.at(-1)?.action))
       .toEqual({ kind: "pause" });
 
-    // Fokus på «Klipp manuelt»: mellomrom spiller, og knappen trykkes IKKE.
-    await page.getByTestId("editor-manual").click();
+    // Fokus på «Fjern alle»: mellomrom spiller, og knappen trykkes IKKE.
+    await page.getByTestId("editor-clear-cuts").focus();
     await expect(page.getByTestId("editor-tools")).toBeVisible();
     await page.keyboard.press(" ");
     await expect
@@ -726,7 +582,7 @@ test.describe("editor", () => {
 
   test("piltastene og Home/End flytter spillehodet", async ({ page }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
     const time = page.getByTestId("editor-time");
 
     await page.keyboard.press("ArrowRight");
@@ -745,13 +601,17 @@ test.describe("editor", () => {
 
   test("⌘Z / Ctrl+Z angrer kuttene, og gjør om med Shift", async ({ page }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
 
-    await page.getByTestId("editor-keep-sermon").click();
+    await keepMiddle(page);
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
 
     await page.keyboard.press("ControlOrMeta+z");
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(1);
+    await page.keyboard.press("ControlOrMeta+z");
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect(page.getByTestId("editor-cut-row")).toHaveCount(1);
     await page.keyboard.press("ControlOrMeta+Shift+z");
     await expect(page.getByTestId("editor-cut-row")).toHaveCount(2);
   });
@@ -777,7 +637,7 @@ test.describe("editor", () => {
     // AVMONTERT på veien. Kom arbeidet tilbake som en ny dekoding, ville et
     // blikk på eksportvalgene kostet en 90-minutters FLAC om igjen.
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
 
     const before = await page.evaluate(
       () =>
@@ -785,7 +645,6 @@ test.describe("editor", () => {
           .__E2E_CALLS__,
     );
     expect(before.editor_peaks).toBeGreaterThan(0);
-    expect(before.editor_segments).toBeGreaterThan(0);
 
     await page.getByTestId("editor-steps-row-sound").click();
     await expect(page.getByTestId("editor-sound")).toBeVisible();
@@ -794,10 +653,9 @@ test.describe("editor", () => {
     await goToExport(page);
     await expect(page.getByTestId("editor-export")).toBeVisible();
 
-    // Tilbake til REDIGERING: fila står fortsatt åpen (biblioteket vises
-    // ikke), og steg 1 tegner bølgeformen fra toppene som allerede lå i
-    // modellen.
-    await page.getByTestId("nav-edit").click();
+    // Lukk arket: fila står fortsatt åpen (lista vises ikke), og steg 1 tegner
+    // bølgeformen fra toppene som allerede lå i modellen.
+    await closeExportSheet(page);
     await expect(page.getByTestId("library-row")).toHaveCount(0);
     await page.getByTestId("editor-steps-row-cut").click();
     await expect(page.getByTestId("editor-canvas")).toBeVisible();
@@ -810,21 +668,21 @@ test.describe("editor", () => {
     ).toEqual(before);
   });
 
-  test("«Tale» er standarden, og den sender tale-presettet med eksporten", async ({
+  test("«Podkastklar lyd» er standarden, og den sender oppskriften med eksporten", async ({
     page,
   }) => {
-    // MUTASJONSPRØVEN for `sound-profiles.ts`: bytt `SPEECH_MASTER_PRESET` og
-    // denne går rød på `masterPreset`.
+    // MUTASJONSPRØVEN for `sound-recipe.ts`: la `soundExportFields(true)` returnere `{}` og
+    // denne går rød på `podcastAudio`.
     await openEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    await expect(page.getByTestId("editor-auto-toggle")).toHaveAttribute(
+    await expect(page.getByTestId("editor-podcast-toggle")).toHaveAttribute(
       "aria-checked",
       "true",
     );
     await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "speech",
+      "data-podcast",
+      "on",
     );
 
     await goToExport(page);
@@ -833,7 +691,7 @@ test.describe("editor", () => {
 
     expect(await exportPayloads(page)).toHaveLength(1);
     expect((await exportPayloads(page))[0]).toMatchObject({
-      masterPreset: "speech-clear",
+      podcastAudio: true,
       format: "mp3",
       // `null` = «Samme mappe som opptaket», som bakenden løser opp til
       // kildens egen mappe. ALLTID med — aldri undefined, aldri en sti (A2),
@@ -841,112 +699,56 @@ test.describe("editor", () => {
       outputFolderToken: null,
       bitrate: 256,
     });
-    // Ingen stemmekjede, og ingen mikser: profilen er ETT preset. To kjeder
-    // over det samme materialet er det dobbelte høypasset bakenden advarer mot.
-    expect((await exportPayloads(page))[0].vocalChainPreset).toBeNull();
-    expect((await exportPayloads(page))[0].processing).toBeNull();
+    // Ingen preset, ingen stemmekjede, ingen mikser: de finnes ikke lenger i nyttelasten.
+    const sent = (await exportPayloads(page))[0];
+    expect("masterPreset" in sent).toBe(false);
+    expect("processing" in sent).toBe(false);
+    expect("channelRepair" in sent).toBe(false);
   });
 
-  test("«Tale og musikk» bytter presettet, «Ingen» sender ingen behandling", async ({
-    page,
-  }) => {
+  test("bryteren AV sender ingen behandling", async ({ page }) => {
     await openEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    await page.getByTestId("editor-profile-row-mixed").click();
-    await goToExport(page);
-    await page.getByTestId("editor-export-go").click();
-    await expect(page.getByTestId("editor-exported")).toBeVisible();
-    expect((await exportPayloads(page))[0]).toMatchObject({
-      masterPreset: "music-speech",
-    });
-
-    // Tilbake til valgene, og til steg 2 for å bytte til «Ingen». Steget bor
-    // på REDIGERING nå, så veien går innom skinnen — og fila står åpen hele
-    // veien, som er det som gjør at valgene fortsatt er der.
-    await page.getByTestId("editor-exported-again").click();
-    await page.getByTestId("nav-edit").click();
-    await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-auto-toggle").click();
+    await page.getByTestId("editor-podcast-toggle").click();
     await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "none",
+      "data-podcast",
+      "off",
     );
-    // Bryteren AV er det samme som «Ingen» — ett felt, to måter å si det på.
+    // Uten oppskrift er det ingenting å høre «Etter» på.
     await expect(page.getByTestId("editor-listen")).toHaveCount(0);
 
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
-    const last = (await exportPayloads(page))[1];
-    expect(last.masterPreset).toBeNull();
-    expect(last.vocalChainPreset).toBeNull();
-    expect(last.processing).toBeNull();
-    expect(last.channelRepair).toBeNull();
+    expect((await exportPayloads(page))[0].podcastAudio).toBe(false);
   });
 
-  test("bryteren husker hvilket kort som var valgt", async ({ page }) => {
-    await openEditor(page);
-    await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-profile-row-mixed").click();
-
-    await page.getByTestId("editor-auto-toggle").click();
-    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "none",
+  test("en stille kanal gir et varsel i editoren — og ingen reparasjon", async ({
+    page,
+  }) => {
+    await openEditor(page, {
+      editor_channel_check: { deadSide: "left" },
+    });
+    await waitForEditor(page);
+    await expect(page.getByTestId("editor-dead-channel")).toContainText(
+      "Venstre side er stille — sjekk kabelen",
     );
-    await page.getByTestId("editor-auto-toggle").click();
-    // Ikke «Tale»: «av, så på» skal ikke flytte noen bort fra valget sitt.
-    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
-      "data-profile",
-      "mixed",
-    );
-  });
-
-  test("mikseren overstyrer profilen — én kjede, ikke to", async ({ page }) => {
-    // Legacy lot `processing` OG `masterPreset` stå i den samme nyttelasten, og
-    // resultatet var to høypass, to kompressorer og to EQ-kurver over det samme
-    // materialet. Går denne rød fordi `masterPreset` er tilbake, er det
-    // nøyaktig den feilen som er tilbake.
-    await openEditor(page);
+    // Ingen bryter og ingen mikser å slå på: bare varselet.
     await page.getByTestId("editor-steps-row-sound").click();
-    await page.getByTestId("editor-mixer-open").click();
-    await page.getByTestId("editor-mixer-toggle").click();
-
-    // Alle tjue kontrollene er der, og de er ekte — en slår av høypasset.
-    await page.getByTestId("editor-mx-hpf-on").click();
-
+    await expect(page.getByTestId("editor-dead-channel")).toBeVisible();
+    await page.getByTestId("editor-steps-row-cut").click();
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
-
     const sent = (await exportPayloads(page))[0];
-    expect(sent.masterPreset).toBeNull();
-    expect(sent.processing).toMatchObject({
-      highpassEnabled: false,
-      // Resten av kjeden er `VocalChain::default()`, importert fra legacys
-      // mikser — det ene stedet de tallene finnes i TypeScript.
-      compEnabled: true,
-      compThresholdDb: -18,
-    });
+    expect("channelRepair" in sent).toBe(false);
   });
 
-  test("en stille kanal repareres uten å bli et spørsmål", async ({ page }) => {
-    // Den vanligste ekte katastrofen i et menighetsopptak. Legacy hadde en
-    // femvalgs «Kanalreparasjon»-velger for den; her ser analysen det, sier det
-    // i én setning, og reparasjonen blir med på eksporten.
-    await openEditor(page, { editor_auto_process: AUTO_PROCESS_DEAD_LEFT });
-    await page.getByTestId("editor-steps-row-sound").click();
-    await expect(page.getByTestId("editor-channel-note")).toContainText(
-      "Ingen lyd på venstre side",
-    );
-
-    await goToExport(page);
-    await page.getByTestId("editor-export-go").click();
-    await expect(page.getByTestId("editor-exported")).toBeVisible();
-    expect((await exportPayloads(page))[0].channelRepair).toMatchObject({
-      mode: "duplicateRight",
-    });
+  test("et balansert opptak får ikke noe varsel", async ({ page }) => {
+    await openEditor(page);
+    await waitForEditor(page);
+    await expect(page.getByTestId("editor-dead-channel")).toHaveCount(0);
   });
 
   test("lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting", async ({
@@ -965,7 +767,7 @@ test.describe("editor", () => {
     );
     await expect(page.getByTestId("editor-tale-said-noise")).toHaveCount(0);
 
-    await page.getByTestId("editor-auto-toggle").click();
+    await page.getByTestId("editor-podcast-toggle").click();
     await expect(page.getByTestId("editor-tale-said")).toHaveCount(0);
   });
 
@@ -987,12 +789,12 @@ test.describe("editor", () => {
     // Posisjonen er motorens egen hendelse, så spionen må stå FØR oppstarten.
     await spyEvents(page);
     await openEditor(page);
-    await waitForSuggestion(page);
+    await waitForEditor(page);
     await page.getByTestId("editor-steps-row-sound").click();
 
-    // Prekenen er SEGMENTS[3], 210–420 → midten er 315, og lyttingen begynner
-    // 10 sekunder før den: 305 = 0:05:05.
-    await expect(page.getByTestId("editor-listen-at")).toContainText("0:05:05");
+    // Uten kutt er vinduet hele opptaket, 0–600 → midten er 300, og lyttingen
+    // begynner 10 sekunder før den: 290 = 0:04:50.
+    await expect(page.getByTestId("editor-listen-at")).toContainText("0:04:50");
 
     await page.getByTestId("editor-listen-play").click();
     await expect
@@ -1002,13 +804,13 @@ test.describe("editor", () => {
     expect(calls.find((c) => c.cmd === "open")?.request).toMatchObject({
       // A2: opptaket er lappen Rust ga det, ikke en sti.
       sourceToken: OPENED.token,
-      startSec: 305,
+      startSec: 290,
     });
     expect(calls.find((c) => c.cmd === "chain")?.request).toMatchObject({
       sourceToken: OPENED.token,
-      // Det SAMME presettet eksporten kommer til å bruke — ellers er «Etter»
+      // Den SAMME oppskriften eksporten kommer til å bruke — ellers er «Etter»
       // en lyd fila aldri får.
-      presetId: "speech-clear",
+      podcastAudio: true,
     });
     await expect(page.getByTestId("editor-listen-play")).toHaveAttribute(
       "aria-label",
@@ -1116,8 +918,8 @@ test.describe("editor", () => {
     // Fremdriften er bakendens egen hendelse, så spionen må stå FØR oppstarten.
     await spyEvents(page);
     await openEditor(page, { editor_export: EXPORT_HELD });
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
 
@@ -1176,8 +978,8 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page, { editor_export: EXPORT_HELD });
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
@@ -1210,8 +1012,8 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
 
@@ -1267,8 +1069,8 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page, { editor_export: EXPORT_HELD });
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await goToExport(page);
 
     await page.evaluate(() => {
@@ -1299,16 +1101,15 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page, { editor_export: EXPORT_HELD });
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
 
-    // Tilbake til REDIGERING med eksporten i gang — den overlever et
-    // sidebytte, og det er nettopp derfor knappen her kan nås midt i en
-    // kjøring.
-    await page.getByTestId("nav-edit").click();
+    // Lukk arket med eksporten i gang — den overlever, og det er nettopp derfor
+    // pila tilbake kan nås midt i en kjøring.
+    await closeExportSheet(page);
     await expect(page.getByTestId("editor")).toBeVisible();
     await page.getByTestId("editor-close").click();
 
@@ -1344,7 +1145,7 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page, { editor_export: EXPORT_HELD });
-    await waitForSuggestion(page);
+    await waitForEditor(page);
     await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
@@ -1378,8 +1179,8 @@ test.describe("editor", () => {
     // annen destinasjon enn redigeringen, så å bare lukke ville latt brukeren
     // stå igjen på en side som nettopp mistet det den handlet om.
     await openEditor(page);
-    await waitForSuggestion(page);
-    await page.getByTestId("editor-keep-sermon").click();
+    await waitForEditor(page);
+    await keepMiddle(page);
     await expect(page.getByTestId("editor-dirty")).toBeVisible();
 
     await goToExport(page);
@@ -1387,7 +1188,10 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     await page.getByTestId("editor-exported-library").click();
 
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
     await expect(page.getByTestId("library-empty")).toBeVisible();
     await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
   });
@@ -1396,12 +1200,13 @@ test.describe("editor", () => {
     await openEditor(page);
     await page.getByTestId("editor-next").click();
     await expect(page.getByTestId("editor-sound")).toBeVisible();
-    // Den siste «Neste» forlater SIDEN: eksporteringen er en destinasjon etter
-    // D3, og knappen navigerer dit med fila åpen.
-    await page.getByTestId("editor-next").click();
+    // «Neste» finnes bare på Klipp-steget; «Eksporter» står på begge og åpner
+    // arket over editoren — ingen navigering.
+    await expect(page.getByTestId("editor-next")).toHaveCount(0);
+    await page.getByTestId("editor-export-open").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "export",
+      "recordings",
     );
     await expect(page.getByTestId("editor-export")).toBeVisible();
   });

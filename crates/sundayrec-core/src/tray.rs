@@ -44,7 +44,6 @@ pub enum TrayAction {
     StopRecording,
     OpenRecordingsFolder,
     RunPreflight,
-    RunDiagnostics,
     Quit,
 }
 
@@ -95,7 +94,7 @@ pub fn icon_for(state: &TrayState) -> TrayIcon {
 /// The status-badge colour (RGB) composited onto the base app icon for a
 /// [`TrayIcon`] variant, or `None` for [`TrayIcon::Idle`] (the bare app icon).
 ///
-/// Dedicated tray-icon assets were never bundled (docs/NEEDS-RICHARD.md PU-2),
+/// Dedicated tray-icon assets were never bundled (docs/archive/NEEDS-RICHARD.md PU-2),
 /// so instead of shipping three PNGs the shell paints a small corner dot onto
 /// the app's own icon at runtime — see [`with_status_badge`]. Red = recording
 /// (the universal record colour), amber = something is wrong.
@@ -158,11 +157,6 @@ pub fn tooltip(state: &TrayState, lang: Lang) -> String {
     let base = match lang {
         Lang::No => "SundayRec — kjører i bakgrunnen",
         Lang::En => "SundayRec — running in background",
-        Lang::De => "SundayRec — läuft im Hintergrund",
-        Lang::Sv => "SundayRec — körs i bakgrunden",
-        Lang::Da => "SundayRec — kører i baggrunden",
-        Lang::Pl => "SundayRec — działa w tle",
-        Lang::Fr => "SundayRec — s'exécute en arrière-plan",
     };
     match &state.next_recording_label {
         Some(next) => format!("{base}\n{}: {next}", next_label(lang)),
@@ -171,16 +165,11 @@ pub fn tooltip(state: &TrayState, lang: Lang) -> String {
 }
 
 /// Build the ordered tray menu for `state` + `lang`. Order + clickability:
-///   status → [next-recording info] → open → start/stop → open-folder →
-///   diagnostics → quit.
+///   status → [next-recording info] → open → start/stop → open-folder → quit.
 ///
-/// The tray is a quick background-menu, so it carries ONE system action. The
-/// status row already answers "is the system OK?" at a glance; when it isn't,
-/// "Diagnoser system…" opens the full report. (Electron's menu also surfaced a
-/// quick "check system now" preflight here, but next to the status row + the
-/// diagnostics item it read as a confusing near-duplicate, so the tray drops it
-/// — the in-app preflight button still exists. `RunPreflight` stays as an action
-/// for that path.)
+/// The tray is a quick background-menu with no system-check item: the status
+/// row already answers "is the system OK?" at a glance. (The in-app preflight
+/// card still exists; `RunPreflight` stays as an action for that path.)
 pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     let mut items = Vec::new();
 
@@ -239,11 +228,6 @@ pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
         TrayAction::OpenRecordingsFolder,
         true,
     ));
-    items.push(TrayItem::item(
-        diagnose_label(lang),
-        TrayAction::RunDiagnostics,
-        true,
-    ));
 
     items.push(TrayItem::Separator);
     items.push(TrayItem::item(quit_label(lang), TrayAction::Quit, true));
@@ -257,121 +241,60 @@ fn recording_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "🔴 Tar opp…",
         Lang::En => "🔴 Recording…",
-        Lang::De => "🔴 Aufnahme…",
-        Lang::Sv => "🔴 Spelar in…",
-        Lang::Da => "🔴 Optager…",
-        Lang::Pl => "🔴 Nagrywa…",
-        Lang::Fr => "🔴 Enregistrement…",
     }
 }
 fn error_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "⚠️ Feil — klikk for detaljer",
         Lang::En => "⚠️ Error — click for details",
-        Lang::De => "⚠️ Fehler — klicken für Details",
-        Lang::Sv => "⚠️ Fel — klicka för detaljer",
-        Lang::Da => "⚠️ Fejl — klik for detaljer",
-        Lang::Pl => "⚠️ Błąd — kliknij po szczegóły",
-        Lang::Fr => "⚠️ Erreur — cliquez pour détails",
     }
 }
 fn schedule_missed_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "⚠️ Planlagt opptak ble ikke tatt — klikk for detaljer",
         Lang::En => "⚠️ A scheduled recording did not run — click for details",
-        Lang::De => "⚠️ Geplante Aufnahme lief nicht — klicken für Details",
-        Lang::Sv => "⚠️ Schemalagd inspelning kördes inte — klicka för detaljer",
-        Lang::Da => "⚠️ Planlagt optagelse kørte ikke — klik for detaljer",
-        Lang::Pl => "⚠️ Zaplanowane nagranie się nie odbyło — kliknij po szczegóły",
-        Lang::Fr => "⚠️ Un enregistrement planifié n'a pas eu lieu — cliquez pour détails",
     }
 }
 fn ready_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "✅ Klar",
         Lang::En => "✅ Ready",
-        Lang::De => "✅ Bereit",
-        Lang::Sv => "✅ Klar",
-        Lang::Da => "✅ Klar",
-        Lang::Pl => "✅ Gotowy",
-        Lang::Fr => "✅ Prêt",
     }
 }
 fn open_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Åpne SundayRec",
         Lang::En => "Open SundayRec",
-        Lang::De => "SundayRec öffnen",
-        Lang::Sv => "Öppna SundayRec",
-        Lang::Da => "Åbn SundayRec",
-        Lang::Pl => "Otwórz SundayRec",
-        Lang::Fr => "Ouvrir SundayRec",
     }
 }
 fn stop_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Stopp opptak",
         Lang::En => "Stop recording",
-        Lang::De => "Aufnahme stoppen",
-        Lang::Sv => "Stoppa inspelning",
-        Lang::Da => "Stop optagelse",
-        Lang::Pl => "Zatrzymaj nagrywanie",
-        Lang::Fr => "Arrêter l'enregistrement",
     }
 }
 fn start_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Start opptak nå",
         Lang::En => "Start recording now",
-        Lang::De => "Aufnahme starten",
-        Lang::Sv => "Starta inspelning nu",
-        Lang::Da => "Start optagelse nu",
-        Lang::Pl => "Rozpocznij nagrywanie",
-        Lang::Fr => "Démarrer un enregistrement",
     }
 }
 fn quit_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Avslutt",
         Lang::En => "Quit",
-        Lang::De => "Beenden",
-        Lang::Sv => "Avsluta",
-        Lang::Da => "Afslut",
-        Lang::Pl => "Wyjdź",
-        Lang::Fr => "Quitter",
-    }
-}
-fn diagnose_label(l: Lang) -> &'static str {
-    match l {
-        Lang::No => "Sjekk maskinen…",
-        Lang::En => "Check this computer…",
-        Lang::De => "Computer prüfen…",
-        Lang::Sv => "Kontrollera datorn…",
-        Lang::Da => "Tjek computeren…",
-        Lang::Pl => "Sprawdź komputer…",
-        Lang::Fr => "Vérifier l’ordinateur…",
     }
 }
 fn open_folder_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Åpne lagringsmappe",
         Lang::En => "Open recordings folder",
-        Lang::De => "Aufnahmeordner öffnen",
-        Lang::Sv => "Öppna inspelningsmapp",
-        Lang::Da => "Åbn optagelsesmappe",
-        Lang::Pl => "Otwórz folder nagrań",
-        Lang::Fr => "Ouvrir le dossier des enregistrements",
     }
 }
 fn next_label(l: Lang) -> &'static str {
     match l {
         Lang::No => "Neste opptak",
         Lang::En => "Next recording",
-        Lang::De => "Nächste Aufnahme",
-        Lang::Sv => "Nästa inspelning",
-        Lang::Da => "Næste optagelse",
-        Lang::Pl => "Następne nagranie",
-        Lang::Fr => "Prochain enregistrement",
     }
 }
 
@@ -387,39 +310,24 @@ fn next_label(l: Lang) -> &'static str {
 /// They used to sit in `src-tauri/src/tray/mod.rs`, with the reasoning that
 /// wall-clock formatting is a shell concern. That reasoning holds for READING
 /// the clock — but [`format_next_label`] reads no clock; it formats a string it
-/// is handed, and the seven rows below are a SEVEN-LANGUAGE CATALOGUE of the
+/// is handed, and the two rows below are a TWO-LANGUAGE CATALOGUE of the
 /// same kind as [`build_menu`]'s labels, five rows down in the same file.
 ///
 /// Keeping the catalogue split across two crates meant `søn.`/`lør.` counted as
 /// stray Norwegian in a shell module (`scripts/check-rust-norwegian.mjs`), when
-/// in fact they are one seventh of a complete set the tests below hold
+/// in fact they are one half of a complete set the tests below hold
 /// complete. One surface, one catalogue.
-const WEEKDAYS: [[&str; 7]; 7] = [
+const WEEKDAYS: [[&str; 7]; 2] = [
     // No
     ["man.", "tir.", "ons.", "tor.", "fre.", "lør.", "søn."],
     // En
     ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    // De
-    ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."],
-    // Sv
-    ["mån.", "tis.", "ons.", "tors.", "fre.", "lör.", "sön."],
-    // Da
-    ["man.", "tir.", "ons.", "tor.", "fre.", "lør.", "søn."],
-    // Pl
-    ["pon.", "wt.", "śr.", "czw.", "pt.", "sob.", "niedz."],
-    // Fr
-    ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
 ];
 
 fn lang_row(lang: Lang) -> usize {
     match lang {
         Lang::No => 0,
         Lang::En => 1,
-        Lang::De => 2,
-        Lang::Sv => 3,
-        Lang::Da => 4,
-        Lang::Pl => 5,
-        Lang::Fr => 6,
     }
 }
 
@@ -472,15 +380,11 @@ mod tests {
     }
 
     #[test]
-    fn tray_exposes_one_system_action_diagnostics_not_preflight() {
-        // The status row + diagnostics cover "is the system OK?"; the old quick
-        // preflight item was a confusing near-duplicate, so the tray drops it.
+    fn the_tray_carries_no_system_check_item() {
+        // The status row answers "is the system OK?"; the tray has neither a
+        // diagnose nor a preflight item (the in-app preflight card remains).
         let acts = actions(&build_menu(&TrayState::default(), Lang::No));
-        assert!(acts.contains(&TrayAction::RunDiagnostics));
-        assert!(
-            !acts.contains(&TrayAction::RunPreflight),
-            "tray must not show both 'check system' and 'diagnose system'"
-        );
+        assert!(!acts.contains(&TrayAction::RunPreflight));
     }
 
     #[test]
@@ -540,7 +444,7 @@ mod tests {
 
     #[test]
     fn menu_always_ends_with_quit() {
-        for lang in [Lang::No, Lang::Fr, Lang::Pl] {
+        for lang in [Lang::No, Lang::En] {
             let menu = build_menu(&TrayState::default(), lang);
             let last = menu.last().unwrap();
             assert!(matches!(
@@ -622,7 +526,7 @@ mod tests {
             .map(|&l| schedule_missed_label(l))
             .collect();
         // Sv and Da are allowed to share words with No elsewhere in this file;
-        // this sentence differs in all seven.
+        // this sentence differs in both.
         assert_eq!(rows.len(), Lang::ALL.len());
         for row in rows {
             assert!(row.starts_with("⚠️ "), "{row}");
@@ -726,10 +630,10 @@ mod tests {
             ..Default::default()
         };
         let no = build_menu(&state, Lang::No);
-        let fr = build_menu(&state, Lang::Fr);
+        let en = build_menu(&state, Lang::En);
         // Same SHAPE, different words — a language switch must be a pure relabel.
-        assert_eq!(actions(&no), actions(&fr));
-        assert_ne!(no, fr);
+        assert_eq!(actions(&no), actions(&en));
+        assert_ne!(no, en);
     }
 
     #[test]
@@ -782,8 +686,8 @@ mod tests {
         );
         // A Wednesday evening, single-digit hour padded.
         assert_eq!(
-            format_next_label(Some("2026-08-05T09:05:00"), Lang::Fr).as_deref(),
-            Some("mer. 09:05")
+            format_next_label(Some("2026-08-05T09:05:00"), Lang::En).as_deref(),
+            Some("Wed 09:05")
         );
     }
 
@@ -802,33 +706,15 @@ mod tests {
     /// weekdays, and `lang_row` maps every variant, so nothing else would say.
     #[test]
     fn every_language_has_seven_distinct_weekday_abbreviations() {
-        for lang in [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ] {
+        for lang in [Lang::No, Lang::En] {
             let row = &WEEKDAYS[lang_row(lang)];
             assert!(row.iter().all(|d| !d.trim().is_empty()), "{lang:?}");
             let uniq: std::collections::HashSet<_> = row.iter().collect();
             assert_eq!(uniq.len(), 7, "{lang:?} repeats a weekday");
         }
         // Every row is reachable: no two languages share one.
-        let rows: std::collections::HashSet<_> = [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ]
-        .iter()
-        .map(|l| lang_row(*l))
-        .collect();
-        assert_eq!(rows.len(), 7);
+        let rows: std::collections::HashSet<_> =
+            [Lang::No, Lang::En].iter().map(|l| lang_row(*l)).collect();
+        assert_eq!(rows.len(), 2);
     }
 }

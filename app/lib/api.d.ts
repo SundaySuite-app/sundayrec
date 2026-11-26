@@ -8,27 +8,20 @@
 // It is trimmed to exactly the surface that exists. 45 methods went with the
 // pages that were their only callers (`masterApply`, `updateHistoryNote`, the
 // `wake*` interactive set, the ASIO/ffmpeg device lists, …); every one of them
-// is named in the fase-B PR and in docs/APP-SHELL.md under «Etter byttet»,
+// is named in the fase-B PR and in docs/archive/APP-SHELL.md under «Etter byttet»,
 // because a Rust command whose only door closed is a decision, not a leak.
 // Declaring a method here that the shim does not install would be worse than
 // not declaring it: the type would promise a function that is `undefined` at
 // run time.
 //
-// ⚠️ THREE of the 45 are back: `runDiagnostics`, `diagnoseAudio` and
-// `runTestRecording` (V1/PR2). Their door closed because the Diagnose modal had
-// no home in the three-destination navigation — not because the diagnosis had
-// stopped being worth having, which is what a rig tester reading §5b off disk
-// with a JSON viewer proved. The screen is a row on Avansert now
-// (`app/pages/setup/advanced/DiagnoseRow.tsx`).
-//
-// ⚠️ FOUR MORE are back: `wakeTest`, `wakeCancelTest`, `wakeFailureHistory`,
+// ⚠️ FOUR of the 45 are back: `wakeTest`, `wakeCancelTest`, `wakeFailureHistory`,
 // `wakeClearFailureHistory` (F1-R3/W6) — the interactive quarter of the
 // `wake*` set this file's own header used to cite as an EXAMPLE of a closed
 // door. `wakeFixSleep` and `wakeGetSleepConfig` are NOT among them and stay
 // closed: nothing in the new shell reads the sleep-config diagnostics they
-// backed. The four that came back are a row on Avansert too — «Test
-// vekking», same file as the diagnostics screen above — because the
-// reachability audit's own reason for leaving them dark (`docs/APP-SHELL.md`
+// backed. The four that came back are a row on Avansert — «Test
+// vekking» — because the
+// reachability audit's own reason for leaving them dark (`docs/archive/APP-SHELL.md`
 // §«Og de 20 som står igjen»: "rig tools waiting for a Mac where the wake
 // actually fails") describes a gap this row exists to close, not a feature
 // nobody wanted.
@@ -38,7 +31,7 @@
 // `.d.ts`, not a module: this is ambient, and every file in the program sees it
 // without importing anything.
 
-import type { Settings, EditorSegment } from "../../legacy/types";
+import type { Settings } from "../../legacy/types";
 import type { MasterPreviewParams } from "./pages/editor/export-params";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { EditorListenAction } from "../../legacy/bindings/EditorListenAction";
@@ -48,7 +41,7 @@ import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
-import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
+import type { EditorChannelCheck } from "../../legacy/bindings/EditorChannelCheck";
 import type { EditorTaleSaid } from "../../legacy/bindings/EditorTaleSaid";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
@@ -83,15 +76,6 @@ declare global {
     api: {
       getSettings: () => Promise<Settings>;
       saveSettings: (s: Partial<Settings>) => Promise<boolean>;
-      /** Write the whole (validated) settings object to a JSON file the
-       *  operator picks in a save dialog RUST opens — no path crosses from
-       *  here. `true` = written, `false` = cancelled. Rejects on failure — the
-       *  profile card shows the reason. */
-      settingsExportProfile: () => Promise<boolean>;
-      /** Import a settings JSON file the operator picks in an open dialog
-       *  RUST opens (merge-over-defaults + validate) and return the stored
-       *  result, or `null` when cancelled. Rejects on failure. */
-      settingsImportProfile: () => Promise<Settings | null>;
       getNextRecording: () => Promise<{ date: string } | null>;
       getHistory: () => Promise<unknown[]>;
       /** Drop one history row by its id. Rejects when the delete failed. */
@@ -181,11 +165,6 @@ declare global {
        *  named by the token its `editor_export` result carried
        *  (`revealToken`). FALSE as above. */
       revealExport: (exportToken: string) => Promise<boolean>;
-      /** Whether the one-time «E-postvarsler er fjernet» banner should show.
-       *  `false` on an IPC failure. */
-      noticeEmailRemovedPending: () => Promise<boolean>;
-      /** The banner was read: never show it again. */
-      noticeEmailRemovedDismiss: () => Promise<void>;
       /** Whether the OS shows SundayRec's notifications. `"unknown"` when the
        *  platform cannot tell (macOS today) and on an IPC failure. */
       notificationPermission: () => Promise<
@@ -219,31 +198,8 @@ declare global {
         version: string | null;
         path: string;
       }>;
-      // ── Diagnose (V1/PR2) ──────────────────────────────────────────────
-      // NOT optional: the shim installs all three unconditionally, and the row
-      // that calls them is mounted unconditionally. `?` here would only buy a
-      // `?.` at the call site that could never be false.
-      /** The whole-system report: markdown, the coded findings, where it was
-       *  saved, and the tri-state capture/video probe results. REJECTS on a
-       *  backend failure rather than answering with an empty report — see the
-       *  shim block for why a fabricated "no findings" is the wrong lie. */
-      runDiagnostics: () => Promise<
-        import("../../legacy/bindings/DiagnosticsReport").DiagnosticsReport
-      >;
-      /** The audio-input name list the panel's device rows are built from. */
-      diagnoseAudio: () => Promise<
-        import("../../legacy/bindings/AudioDiagnostics").AudioDiagnostics
-      >;
-      /** A ~10 s capture against THE CONFIGURED device (the command reads the
-       *  setting itself — no parameter), reporting size + measured signal.
-       *  Stops the VU engine backend-side; the caller restarts it. */
-      runTestRecording: () => Promise<
-        import("../../legacy/bindings/TestRecordingResult").TestRecordingResult
-      >;
       /** Whether the OS login item is really registered (not the stored boolean). */
       getLaunchAtLogin?: () => Promise<boolean>;
-      /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */
-      hapticPerform?: (pattern: string) => Promise<void>;
       /** F2-I18N-R2: de to listene er KODER, ikke setninger — bindingene er
        *  fasiten, og typen her peker på dem så en ny kode i Rust ikke kan bli
        *  en `string` skallet aldri oversetter. */
@@ -301,13 +257,14 @@ declare global {
        *  drop and minted the token (`editor://file-dropped`). */
       onFileDropped: (fn: (dropped: DroppedRecording) => void) => () => void;
       /** Pick/clear the editor's intro and outro clips: Rust's own dialog, and
-       *  the stored settings back (`null` = cancelled). Nothing in the pages
-       *  uses them yet — the export page dropped its intro/outro rows in D3 — and
-       *  `settings_save` no longer takes the clips from the page, so these are
-       *  the way back when a page needs them. */
+       *  the stored settings back (`settings: null` = cancelled). The export
+       *  sheet's «Intro» and «Outro» rows use them; `settings_save` takes no
+       *  clip from the page. A refusal is `{ ok: false, error }`. */
       settingsPickEditorClip: (
         which: "intro" | "outro",
-      ) => Promise<Settings | null>;
+      ) => Promise<
+        { ok: true; settings: Settings | null } | { ok: false; error: string }
+      >;
       settingsClearEditorClip: (which: "intro" | "outro") => Promise<Settings>;
       editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */
@@ -319,40 +276,14 @@ declare global {
       editorPickOutputFolder: () => Promise<
         { ok: true; folder: ChosenPlace | null } | { ok: false; error: string }
       >;
-      // The generated binding, not a hand-written twin — see `Suggestion` in
-      // pages/editor/types.ts for what the twin cost us.
-      editorDetectSegments: (
-        sourceToken: string,
-        force?: boolean,
-      ) => Promise<EditorSegment[]>;
-      /** Persist a sermon-pick correction (E8). Resolves to whether it was
-       *  recorded — re-picking the detector's own block is not a correction.
-       *  Names the recording by its File token (A3/A4); Rust derives
-       *  `<stem>.feedback.json` from what the token resolves to. */
-      editorRecordSermonPick: (
-        sourceToken: string,
-        request: import("../../legacy/bindings/EditorSermonPickRequest").EditorSermonPickRequest,
-      ) => Promise<boolean>;
-      /** Index into `segments` of the block the human corrected us to, or null. */
-      editorSermonPick: (
-        sourceToken: string,
-        segments: EditorSegment[],
-      ) => Promise<number | null>;
-      // Typed against the GENERATED `EditorAutoProcess` binding (nesting
-      // `EditorChannelDiagnosis`) — the hand-typed twin this replaced had
-      // silently DROPPED `imbalanceDb`/`peakLeftDb`/`peakRightDb` from the
-      // declared type (the backend always sent them; nothing here could read
-      // them). A Rust rename now fails `npm run typecheck`. (Extra finding —
-      // see the PR description.)
-      editorAutoProcess: (
-        sourceToken: string,
-      ) => Promise<EditorAutoProcess | null>;
       /** B3b: what «Tale» did to the recording — codes (`hum`, `noise`,
        *  `reverb`, `clicks`), never prose. Null outside the Tauri shell. */
       editorTaleSaid: (sourceToken: string) => Promise<EditorTaleSaid | null>;
-      /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
-       *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
-      editorChurchDayName: (date: string) => Promise<string | null>;
+      /** Is one side of the recording silent next to a live one? `deadSide` is
+       *  `"left"`, `"right"` or null. Null outside the Tauri shell. */
+      editorChannelCheck: (
+        sourceToken: string,
+      ) => Promise<EditorChannelCheck | null>;
       /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
        *  with `parseSavedContent`. Null when there is none. The sidecar
        *  commands name the recording by its File token, never its path (A3). */
@@ -424,10 +355,6 @@ declare global {
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */
-      /** «Legg ut»: open the upload page for the stored channel. `nothing` =
-       *  the channel is off or the custom link did not pass; `failed` = the
-       *  OS would not open it. Never rejects. */
-      publishOpenUploadPage: () => Promise<"opened" | "nothing" | "failed">;
       logsReveal: () => Promise<boolean>;
       /** The tail of the live log file, clamped server-side to 512 KB
        *  regardless of `maxBytes`. Empty string means nothing logged yet. */

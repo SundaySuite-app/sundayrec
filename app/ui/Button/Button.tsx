@@ -57,6 +57,9 @@ export interface ButtonProps {
   block?: boolean;
   type?: "button" | "submit";
   testId?: string;
+  /** Tilgjengelig navn når etiketten alene er flertydig («Velg lydfil …» står
+   *  på to rader og må si hvilken). Utelatt = etiketten er navnet. */
+  ariaLabel?: string;
   /** Hurtigtasten som gjør det samme, ferdig formulert for verktøytipset
    *  («Hurtigtast: ⌘Z»). Vises bare når knappen ikke er av — da er det
    *  `disabledReason` som står der. */
@@ -66,8 +69,8 @@ export interface ButtonProps {
   /**
    * Knappen folder ut noe: `aria-expanded` + `aria-controls`.
    *
-   * D2s kontrollrom folder skjermer ut på stedet, og kilde-kortets «Endre» er
-   * en slik knapp uten å være en `ControlCard`-rad. Uten de to attributtene
+   * Kamera-kortet og ukevisningen folder noe ut på stedet, og en slik knapp er
+   * ikke alltid en `ControlCard`-rad. Uten de to attributtene
    * ville en skjermleserbruker fått en knapp som «gjør noe» og en ny landmasse
    * som dukket opp uten forklaring.
    */
@@ -99,6 +102,7 @@ export function Button({
   block = false,
   type = "button",
   testId,
+  ariaLabel,
   expanded,
   controls,
   shortcutHint,
@@ -117,6 +121,7 @@ export function Button({
       data-testid={testId}
       data-variant={variant}
       data-dialog-button={dialogButton}
+      aria-label={ariaLabel}
       aria-disabled={off ? "true" : undefined}
       aria-busy={busy ? "true" : undefined}
       aria-expanded={expanded}

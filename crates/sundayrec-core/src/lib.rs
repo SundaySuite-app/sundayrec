@@ -3,7 +3,7 @@
 //! This crate is the *behaviour* of the recorder distilled out of the Electron
 //! main process (`src/main/recorder-utils.ts` and friends) into deterministic
 //! Rust. The Electron code is the behavioural specification; the structure here
-//! is rebuilt clean (see `docs/MIGRATION-TAURI2.md`, §2 "bygg det riktig").
+//! is rebuilt clean (see `docs/archive/MIGRATION-TAURI2.md`, §2 "bygg det riktig").
 //!
 //! Everything here is unit-testable without a display, a device, or a process —
 //! the `src-tauri` shell is a thin command/event layer on top.
@@ -17,8 +17,8 @@
 //!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
-//!   - [`lang`]          — the seven UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
-//!   - [`alerts`]        — the sentences the NATIVE notification says, in the 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
+//!   - [`lang`]          — the two UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
+//!   - [`alerts`]        — the sentences the NATIVE notification says, in the 2 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
 //!   - [`notify`]        — the notification decisions: warning codes, once-semantics for the repeating observers, and the "we already said this" ledger for missed recordings
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
@@ -42,32 +42,20 @@
 //!   - [`editor`]       — non-destructive cut/trim/region planning + export-arg math (PU-7 editor)
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
 //!   - [`playback`]     — the playback engine's pure half (B5a): the cut plan, constant-power joins, and the reader that turns kept segments into one programme
-//!   - [`chain`]        — the vocal chain and the mastering presets as a list of filmcraft effects, built from the same preset tables (B2a)
-//!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
-//!   - [`detect`] — the ONE sermon detector over those segments (E9)
+//!   - [`chain`]        — the podcast recipe and «Tale»'s clean-up as a list of filmcraft effects (B2a)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
-//!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick and the proposed trim — what to store, what counts as a correction, and what a later one replaces (E8)
-//!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
-//!   - [`vad`]         — the neural voice-activity seam (E9): the 576-sample framing + two-piece per-stream state a Silero-class model needs, and the `VadBackend` trait that keeps ONNX out of this crate. NOT wired into sermon detection yet
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
-//!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
 
-pub mod ab_eval;
 pub mod alerts;
 pub mod audio;
-pub mod audio_analysis;
 pub mod av_clock;
 pub mod camera_format;
 pub mod camera_reconnect;
 pub mod capture;
 pub mod chain;
-pub mod church_calendar;
-pub mod detect;
 pub mod device_match;
-pub mod diagnostics;
 pub mod editor;
 pub mod errors;
-pub mod feedback;
 pub mod ffmpeg;
 pub mod filename;
 pub mod history;
@@ -83,7 +71,6 @@ pub mod playback;
 pub mod preflight;
 pub mod preroll;
 pub mod processing;
-pub mod publish;
 pub mod reconnect;
 pub mod recorder;
 pub mod recovery;
@@ -91,18 +78,13 @@ pub mod redact;
 pub mod schedule;
 pub mod selftest;
 pub mod settings;
-pub mod shadow;
 pub mod silence;
 pub mod stream_fault;
 pub mod tale;
 pub mod telemetry;
-pub mod test_recording;
 pub mod timeouts;
 pub mod tray;
-pub mod trim_feedback;
-pub mod tuning;
 pub mod update;
-pub mod vad;
 pub mod video_conform;
 pub mod video_copy;
 pub mod video_encoder;

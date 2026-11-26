@@ -1,6 +1,6 @@
 /*
- * Kontrollrommets rad. Samme flate, kant og radius som `Card` — den er ETT kort
- * blant kort — men med en tettere padding, fordi fem av dem står i en stabel og
+ * En rad med verdi og utfolding. Samme flate, kant og radius som `Card` — den er ETT kort
+ * blant kort — men med en tettere padding, fordi flere av dem står i en stabel og
  * skal kunne leses som én liste.
  */
 

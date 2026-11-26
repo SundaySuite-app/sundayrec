@@ -48,7 +48,7 @@ const tf = (
 /** Count-aware stub. The CLDR category is appended to the key so an assertion
  *  can still tell singular from plural without knowing any language's words;
  *  nb-NO stands in for "the active language" (the real per-language form
- *  selection is proven against all seven catalogues in i18n.test.ts). */
+ *  selection is proven against all two catalogues in i18n.test.ts). */
 const tn = (
   key: string,
   count: number,
@@ -82,17 +82,6 @@ function stateWith(patch: Partial<NextRecordingState>): NextRecordingState {
 const AT = "2026-06-07T11:00:00";
 const AT_MS = new Date(AT).getTime();
 
-/** A stored special, in the full shape the renderer keeps them in — `buildNext`
- *  only reads date/name/start, which is why it accepts a structural type. */
-const special = (date: string, name: string, start: string) => ({
-  id: "sp-1",
-  date,
-  name,
-  start,
-  stop: "12:00",
-  deviceId: null,
-});
-
 describe("parseLocalIso", () => {
   it("reads the backend zone-less ISO as LOCAL wall time", () => {
     const ms = parseLocalIso("2026-06-07T11:00:00");
@@ -114,25 +103,8 @@ describe("buildNext", () => {
     expect(buildNext("not-a-date")).toBeNull();
   });
 
-  it("is an unnamed slot start when no special matches", () => {
-    expect(buildNext(AT, [])).toEqual({ at: AT, atMs: AT_MS });
-  });
-
-  it("names the start when a one-off special produced it", () => {
-    const next = buildNext(AT, [special("2026-06-07", "Julaften", "11:00")]);
-    expect(next).toEqual({
-      at: AT,
-      atMs: AT_MS,
-      label: "Julaften",
-      isSpecial: true,
-    });
-  });
-
-  it("does not match a special on a different day or time", () => {
-    const wrongDay = buildNext(AT, [special("2026-06-08", "X", "11:00")]);
-    const wrongTime = buildNext(AT, [special("2026-06-07", "X", "11:30")]);
-    expect(wrongDay?.isSpecial).toBeUndefined();
-    expect(wrongTime?.isSpecial).toBeUndefined();
+  it("is the timestamp, parsed once", () => {
+    expect(buildNext(AT)).toEqual({ at: AT, atMs: AT_MS });
   });
 });
 
@@ -224,13 +196,6 @@ describe("formatNextDate", () => {
   it("is the long date for a slot start", () => {
     expect(formatNextDate(stateWith({ next: buildNext(AT) }), ctx())).toBe(
       `DATE@${AT_MS}`,
-    );
-  });
-
-  it("appends the special name when there is one", () => {
-    const next = buildNext(AT, [special("2026-06-07", "Julaften", "11:00")]);
-    expect(formatNextDate(stateWith({ next }), ctx())).toBe(
-      `DATE@${AT_MS} · Julaften`,
     );
   });
 });
@@ -360,12 +325,11 @@ describe("formatSchedulePreview", () => {
     expect(formatSchedulePreview(stateWith({}), ctx())).toBe("");
   });
 
-  it("includes a SPECIAL — the old hand-rolled preview could not see them", () => {
-    const next = buildNext(AT, [special("2026-06-07", "Julaften", "11:00")]);
+  it("names the day and the time of the next start", () => {
+    const next = buildNext(AT);
     const out = formatSchedulePreview(stateWith({ next }), ctx());
     expect(out).toContain(`DATE@${AT_MS}`);
     expect(out).toContain(`TIME@${AT_MS}`);
-    expect(out).toContain("Julaften");
   });
 });
 

@@ -19,7 +19,7 @@ scheduledAt: string,
  */
 kind: WakeFailureKind, 
 /**
- * Human-readable label (slot name, "Spesialopptak", "Test-wake").
+ * Human-readable label (slot name, "Test-wake").
  */
 label: string, 
 /**

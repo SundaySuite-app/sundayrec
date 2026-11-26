@@ -7,8 +7,6 @@
 //!   - the mastering presets, dither table and preview argv →
 //!     [`sundayrec_core::mastering`]; EBU R128 loudness measure/gain/limiter →
 //!     [`sundayrec_core::loudness`] / [`sundayrec_core::pcm_stream`],
-//!   - VAD / content classification + sermon detection →
-//!     [`sundayrec_core::audio_analysis`],
 //!   - the ffprobe/decode/peaks argv + peak down-sampling →
 //!     [`sundayrec_core::editor`] (R1 additions).
 //!
@@ -28,8 +26,7 @@
 //!
 //! ## One read when a recording is opened (B4a)
 //!
-//! The waveform, the sermon search ([`segments`]), the channel diagnosis
-//! ([`diagnose_channels`], [`auto_process`]) and «Tale»'s analysis
+//! The waveform and «Tale»'s analysis
 //! ([`tale_said`], and the preview and export behind it) used to decode the file once
 //! each. They are now four views of ONE ffmpeg read, in the recording's own
 //! sample rate and channels: [`open`] runs it and fans the blocks out to
@@ -86,7 +83,6 @@ use ts_rs::TS;
 
 use crate::error::AppError;
 use crate::error::AppResult;
-use sundayrec_core::detect::Detection;
 
 mod export_journal;
 pub mod listen;
@@ -129,47 +125,6 @@ pub struct EditorPeaks {
     pub peaks: Vec<f32>,
     /// The sample rate the peaks were decoded at (8 kHz — see core).
     pub sample_rate: u32,
-}
-
-/// One content-detected segment for the editor timeline. Reuses the core
-/// `SegmentType` lowercase strings (or `"sermon"` for the promoted block), the
-/// same shape `detectSegments` returned to the Electron renderer.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorSegment.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorSegment {
-    pub start: f64,
-    pub end: f64,
-    pub duration: f64,
-    pub label: String,
-    /// `silence|speech|music|mixed|unknown|sermon`.
-    ///
-    /// Serialised as `type` — `kind` is only the Rust-side spelling, because
-    /// `type` is a keyword. The wire name is what the doc-comment above promises
-    /// ("the same shape `detectSegments` returned to the Electron renderer") and
-    /// what the detector's own segment shape ships: `detect::PrepAnalysisSegment`
-    /// carries the identical `#[serde(rename = "type")]`. Without it this field
-    /// went out as `kind`, every renderer read of `.type` was `undefined`, and
-    /// the whole sermon-detection UI was dead in shipped builds.
-    ///
-    /// A `<stem>.segments.json` cache written by such a build no longer
-    /// deserialises — `read_sidecar_typed` swallows that into a cache miss and
-    /// the recording is analysed once more, so no version bump is needed (and
-    /// `EDITOR_CACHE_VERSION` is shared with the far more expensive peaks
-    /// cache, which must NOT be invalidated over this).
-    #[serde(rename = "type")]
-    pub kind: String,
-    /// How sure the classifier was about `kind`, 0..1.
-    ///
-    /// `#[serde(default)]` on purpose: a `<stem>.segments.json` written before
-    /// this field existed must keep deserialising, because invalidating that
-    /// cache means re-decoding a whole service to gain a number no shipped
-    /// feature depends on. Absent therefore means "that cache predates the
-    /// field", never "the classifier was unsure" — and
-    /// `sundayrec_core::feedback` keeps the two apart.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub confidence: Option<f64>,
 }
 
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
@@ -223,8 +178,12 @@ pub struct EditorExportRequest {
     pub bitrate: Option<u32>,
     /// WAV bit depth (16/24); ignored for non-WAV.
     pub bit_depth: Option<u8>,
-    /// Optional mastering preset id (its chain runs first, then one measured gain to its loudness target).
-    pub master_preset: Option<String>,
+    /// «Podkastklar lyd» (F3): the one fixed recipe — the `speech-clear` chain, then one measured
+    /// gain to −16 LUFS with the true-peak cap — or nothing. The editor's only audio choice;
+    /// the preset names and the mixer chain an older renderer may still send are unknown keys,
+    /// which serde ignores, and that export runs as `false` (the file as it was recorded).
+    #[serde(default)]
+    pub podcast_audio: bool,
     /// Prepend the stored intro clip (`settings.editorIntroPath`) to the audio
     /// on export (non-mp4 only). A switch, not a path: Rust reads the clip from
     /// the saved settings and re-validates it, so the webview cannot name a file
@@ -250,8 +209,8 @@ pub struct EditorExportRequest {
     /// Optional description (FFMETADATA `comment`).
     #[serde(default)]
     pub description: Option<String>,
-    /// Optional church name (FFMETADATA `album`) — `settings.churchName`, so an
-    /// episode is filed under the congregation wherever the tags are read.
+    /// Optional album tag (FFMETADATA `album`). The renderer sends none since F2
+    /// (the church name it used to carry is gone).
     #[serde(default)]
     pub album: Option<String>,
     /// Optional service date as `YYYY-MM-DD` (FFMETADATA `date`). Also the
@@ -259,18 +218,6 @@ pub struct EditorExportRequest {
     /// `sundayrec_core::editor::export_stem`.
     #[serde(default)]
     pub date: Option<String>,
-    /// One-click vocal-chain preset id (`voice-light|voice-podcast|
-    /// voice-noisy-room`). Resolved server-side; ignored when `processing` is set.
-    #[serde(default)]
-    pub vocal_chain_preset: Option<String>,
-    /// Full per-stage vocal-chain config. Overrides `vocalChainPreset`. The chain
-    /// runs BEFORE the mastering level step (tone/dynamics first, loudness last).
-    #[serde(default)]
-    pub processing: Option<EditorProcessing>,
-    /// Channel repair to apply. Overrides the repair carried by `processing`/the
-    /// preset, and applies on its own (without any vocal chain) when set alone.
-    #[serde(default)]
-    pub channel_repair: Option<EditorChannelRepair>,
     /// Video codec for a video-container export (`h264` default, or `h265`/`hevc`
     /// for ~half the size). Ignored for audio formats.
     #[serde(default)]
@@ -351,195 +298,15 @@ pub(crate) fn export_target(
     (out_dir, out_stem)
 }
 
-/// How to repair the channel layout (mirror of
-/// [`sundayrec_core::processing::ChannelRepair`]). `mode` is one of
-/// `none|swapLr|duplicateLeft|duplicateRight|monoMix|gainDb`; `leftDb`/`rightDb`
-/// are only read for `gainDb`.
+/// The dead-channel warning's answer: which side of the recording is silent while the other
+/// carries signal, as the stable code the editor turns into «Venstre/høyre side er stille — sjekk
+/// kabelen». No repair follows: the warning is the whole feature.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorChannelRepair.ts")]
+#[ts(export, export_to = "EditorChannelCheck.ts")]
 #[serde(rename_all = "camelCase")]
-pub struct EditorChannelRepair {
-    pub mode: String,
-    #[serde(default)]
-    pub left_db: f64,
-    #[serde(default)]
-    pub right_db: f64,
-}
-
-impl EditorChannelRepair {
-    /// The struct stays ungated (it is a ts-rs export the bindings step needs in
-    /// every build), but only the editor seam ever converts it to the core type,
-    /// so the conversion compiles out with the feature.
-    #[cfg(feature = "editor")]
-    fn to_core(&self) -> sundayrec_core::processing::ChannelRepair {
-        use sundayrec_core::processing::ChannelRepair as R;
-        match self.mode.as_str() {
-            "swapLr" => R::SwapLr,
-            "duplicateLeft" => R::DuplicateLeft,
-            "duplicateRight" => R::DuplicateRight,
-            "monoMix" => R::MonoMix,
-            "gainDb" => R::GainDb {
-                left_db: self.left_db,
-                right_db: self.right_db,
-            },
-            _ => R::None,
-        }
-    }
-}
-
-/// One parametric EQ band (mirror of [`sundayrec_core::processing::EqBand`]).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorEqBand.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorEqBand {
-    pub freq_hz: u32,
-    pub gain_db: f64,
-    pub q: f64,
-}
-
-/// The full, per-stage vocal-chain configuration (mirror of
-/// [`sundayrec_core::processing::VocalChain`]). Every stage is independently
-/// toggleable; `serde(default)` lets the renderer send a partial object. When an
-/// export carries this it overrides any `vocalChainPreset`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorProcessing.ts")]
-#[serde(rename_all = "camelCase", default)]
-pub struct EditorProcessing {
-    pub channel_repair: Option<EditorChannelRepair>,
-    pub highpass_enabled: bool,
-    pub highpass_hz: u32,
-    pub denoise_enabled: bool,
-    pub denoise_db: f64,
-    pub denoise_floor_db: f64,
-    pub dereverb_enabled: bool,
-    pub dereverb_strength: f64,
-    pub gate_enabled: bool,
-    pub gate_threshold_db: f64,
-    pub gate_ratio: f64,
-    pub eq: Vec<EditorEqBand>,
-    pub comp_enabled: bool,
-    pub comp_threshold_db: f64,
-    pub comp_ratio: f64,
-    pub comp_attack_ms: f64,
-    pub comp_release_ms: f64,
-    pub comp_makeup_db: f64,
-    pub deesser_enabled: bool,
-    pub deesser_intensity: f64,
-    pub limiter_enabled: bool,
-    pub limiter_db: f64,
-    pub gain_db: f64,
-}
-
-impl Default for EditorProcessing {
-    fn default() -> Self {
-        // Mirrors `VocalChain::default()` so an empty object behaves identically.
-        use sundayrec_core::processing::VocalChain;
-        let c = VocalChain::default();
-        Self {
-            channel_repair: None,
-            highpass_enabled: c.highpass.enabled,
-            highpass_hz: c.highpass.freq_hz,
-            denoise_enabled: c.denoise.enabled,
-            denoise_db: c.denoise.reduction_db,
-            denoise_floor_db: c.denoise.noise_floor_db,
-            dereverb_enabled: c.dereverb.enabled,
-            dereverb_strength: c.dereverb.strength,
-            gate_enabled: c.gate.enabled,
-            gate_threshold_db: c.gate.threshold_db,
-            gate_ratio: c.gate.ratio,
-            eq: Vec::new(),
-            comp_enabled: c.compressor.enabled,
-            comp_threshold_db: c.compressor.threshold_db,
-            comp_ratio: c.compressor.ratio,
-            comp_attack_ms: c.compressor.attack_ms,
-            comp_release_ms: c.compressor.release_ms,
-            comp_makeup_db: c.compressor.makeup_db,
-            deesser_enabled: c.deesser.enabled,
-            deesser_intensity: c.deesser.intensity,
-            limiter_enabled: c.limiter.enabled,
-            limiter_db: c.limiter.limit_db,
-            gain_db: c.gain_db,
-        }
-    }
-}
-
-impl EditorProcessing {
-    /// Same deal as [`EditorChannelRepair::to_core`]: the struct is an ungated
-    /// ts-rs export, the conversion is only reachable from editor-gated code.
-    #[cfg(feature = "editor")]
-    fn to_core(&self) -> sundayrec_core::processing::VocalChain {
-        use sundayrec_core::processing::*;
-        VocalChain {
-            channel_repair: self
-                .channel_repair
-                .as_ref()
-                .map(|r| r.to_core())
-                .unwrap_or(ChannelRepair::None),
-            highpass: HighpassStage {
-                enabled: self.highpass_enabled,
-                freq_hz: self.highpass_hz,
-            },
-            denoise: DenoiseStage {
-                enabled: self.denoise_enabled,
-                reduction_db: self.denoise_db,
-                noise_floor_db: self.denoise_floor_db,
-            },
-            dereverb: DereverbStage {
-                enabled: self.dereverb_enabled,
-                strength: self.dereverb_strength,
-            },
-            gate: GateStage {
-                enabled: self.gate_enabled,
-                threshold_db: self.gate_threshold_db,
-                ratio: self.gate_ratio,
-                attack_ms: 5.0,
-                release_ms: 120.0,
-            },
-            eq: self
-                .eq
-                .iter()
-                .map(|b| EqBand {
-                    freq_hz: b.freq_hz,
-                    gain_db: b.gain_db,
-                    q: b.q,
-                })
-                .collect(),
-            compressor: CompressorStage {
-                enabled: self.comp_enabled,
-                threshold_db: self.comp_threshold_db,
-                ratio: self.comp_ratio,
-                attack_ms: self.comp_attack_ms,
-                release_ms: self.comp_release_ms,
-                makeup_db: self.comp_makeup_db,
-            },
-            deesser: DeesserStage {
-                enabled: self.deesser_enabled,
-                intensity: self.deesser_intensity,
-            },
-            limiter: LimiterStage {
-                enabled: self.limiter_enabled,
-                limit_db: self.limiter_db,
-            },
-            gain_db: self.gain_db,
-        }
-    }
-}
-
-/// The result of analysing a recording's stereo channel balance (mirror of
-/// [`sundayrec_core::processing::ChannelDiagnosis`] plus the measured peaks and a
-/// ready-to-apply [`EditorChannelRepair`]).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorChannelDiagnosis.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorChannelDiagnosis {
-    /// `balanced|imbalance|dead_left|dead_right|both_dead|mono`.
-    pub code: String,
-    /// Left − right level difference in dB (positive = left louder).
-    pub imbalance_db: f64,
-    pub peak_left_db: f64,
-    pub peak_right_db: Option<f64>,
-    /// The repair to apply (`mode == "none"` when nothing is recommended).
-    pub recommended: EditorChannelRepair,
+pub struct EditorChannelCheck {
+    /// `left` or `right`; `None` for a healthy, mono, silent or unreadable recording.
+    pub dead_side: Option<String>,
 }
 
 /// B3b: what «Tale» did to this recording, as the stable codes the sound step turns into
@@ -554,66 +321,6 @@ pub struct EditorTaleSaid {
     /// `hum`, `clicks`, `noise`, `reverb` — in the order of the chain
     /// ([`sundayrec_core::tale::SpeechClean::said`]). Empty: nothing was done.
     pub said: Vec<String>,
-}
-
-/// The one-click "auto-improve" recommendation: the channel diagnosis plus the
-/// vocal-chain + mastering presets to apply for the best out-of-the-box result.
-/// The renderer applies these to its export settings in a single click.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorAutoProcess.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorAutoProcess {
-    /// The channel-balance analysis + recommended repair.
-    pub diagnosis: EditorChannelDiagnosis,
-    /// Vocal-chain preset id to apply (e.g. `voice-podcast`).
-    pub vocal_chain_preset: String,
-    /// Mastering preset id to apply. EMPTY from [`auto_process`] — one click
-    /// recommends the vocal chain only; stacking a mastering chain on top of it
-    /// double-processes (two highpasses, two compressors). Kept in the DTO
-    /// because the renderer applies whatever it is told, and a future
-    /// recommender may fill it in.
-    pub master_preset: String,
-    /// A short ENGLISH summary of what was decided — a RESERVE, for the log and
-    /// for a support paste (F2-I18N-R2).
-    ///
-    /// The shell does not render it: `SoundStep`'s channel note is built from
-    /// [`Self::diagnosis`]'s `code` and the profile names the chain, both in
-    /// the volunteer's own language. Anything that wants the sentence on screen
-    /// builds it from those two fields, never from this one.
-    pub summary: String,
-}
-
-/// A mastering preset for the editor's preset dropdown (mirror of
-/// [`sundayrec_core::mastering::MasterPreset`]). The renderer renders `label`/
-/// `description` and applies by `id`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorMasterPreset.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorMasterPreset {
-    pub id: String,
-    pub label: String,
-    pub description: String,
-    pub target_lufs: f64,
-    pub target_lra: f64,
-    pub true_peak_db: f64,
-    pub filters: String,
-}
-
-/// The built-in mastering presets, for the editor's preset dropdown. Pure core —
-/// no ffmpeg, no feature gate.
-pub fn master_presets() -> Vec<EditorMasterPreset> {
-    sundayrec_core::mastering::master_presets()
-        .into_iter()
-        .map(|p| EditorMasterPreset {
-            id: p.id,
-            label: p.label,
-            description: p.description,
-            target_lufs: p.target_lufs,
-            target_lra: p.target_lra,
-            true_peak_db: p.true_peak_db,
-            filters: p.filters,
-        })
-        .collect()
 }
 
 /// What the mastering actually did to the delivery level (F2-C-B, B1b).
@@ -674,12 +381,9 @@ pub enum EditorSidecar {
     /// `<stem>.peaks.json` — the waveform cache (P3). Written/read by the seam
     /// itself, never by the renderer, but it shares the same path policy.
     Peaks,
-    /// `<stem>.segments.json` — the content-detection cache (P3).
-    Segments,
-    /// `<stem>.feedback.json` — the human's corrections of what we detected
-    /// (E8). Written/read by the seam only; unlike its two neighbours it is NOT
-    /// derived data, so nothing here may treat losing it as cheap.
-    Feedback,
+    // (`Segments` and `Feedback` left this renderer-facing enum in F1 with the
+    // sermon search and the correction capture; the core `Sidecar` kinds stay
+    // so old files still travel with their recording.)
 }
 
 impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
@@ -688,8 +392,6 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
             EditorSidecar::Meta => sundayrec_core::editor::Sidecar::Meta,
             EditorSidecar::CutsDraft => sundayrec_core::editor::Sidecar::CutsDraft,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
-            EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
-            EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
         }
     }
 }
@@ -819,6 +521,7 @@ fn write_sidecar_atomic(media_path: &str, sidecar: EditorSidecar, json: &str) ->
 /// `serde_json::Value` (a 2 h peaks cache would otherwise materialise ~720 000
 /// boxed `Number`s just to be thrown away). `None` for missing, unreadable, or
 /// shape-mismatched JSON — a cache is never allowed to fail an open.
+#[cfg(feature = "editor")]
 fn read_sidecar_typed<T: serde::de::DeserializeOwned>(
     media_path: &str,
     sidecar: EditorSidecar,
@@ -858,17 +561,7 @@ pub struct PeaksCache {
     pub peaks: Vec<u8>,
 }
 
-/// The on-disk content-detection cache (`<stem>.segments.json`). Same deal:
-/// derived data, cache-file-only.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SegmentsCache {
-    pub version: u32,
-    pub size_bytes: u64,
-    pub mtime_ms: u64,
-    pub segments: Vec<EditorSegment>,
-}
-
-/// Current cache format version for both derived caches.
+/// Current cache format version for the derived peaks cache.
 pub const EDITOR_CACHE_VERSION: u32 = 1;
 
 /// Delete a sidecar, mirroring `editor-delete-cuts-draft`/`-transcript`. A
@@ -878,249 +571,6 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
         Some(path) => std::fs::remove_file(&path).is_ok(),
         None => false,
     }
-}
-
-// ── Learning feedback (E8) — pure decisions in core, fs here ────────────────
-//
-// Not feature-gated: a correction is a human's work, and it must persist in the
-// default build exactly as the meta/cuts sidecars do. The whole of "is this a
-// correction", "what does it replace", "which block does it mean now" lives in
-// `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
-//
-// More than one caller shares that read-modify-write (the sermon dropdown, the
-// dormant trim seam, the shadow observer). They are independent, and a
-// read-modify-write of one file from two places at once loses whichever write
-// lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
-// all recordings rather than one per path: these writes are a few hundred bytes
-// each and happen at human speed, so a map of locks would be more machinery than
-// the contention justifies.
-
-/// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
-static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Tell the telemetry accumulator what a successful fold changed, as the file's
-/// PROJECTION before and after.
-///
-/// Called by every correction seam — so a signal added to the projection later
-/// is reported from every seam at once rather than from the ones somebody
-/// remembered. (Until v0.15 a second, disjoint projection — the companion's
-/// suggestion outcomes — was folded here too.)
-///
-/// Projections, not the event: a correction REPLACES the previous answer to the
-/// same baseline, so someone cycling through four blocks has made one decision,
-/// and only the difference between two file states says that. It also means the
-/// only thing that can ever be reported is what actually reached the disk. A
-/// no-op without consent, and a no-op for whichever projection did not move.
-fn observe_feedback_change(
-    before: &sundayrec_core::feedback::RecordingFeedback,
-    after: &sundayrec_core::feedback::RecordingFeedback,
-) {
-    crate::telemetry::corrections::observe_files(before, after);
-}
-
-/// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
-/// A panic in another writer says nothing about the FILE — the guard protects a
-/// read-modify-write, not an invariant that could be left half-applied (the
-/// write itself is a temp file plus a rename), and refusing every later
-/// correction because of one unrelated panic would be a worse failure than the
-/// one it reported.
-fn feedback_lock() -> std::sync::MutexGuard<'static, ()> {
-    FEEDBACK_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// What the renderer sends when the human overrides the sermon auto-pick.
-///
-/// The whole segment list travels, not just the two blocks: the record is only
-/// interpretable against the alternatives that existed, and the attention
-/// heuristics read the music/silence blocks the picker never offers.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorSermonPickRequest.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorSermonPickRequest {
-    /// The segments as the UI had them WHEN THE CHOICE WAS MADE — i.e. before
-    /// the promotion flips the two `type` fields, so `autoIndex` still points at
-    /// a block the detector labelled `sermon`.
-    pub segments: Vec<EditorSegment>,
-    /// Indices of the blocks the picker offered, in the order it offered them.
-    pub candidate_indices: Vec<u32>,
-    /// Index of the DETECTOR's pick — not whatever is promoted right now, which
-    /// may already be an earlier correction. `None` when it found no sermon.
-    pub auto_index: Option<u32>,
-    /// Index of the block the human picked.
-    pub chosen_index: u32,
-    /// Length of the recording, seconds.
-    pub duration_sec: f64,
-}
-
-fn to_feedback_segments(
-    segments: &[EditorSegment],
-) -> Vec<sundayrec_core::feedback::FeedbackSegment> {
-    use sundayrec_core::feedback::{FeedbackSegment, FeedbackSegmentKind};
-    segments
-        .iter()
-        .enumerate()
-        .map(|(i, s)| FeedbackSegment {
-            index: i as u32,
-            start_sec: s.start,
-            end_sec: s.end,
-            duration_sec: s.duration,
-            kind: FeedbackSegmentKind::from_kind(&s.kind),
-            confidence: s.confidence,
-        })
-        .collect()
-}
-
-/// Read the recording's feedback file. `Err(())` means a file is there that we
-/// must not touch — corrupt, or written by a newer schema. Missing is `Ok` with
-/// an empty file, because "nobody has corrected this recording yet" is the
-/// normal case, not an error.
-fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::RecordingFeedback, ()> {
-    use sundayrec_core::feedback::{FEEDBACK_SCHEMA, RecordingFeedback};
-    let Some(path) = resolve_sidecar(media_path, EditorSidecar::Feedback) else {
-        return Err(());
-    };
-    if !std::path::Path::new(&path).exists() {
-        return Ok(RecordingFeedback::default());
-    }
-    match read_sidecar_typed::<RecordingFeedback>(media_path, EditorSidecar::Feedback) {
-        Some(f) if f.schema == FEEDBACK_SCHEMA => Ok(f),
-        // Deliberately NOT the "start fresh" treatment the other sidecars get.
-        // Those are caches and drafts; this one holds corrections a person made
-        // by hand and will not make again, so an unreadable file is kept as it
-        // is and the write is refused.
-        _ => {
-            tracing::warn!("feedback: {path} is not schema {FEEDBACK_SCHEMA} — leaving it alone");
-            Err(())
-        }
-    }
-}
-
-/// Which block of `segments` the human's stored correction means, or `None`.
-///
-/// This is what makes a correction outlive the editor window: on reopen the
-/// renderer asks, and promotes the answer instead of the detector's.
-pub fn sermon_pick_index(media_path: &str, segments: &[EditorSegment]) -> Option<u32> {
-    let file = read_feedback(media_path).ok()?;
-    let mapped = to_feedback_segments(segments);
-    sundayrec_core::feedback::resolve_sermon_pick(&file, &mapped).map(|i| i as u32)
-}
-
-/// Write a folded feedback record back beside its recording. Returns whether it
-/// persisted.
-///
-/// A record with nothing left in ANY of its collections is deleted rather than
-/// left as an empty assertion — and the emptiness question belongs to
-/// `RecordingFeedback::is_empty`, not to the collection the caller happened to
-/// touch: a withdrawn sermon pick on a recording whose trim was also adjusted
-/// must not take the adjustment with it.
-fn write_feedback(media_path: &str, file: &sundayrec_core::feedback::RecordingFeedback) -> bool {
-    if file.is_empty() {
-        return delete_sidecar(media_path, EditorSidecar::Feedback);
-    }
-    match serde_json::to_string_pretty(file) {
-        Ok(json) => write_sidecar_atomic(media_path, EditorSidecar::Feedback, &json),
-        Err(_) => false,
-    }
-}
-
-/// Fold one sermon-pick correction into the recording's feedback file. Returns
-/// whether anything was persisted — `false` covers both "that was not a
-/// correction" and "we refused to touch an unreadable file".
-pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -> bool {
-    use sundayrec_core::feedback as core;
-    let _guard = feedback_lock();
-    let Ok(mut file) = read_feedback(media_path) else {
-        return false;
-    };
-    let segments = to_feedback_segments(&request.segments);
-    let candidates: Vec<usize> = request
-        .candidate_indices
-        .iter()
-        .map(|i| *i as usize)
-        .collect();
-    let Some(correction) = core::build_sermon_pick_correction(
-        &segments,
-        &candidates,
-        request.auto_index.map(|i| i as usize),
-        request.chosen_index as usize,
-        request.duration_sec,
-        env!("CARGO_PKG_VERSION"),
-    ) else {
-        return false;
-    };
-    let before = file.clone();
-    if !core::record_sermon_pick(&mut file, correction).changed() {
-        return false;
-    }
-    // Only after the write: a fold that did not reach the disk must not be
-    // counted as something the person told us, or the telemetry would be
-    // reporting a correction the app itself has lost.
-    let written = write_feedback(media_path, &file);
-    if written {
-        observe_feedback_change(&before, &file);
-    }
-    written
-}
-
-/// Fold one trim adjustment into the recording's feedback file.
-///
-/// `Some` carries the pure layer's verdict, including the two that write nothing
-/// (the operator published the proposal untouched, or moved the boundaries back
-/// onto it). `None` means we could not persist: an unreadable or newer-schema
-/// file we refuse to overwrite, or a failed write.
-///
-/// DORMANT since v0.15 (R1 removed its only caller, the review queue's
-/// `review_update_trim` → `learning::record_trim_deltas`). Kept, with its
-/// tests, because the trim-correction signal is part of the consented
-/// telemetry contract and the editor is the obvious next writer; see
-/// `docs/LEARNING.md`.
-pub fn record_trim_adjustment(
-    media_path: &str,
-    deltas: sundayrec_core::trim_feedback::TrimDeltas,
-) -> Option<sundayrec_core::feedback::TrimOutcome> {
-    use sundayrec_core::feedback as core;
-    let _guard = feedback_lock();
-    let mut file = read_feedback(media_path).ok()?;
-    let before = file.clone();
-    let outcome = core::record_trim_adjustment(&mut file, deltas, env!("CARGO_PKG_VERSION"));
-    if outcome.changed() {
-        if !write_feedback(media_path, &file) {
-            return None;
-        }
-        // Includes the WITHDRAWN case, which is a decrement rather than an
-        // increment: a correction the operator has taken back must stop being
-        // reported, exactly as it stops being on file.
-        observe_feedback_change(&before, &file);
-    }
-    Some(outcome)
-}
-
-/// Fold one shadow-mode observation into the recording's feedback file.
-///
-/// Returns whether it persisted; `false` is an unreadable or newer-schema file
-/// we refuse to overwrite, or a failed write. The caller turns that into a log
-/// line and nothing else — a measurement that could not be stored must never
-/// become something the operator sees.
-///
-/// **`observe_feedback_change` is deliberately NOT called here**, and that is
-/// the one line of this function that matters. The other seams report
-/// their change to the telemetry accumulators; this one must not, because a
-/// disagreement between two detectors is outside the three categories the
-/// consent text covers (crash reports, quality data, feature-usage counters).
-/// See [`sundayrec_core::feedback::ShadowObservation`] for the full argument.
-/// The two projections that read this file are blind to the collection anyway,
-/// so calling it would report nothing today — which is exactly why the absence
-/// is stated here rather than left to be noticed.
-pub fn record_shadow_observation(
-    media_path: &str,
-    observation: sundayrec_core::feedback::ShadowObservation,
-) -> bool {
-    let _guard = feedback_lock();
-    let Ok(mut file) = read_feedback(media_path) else {
-        return false;
-    };
-    sundayrec_core::feedback::record_shadow_observation(&mut file, observation);
-    write_feedback(media_path, &file)
 }
 
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
@@ -1322,18 +772,12 @@ pub struct EditorMasterPreviewRequest {
     /// The recording to preview, as the File token that stands for it — never a
     /// path; the command resolves it and hands the seam the place.
     pub source_token: String,
-    /// The mastering preset the export would carry. `None` when the mixer is on: the mixer
-    /// replaces the profile, so the export carries `processing` and no preset.
+    /// «Podkastklar lyd», exactly as the export request carries it. `false` previews the file
+    /// as it is.
     #[serde(default)]
-    pub preset_id: Option<String>,
+    pub podcast_audio: bool,
     pub start_sec: f64,
     pub duration_sec: f64,
-    /// The mixer's chain, exactly as the export request would carry it (M2R #3a).
-    #[serde(default)]
-    pub processing: Option<EditorProcessing>,
-    /// The channel repair the export would carry (M2R #3b).
-    #[serde(default)]
-    pub channel_repair: Option<EditorChannelRepair>,
     /// The cuts and the length of the whole recording, as the export request carries them: the
     /// level the window is given is the level of the PROGRAMME that is left after the cuts
     /// (M2R #3c). No cuts and no length = the whole file.
@@ -1800,25 +1244,6 @@ where
     disabled("allowAssetPath")
 }
 
-/// Content-detect segments (silence/speech/music + promoted sermon block).
-#[cfg(not(feature = "editor"))]
-pub async fn segments<F>(
-    _input_path: &str,
-    _force: bool,
-    _on_progress: F,
-) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
-where
-    F: Fn(f32),
-{
-    disabled("segments")
-}
-
-/// Analyse stereo channel balance.
-#[cfg(not(feature = "editor"))]
-pub async fn diagnose_channels(_input_path: &str) -> AppResult<EditorChannelDiagnosis> {
-    disabled("diagnoseChannels")
-}
-
 /// What the export command passes for `hw_first` (v0.15): always try the
 /// hardware encoder where the platform has one. A toggle for this was a setting
 /// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
@@ -1950,7 +1375,7 @@ fn read_peaks_cache(input_path: &str, size_bytes: u64, mtime_ms: u64) -> Option<
 /// file read instead of a full decode.
 ///
 /// B4a: a cache miss is not a decode of its own any more. It is the open round ([`open`]): ONE
-/// ffmpeg read of the file, in its own rate and channels, that the waveform, the sermon search,
+/// ffmpeg read of the file, in its own rate and channels, that the waveform,
 /// the channel diagnosis and «Tale» all share, with the 8 kHz mix made in Rust
 /// ([`sundayrec_core::open_read`]). Whoever of them asks first starts the read, and the rest find
 /// it done or wait for it.
@@ -1988,7 +1413,7 @@ where
     sweep_editor_temp_once();
 
     let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &on_progress).await?;
+    let opened = open::opened(&engine, input_path, &on_progress).await?;
     // The decode IS done, whatever the byte arithmetic came to (an ffprobe duration is a
     // container header and can be a little short or long). Say so once, unconditionally, so the
     // bar always reaches the end — and so a source whose duration could not be probed still gets
@@ -2129,256 +1554,6 @@ fn sweep_editor_temp_once() {
     });
 }
 
-/// Read the content-detection cache for `input_path`, if one still describes
-/// this exact file. Never errors — a miss just means "analyse again".
-#[cfg(feature = "editor")]
-fn read_segments_cache(
-    input_path: &str,
-    size_bytes: u64,
-    mtime_ms: u64,
-) -> Option<Vec<EditorSegment>> {
-    use sundayrec_core::editor::cache_is_fresh;
-
-    let cache: SegmentsCache = read_sidecar_typed(input_path, EditorSidecar::Segments)?;
-    cache_is_fresh(
-        cache.version,
-        EDITOR_CACHE_VERSION,
-        cache.size_bytes,
-        cache.mtime_ms,
-        None,
-        size_bytes,
-        mtime_ms,
-    )
-    .then_some(cache.segments)
-}
-
-/// The 16 kHz mono PCM the sermon search ran on, for the shadow VAD (`vad` feature): the shadow
-/// scores the same samples the open round made, so a recording is still read once with the model
-/// on. To the first caller, and only after [`segments`] has handed out the detection that the
-/// shadow compares against; `None` otherwise (the shadow then does not run: it never reads the
-/// file itself).
-#[cfg(all(feature = "editor", feature = "vad"))]
-pub(crate) fn take_shadow_pcm(path: &str) -> Option<Vec<f32>> {
-    open::peek(path)?.detected_now()?.take_shadow_pcm()
-}
-
-/// The sermon search: classify + group with the core, promote the sermon block, and map to UI
-/// segments — cached next to the recording so a reopen is free.
-///
-/// B4a: the 16 kHz PCM it works on is not decoded here. It comes from the open round
-/// ([`open`]), the one read of the file that the waveform, the channel diagnosis and «Tale» share,
-/// and the search runs on its own thread right after that read. If the waveform asked first, the
-/// search is already under way or done when this is called.
-///
-/// `force` skips the cache READ (the explicit «Analyser opptak» button: the user
-/// asked for the work to be done again) and starts a read that carries the search,
-/// but still writes the result, so the next automatic open is fast again.
-///
-/// A P3 fix lives in the cache: detection is a second full pass over the whole
-/// recording and it auto-fired on every single open.
-///
-/// `on_progress` receives the read's 0..1 fraction, capped at 0.99 because the tail —
-/// feature extraction and classification — is not covered by it; the caller only sees 1.0 once
-/// the segments exist. «Analyser opptak» was the last button in the editor that could run for
-/// minutes with nothing but a spinner.
-///
-/// The second return value is the analysis BEHIND those segments, and it is
-/// `Some` only on a pass that actually ran, and only for the first caller. [`EditorSegment`] is a
-/// lossy projection — it keeps the bounds and the class but drops `confidence` and
-/// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
-/// cache hit can hand back segments but not the analysis, and `None` says so
-/// rather than reconstructing values that were never on disk.
-///
-/// That distinction is load-bearing for the review queue (E8): the episode-prep
-/// heuristic weighs `confidence` — it breaks sermon-candidate ties on it and
-/// raises the low-confidence attention flag from it — so a queue entry built
-/// from invented confidences would be a guess wearing the detector's clothes.
-///
-/// HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-pub async fn segments<F>(
-    input_path: &str,
-    force: bool,
-    on_progress: F,
-) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
-where
-    F: Fn(f32),
-{
-    let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
-        return Err(AppError::Validation("file_not_found".into()));
-    };
-    if !force {
-        // The waveform may have started the read, and the search with it: the sidecar can
-        // already be written, but the analysis behind it has not been handed out yet, and the
-        // shadow pass and the review queue want it. A read that carried the search answers first,
-        // once; after that the sidecar answers, as it always did.
-        if let Some(opened) = open::peek(input_path)
-            && let Some(detected) = opened.detected().await.transpose()?
-            && let Some(detection) = detected.take_detection()
-        {
-            on_progress(1.0);
-            return Ok((detected.segments.clone(), Some(detection)));
-        }
-        if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
-            return Ok((cached, None));
-        }
-    }
-
-    let engine = ExportEngine::new();
-    let search = if force {
-        open::Search::Force
-    } else {
-        open::Search::IfMissing
-    };
-    let mut opened = open::opened(&engine, input_path, search, &on_progress).await?;
-    if !opened.has_detection() {
-        // Joined a read that was started when the segments sidecar still counted as fresh (or
-        // by a consumer that did not need the search): start one that carries it.
-        opened = open::opened(&engine, input_path, open::Search::Force, &on_progress).await?;
-    }
-    let detected = opened
-        .detected()
-        .await
-        .ok_or_else(|| AppError::Recording("analysis carried no search".into()))??;
-    on_progress(1.0);
-    Ok((detected.segments.clone(), detected.take_detection()))
-}
-
-/// Map a core [`ChannelRepair`](sundayrec_core::processing::ChannelRepair) to the
-/// renderer DTO.
-#[cfg(feature = "editor")]
-fn core_repair_to_dto(r: sundayrec_core::processing::ChannelRepair) -> EditorChannelRepair {
-    use sundayrec_core::processing::ChannelRepair as R;
-    let (mode, left_db, right_db) = match r {
-        R::None => ("none", 0.0, 0.0),
-        R::SwapLr => ("swapLr", 0.0, 0.0),
-        R::DuplicateLeft => ("duplicateLeft", 0.0, 0.0),
-        R::DuplicateRight => ("duplicateRight", 0.0, 0.0),
-        R::MonoMix => ("monoMix", 0.0, 0.0),
-        R::GainDb { left_db, right_db } => ("gainDb", left_db, right_db),
-    };
-    EditorChannelRepair {
-        mode: mode.to_string(),
-        left_db,
-        right_db,
-    }
-}
-
-/// Build the channel diagnosis from the measured levels.
-#[cfg(feature = "editor")]
-fn diagnosis_from_levels(levels: sundayrec_core::levels::ChannelLevels) -> EditorChannelDiagnosis {
-    use sundayrec_core::processing::{ChannelLevelsDb, diagnose_channels as core_diagnose};
-
-    let pl = levels.peak_db_left;
-    match levels.peak_db_right {
-        // Mono source — nothing to balance.
-        None => EditorChannelDiagnosis {
-            code: "mono".into(),
-            imbalance_db: 0.0,
-            peak_left_db: pl,
-            peak_right_db: None,
-            recommended: core_repair_to_dto(sundayrec_core::processing::ChannelRepair::None),
-        },
-        Some(pr) => {
-            // The RMS values come from the SAME measurement we already have in hand. Passing
-            // `None` here (what this did) made the core decide on peaks alone, which cannot tell
-            // a crackling cable from a healthy channel — see the threshold note in
-            // `processing::diagnose_channels`.
-            let d = core_diagnose(ChannelLevelsDb {
-                peak_left_db: pl,
-                peak_right_db: pr,
-                rms_left_db: levels.rms_db_left,
-                rms_right_db: levels.rms_db_right,
-            });
-            EditorChannelDiagnosis {
-                code: d.code.to_string(),
-                imbalance_db: d.imbalance_db,
-                peak_left_db: pl,
-                peak_right_db: Some(pr),
-                recommended: core_repair_to_dto(d.recommended),
-            }
-        }
-    }
-}
-
-/// Analyse a recording's stereo channel balance: the peaks and RMS of each channel, measured over
-/// the whole file in the open round (they used to be an `astats` round of their own), and
-/// the core's recommended repair (swap / duplicate-good-channel / per-channel makeup).
-/// HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagnosis> {
-    let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &|_| {}).await?;
-    Ok(diagnosis_from_levels(opened.channel_levels()?))
-}
-
-/// One-click "auto-improve": ONE measurement yields both the channel diagnosis
-/// AND the noise floor, so we recommend channel repair + a NOISE-AWARE vocal
-/// chain (the heavier `voice-noisy-room` when the floor is high, else
-/// `voice-podcast`). The renderer applies the result in one click.
-///
-/// It deliberately does NOT recommend a mastering preset. Stacking one on top of
-/// the vocal chain ran the material through two highpasses, two compressors and
-/// two EQ curves — the classic over-processed "one-click" result (pumping, thin
-/// low end). The vocal chain alone is the honest default; mastering stays an
-/// explicit choice in the export modal, where its loudness target is the point.
-#[cfg(feature = "editor")]
-pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
-    let engine = ExportEngine::new();
-    let opened = open::opened(&engine, input_path, open::Search::IfMissing, &|_| {}).await?;
-    let diagnosis = diagnosis_from_levels(opened.channel_levels()?);
-    let noise_floor = opened.levels.noise_floor_db;
-    let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
-
-    // F2-I18N-R2: the summary is an ENGLISH RESERVE, and the DATA is the
-    // contract. The screen never read this string — `SoundStep`'s
-    // `ChannelNote` renders `editor.chanDeadLeft`/`…chanUnusableRight` from
-    // `diagnosis.code`, and the sound profile names the chain — so a Norwegian
-    // sentence here was prose the volunteer could not see written in a language
-    // six of seven of them do not read. The shell builds its own sentence from
-    // `diagnosis.code` + `vocalChainPreset`; this one is for the log and for a
-    // support paste.
-    //
-    // `unusable_*` shares an arm with `dead_*` on purpose: it is the same fault
-    // seen from further away (the channel has SOMETHING, but 12 dB of makeup
-    // cannot rescue it), so the repair and the advice are identical. The
-    // catalogue keeps them apart, and says "too weak" rather than "silent".
-    let repair_note = match diagnosis.code.as_str() {
-        "dead_left" | "unusable_left" => {
-            "the right channel is copied to both (the left is silent — check the cable)"
-        }
-        "dead_right" | "unusable_right" => {
-            "the left channel is copied to both (the right is silent — check the cable)"
-        }
-        "imbalance" => "the channels are balanced (uneven levels)",
-        "both_dead" => "both channels are very weak — check the connection",
-        "mono" => "mono recording",
-        _ => "channel balance OK",
-    };
-    let chain_note = if preset == "voice-noisy-room" {
-        "noisy-room chain (stronger noise reduction)"
-    } else {
-        "podcast voice"
-    };
-    let summary = format!(
-        "Automatic sound improvement: {repair_note}, {chain_note}. \
-         Mastering is chosen separately (it sets the release level)."
-    );
-    Ok(EditorAutoProcess {
-        diagnosis,
-        vocal_chain_preset: preset.to_string(),
-        // Empty on purpose — see the doc comment: no double processing.
-        master_preset: String::new(),
-        summary,
-    })
-}
-
-/// Auto-process needs ffmpeg — disabled in the default build.
-#[cfg(not(feature = "editor"))]
-pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
-    disabled("autoProcess")
-}
-
 /// B3b: what «Tale» takes along for this recording, for the explanation in the sound step.
 /// It is the SAME decision the preview, the loudness figure and the export read
 /// ([`tale_clean_for`], cached per file), so the sentence on screen is the chain that runs.
@@ -2391,7 +1566,7 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
 pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
     let work = async {
         let engine = ExportEngine::new();
-        let clean = tale_clean_with(&engine, input_path, open::Search::IfMissing).await?;
+        let clean = tale_clean_for(&engine, input_path).await?;
         Ok::<_, AppError>(tale_said_from(clean.as_ref()))
     };
     match until_superseded(tale_epoch(), work).await {
@@ -2417,6 +1592,44 @@ fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTa
             .map(|c| c.said().into_iter().map(String::from).collect())
             .unwrap_or_default(),
     }
+}
+
+/// Is one side of the recording dead? Reads the channel meter the open round already ran (one
+/// decode shared with the waveform and «Tale»). Never an error: a recording that cannot be read
+/// says nothing, and the editor then says nothing too.
+#[cfg(feature = "editor")]
+pub async fn channel_check(input_path: &str) -> EditorChannelCheck {
+    let engine = ExportEngine::new();
+    let dead_side = match open::opened(&engine, input_path, &|_| {}).await {
+        Ok(opened) => dead_side_of(opened.levels.levels),
+        Err(_) => None,
+    };
+    EditorChannelCheck { dead_side }
+}
+
+#[cfg(not(feature = "editor"))]
+pub async fn channel_check(_input_path: &str) -> EditorChannelCheck {
+    EditorChannelCheck { dead_side: None }
+}
+
+/// The side code for measured levels. Mono (no right peak) has nothing to compare. Pure.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+fn dead_side_of(levels: Option<sundayrec_core::levels::ChannelLevels>) -> Option<String> {
+    use sundayrec_core::processing::{ChannelLevelsDb, DeadSide, dead_channel};
+    let l = levels?;
+    let side = dead_channel(ChannelLevelsDb {
+        peak_left_db: l.peak_db_left,
+        peak_right_db: l.peak_db_right?,
+        rms_left_db: l.rms_db_left,
+        rms_right_db: l.rms_db_right,
+    })?;
+    Some(
+        match side {
+            DeadSide::Left => "left",
+            DeadSide::Right => "right",
+        }
+        .to_string(),
+    )
 }
 
 /// Probe just has_video/has_audio — reuses the full load probe and projects the
@@ -2451,7 +1664,7 @@ async fn listen_plan(
     }
     let info = load_recording(input_path).await.ok();
     let channels = info.as_ref().and_then(|i| i.channels);
-    let params = req.audio_params(channels)?;
+    let params = req.audio_params();
     let fmt = pcm::pcm_format(info.as_ref().and_then(|i| i.sample_rate), channels);
     let chain = pre_chain_for(engine, input_path, &params).await?;
     let plan = match &params.preset {
@@ -2656,9 +1869,9 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
         done.iter().find(|(k, _)| k == key).map(|(_, p)| p.clone())
     }
 
-    /// Drop the finished value for `key`, so the next ask computes it again (the operator asked
-    /// for the analysis to be done afresh).
-    #[cfg(feature = "editor")]
+    /// Drop the finished value for `key`, so the next ask computes it again (a test stands in
+    /// for a new process).
+    #[cfg(all(test, feature = "editor"))]
     fn forget(&self, key: &str) {
         let mut done = self.done.lock().unwrap_or_else(|e| e.into_inner());
         done.retain(|(k, _)| k != key);
@@ -2713,11 +1926,6 @@ impl<V: Clone, const CAP: usize> Book<V, CAP> {
     }
 }
 
-/// The mastering preset behind the «Tale» profile (`app/editor/sound-profiles.ts`,
-/// `SPEECH_MASTER_PRESET`). B3a: it is the one that cleans by itself.
-#[cfg(feature = "editor")]
-const TALE_PRESET_ID: &str = "speech-clear";
-
 /// The whole-file reads of a recording that exist to MEASURE it, by what they are. The counter
 /// ([`analysis_decodes_of`]) counts every one of them, so a test (and the bench) can say how many
 /// times a file is decoded instead of assuming it. A new whole-file read that measures must say
@@ -2725,8 +1933,7 @@ const TALE_PRESET_ID: &str = "speech-clear";
 #[cfg(feature = "editor")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Decode {
-    /// The open round ([`open`]): waveform, sermon search, channel levels and «Tale»'s analysis,
-    /// in ONE read. Also the shadow VAD's (`vad` feature), which takes its PCM from this read.
+    /// The open round ([`open`]): waveform, channel levels and «Tale»'s analysis, in ONE read.
     Open,
     /// The export's measuring pass ([`pcm::measure_and_plan`]): the kept parts of the source,
     /// through the chain, measured and staged. Needs the cuts and the chain, so it cannot be part
@@ -2798,7 +2005,7 @@ fn tale_cache_key(path: &str) -> Option<TaleKey> {
 }
 
 /// B3a: what «Tale» takes along ([`sundayrec_core::tale`]), decided from the measurements of the
-/// open round (B4a: the recording is read once for the waveform, the sermon search, the
+/// open round (B4a: the recording is read once for the waveform, the
 /// channel diagnosis and this, see [`open`]). `None` when the file cannot be analysed: the
 /// profile then runs as before, and the export is never lost to an analysis that failed. A cancel
 /// or a stall still ends the export.
@@ -2810,19 +2017,7 @@ async fn tale_clean_for(
     engine: &ExportEngine,
     input_path: &str,
 ) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
-    tale_clean_with(engine, input_path, open::Search::Skip).await
-}
-
-/// [`tale_clean_for`], with a say in whether the read it may have to start carries the sermon
-/// search too: the sound step's sentence is asked inside the editor, where the search is wanted
-/// next; the export and the preview are not.
-#[cfg(feature = "editor")]
-async fn tale_clean_with(
-    engine: &ExportEngine,
-    input_path: &str,
-    search: open::Search,
-) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
-    match open::opened(engine, input_path, search, &|_| {}).await {
+    match open::opened(engine, input_path, &|_| {}).await {
         Ok(opened) => Ok(Some(opened.analysis.decide())),
         Err(AppError::Recording(code)) if code == "cancelled" || code == "timeout" => {
             Err(AppError::Recording(code))
@@ -2834,130 +2029,46 @@ async fn tale_clean_with(
     }
 }
 
-/// What the volunteer chose in the sound step, as the export request and the preview request
-/// both carry it. Borrowed, so neither request type has to be cloned to be read.
+/// The decisions behind the audio chain, made once for the export AND the windowed preview
+/// (M2R #3: «det du hører er det du får»).
 #[cfg(feature = "editor")]
-struct AudioChoice<'a> {
-    preset_id: Option<&'a str>,
-    processing: Option<&'a EditorProcessing>,
-    vocal_chain_preset: Option<&'a str>,
-    channel_repair: Option<&'a EditorChannelRepair>,
+#[derive(Debug, Clone, PartialEq)]
+struct AudioParams {
+    /// `speech-clear` when «Podkastklar lyd» is on, `None` for the file as recorded.
+    preset: Option<sundayrec_core::mastering::MasterPreset>,
     gain_db: Option<f64>,
+    /// «Podkastklar lyd» is on: the chain takes along what the analysis of the file finds
+    /// («Tale»: hum, noise, a long room, clicks) in front of the preset's own chain.
+    tale: bool,
+}
+
+/// The audio decisions of an export (`podcast_audio`, plus the editor's normalize `gain_db`)
+/// or of a preview (`podcast_audio` only). On = the one podcast recipe; off = no processing.
+/// Pure; unit-tested without ffmpeg.
+#[cfg(feature = "editor")]
+fn resolve_audio_params(podcast_audio: bool, gain_db: Option<f64>) -> AudioParams {
+    AudioParams {
+        preset: podcast_audio.then(sundayrec_core::mastering::podcast_preset),
+        gain_db,
+        tale: podcast_audio,
+    }
 }
 
 #[cfg(feature = "editor")]
 impl EditorExportRequest {
     /// The audio decisions this export carries — see [`resolve_audio_params`].
-    fn audio_params(&self, channels: Option<u32>) -> AppResult<AudioParams> {
-        resolve_audio_params(
-            &AudioChoice {
-                preset_id: self.master_preset.as_deref(),
-                processing: self.processing.as_ref(),
-                vocal_chain_preset: self.vocal_chain_preset.as_deref(),
-                channel_repair: self.channel_repair.as_ref(),
-                gain_db: self.gain_db,
-            },
-            channels,
-        )
+    fn audio_params(&self) -> AudioParams {
+        resolve_audio_params(self.podcast_audio, self.gain_db)
     }
 }
 
 #[cfg(feature = "editor")]
 impl EditorMasterPreviewRequest {
-    /// The audio decisions the preview carries: the same fields as the export, which the sound
-    /// step sends from the same state. A preview has no `vocalChainPreset` and no normalize
-    /// gain (the UI sends neither, to either).
-    fn audio_params(&self, channels: Option<u32>) -> AppResult<AudioParams> {
-        resolve_audio_params(
-            &AudioChoice {
-                preset_id: self.preset_id.as_deref(),
-                processing: self.processing.as_ref(),
-                vocal_chain_preset: None,
-                channel_repair: self.channel_repair.as_ref(),
-                gain_db: None,
-            },
-            channels,
-        )
+    /// The audio decisions the preview carries: the same field as the export, which the sound
+    /// step sends from the same state. A preview has no normalize gain.
+    fn audio_params(&self) -> AudioParams {
+        resolve_audio_params(self.podcast_audio, None)
     }
-}
-
-/// The decisions behind the audio chain, made once for the export AND the windowed preview
-/// (M2R #3: «det du hører er det du får»). Two callers that each made these decisions had
-/// already drifted apart — the preview ignored the mixer and the channel repair.
-#[cfg(feature = "editor")]
-#[derive(Debug, Clone, PartialEq)]
-struct AudioParams {
-    preset: Option<sundayrec_core::mastering::MasterPreset>,
-    chain: Option<sundayrec_core::processing::VocalChain>,
-    gain_db: Option<f64>,
-    /// «Tale» on its own (the `speech-clear` preset, no mixer chain): the chain takes along
-    /// what the analysis of the file finds.
-    tale: bool,
-}
-
-/// Resolve the preset, the vocal chain (mixer or one-click preset, with the channel repair laid
-/// over it) and the «Tale» decision. `channels` is the probed channel count of the source.
-/// Pure; unit-tested without ffmpeg.
-#[cfg(feature = "editor")]
-fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppResult<AudioParams> {
-    // An empty preset id is "no mastering" (the renderer sends `undefined`, but a stray ''
-    // must not read as an unknown preset).
-    let preset = match choice.preset_id.map(str::trim) {
-        Some(id) if !id.is_empty() => Some(
-            sundayrec_core::mastering::get_preset_by_id(id)
-                .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?,
-        ),
-        _ => None,
-    };
-
-    // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering level step:
-    // shape the tone/dynamics first, set delivery loudness last. A full `processing` object
-    // wins; otherwise resolve the one-click preset id.
-    //
-    // F2-C-E T5: `vocal_chain_preset_by_id` takes a measured noise floor for `afftdn:nf`. No
-    // caller reaches this branch with one today — the app shell never sends `vocalChainPreset`
-    // (`app/editor/sound-profiles.ts`: "vocalChainPreset sendes ALDRI"), so it stays `None`.
-    let mut chain = choice.processing.map(|p| p.to_core()).or_else(|| {
-        choice
-            .vocal_chain_preset
-            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
-            .map(|p| p.chain)
-    });
-    // A top-level channel repair overrides the chain's repair, and applies on its own (in an
-    // otherwise-empty chain) when no vocal processing was requested.
-    let requested_repair = choice.channel_repair.map(|r| r.to_core());
-    // …but a stereo repair on a MONO source does nothing (the chain skips it). Refuse, for
-    // the user's sake, rather than hand back an untouched file the UI calls "repaired".
-    // `auto_process` answers `None` for mono, so this only catches a stale or hand-rolled
-    // request.
-    if let (Some(cr), Some(1)) = (requested_repair, channels)
-        && sundayrec_core::processing::channel_repair_needs_stereo(cr)
-    {
-        return Err(AppError::Validation("channel_repair_needs_stereo".into()));
-    }
-    if let Some(cr) = requested_repair {
-        match &mut chain {
-            Some(c) => c.channel_repair = cr,
-            None => {
-                let mut empty = sundayrec_core::processing::VocalChain::default();
-                empty.highpass.enabled = false;
-                empty.compressor.enabled = false;
-                empty.channel_repair = cr;
-                chain = Some(empty);
-            }
-        }
-    }
-    // B3a: «Tale» (the `speech-clear` preset on its own, no mixer chain) cleans what the
-    // analysis finds: hum, noise, a long room, clicks.
-    let tale = preset.as_ref().is_some_and(|p| p.id == TALE_PRESET_ID)
-        && choice.processing.is_none()
-        && choice.vocal_chain_preset.is_none();
-    Ok(AudioParams {
-        preset,
-        chain,
-        gain_db: choice.gain_db,
-        tale,
-    })
 }
 
 /// The pre-level chain for `params` — with «Tale»'s decision from the shared cache
@@ -2973,48 +2084,34 @@ async fn pre_chain_for(
     } else {
         None
     };
-    build_pre_chain(
-        params.chain.clone(),
-        params.gain_db,
-        params.preset.as_ref(),
-        clean.as_ref(),
-    )
+    build_pre_chain(params.gain_db, params.preset.as_ref(), clean.as_ref())
 }
 
-/// Build the pre-level audio chain, in order: normalize gain, THEN the vocal
-/// chain, THEN the mastering preset's own chain (B2b: a Rust [`Chain`], run by
-/// `sundayrec_core::chain::ChainReader` over the decoded PCM — ffmpeg gets no `-af`).
+/// Build the pre-level audio chain, in order: normalize gain, THEN what «Tale» found, THEN the
+/// mastering preset's own chain (a Rust [`Chain`], run by `sundayrec_core::chain::ChainReader`
+/// over the decoded PCM — ffmpeg gets no `-af`).
 ///
-/// T12: the gain (the editor's "Normalize" button) goes FIRST, ahead of
-/// `chain`'s stages — the vocal chain's compressor/limiter is its LAST stage, so this
-/// order leaves the limiter with final say over the rendered peak. The previous order
-/// (gain appended AFTER the chain) let a positive gain push the already-limited signal
-/// back over 0 dBFS, undoing the limiter entirely. Gain is SKIPPED when a mastering
-/// preset is active: the preset's level step sets the delivery level, so a volume shift
-/// ahead of it changes nothing but the measured input (the export modal says so instead
-/// of claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
-/// without ffmpeg.
+/// The gain (the editor's "Normalize" button) goes FIRST. Gain is SKIPPED when a mastering
+/// preset is active: the preset's level step sets the delivery level, so a volume shift ahead
+/// of it changes nothing but the measured input (the export modal says so instead of claiming
+/// "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested without ffmpeg.
 #[cfg(feature = "editor")]
 fn build_pre_chain(
-    chain: Option<sundayrec_core::processing::VocalChain>,
     gain_db: Option<f64>,
     preset: Option<&sundayrec_core::mastering::MasterPreset>,
     clean: Option<&sundayrec_core::tale::SpeechClean>,
 ) -> AppResult<sundayrec_core::chain::Chain> {
     use sundayrec_core::chain::Chain;
     let gain = if preset.is_none() { gain_db } else { None };
-    let vocal = chain
-        .map(|c| Chain::from_vocal_chain(&c))
-        .unwrap_or_default();
     let mastering = match preset {
         Some(p) => Chain::from_master_preset(p)
             .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?,
         None => Chain::default(),
     };
-    // B3a: what the analysis found wrong with this recording goes between the channel repair
-    // and the preset's own chain.
+    // B3a: what the analysis found wrong with this recording goes in front of the preset's own
+    // chain.
     let clean = clean.map(Chain::speech_clean).unwrap_or_default();
-    Ok(vocal.then(clean).then(mastering).with_leading_gain(gain))
+    Ok(clean.then(mastering).with_leading_gain(gain))
 }
 
 /// Render the cut-plan + optional mastering gain to the requested format. The
@@ -3396,14 +2493,14 @@ where
 
     // 2. The pre-level graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
-    //      (normalize gain, only without a preset) → vocal chain → preset chain.
+    //      (normalize gain, only without a preset) → «Tale»'s clean-up → preset chain.
     //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
     //    final say over the peak — see `build_pre_chain`.
     //
     //    M2R #3: the decisions (preset, mixer chain, channel repair, «Tale») are made by
     //    `resolve_audio_params`, the one function the windowed preview calls too — what the
     //    volunteer hears is what this builds.
-    let params = req.audio_params(probed.as_ref().and_then(|i| i.channels))?;
+    let params = req.audio_params();
     if params.tale {
         on_progress(0.0, EXPORT_PHASE_MEASURING);
     }
@@ -3423,11 +2520,12 @@ where
     //     B1b: the level is set in Rust. ffmpeg decodes + cuts + runs graph G to raw f32 PCM,
     //     `sundayrec_core::pcm_stream` meters it and parks a copy in the OS temp dir (90
     //     minutes of stereo is 2 GB; the other choice, running the chain twice, was slower on
-    //     the real 90-minute file, see docs/LYDMOTOR.md). The plan is ONE linear gain to the
+    //     the real 90-minute file, see docs/archive/LYDMOTOR.md). The plan is ONE linear gain to the
     //     preset's target plus, only where the peaks need it, a true-peak limiter; the limiter's
     //     cost in loudness is corrected by dry runs over the parked copy. Pass 2 then feeds the
-    //     encoder from that copy. Intro/outro are deliberately absent from the measured signal:
-    //     they are concatenated after the level is set, so a jingle cannot skew the target.
+    //     encoder from that copy. Intro/outro are deliberately absent from the measured signal,
+    //     so a jingle cannot skew the sermon's target: each is levelled on its own to the same
+    //     target (step 4a) and concatenated after.
     // B2b: ffmpeg gets no `-af`. Whenever there is anything to do to the tone or the level, the
     // audio is decoded + cut by ffmpeg, run through the Rust chain, and (with a preset)
     // levelled, all in the staged PCM the encoder is then fed from.
@@ -3505,6 +2603,36 @@ where
     let has_intro = intro.is_some();
     let has_outro = outro.is_some();
     let main_input_idx = if has_intro { 1 } else { 0 };
+    // 4a. With «Podkastklar lyd» the jingles are levelled by the SAME preset as the sermon
+    //     (own measure, own gain, own true-peak limiter) and parked as raw PCM, so the
+    //     finished file's intro, sermon and outro all sit at the preset's target. Without a
+    //     preset they go in exactly as they are on disk.
+    let (intro_master, outro_master) = match preset.as_ref() {
+        Some(p) => {
+            let mut masters = [None, None];
+            for (slot, clip) in masters.iter_mut().zip([intro, outro]) {
+                if let Some(clip) = clip {
+                    bail_if_cancelled(engine)?;
+                    *slot = Some(pcm::master_clip(engine, clip, p, timeout_ms).await?);
+                }
+            }
+            let [a, b] = masters;
+            (a, b)
+        }
+        None => (None, None),
+    };
+    // The ffmpeg input a jingle is read from: its own file, or its levelled PCM.
+    let clip_input = |clip: &str, master: &Option<pcm::MasteredClip>| -> Vec<String> {
+        match master {
+            Some(m) => {
+                let mut a = sundayrec_core::pcm_stream::input_args(m.fmt);
+                a.pop(); // `pipe:0`
+                a.push(m.path().to_string_lossy().into_owned());
+                a
+            }
+            None => vec!["-i".into(), clip.to_string()],
+        }
+    };
 
     // 4b. Title/speaker/description → tags, and chapters → FFMETADATA. Since
     //     v0.15 nothing in the app produces chapters (the transcript-driven
@@ -3588,7 +2716,7 @@ where
     let build_args = |use_hw: bool| -> Vec<String> {
         let mut args: Vec<String> = vec!["-nostdin".into(), "-hide_banner".into()];
         if let Some(p) = intro {
-            args.extend(["-i".into(), p.to_string()]);
+            args.extend(clip_input(p, &intro_master));
         }
         match pcm_in {
             // The audio of an AUDIO export is the programme's PCM on stdin, already cut (and
@@ -3621,7 +2749,7 @@ where
             args.extend(sundayrec_core::pcm_stream::input_args(fmt));
         }
         if let Some(p) = outro {
-            args.extend(["-i".into(), p.to_string()]);
+            args.extend(clip_input(p, &outro_master));
         }
         if let Some(p) = &meta_path {
             args.extend(["-i".into(), p.clone()]);
@@ -3699,11 +2827,15 @@ where
     //    kept media plus any jingles concatenated around it (they lengthen the
     //    output, so leaving them out would make the bar stall near 100 %).
     let mut total_sec = kept_duration;
-    for clip in [intro, outro].into_iter().flatten() {
+    for (clip, master) in [(intro, &intro_master), (outro, &outro_master)] {
+        let Some(clip) = clip else { continue };
         bail_if_cancelled(engine)?;
-        total_sec += crate::media::ffmpeg::probe_duration_secs(clip)
-            .await
-            .unwrap_or(0.0);
+        total_sec += match master {
+            Some(m) => m.seconds(),
+            None => crate::media::ffmpeg::probe_duration_secs(clip)
+                .await
+                .unwrap_or(0.0),
+        };
     }
     // With a processed programme the measure pass already spent the first half of
     // the bar; without one the render owns all of it.
@@ -4513,16 +3645,9 @@ mod tests {
 
     #[cfg(not(feature = "editor"))]
     #[tokio::test]
-    async fn peaks_segments_mastering_export_disabled_without_feature() {
+    async fn peaks_mastering_export_disabled_without_feature() {
         assert!(
             peaks("/x.mp4", |_| {})
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("feature_disabled")
-        );
-        assert!(
-            segments("/x.mp4", false, |_| {})
                 .await
                 .unwrap_err()
                 .to_string()
@@ -4536,7 +3661,7 @@ mod tests {
             output_folder_token: None,
             bitrate: None,
             bit_depth: None,
-            master_preset: None,
+            podcast_audio: false,
             use_intro: false,
             use_outro: false,
             gain_db: None,
@@ -4545,9 +3670,6 @@ mod tests {
             description: None,
             album: None,
             date: None,
-            vocal_chain_preset: None,
-            processing: None,
-            channel_repair: None,
             video_codec: None,
         };
         let engine = ExportEngine::new();
@@ -4672,366 +3794,6 @@ mod tests {
         assert!(delete_sidecar(&media, EditorSidecar::Meta));
         assert!(!delete_sidecar(&media, EditorSidecar::Meta));
         assert!(read_sidecar(&media, EditorSidecar::Meta).unwrap().is_none());
-    }
-
-    // ── Sermon-pick feedback (E8) ──────────────────────────────────────────────
-
-    fn feedback_segments() -> Vec<EditorSegment> {
-        let seg = |start: f64, end: f64, kind: &str| EditorSegment {
-            start,
-            end,
-            duration: end - start,
-            label: kind.to_string(),
-            kind: kind.to_string(),
-            confidence: Some(0.8),
-        };
-        vec![
-            seg(0.0, 300.0, "music"),
-            seg(300.0, 480.0, "sermon"), // the detector's pick — a reading
-            seg(480.0, 700.0, "music"),
-            seg(700.0, 2200.0, "speech"), // the actual message
-            seg(2200.0, 2400.0, "silence"),
-        ]
-    }
-
-    fn pick_request(auto: Option<u32>, chosen: u32) -> EditorSermonPickRequest {
-        EditorSermonPickRequest {
-            segments: feedback_segments(),
-            candidate_indices: vec![1, 3],
-            auto_index: auto,
-            chosen_index: chosen,
-            duration_sec: 2400.0,
-        }
-    }
-
-    /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
-    /// modules' process-wide test lock.
-    ///
-    /// Every write here goes through `observe_feedback_change`, which feeds a
-    /// process-global accumulator. That is shared mutable state, and the tests
-    /// that assert on it (`telemetry::corrections`) take this same lock — so a feedback test running beside one of them would
-    /// otherwise add counts to a map another test is measuring. The lock also
-    /// leaves consent OFF for the duration, which makes both seams inert and
-    /// keeps THESE tests about the file rather than about telemetry.
-    ///
-    /// Bind the guard, do not discard it: `let (_dir, media, _telemetry) = …`.
-    /// A `_` binding would drop the lock immediately and reintroduce the race.
-    fn feedback_media() -> (
-        tempfile::TempDir,
-        String,
-        std::sync::MutexGuard<'static, ()>,
-    ) {
-        let lock = crate::telemetry::counters::test_lock();
-        let (dir, media) = tmp_media();
-        (dir, media, lock)
-    }
-
-    /// The acceptance gate for E8 phase A, as far as a test without a webview
-    /// can take it: correct the pick, throw the editor's memory away, ask again
-    /// with a freshly analysed segment list — and get the human's block back.
-    #[test]
-    fn a_correction_survives_the_editor_closing() {
-        let (_dir, media, _telemetry) = feedback_media();
-        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
-
-        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
-
-        let expected = std::path::Path::new(&media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json");
-        assert!(expected.exists(), "the record lands beside the recording");
-
-        // Reopen: detection returns its own answer (block 1 still wears the
-        // sermon label) and the stored correction points past it.
-        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
-    }
-
-    #[test]
-    fn re_picking_the_detectors_own_block_writes_nothing() {
-        let (_dir, media, _telemetry) = feedback_media();
-        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 1)));
-        let path = std::path::Path::new(&media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json");
-        assert!(!path.exists(), "agreement is not a correction");
-    }
-
-    #[test]
-    fn going_back_to_the_detectors_block_removes_the_record() {
-        let (_dir, media, _telemetry) = feedback_media();
-        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
-        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
-        assert_eq!(sermon_pick_index(&media, &feedback_segments()), None);
-        // Nothing left to say → no empty file left behind either.
-        let path = std::path::Path::new(&media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json");
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn cycling_through_the_dropdown_leaves_one_record() {
-        let (_dir, media, _telemetry) = feedback_media();
-        record_sermon_pick(&media, &pick_request(Some(1), 0));
-        record_sermon_pick(&media, &pick_request(Some(1), 2));
-        record_sermon_pick(&media, &pick_request(Some(1), 3));
-        let file: sundayrec_core::feedback::RecordingFeedback =
-            read_sidecar_typed(&media, EditorSidecar::Feedback).expect("the record is there");
-        assert_eq!(file.sermon_picks.len(), 1);
-        assert_eq!(file.sermon_picks[0].chosen.index, 3);
-    }
-
-    #[test]
-    fn the_record_carries_no_path_and_no_recording_name() {
-        let (_dir, media, _telemetry) = feedback_media();
-        record_sermon_pick(&media, &pick_request(Some(1), 3));
-        let path = std::path::Path::new(&media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json");
-        let raw = std::fs::read_to_string(&path).unwrap();
-        // The one thing a sidecar is uniquely tempted to write down is where it
-        // came from. It must not be in there — not the path, not the stem.
-        assert!(!raw.contains("service"), "the recording's name leaked");
-        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
-    }
-
-    #[test]
-    fn a_feedback_file_we_cannot_read_is_left_alone() {
-        let (_dir, media, _telemetry) = feedback_media();
-        let path = std::path::Path::new(&media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json");
-        // A record from a schema this build does not know. Overwriting it would
-        // destroy corrections a person made by hand.
-        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
-        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 3)));
-        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
-        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
-    }
-
-    #[test]
-    fn an_atomic_write_leaves_no_temp_file_behind() {
-        let (_dir, media, _telemetry) = feedback_media();
-        record_sermon_pick(&media, &pick_request(Some(1), 3));
-        let dir = std::path::Path::new(&media).parent().unwrap();
-        let leftovers: Vec<String> = std::fs::read_dir(dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| sundayrec_core::editor::is_editor_temp_name(n))
-            .collect();
-        assert!(leftovers.is_empty(), "{leftovers:?}");
-    }
-
-    // ── The two later signals into the same file (E8 integration) ─────────────
-
-    fn feedback_path(media: &str) -> std::path::PathBuf {
-        std::path::Path::new(media)
-            .parent()
-            .unwrap()
-            .join("service.feedback.json")
-    }
-
-    fn stored(media: &str) -> sundayrec_core::feedback::RecordingFeedback {
-        read_sidecar_typed(media, EditorSidecar::Feedback).expect("the record is there")
-    }
-
-    fn deltas(start: f64, end: f64) -> sundayrec_core::trim_feedback::TrimDeltas {
-        sundayrec_core::trim_feedback::TrimDeltas {
-            start_delta_sec: start,
-            end_delta_sec: end,
-        }
-    }
-
-    /// Rewrite the sidecar as the build that only knew about sermon picks left
-    /// it: the later collections ABSENT, not empty.
-    fn strip_to_phase_a_shape(media: &str) {
-        let path = feedback_path(media);
-        let mut json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let obj = json.as_object_mut().unwrap();
-        obj.remove("trimAdjustments");
-        obj.remove("shadowObservations");
-        std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
-    }
-
-    #[test]
-    fn a_trim_adjustment_lands_beside_the_recording() {
-        use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media, _telemetry) = feedback_media();
-        assert_eq!(
-            record_trim_adjustment(&media, deltas(30.0, -50.0)),
-            Some(TrimOutcome::Recorded)
-        );
-        let file = stored(&media);
-        assert_eq!(file.trim_adjustments.len(), 1);
-        assert_eq!(file.trim_adjustments[0].deltas.start_delta_sec, 30.0);
-        assert_eq!(file.trim_adjustments[0].deltas.end_delta_sec, -50.0);
-    }
-
-    #[test]
-    fn publishing_the_proposal_untouched_creates_no_file() {
-        use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media, _telemetry) = feedback_media();
-        assert_eq!(
-            record_trim_adjustment(&media, deltas(0.0, 0.0)),
-            Some(TrimOutcome::NotAnAdjustment)
-        );
-        assert!(!feedback_path(&media).exists());
-    }
-
-    /// The failure this guards is the one nobody would notice: an existing
-    /// correction is destroyed by the next write, on a file the seam happily
-    /// read but only half understood.
-    #[test]
-    fn a_file_written_before_the_later_signals_keeps_its_sermon_pick() {
-        let (_dir, media, _telemetry) = feedback_media();
-        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
-        strip_to_phase_a_shape(&media);
-
-        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
-
-        let file = stored(&media);
-        assert_eq!(
-            file.sermon_picks.len(),
-            1,
-            "the human's correction was lost"
-        );
-        assert_eq!(file.sermon_picks[0].chosen.index, 3);
-        assert_eq!(file.trim_adjustments.len(), 1);
-        // And the reopen path still answers with the human's block.
-        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
-    }
-
-    #[test]
-    fn a_withdrawn_sermon_pick_leaves_a_file_that_still_holds_a_trim() {
-        let (_dir, media, _telemetry) = feedback_media();
-        record_sermon_pick(&media, &pick_request(Some(1), 3));
-        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
-        // Back to the detector's block: the sermon-pick record goes, but the
-        // trim adjustment is a separate signal the operator never touched.
-        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
-
-        assert!(feedback_path(&media).exists(), "the file was deleted whole");
-        let file = stored(&media);
-        assert!(file.sermon_picks.is_empty());
-        assert_eq!(file.trim_adjustments.len(), 1);
-    }
-
-    #[test]
-    fn a_withdrawn_trim_adjustment_takes_an_otherwise_empty_file_with_it() {
-        use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media, _telemetry) = feedback_media();
-        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
-        assert_eq!(
-            record_trim_adjustment(&media, deltas(0.0, 0.0)),
-            Some(TrimOutcome::Withdrawn)
-        );
-        assert!(
-            !feedback_path(&media).exists(),
-            "nothing left to say — no empty assertion left behind either"
-        );
-    }
-
-    #[test]
-    fn the_later_signals_also_refuse_a_file_they_cannot_read() {
-        let (_dir, media, _telemetry) = feedback_media();
-        let path = feedback_path(&media);
-        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
-
-        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
-        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
-    }
-
-    /// Every writer of `<stem>.feedback.json` must take [`FEEDBACK_LOCK`].
-    ///
-    /// These seams are genuinely concurrent in the app: shadow mode writes
-    /// from a DETACHED task that is still running minutes after the editor
-    /// opened, while the sermon dropdown (and, once it has a writer again, the
-    /// trim seam) fold their own records.
-    /// A read-modify-write of one file from two places at once loses whichever
-    /// write lands first, and it loses it in the quietest possible way — the
-    /// second writer's record is simply not in the file, and every function
-    /// involved returned `true`.
-    ///
-    /// Asserted on the OUTCOME rather than by inspecting the lock, so a future
-    /// writer that forgets the guard fails here instead of in someone's service.
-    #[test]
-    fn concurrent_writers_do_not_lose_each_others_records() {
-        use sundayrec_core::feedback::build_shadow_observation;
-        let (_dir, media, _telemetry) = feedback_media();
-
-        const ROUNDS: usize = 12;
-        std::thread::scope(|s| {
-            // The sermon dropdown, flipping between two blocks.
-            s.spawn(|| {
-                for i in 0..ROUNDS {
-                    let chosen = if i % 2 == 0 { 3 } else { 2 };
-                    assert!(record_sermon_pick(&media, &pick_request(Some(1), chosen)));
-                }
-            });
-            // The trim seam, replacing its one record over and over.
-            s.spawn(|| {
-                for i in 0..ROUNDS {
-                    assert!(record_trim_adjustment(&media, deltas(i as f64 + 1.0, 0.0)).is_some());
-                }
-            });
-            // Shadow mode, on its detached task.
-            s.spawn(|| {
-                for _ in 0..ROUNDS {
-                    let observation = build_shadow_observation(
-                        shadow_comparison_fixture(),
-                        sundayrec_core::shadow::ShadowSettings::default(),
-                        "0.11.0",
-                    );
-                    assert!(record_shadow_observation(&media, observation));
-                }
-            });
-        });
-
-        let file = stored(&media);
-        assert_eq!(
-            file.sermon_picks.len(),
-            1,
-            "one detector baseline, one correction — the settled one"
-        );
-        assert_eq!(
-            file.sermon_picks[0].chosen.index, 2,
-            "the last pick (ROUNDS is even, so the final chosen block is 2) must be the one on file"
-        );
-        assert_eq!(
-            file.trim_adjustments.len(),
-            1,
-            "one app version, one adjustment"
-        );
-        assert_eq!(
-            file.shadow_observations.len(),
-            1,
-            "one (version, settings) baseline, one observation"
-        );
-    }
-
-    /// A minimal, finite [`ShadowComparison`] — the shape only, so the lock test
-    /// needs no model and no PCM.
-    fn shadow_comparison_fixture() -> sundayrec_core::shadow::ShadowComparison {
-        sundayrec_core::shadow::ShadowComparison {
-            recording_duration_sec: 2400.0,
-            heuristic_segment_count: 5,
-            shadow_segment_count: 5,
-            speech_agreed_sec: 1500.0,
-            speech_only_heuristic_sec: 0.0,
-            speech_only_shadow_sec: 0.0,
-            heuristic_sermon: None,
-            shadow_sermon: None,
-            sermon_deltas: None,
-            heuristic_attention: Vec::new(),
-            shadow_attention: Vec::new(),
-        }
     }
 
     #[test]
@@ -5532,7 +4294,7 @@ mod tests {
             output_folder_token: None,
             bitrate: None,
             bit_depth: None,
-            master_preset: None,
+            podcast_audio: false,
             use_intro: false,
             use_outro: false,
             gain_db: None,
@@ -5541,9 +4303,6 @@ mod tests {
             description: None,
             album: None,
             date: None,
-            vocal_chain_preset: None,
-            processing: None,
-            channel_repair: None,
             video_codec: None,
         };
         let err = {
@@ -5581,7 +4340,7 @@ mod tests {
     // ── T12: the "Normalize" gain must lead the chain, not trail it ──────────────
     //
     // `build_pre_chain` decides the one thing T12 fixed: the export-level
-    // gain's position relative to the vocal chain. Pure — no ffmpeg — asserted
+    // gain's position relative to the rest of the chain. Pure — no ffmpeg — asserted
     // on the returned stages and their order, not on rendered audio.
 
     #[cfg(feature = "editor")]
@@ -5591,25 +4350,22 @@ mod tests {
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_chain_puts_gain_before_the_chains_limiter() {
-        let mut chain = sundayrec_core::processing::VocalChain::default();
-        chain.limiter.enabled = true;
-        let c = build_pre_chain(Some(chain), Some(6.0), None, None).unwrap();
-        let ids = stage_ids(&c);
-        let gain_at = ids.iter().position(|f| f == "amplify").expect("gain stage");
-        let limiter_at = ids.iter().position(|f| f == "limiter").expect("limiter");
-        assert!(
-            gain_at < limiter_at,
-            "T12: gain must run BEFORE the chain's limiter, not after (stages: {ids:?})"
-        );
-        assert_eq!(c.stages()[gain_at].param("gain"), Some(6.0));
+    fn build_pre_chain_puts_the_gain_first() {
+        let preset = sundayrec_core::mastering::podcast_preset();
+        // With no preset the gain leads (and is the only stage here).
+        let c = build_pre_chain(Some(6.0), None, None).unwrap();
+        assert_eq!(stage_ids(&c), ["amplify"]);
+        assert_eq!(c.stages()[0].param("gain"), Some(6.0));
+        // The preset owns the level: no gain stage.
+        let c = build_pre_chain(Some(6.0), Some(&preset), None).unwrap();
+        assert!(!stage_ids(&c).iter().any(|f| f == "amplify"));
     }
 
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_skips_gain_when_a_preset_is_active() {
-        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-        let c = build_pre_chain(None, Some(6.0), Some(&preset), None).unwrap();
+        let preset = sundayrec_core::mastering::podcast_preset();
+        let c = build_pre_chain(Some(6.0), Some(&preset), None).unwrap();
         assert_eq!(
             c,
             sundayrec_core::chain::Chain::from_master_preset(&preset).unwrap(),
@@ -5620,69 +4376,22 @@ mod tests {
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_skips_zero_and_nonfinite_gain() {
+        assert!(build_pre_chain(Some(0.0), None, None).unwrap().is_empty());
         assert!(
-            build_pre_chain(None, Some(0.0), None, None)
+            build_pre_chain(Some(f64::NAN), None, None)
                 .unwrap()
                 .is_empty()
         );
-        assert!(
-            build_pre_chain(None, Some(f64::NAN), None, None)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(build_pre_chain(None, None, None, None).unwrap().is_empty());
+        assert!(build_pre_chain(None, None, None).unwrap().is_empty());
     }
 
     /// M2R #3: the windowed preview and the export decide the chain from the same choice. For
-    /// each thing the sound step can send — a profile with no mixer, the mixer, a dead channel,
-    /// «Tale» with cleaning — both request types give the same parameters and, built, the same
-    /// chain. Before this the preview ignored the mixer (it played `speech-clear` with «Tale»'s
-    /// cleaning while the export carried the mixer) and the channel repair (one ear).
+    /// each thing the sound step can send — «Podkastklar lyd» off, on, on with cleaning — both
+    /// request types give the same parameters and, built, the same chain.
     #[cfg(feature = "editor")]
     #[test]
     fn preview_and_export_get_identical_chain_params() {
         use sundayrec_core::tale::{Mains, SpeechClean};
-        struct Case {
-            name: &'static str,
-            preset: Option<&'static str>,
-            processing: Option<EditorProcessing>,
-            repair: Option<EditorChannelRepair>,
-        }
-        let mixer = EditorProcessing {
-            denoise_enabled: true,
-            ..EditorProcessing::default()
-        };
-        let dead = EditorChannelRepair {
-            mode: "duplicateLeft".into(),
-            left_db: 0.0,
-            right_db: 0.0,
-        };
-        let cases = [
-            Case {
-                name: "preset, no mixer",
-                preset: Some("music-speech"),
-                processing: None,
-                repair: None,
-            },
-            Case {
-                name: "mixer on (no preset)",
-                preset: None,
-                processing: Some(mixer),
-                repair: None,
-            },
-            Case {
-                name: "dead channel",
-                preset: Some("speech-clear"),
-                processing: None,
-                repair: Some(dead.clone()),
-            },
-            Case {
-                name: "Tale with cleaning",
-                preset: Some("speech-clear"),
-                processing: None,
-                repair: None,
-            },
-        ];
         let clean = SpeechClean {
             hum: Some(Mains::Hz50),
             denoise: true,
@@ -5690,64 +4399,44 @@ mod tests {
             declick: false,
             floor_db: -60.0,
         };
-        for c in cases {
+        for on in [false, true] {
             let mut export = export_request_for_params();
-            export.master_preset = c.preset.map(str::to_string);
-            export.processing = c.processing.clone();
-            export.channel_repair = c.repair.clone();
+            export.podcast_audio = on;
             let preview = EditorMasterPreviewRequest {
                 source_token: "t".into(),
-                preset_id: c.preset.map(str::to_string),
+                podcast_audio: on,
                 start_sec: 0.0,
                 duration_sec: 20.0,
-                processing: c.processing,
-                channel_repair: c.repair,
                 cut_regions: Vec::new(),
                 full_length_sec: None,
             };
-            let e = export.audio_params(Some(2)).unwrap();
-            let p = preview.audio_params(Some(2)).unwrap();
-            assert_eq!(e, p, "{}: the parameters differ", c.name);
+            let e = export.audio_params();
+            let p = preview.audio_params();
+            assert_eq!(e, p, "podcast_audio={on}: the parameters differ");
             let build = |a: &AudioParams| {
                 let clean = a.tale.then_some(&clean);
-                build_pre_chain(a.chain.clone(), a.gain_db, a.preset.as_ref(), clean).unwrap()
+                build_pre_chain(a.gain_db, a.preset.as_ref(), clean).unwrap()
             };
-            assert_eq!(build(&e), build(&p), "{}: the chains differ", c.name);
+            assert_eq!(
+                build(&e),
+                build(&p),
+                "podcast_audio={on}: the chains differ"
+            );
         }
 
         // …and each carries what it should, so the test cannot pass by both being empty.
         let mut ex = export_request_for_params();
-        ex.processing = Some(EditorProcessing::default());
-        let a = ex.audio_params(Some(2)).unwrap();
-        assert!(a.preset.is_none() && !a.tale && a.chain.is_some());
-        let mut ex = export_request_for_params();
-        ex.master_preset = Some("speech-clear".into());
-        ex.channel_repair = Some(dead);
-        let a = ex.audio_params(Some(2)).unwrap();
-        assert!(a.tale, "speech-clear on its own is «Tale»");
-        assert_eq!(
-            a.chain.unwrap().channel_repair,
-            sundayrec_core::processing::ChannelRepair::DuplicateLeft
+        let a = ex.audio_params();
+        assert!(a.preset.is_none() && !a.tale, "off is the file as recorded");
+        assert!(
+            build_pre_chain(a.gain_db, a.preset.as_ref(), None)
+                .unwrap()
+                .is_empty()
         );
-        // The mono guard is shared too: a stereo-only repair on a mono file is refused by both.
-        let mut ex = export_request_for_params();
-        ex.channel_repair = Some(EditorChannelRepair {
-            mode: "duplicateRight".into(),
-            left_db: 0.0,
-            right_db: 0.0,
-        });
-        let pv = EditorMasterPreviewRequest {
-            source_token: "t".into(),
-            preset_id: None,
-            start_sec: 0.0,
-            duration_sec: 20.0,
-            processing: None,
-            channel_repair: ex.channel_repair.clone(),
-            cut_regions: Vec::new(),
-            full_length_sec: None,
-        };
-        assert!(ex.audio_params(Some(1)).is_err());
-        assert!(pv.audio_params(Some(1)).is_err());
+        ex.podcast_audio = true;
+        let a = ex.audio_params();
+        assert!(a.tale, "on is «Tale» plus the speech-clear preset");
+        assert_eq!(a.preset.unwrap().id, "speech-clear");
     }
 
     /// A bare export request for the parameter tests (nothing but the fields they set).
@@ -5761,7 +4450,7 @@ mod tests {
             output_folder_token: None,
             bitrate: None,
             bit_depth: None,
-            master_preset: None,
+            podcast_audio: false,
             use_intro: false,
             use_outro: false,
             gain_db: None,
@@ -5770,30 +4459,47 @@ mod tests {
             description: None,
             album: None,
             date: None,
-            vocal_chain_preset: None,
-            processing: None,
-            channel_repair: None,
             video_codec: None,
         }
     }
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_chain_orders_gain_then_chain_then_preset() {
+    fn build_pre_chain_orders_gain_then_preset() {
         use sundayrec_core::chain::Chain;
-        let mut chain = sundayrec_core::processing::VocalChain::default();
-        chain.compressor.enabled = false;
-        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-        let vocal = Chain::from_vocal_chain(&chain);
-        // No preset: gain leads, chain follows.
-        let no_preset = build_pre_chain(Some(chain.clone()), Some(3.0), None, None).unwrap();
+        let preset = sundayrec_core::mastering::podcast_preset();
+        // No preset: gain leads.
+        let no_preset = build_pre_chain(Some(3.0), None, None).unwrap();
         assert_eq!(no_preset.stages()[0].id(), "amplify");
-        assert_eq!(&no_preset.stages()[1..], vocal.stages());
-        // With a preset: gain is skipped, chain still runs, preset trails.
-        let with_preset =
-            build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset), None).unwrap();
-        let want = vocal.then(Chain::from_master_preset(&preset).unwrap());
-        assert_eq!(with_preset, want);
+        // With a preset: gain is skipped, the preset's chain runs.
+        let with_preset = build_pre_chain(Some(3.0), Some(&preset), None).unwrap();
+        assert_eq!(with_preset, Chain::from_master_preset(&preset).unwrap());
+    }
+
+    /// The dead-channel warning names the silent side, and nothing for mono, a healthy pair or
+    /// a recording with no samples.
+    #[test]
+    fn the_dead_side_is_named_from_measured_levels() {
+        use sundayrec_core::levels::ChannelLevels;
+        let lv = |pl: f64, pr: Option<f64>, rl: f64, rr: Option<f64>| {
+            Some(ChannelLevels {
+                peak_db_left: pl,
+                peak_db_right: pr,
+                rms_db_left: Some(rl),
+                rms_db_right: rr,
+            })
+        };
+        assert_eq!(
+            dead_side_of(lv(-70.0, Some(-6.0), -80.0, Some(-24.0))).as_deref(),
+            Some("left")
+        );
+        assert_eq!(
+            dead_side_of(lv(-6.0, Some(-90.0), -24.0, Some(-100.0))).as_deref(),
+            Some("right")
+        );
+        assert_eq!(dead_side_of(lv(-6.0, Some(-8.0), -24.0, Some(-26.0))), None);
+        assert_eq!(dead_side_of(lv(-6.0, None, -24.0, None)), None, "mono");
+        assert_eq!(dead_side_of(None), None);
     }
 
     /// B3a: what the analysis found goes between the channel repair and the preset's own chain,
@@ -5828,14 +4534,10 @@ mod tests {
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_chain_puts_the_tale_cleaning_between_the_repair_and_the_preset() {
+    fn build_pre_chain_puts_the_tale_cleaning_in_front_of_the_preset() {
         use sundayrec_core::chain::Chain;
         use sundayrec_core::tale::{Mains, SpeechClean};
-        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-        let mut repair = sundayrec_core::processing::VocalChain::default();
-        repair.highpass.enabled = false;
-        repair.compressor.enabled = false;
-        repair.channel_repair = sundayrec_core::processing::ChannelRepair::SwapLr;
+        let preset = sundayrec_core::mastering::podcast_preset();
         let clean = SpeechClean {
             hum: Some(Mains::Hz50),
             denoise: true,
@@ -5843,11 +4545,11 @@ mod tests {
             declick: false,
             floor_db: -60.0,
         };
-        let c = build_pre_chain(Some(repair.clone()), None, Some(&preset), Some(&clean)).unwrap();
+        let c = build_pre_chain(None, Some(&preset), Some(&clean)).unwrap();
         let ids: Vec<&str> = c.stages().iter().map(|s| s.id()).collect();
-        assert_eq!(&ids[..3], ["swap_channels", "dehum", "denoise"]);
+        assert_eq!(&ids[..2], ["dehum", "denoise"]);
         assert_eq!(
-            &c.stages()[3..],
+            &c.stages()[2..],
             Chain::from_master_preset(&preset).unwrap().stages()
         );
         // Nothing found: the chain is exactly what it was.
@@ -5859,50 +4561,12 @@ mod tests {
             floor_db: -60.0,
         };
         assert_eq!(
-            build_pre_chain(Some(repair.clone()), None, Some(&preset), Some(&none)).unwrap(),
-            build_pre_chain(Some(repair), None, Some(&preset), None).unwrap()
+            build_pre_chain(None, Some(&preset), Some(&none)).unwrap(),
+            build_pre_chain(None, Some(&preset), None).unwrap()
         );
     }
 
-    /// B2b: the mixer and the presets are ONE chain. The mixer's request type converts to the
-    /// core `VocalChain` and from there to the same `Chain` the presets give; a mixer left on
-    /// its defaults is exactly "voice-light", and a mixer with the stages switched on builds the
-    /// stages in the canonical order, through the one builder the export runs.
-    #[cfg(feature = "editor")]
-    #[test]
-    fn the_mixer_maps_to_the_same_chain_as_the_presets() {
-        use sundayrec_core::chain::Chain;
-        let light = sundayrec_core::processing::vocal_chain_preset_by_id("voice-light", None)
-            .unwrap()
-            .chain;
-        let from_mixer = EditorProcessing::default().to_core();
-        let export_chain = build_pre_chain(Some(from_mixer.clone()), None, None, None).unwrap();
-        assert_eq!(export_chain, Chain::from_vocal_chain(&light));
-
-        let mixer = EditorProcessing {
-            denoise_enabled: true,
-            dereverb_enabled: true,
-            gate_enabled: true,
-            deesser_enabled: true,
-            limiter_enabled: true,
-            ..EditorProcessing::default()
-        };
-        let c = build_pre_chain(Some(mixer.to_core()), None, None, None).unwrap();
-        assert_eq!(
-            stage_ids(&c),
-            [
-                "parametric_eq",
-                "denoise",
-                "dereverb",
-                "gate",
-                "compressor",
-                "deesser",
-                "limiter"
-            ]
-        );
-    }
-
-    // ── derived caches (P3): the peaks + segments sidecars ───────────────────────
+    // ── derived caches (P3): the peaks sidecar ───────────────────────
     //
     // The cache KEY is (format version, file size, file mtime). These exercise
     // the read/write seam + every miss reason on a real filesystem; the
@@ -6080,55 +4744,10 @@ mod tests {
 
     #[cfg(feature = "editor")]
     #[test]
-    fn segments_answers_from_the_cache_without_touching_ffmpeg() {
-        let (_dir, media) = tmp_media();
-        let (size_bytes, mtime_ms) = stat_of(&media);
-        let sentinel = EditorSegment {
-            start: 12.0,
-            end: 34.0,
-            duration: 22.0,
-            label: "Preken".into(),
-            kind: "sermon".into(),
-            confidence: Some(0.77),
-        };
-        put_cache(
-            &media,
-            EditorSidecar::Segments,
-            &SegmentsCache {
-                version: EDITOR_CACHE_VERSION,
-                size_bytes,
-                mtime_ms,
-                segments: vec![sentinel.clone()],
-            },
-        );
-
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let got = rt
-            .block_on(segments(&media, false, |_| {}))
-            .expect("a cache hit must not need ffmpeg");
-        assert_eq!(got, (vec![sentinel], None));
-
-        // `force` is what the «Analyser opptak» button sends: it must IGNORE the
-        // cache, which on this undecodable file means it fails loudly rather than
-        // quietly handing back the cached answer.
-        assert!(
-            rt.block_on(segments(&media, true, |_| {})).is_err(),
-            "force must bypass the cache and actually re-run the analysis"
-        );
-    }
-
-    #[cfg(feature = "editor")]
-    #[test]
     fn cache_reads_are_missing_file_errors_not_silent_empties() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         assert!(
             rt.block_on(peaks("/no/such/file.wav", |_| {}))
-                .unwrap_err()
-                .to_string()
-                .contains("file_not_found")
-        );
-        assert!(
-            rt.block_on(segments("/no/such/file.wav", false, |_| {}))
                 .unwrap_err()
                 .to_string()
                 .contains("file_not_found")
@@ -6411,40 +5030,7 @@ mod tests {
             src.to_string_lossy().into_owned()
         }
 
-        /// Generate a 4 s audio-only wav in `dir`: 2 s of digital silence, then
-        /// 2 s of a 440 Hz tone. Gives the content classifier both of the things
-        /// it distinguishes, so the detection pass has real work to do.
-        fn lavfi_silence_then_tone(ffmpeg: &std::path::Path, dir: &std::path::Path) -> String {
-            let src = dir.join("silence_tone.wav");
-            let r#gen = std::process::Command::new(ffmpeg)
-                .args([
-                    "-hide_banner",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "anullsrc=r=16000:cl=mono:d=2",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "sine=frequency=440:sample_rate=16000:duration=2",
-                    "-filter_complex",
-                    "[0:a][1:a]concat=n=2:v=0:a=1[out]",
-                    "-map",
-                    "[out]",
-                    "-y",
-                ])
-                .arg(&src)
-                .output()
-                .expect("ffmpeg should run to generate the silence+tone source");
-            assert!(
-                r#gen.status.success(),
-                "silence+tone generation failed: {}",
-                String::from_utf8_lossy(&r#gen.stderr)
-            );
-            src.to_string_lossy().into_owned()
-        }
-
-        /// The peaks/segments sidecar beside a media path.
+        /// The peaks sidecar beside a media path.
         fn sidecar_of(media: &str, suffix: &str) -> std::path::PathBuf {
             let p = std::path::Path::new(media);
             p.parent().unwrap().join(format!(
@@ -6597,130 +5183,10 @@ mod tests {
             eprintln!("editor peaks smoke: second open served the sidecar verbatim");
         }
 
-        /// Segments: compute → cache → serve from cache → `force` recomputes.
-        #[test]
-        fn segments_cache_round_trip_on_silence_and_tone_or_skips() {
-            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
-            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
-            // (ci.yml's `check` job), where a missing sidecar must panic instead.
-            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = lavfi_silence_then_tone(&ffmpeg, dir.path());
-            let rt = tokio::runtime::Runtime::new().unwrap();
-
-            let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
-            let sink = ticks.clone();
-            let (computed, analysis) = {
-                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(segments(&src, false, move |f| sink.lock().unwrap().push(f)));
-                unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
-                r.expect("detection should run on the silence+tone source")
-            };
-            assert_eq!(
-                ticks.lock().unwrap().last().copied(),
-                Some(1.0),
-                "«Analyser opptak» must end on a full bar"
-            );
-            // A pass that RAN carries the whole detection the review queue is
-            // built from — with what `EditorSegment` drops: `avg_rms_db`, the
-            // strict pick, and the attention reasons.
-            let detection = analysis.expect("a fresh pass must expose its detection");
-            assert_eq!(detection.segments.len(), computed.len());
-            assert!(
-                detection.segments.iter().all(|s| s.confidence.is_finite()),
-                "an unusable confidence would silently mis-flag every episode"
-            );
-            // The editor and the review queue now read ONE detection, so the
-            // block the editor marked must be the block the detector offered —
-            // the disagreement E9 removed cannot come back through this path.
-            match (
-                detection.offered,
-                computed.iter().find(|s| s.kind == "sermon"),
-            ) {
-                (Some(o), Some(marked)) => {
-                    assert!((o.start_sec - marked.start).abs() < 1e-9);
-                    assert!((o.end_sec - marked.end).abs() < 1e-9);
-                }
-                (None, None) => {}
-                (o, m) => panic!("editor and detector disagree: offered={o:?} marked={m:?}"),
-            }
-
-            let cache_path = sidecar_of(&src, ".segments.json");
-            assert!(
-                cache_path.exists(),
-                "expected a segments cache at {}",
-                cache_path.display()
-            );
-            let cached: SegmentsCache =
-                serde_json::from_str(&std::fs::read_to_string(&cache_path).unwrap()).unwrap();
-            assert_eq!(cached.segments, computed);
-
-            // Poison it, then prove the non-forced path serves the file …
-            let sentinel = EditorSegment {
-                start: 0.0,
-                end: 1.0,
-                duration: 1.0,
-                label: "sentinel".into(),
-                kind: "speech".into(),
-                confidence: Some(0.5),
-            };
-            let poisoned = SegmentsCache {
-                segments: vec![sentinel.clone()],
-                ..cached
-            };
-            std::fs::write(&cache_path, serde_json::to_string(&poisoned).unwrap()).unwrap();
-            let (served, no_analysis) = rt.block_on(segments(&src, false, |_| {})).unwrap();
-            assert_eq!(
-                served,
-                vec![sentinel],
-                "the automatic run must take the cached answer"
-            );
-            // The cache cannot carry `confidence`, so a cache hit must say it
-            // has no analysis rather than hand back a reconstructed one — the
-            // review queue would otherwise be built on invented numbers.
-            assert!(
-                no_analysis.is_none(),
-                "a cache hit has no analysis to offer"
-            );
-
-            // … and that «Analyser opptak» (force) redoes the work and refreshes
-            // the cache with the real result.
-            let forced = {
-                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(segments(&src, true, |_| {}));
-                unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
-                r.expect("a forced re-analysis should run")
-            };
-            assert_eq!(
-                forced.0, computed,
-                "force must recompute, not read the cache"
-            );
-            assert!(
-                forced.1.is_some(),
-                "a forced pass ran, so it too must offer its analysis"
-            );
-            let refreshed: SegmentsCache =
-                serde_json::from_str(&std::fs::read_to_string(&cache_path).unwrap()).unwrap();
-            assert_eq!(
-                refreshed.segments, computed,
-                "a forced run still refreshes the cache for the next open"
-            );
-            eprintln!(
-                "editor segments smoke: {} segment(s), cache round-tripped + force recomputed",
-                computed.len()
-            );
-        }
-
         /// A request and the places the command layer resolved for it (the
         /// source, the jingles, the folder) — the two things `editor_export`
         /// hands the seam. Derefs to the request, so a test tunes its knobs
-        /// (`case.master_preset = …`) as before.
+        /// (`case.podcast_audio = …`) as before.
         pub(super) struct ExportCase {
             pub(super) req: EditorExportRequest,
             pub(super) inputs: ResolvedExport,
@@ -6764,7 +5230,7 @@ mod tests {
                 output_folder_token: None,
                 bitrate: Some(128),
                 bit_depth: None,
-                master_preset: None,
+                podcast_audio: false,
                 use_intro: false,
                 use_outro: false,
                 gain_db: None,
@@ -6773,9 +5239,6 @@ mod tests {
                 description: None,
                 album: None,
                 date: None,
-                vocal_chain_preset: None,
-                processing: None,
-                channel_repair: None,
                 video_codec: None,
             };
             ExportCase {
@@ -6812,7 +5275,7 @@ mod tests {
                 output_folder_token: None,
                 bitrate: None,
                 bit_depth: None,
-                master_preset: None,
+                podcast_audio: false,
                 use_intro: false,
                 use_outro: false,
                 gain_db: None,
@@ -6821,9 +5284,6 @@ mod tests {
                 description: None,
                 album: None,
                 date: None,
-                vocal_chain_preset: None,
-                processing: None,
-                channel_repair: None,
                 video_codec: None,
             };
             ExportCase {
@@ -7359,9 +5819,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dynamic.wav", 48_000, 12.0);
 
-            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
-                .unwrap()
-                .target_lufs;
+            let target = sundayrec_core::mastering::podcast_preset().target_lufs;
             // The fixture only proves anything while the file and the KEPT half
             // measure far apart — that gap is exactly the error the old pass-1
             // baked into every mastered export.
@@ -7383,7 +5841,7 @@ mod tests {
                 &[(6.0, 12.0)],
                 12.0,
             );
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
             // A normalize gain the export must IGNORE — the preset's level step owns the level.
             req.gain_db = Some(6.0);
 
@@ -7415,7 +5873,7 @@ mod tests {
             );
         }
 
-        /// B2b: an export with a vocal chain / a normalize gain and NO mastering preset used to
+        /// B2b: an export with a normalize gain and NO mastering preset used to
         /// hand ffmpeg a filter string. It now goes through the Rust chain like the mastered
         /// one does: decode + cut in ffmpeg, the chain in Rust, encode. The normalize gain is the
         /// easiest stage to prove from the outside: +6 dB must come out as +6 dB, and the first
@@ -7492,11 +5950,7 @@ mod tests {
                 .collect();
             let mut req =
                 export_request(&file, &dir.path().to_string_lossy(), &format, &cuts, secs);
-            req.master_preset = match std::env::var("SUNDAYREC_BENCH_PRESET").as_deref() {
-                Ok("none") => None,
-                Ok(p) => Some(p.to_string()),
-                Err(_) => Some("speech-clear".into()),
-            };
+            req.podcast_audio = std::env::var("SUNDAYREC_BENCH_PRESET").as_deref() != Ok("none");
             let started = std::time::Instant::now();
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let took = started.elapsed();
@@ -7521,7 +5975,7 @@ mod tests {
         //
         // Landing on the target (above) says nothing about HOW. A rider that reaches
         // −16 LUFS by moving the level in short steps compresses, which is the one thing
-        // `music-speech`'s "Bevarer dynamikk" promises not to do, and no string test can
+        // the recipe promises not to do, and no string test can
         // see it. Since B1b the level is a plain linear gain (plus a limiter only for the
         // rare peak), measured in Rust; these two run the real bundled ffmpeg over
         // material chosen to make each half of that claim visible, and read the answer
@@ -7540,7 +5994,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
 
-            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+            let preset = sundayrec_core::mastering::podcast_preset();
             // The fixture only proves anything while its range is wide: a gain rider would
             // have squeezed it.
             let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
@@ -7553,7 +6007,7 @@ mod tests {
             );
 
             let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 20.0);
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let out = result.expect("a mastered export should succeed");
 
@@ -7605,7 +6059,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let src = lavfi_peaky_tone(&ffmpeg, dir.path(), "peaky.wav", 12.0);
 
-            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+            let preset = sundayrec_core::mastering::podcast_preset();
             // The fixture only proves anything while the gain the target implies does NOT
             // fit under the ceiling.
             let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
@@ -7618,7 +6072,7 @@ mod tests {
             );
 
             let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 12.0);
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let out = result.expect("a mastered export should succeed");
 
@@ -7828,9 +6282,7 @@ mod tests {
         }
 
         /// THE claim of B4a: opening a recording and asking everything the editor asks (the
-        /// waveform, the sermon search, the channel diagnosis, the one-click vocal chain, «Tale»'s
-        /// sentence and its decision) reads the file ONCE. Before: four reads (waveform, search,
-        /// `astats`, «Tale»).
+        /// waveform, «Tale»'s sentence and its decision) reads the file ONCE.
         #[test]
         fn opening_a_recording_reads_it_once_for_every_consumer_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
@@ -7851,28 +6303,13 @@ mod tests {
                         pk.peaks.len()
                     );
                     assert_eq!(pk.sample_rate, 8000);
-                    let (segs, analysis) = segments(&src, false, |_| {}).await.expect("segments");
-                    assert!(!segs.is_empty());
-                    assert!(
-                        analysis.is_some(),
-                        "the first ask after the read that ran the search gets the analysis behind it"
-                    );
-                    let diag = diagnose_channels(&src).await.expect("diagnosis");
-                    assert!(
-                        diag.peak_right_db.is_some_and(|r| r < diag.peak_left_db - 3.0),
-                        "{diag:?}"
-                    );
-                    let auto = auto_process(&src).await.expect("auto process");
-                    assert_eq!(auto.diagnosis, diag, "one measurement behind both");
                     let said = tale_said(&src).await.expect("sentence");
-                    assert!(said.analysed && said.said.contains(&"hum".to_string()), "{said:?}");
+                    assert!(
+                        said.analysed && said.said.contains(&"hum".to_string()),
+                        "{said:?}"
+                    );
                     let clean = tale_clean_for(&engine, &src).await.unwrap().unwrap();
                     assert_eq!(clean.hum, Some(sundayrec_core::tale::Mains::Hz50));
-                    // A second ask for the segments is a cache hit in all but name: no second
-                    // analysis to hand out, and no second read.
-                    let (again, none) = segments(&src, false, |_| {}).await.expect("again");
-                    assert_eq!(again, segs);
-                    assert!(none.is_none());
                     let pk2 = peaks(&src, |_| {}).await.expect("peaks again");
                     assert_eq!(pk2.peaks.len(), pk.peaks.len());
                 });
@@ -7898,18 +6335,12 @@ mod tests {
             with_sidecars(&ffmpeg, &ffprobe, |rt| {
                 rt.block_on(async {
                     let engine = ExportEngine::new();
-                    let (pk, seg, diag, auto, said, clean) = tokio::join!(
+                    let (pk, said, clean) = tokio::join!(
                         peaks(&src, |_| {}),
-                        segments(&src, false, |_| {}),
-                        diagnose_channels(&src),
-                        auto_process(&src),
                         tale_said(&src),
                         tale_clean_for(&engine, &src),
                     );
                     pk.expect("peaks");
-                    seg.expect("segments");
-                    diag.expect("diagnosis");
-                    auto.expect("auto process");
                     assert!(said.expect("sentence").analysed);
                     assert!(clean.unwrap().is_some());
                 });
@@ -7918,10 +6349,9 @@ mod tests {
         }
 
         /// A warm sidecar still means no read for what it answers; what is not on disk (the
-        /// channel levels and «Tale»'s decision) costs ONE read together, not one each. And the
-        /// «Analyser opptak» button (`force`) really starts the analysis again.
+        /// channel levels and «Tale»'s decision) costs ONE read together, not one each.
         #[test]
-        fn sidecars_answer_themselves_and_force_reads_again_or_skips() {
+        fn sidecars_answer_themselves_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -7933,72 +6363,19 @@ mod tests {
             with_sidecars(&ffmpeg, &ffprobe, |rt| {
                 rt.block_on(async {
                     peaks(&src, |_| {}).await.expect("peaks");
-                    let (segs, first) = segments(&src, false, |_| {}).await.expect("segments");
-                    assert!(first.is_some());
                     assert_eq!(analysis_decodes_of(&src), 1);
 
                     // A new process: the book is empty, the sidecars are on disk.
                     open::OPEN_BOOK.forget(&key);
                     let pk = peaks(&src, |_| {}).await.expect("warm peaks");
                     assert!(!pk.peaks.is_empty());
-                    let (warm, none) = segments(&src, false, |_| {}).await.expect("warm segments");
-                    assert_eq!((warm, none.is_none()), (segs.clone(), true));
                     assert_eq!(analysis_decodes_of(&src), 1, "warm sidecars read nothing");
 
-                    // The sound step: the diagnosis, the vocal chain and «Tale» share one read.
-                    tokio::join!(diagnose_channels(&src), auto_process(&src), tale_said(&src))
-                        .0
-                        .expect("diagnosis");
+                    // The sound step: «Tale»'s sentence and decision share one read.
+                    tale_said(&src).await.expect("sentence");
                     assert_eq!(analysis_decodes_of(&src), 2);
-
-                    // force: the analysis is done again and the operator gets its analysis.
-                    let (forced, analysis) = segments(&src, true, |_| {}).await.expect("forced");
-                    assert!(analysis.is_some());
-                    assert_eq!(forced.len(), segs.len());
-                    assert_eq!(analysis_decodes_of(&src), 3);
                 });
             });
-        }
-
-        /// What ffmpeg's `astats=metadata=0` printed for a file, as the numbers the round measures:
-        /// per channel the `Peak level`, `RMS level` and `Noise floor` (dBFS), and the `Overall`
-        /// block's noise floor. A test-only reader: the app does not use `astats` any more, the
-        /// oracle below does, because it is a second, independent implementation.
-        struct AstatsSummary {
-            peak: [f64; 2],
-            rms: [f64; 2],
-            overall_floor: f64,
-        }
-
-        fn parse_astats_summary(stderr: &str) -> AstatsSummary {
-            let (mut peak, mut rms) = ([f64::NAN; 2], [f64::NAN; 2]);
-            let (mut channel, mut overall, mut overall_floor) = (0usize, false, f64::NAN);
-            for line in stderr.lines() {
-                let value = |marker: &str| {
-                    let tail = line.split_once(marker)?.1.trim();
-                    tail.split_whitespace().next()?.parse::<f64>().ok()
-                };
-                if line.contains("Channel:") {
-                    channel += 1;
-                } else if line.trim_end().ends_with("Overall") {
-                    overall = true;
-                } else if overall {
-                    if let Some(v) = value("Noise floor dB:") {
-                        overall_floor = v;
-                    }
-                } else if (1..=2).contains(&channel) {
-                    if let Some(v) = value("Peak level dB:") {
-                        peak[channel - 1] = v;
-                    } else if let Some(v) = value("RMS level dB:") {
-                        rms[channel - 1] = v;
-                    }
-                }
-            }
-            AstatsSummary {
-                peak,
-                rms,
-                overall_floor,
-            }
         }
 
         /// The round against ffmpeg itself, on the same file: ffmpeg's own resampler (`-ar 16000`),
@@ -8050,61 +6427,15 @@ mod tests {
             let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
             acc.push_bytes(&run(peaks_pipe_args(&src)).stdout);
             let old_peaks = acc.finish();
-            // 16 kHz mono s16le on stdout, ffmpeg's resampler.
-            let old_bytes = run(["-nostdin", "-hide_banner", "-i", &src, "-vn"]
-                .into_iter()
-                .chain(["-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
-                .map(String::from)
-                .collect())
-            .stdout;
-            let old_pcm: Vec<f32> = old_bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0)
-                .collect();
-            let old_detection = sundayrec_core::detect::analyse_pcm(
-                &old_pcm,
-                sundayrec_core::audio_analysis::SAMPLE_RATE,
-                sundayrec_core::audio_analysis::FRAME_MS,
-                &sundayrec_core::audio_analysis::HeuristicScorer,
-            );
-            let old_stats = String::from_utf8_lossy(
-                &run([
-                    "-nostdin",
-                    "-hide_banner",
-                    "-i",
-                    &src,
-                    "-af",
-                    "astats=metadata=0",
-                    "-f",
-                    "null",
-                    "-",
-                ]
-                .map(String::from)
-                .to_vec())
-                .stderr,
-            )
-            .into_owned();
-            let old = parse_astats_summary(&old_stats);
-            let old_floor = old.overall_floor;
-            assert!(
-                old.peak.iter().chain(&old.rms).all(|v| v.is_finite()),
-                "{old_stats}"
-            );
 
             // The new one.
             let new = with_sidecars(&ffmpeg, &ffprobe, |rt| {
                 rt.block_on(async {
                     let engine = ExportEngine::new();
-                    let opened = open::opened(&engine, &src, open::Search::Force, &|_| {})
-                        .await
-                        .expect("round");
-                    let detected = opened.detected().await.unwrap().expect("search");
-                    (opened, detected)
+                    open::opened(&engine, &src, &|_| {}).await.expect("round")
                 })
             });
-            let (opened, detected) = new;
+            let opened = new;
 
             // «Tale»: the same decision, the same numbers to within the histogram's step.
             assert_eq!(
@@ -8147,44 +6478,10 @@ mod tests {
                 .map(|(a, b)| (a - b).abs())
                 .fold(0.0f32, f32::max);
             assert!(worst < 0.02, "worst peak difference {worst}");
-
-            // The channel diagnosis: measured on the same samples, so the same numbers.
-            let new_levels = opened.channel_levels().unwrap();
-            assert!((new_levels.peak_db_left - old.peak[0]).abs() < 0.01);
-            assert!((new_levels.peak_db_right.unwrap() - old.peak[1]).abs() < 0.01);
-            assert!((new_levels.rms_db_left.unwrap() - old.rms[0]).abs() < 0.01);
-            assert!((new_levels.rms_db_right.unwrap() - old.rms[1]).abs() < 0.01);
-            // The noise floor: the exact sliding-window maximum (the core tests pin it against a
-            // brute force). `astats` computes the same thing with a queue of its own that is
-            // exact on most recordings (the 90-minute service in docs/LYDMOTOR.md agrees to
-            // 0.01 dB) and drifts on others (here 0.4 dB: a steady hum plus room tone), so the
-            // claim kept is the one the app acts on: the same side of the noisy-room threshold,
-            // and within a dB.
-            let new_floor = opened.levels.noise_floor_db.expect("floor");
-            assert!(
-                (new_floor - old_floor).abs() < 1.0,
-                "noise floor {new_floor} vs astats {old_floor}"
-            );
-            assert_eq!(
-                sundayrec_core::processing::recommend_vocal_preset(Some(new_floor)),
-                sundayrec_core::processing::recommend_vocal_preset(Some(old_floor))
-            );
-
-            // The sermon search: the same segments, to within a frame or two.
-            let old_segments = &old_detection.segments;
-            let new_segments = &detected.take_detection().expect("analysis").segments;
-            assert_eq!(new_segments.len(), old_segments.len());
-            for (n, o) in new_segments.iter().zip(old_segments) {
-                assert_eq!(n.kind, o.kind);
-                assert!(
-                    (n.start_sec - o.start_sec).abs() < 0.1 && (n.end_sec - o.end_sec).abs() < 0.1,
-                    "{n:?} vs {o:?}"
-                );
-            }
         }
 
         /// A 90-minute mono FLAC at 8 kHz (a sine that switches between loud and quiet every few
-        /// seconds, so the search and the meters have something to find). Small on disk and
+        /// seconds, so the meters have something to find). Small on disk and
         /// quick to make, but 5400 s long to every consumer: the duration, the byte counts and the
         /// progress arithmetic are those of a whole service.
         fn ninety_minute_fixture(
@@ -8210,7 +6507,7 @@ mod tests {
             out.to_string_lossy().into_owned()
         }
 
-        /// THE gate of B4b: a 90-minute recording is opened (waveform, sermon search, channel
+        /// THE gate of B4b: a 90-minute recording is opened (waveform, channel
         /// diagnosis, one-click chain, «Tale»'s sentence and decision, all asked at once and then
         /// again) and the counter says the file was decoded ONCE: one whole-file read, of the
         /// open kind, and no other kind of read. Not an assumption: every whole-file read that
@@ -8234,11 +6531,8 @@ mod tests {
                         info.duration_sec
                     );
                     assert_eq!(analysis_decodes_of(&src), 0, "opening is not reading");
-                    let (pk, seg, diag, auto, said, clean) = tokio::join!(
+                    let (pk, said, clean) = tokio::join!(
                         peaks(&src, |_| {}),
-                        segments(&src, false, |_| {}),
-                        diagnose_channels(&src),
-                        auto_process(&src),
                         tale_said(&src),
                         tale_clean_for(&engine, &src),
                     );
@@ -8248,15 +6542,10 @@ mod tests {
                         "100 a second for 90 minutes: {}",
                         pk.peaks.len()
                     );
-                    assert!(!seg.expect("segments").0.is_empty());
-                    diag.expect("diagnosis");
-                    auto.expect("auto process");
                     assert!(said.expect("sentence").analysed);
                     assert!(clean.unwrap().is_some());
                     // And asked again, one by one, the way the editor does over the next minutes.
                     peaks(&src, |_| {}).await.expect("peaks again");
-                    segments(&src, false, |_| {}).await.expect("segments again");
-                    diagnose_channels(&src).await.expect("diagnosis again");
                     tale_said(&src).await.expect("sentence again");
                 });
             });
@@ -8266,35 +6555,6 @@ mod tests {
                 "a 90-minute recording is decoded once, however many ask"
             );
             assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
-        }
-
-        /// B4b: with the shadow VAD on (`vad` feature) the model scores the samples the sermon
-        /// search ran on, taken from the open round: no read of its own, so the count stays one.
-        /// Only after the detection has been handed out, and only once.
-        #[cfg(feature = "vad")]
-        #[test]
-        fn the_shadow_vad_takes_the_open_rounds_samples_and_reads_nothing_or_skips() {
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
-            else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = open_fixture(&ffmpeg, dir.path(), "shadow.wav", 44_100, 20.0);
-            with_sidecars(&ffmpeg, &ffprobe, |rt| {
-                rt.block_on(async {
-                    let (_, analysis) = segments(&src, false, |_| {}).await.expect("segments");
-                    assert!(analysis.is_some());
-                })
-            });
-            let pcm = take_shadow_pcm(&src).expect("the samples the search ran on");
-            assert!(
-                (319_000..=321_000).contains(&pcm.len()),
-                "20 s at 16 kHz: {}",
-                pcm.len()
-            );
-            assert!(take_shadow_pcm(&src).is_none(), "once");
-            assert_eq!(analysis_decodes_of(&src), 1, "and the shadow read nothing");
         }
 
         /// The reads that do NOT share the open round are counted as what they are, so they
@@ -8313,23 +6573,20 @@ mod tests {
             let out_dir = tempfile::tempdir().unwrap();
             let req = EditorMasterPreviewRequest {
                 source_token: "t".into(),
-                preset_id: Some("speech-clear".into()),
+                podcast_audio: true,
                 start_sec: 2.0,
                 duration_sec: 8.0,
-                processing: None,
-                channel_repair: None,
                 cut_regions: Vec::new(),
                 full_length_sec: Some(20.0),
             };
             let mut ex = export_request(&src, &out_dir.path().to_string_lossy(), "wav", &[], 20.0);
-            ex.master_preset = Some("speech-clear".into());
+            ex.podcast_audio = true;
             // One hold of the sidecar lock for the whole sequence: the open book keeps only a few
             // recordings, and other tests reading files at the same time would push this one out
             // between the steps.
             with_sidecars(&ffmpeg, &ffprobe, |rt| {
                 rt.block_on(async {
                     peaks(&src, |_| {}).await.expect("peaks");
-                    diagnose_channels(&src).await.expect("diagnosis");
                     assert_eq!(analysis_decodes_by(&src, Decode::Open), 1);
                     assert_eq!(analysis_decodes_of(&src), 1);
 
@@ -8418,32 +6675,12 @@ mod tests {
                     pk.peaks.iter().cloned().fold(0.0f32, f32::max)
                 );
                 lap("peaks");
-                let (segs, _) = segments(&file, false, |_| {}).await.expect("segments");
-                for sg in &segs {
-                    eprintln!(
-                        "BENCH segment {:>8.2} {:>8.2} {:<8} conf={:?}",
-                        sg.start, sg.end, sg.kind, sg.confidence
-                    );
-                }
-                lap("segments");
-                let auto = auto_process(&file).await.expect("auto_process");
-                eprintln!(
-                    "BENCH auto_process {:?} preset={}",
-                    auto.diagnosis, auto.vocal_chain_preset
-                );
-                lap("auto_process");
                 let said = tale_said(&file).await.expect("tale_said");
                 eprintln!("BENCH tale_said {said:?}");
                 lap("tale_said");
                 let engine = ExportEngine::new();
                 let clean = tale_clean_for(&engine, &file).await;
                 eprintln!("BENCH tale decision {clean:?}");
-                if let Some(o) = open::peek(&file) {
-                    eprintln!(
-                        "BENCH levels {:?} noise floor {:?}",
-                        o.levels.levels, o.levels.noise_floor_db
-                    );
-                }
                 lap("tale decision (cached)");
                 if std::env::var_os("SUNDAYREC_BENCH_NO_EXPORT").is_some() {
                     return;
@@ -8457,7 +6694,7 @@ mod tests {
                     output_folder_token: None,
                     bitrate: Some(128),
                     bit_depth: None,
-                    master_preset: Some("speech-clear".into()),
+                    podcast_audio: true,
                     use_intro: false,
                     use_outro: false,
                     gain_db: None,
@@ -8466,9 +6703,6 @@ mod tests {
                     description: None,
                     album: None,
                     date: None,
-                    vocal_chain_preset: None,
-                    processing: None,
-                    channel_repair: None,
                     video_codec: None,
                 };
                 let inputs = ResolvedExport {
@@ -8517,7 +6751,7 @@ mod tests {
                 &[(0.75, 1.25)],
                 2.0,
             );
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
             req.title = Some("Søndag".into()); // the metadata input must not collide
             let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let out = result.expect("a mastered video export should succeed");
@@ -8534,9 +6768,7 @@ mod tests {
                 (1.0..1.9).contains(&dur),
                 "cut video export duration {dur}s should be ~1.5 s"
             );
-            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
-                .unwrap()
-                .target_lufs;
+            let target = sundayrec_core::mastering::podcast_preset().target_lufs;
             let loudness = out.loudness.expect("a mastered export reports its level");
             assert!(
                 (loudness.achieved_lufs - target).abs() <= 0.5,
@@ -8547,8 +6779,8 @@ mod tests {
         }
 
         /// B1b: the level is set on the SERMON. A jingle louder than the sermon is
-        /// concatenated after the level is set, so it cannot pull the measure (and the
-        /// gain) towards itself.
+        /// levelled on its own and concatenated after, so it cannot pull the measure (and
+        /// the gain) of the sermon towards itself.
         #[test]
         fn a_mastered_export_levels_the_sermon_not_the_jingles_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
@@ -8567,16 +6799,14 @@ mod tests {
                 &[(6.0, 12.0)],
                 12.0,
             );
-            case.master_preset = Some("speech-clear".into());
+            case.podcast_audio = true;
             case.inputs.intro = Some(jingle.clone());
             case.inputs.outro = Some(jingle);
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &case);
             let out = result.expect("a mastered export with jingles should succeed");
             let path = std::path::Path::new(&out.output_path);
 
-            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
-                .unwrap()
-                .target_lufs;
+            let target = sundayrec_core::mastering::podcast_preset().target_lufs;
             // The sermon sits between the two 1 s jingles.
             let sermon = measure_integrated_lufs(&ffmpeg, path, Some((1.0, 6.0)));
             assert!(
@@ -8594,6 +6824,102 @@ mod tests {
             );
         }
 
+        /// A speech-like source: a 220 Hz tone with a 4 Hz syllable tremolo, `secs` long, at
+        /// the given linear `volume` (the tone is mono, 44.1 kHz — unlike the stereo 48 kHz
+        /// sermon, so the pin to the source's format is exercised too).
+        fn lavfi_speechlike(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            secs: f64,
+            volume: f64,
+            rate: u32,
+        ) -> String {
+            let src = dir.join(name);
+            let out = std::process::Command::new(ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=220:sample_rate={rate}:duration={secs}"),
+                    "-af",
+                    &format!("tremolo=f=4:d=0.6,volume={volume}"),
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the speech-like source");
+            assert!(
+                out.status.success(),
+                "speech-like generation failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            src.to_string_lossy().into_owned()
+        }
+
+        /// The jingles are levelled by the SAME preset as the sermon: a loud 2 s intro and a
+        /// quiet 2 s outro around a 6 s speech-like body, «Podkastklar lyd» on. The duration
+        /// is the sum of the parts, and the FINISHED FILE measures at the preset's target
+        /// with the true peak under the cap, not just the sermon in the middle.
+        #[test]
+        fn a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_speechlike(&ffmpeg, dir.path(), "body.wav", 6.0, 0.35, 48_000);
+            let intro = lavfi_speechlike(&ffmpeg, dir.path(), "intro.wav", 2.0, 1.0, 44_100);
+            let outro = lavfi_speechlike(&ffmpeg, dir.path(), "outro.wav", 2.0, 0.12, 44_100);
+            let mut case = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 6.0);
+            case.podcast_audio = true;
+            case.inputs.intro = Some(intro);
+            case.inputs.outro = Some(outro);
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &case);
+            let out = result.expect("a podcast export with jingles should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            let preset = sundayrec_core::mastering::podcast_preset();
+            let whole = measure_ebu_r128(&ffmpeg, path, None);
+            let intro_leg = measure_integrated_lufs(&ffmpeg, path, Some((0.0, 2.0)));
+            let sermon_leg = measure_integrated_lufs(&ffmpeg, path, Some((2.0, 6.0)));
+            let outro_leg = measure_integrated_lufs(&ffmpeg, path, Some((8.0, 2.0)));
+            let dur: f64 = probe_report(&ffprobe, path)
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            eprintln!(
+                "JINGLE MEASURE: duration {dur:.3} s, whole {:.2} LUFS, intro {intro_leg:.2}, \
+                 sermon {sermon_leg:.2}, outro {outro_leg:.2}, true peak {:.2} dBTP",
+                whole.input_i, whole.input_tp
+            );
+            assert!(
+                (9.8..10.3).contains(&dur),
+                "2 + 6 + 2 s expected, got {dur}"
+            );
+            assert!(
+                (whole.input_i - preset.target_lufs).abs() <= 0.7,
+                "the finished file measures {:.2} LUFS against {:.2}",
+                whole.input_i,
+                preset.target_lufs
+            );
+            for (leg, lufs) in [("intro", intro_leg), ("outro", outro_leg)] {
+                assert!(
+                    (lufs - preset.target_lufs).abs() <= 1.5,
+                    "the {leg} sits at {lufs:.2} LUFS, the preset's target is {:.2}",
+                    preset.target_lufs
+                );
+            }
+            assert!(
+                whole.input_tp <= preset.true_peak_db + 0.3,
+                "true peak {:.2} dBTP is over the cap {:.2}",
+                whole.input_tp,
+                preset.true_peak_db
+            );
+        }
+
         /// B1b: a cancel during the measure pass stops the export and leaves nothing
         /// behind — no output, no render temp, no staged copy of the processed audio.
         #[test]
@@ -8607,7 +6933,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "long.wav", 48_000, 1200.0);
             let mut req = export_request(&src, &dir.path().to_string_lossy(), "flac", &[], 1200.0);
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
 
             let staged_now = || -> Vec<String> {
                 std::fs::read_dir(std::env::temp_dir())
@@ -8695,7 +7021,7 @@ mod tests {
             let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 6.0);
             req.bit_depth = Some(16);
             // The mastering preset is what used to drag the output to 192 kHz.
-            req.master_preset = Some("speech-clear".into());
+            req.podcast_audio = true;
 
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let out = result.expect("a wav export should succeed");
@@ -9085,7 +7411,7 @@ mod tests {
                 .unwrap_or((1200.0, 3000.0));
             let total = probe_total_secs(&ffprobe, &source);
             let dir = tempfile::tempdir().unwrap();
-            for preset in [None, Some("speech-clear")] {
+            for preset in [false, true] {
                 for allow_copy in [false, true] {
                     let mut req = export_request(
                         &source,
@@ -9094,7 +7420,7 @@ mod tests {
                         &[(0.0, keep_start), (keep_end, total)],
                         total,
                     );
-                    req.master_preset = preset.map(String::from);
+                    req.podcast_audio = preset;
                     let started = std::time::Instant::now();
                     let (result, _ticks) =
                         run_export_blocking_with(&ffmpeg, &ffprobe, &req, allow_copy);
@@ -9106,7 +7432,7 @@ mod tests {
                     eprintln!(
                         "B6 BENCH {:>12} preset={:<12} {:6.1} s  ({:.0} MB out, {:.0} s kept)",
                         if allow_copy { "copy" } else { "re-encode" },
-                        preset.unwrap_or("none"),
+                        if preset { "podcast" } else { "none" },
                         took.as_secs_f64(),
                         size as f64 / 1e6,
                         keep_end - keep_start
@@ -9724,54 +8050,6 @@ mod tests {
                 .expect("both streams have a length")
         }
 
-        /// One-click auto-improve recommends the vocal chain ONLY. Stacking a
-        /// mastering preset on it double-processed every recording.
-        #[test]
-        fn auto_process_recommends_no_mastering_or_skips() {
-            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
-            // the note on the single-sidecar tests above.
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
-            else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "auto.wav", 48_000, 4.0);
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let res = {
-                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                unsafe {
-                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                    std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-                }
-                let r = rt.block_on(auto_process(&src));
-                unsafe {
-                    std::env::remove_var("SUNDAYREC_FFMPEG");
-                    std::env::remove_var("SUNDAYREC_FFPROBE");
-                }
-                r.expect("auto-process should analyse the lavfi source")
-            };
-            assert_eq!(
-                res.master_preset, "",
-                "one click must not stack a mastering chain on the vocal chain"
-            );
-            assert!(
-                res.vocal_chain_preset.starts_with("voice-"),
-                "a vocal chain is still recommended; got {}",
-                res.vocal_chain_preset
-            );
-            assert!(
-                !res.summary.contains("tydelig mastering"),
-                "the summary must not promise mastering it no longer applies: {}",
-                res.summary
-            );
-            eprintln!(
-                "editor auto-process smoke: chain {}, no mastering",
-                res.vocal_chain_preset
-            );
-        }
-
         /// A wedged render must be killed, not waited on forever. Drives a REAL
         /// export with the kill-timer overridden to 1 ms.
         #[test]
@@ -10276,262 +8554,6 @@ mod tests {
             );
             assert!(rt.block_on(journalled_paths(&pool)).is_empty());
             eprintln!("editor export smoke: a power cut's temp was reaped from a picked folder");
-        }
-
-        // ── ffmpeg level helpers ─────────────────────────────────────────────
-        //
-        // The vocal chain no longer runs in ffmpeg (B2c deleted the filter-string
-        // builders and the tests that measured them); its levels are held by the
-        // tests in `sundayrec_core::chain`. What stays is the sidecar lookup the
-        // channel-diagnosis tests below use.
-        mod level_probe {
-            /// The sidecar, or `None` → the caller SKIPs. In a lane that fetched
-            /// the binaries and set `SUNDAYREC_REQUIRE_SIDECAR=1` (ci.yml's
-            /// `check` job, `scripts/ci-local.sh`) a missing sidecar is a
-            /// PANIC instead: a silent skip here is precisely how three
-            /// measurable audio bugs shipped, and a green run that measured
-            /// nothing must not look like a green run that measured everything.
-            pub(super) fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
-                super::sidecar_or_skip("ffmpeg")
-            }
-        }
-
-        // ── The channel diagnosis, MEASURED (F2-C-C) ─────────────────────────
-        //
-        // The unit tests in `sundayrec_core::processing` say what the RULES do
-        // with a given pair of numbers. They cannot say whether the numbers the
-        // SEAM feeds them are the recording's numbers — and for a year they were
-        // not: the seam passed `rms_*: None`, and the parser folded astats'
-        // `Overall` rollup into the right channel, so a stone-dead right channel
-        // arrived at the rules as "identical to the left".
-        //
-        // These tests build stereo files whose two channels are known by
-        // construction, run the REAL one-click analysis over them, and read back
-        // the recommendation. HARDWARE-FREE — lavfi synthesises every input.
-        mod channel_diagnosis_levels {
-            use super::level_probe::ffmpeg_or_skip;
-            use crate::editor::{ExportEngine, auto_process, export};
-            use crate::media::ffmpeg::tests::ENV_LOCK;
-
-            /// Build a stereo wav whose LEFT and RIGHT legs come from separate
-            /// lavfi sources, so "left is a −12 dBFS sine, right is −70 dBFS
-            /// noise" is a fact about the file and not a hope about it.
-            ///
-            /// `left`/`right` are `(lavfi source, filter chain)`. Each chain
-            /// reaches ffmpeg inside one argv element, so its commas belong to
-            /// the filter parser.
-            fn stereo_pair(
-                ffmpeg: &std::path::Path,
-                dir: &std::path::Path,
-                name: &str,
-                left: (&str, &str),
-                right: (&str, &str),
-            ) -> String {
-                let src = dir.join(name);
-                let fc = format!(
-                    "[0:a]{}[l];[1:a]{}[r];[l][r]join=inputs=2:channel_layout=stereo[out]",
-                    left.1, right.1
-                );
-                let r#gen = std::process::Command::new(ffmpeg)
-                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", left.0])
-                    .args(["-f", "lavfi", "-i", right.0])
-                    .args(["-filter_complex", &fc, "-map", "[out]", "-y"])
-                    .arg(&src)
-                    .output()
-                    .expect("ffmpeg should run to generate the stereo pair");
-                assert!(
-                    r#gen.status.success(),
-                    "stereo pair generation failed: {}",
-                    String::from_utf8_lossy(&r#gen.stderr)
-                );
-                src.to_string_lossy().into_owned()
-            }
-
-            /// lavfi's `sine` is ~−18.06 dBFS, so every leg states its level as
-            /// a `volume` on top of that.
-            fn sine(secs: f64) -> String {
-                format!("sine=frequency=1000:sample_rate=48000:duration={secs}")
-            }
-            /// Pink noise with a PINNED seed — reproducible, not merely plausible.
-            /// Raw peak is ~−2.7 dBFS, so a leg asking for −40 dBFS says −37.3.
-            fn noise(secs: f64) -> String {
-                format!("anoisesrc=r=48000:d={secs}:c=pink:a=1:s=42")
-            }
-
-            /// Run the real one-click analysis over `path` with the sidecar
-            /// wired in, and return `(diagnosis code, repair mode)`.
-            fn analyse(ffmpeg: &std::path::Path, path: &str) -> (String, String) {
-                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
-                    .expect("ffprobe sidecar sits next to the ffmpeg one");
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let res = {
-                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                    unsafe {
-                        std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
-                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-                    }
-                    let r = rt.block_on(auto_process(path));
-                    unsafe {
-                        std::env::remove_var("SUNDAYREC_FFMPEG");
-                        std::env::remove_var("SUNDAYREC_FFPROBE");
-                    }
-                    r.expect("auto-process should analyse the lavfi source")
-                };
-                (
-                    res.diagnosis.code.clone(),
-                    res.diagnosis.recommended.mode.clone(),
-                )
-            }
-
-            /// The bad-cable case, end to end. Right is 58 dB below left, which
-            /// the seam could not see at all: the `Overall` rollup overwrote the
-            /// right channel with the LEFT channel's peak, and the pair reached
-            /// the rules as `balanced`.
-            #[test]
-            fn dead_right_channel_recommends_duplicate_left_or_skips() {
-                let Some(ffmpeg) = ffmpeg_or_skip() else {
-                    return;
-                };
-                let dir = tempfile::tempdir().unwrap();
-                let src = stereo_pair(
-                    &ffmpeg,
-                    dir.path(),
-                    "dead_right.wav",
-                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
-                    (&noise(3.0), "volume=-67.3dB"), // −70 dBFS: nothing
-                );
-                let (code, mode) = analyse(&ffmpeg, &src);
-                assert_eq!(
-                    code, "dead_right",
-                    "a −70 dBFS right channel next to a −12 dBFS left is a fault, \
-                     not a balance problem"
-                );
-                assert_eq!(mode, "duplicateLeft");
-                eprintln!("channel diagnosis: −12/−70 dBFS → {code} / {mode}");
-            }
-
-            /// The 28 dB gap. A mono mix in L with low-level bleed in R used to
-            /// come back as `gainDb` with +12 on the right — a lift that cannot
-            /// close the gap and DOES raise the bleed by 12 dB.
-            #[test]
-            fn gap_wider_than_the_cap_recommends_duplicate_not_gain_or_skips() {
-                let Some(ffmpeg) = ffmpeg_or_skip() else {
-                    return;
-                };
-                let dir = tempfile::tempdir().unwrap();
-                let src = stereo_pair(
-                    &ffmpeg,
-                    dir.path(),
-                    "bleed_right.wav",
-                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
-                    (&noise(3.0), "volume=-37.3dB"), // −40 dBFS bleed
-                );
-                let (code, mode) = analyse(&ffmpeg, &src);
-                assert_eq!(code, "unusable_right");
-                assert_eq!(
-                    mode, "duplicateLeft",
-                    "28 dB apart: `gainDb` +12 would leave the pair 16 dB apart \
-                     and call the file repaired"
-                );
-                eprintln!("channel diagnosis: −12/−40 dBFS → {code} / {mode}");
-            }
-
-            /// …and the other side of the same boundary: a pair that gain CAN
-            /// rescue must still be rescued with gain. Without this the new rule
-            /// could be "always duplicate" and every test above would pass.
-            #[test]
-            fn rescuable_imbalance_still_recommends_gain_or_skips() {
-                let Some(ffmpeg) = ffmpeg_or_skip() else {
-                    return;
-                };
-                let dir = tempfile::tempdir().unwrap();
-                let src = stereo_pair(
-                    &ffmpeg,
-                    dir.path(),
-                    "quiet_right.wav",
-                    (&sine(3.0), "volume=6.06dB"),  // −12 dBFS
-                    (&sine(3.0), "volume=-1.94dB"), // −20 dBFS
-                );
-                let (code, mode) = analyse(&ffmpeg, &src);
-                assert_eq!(code, "imbalance");
-                assert_eq!(mode, "gainDb");
-                eprintln!("channel diagnosis: −12/−20 dBFS → {code} / {mode}");
-            }
-
-            /// A healthy stereo pair must be left alone. The cheapest way for a
-            /// diagnosis to look clever is to always find something.
-            #[test]
-            fn balanced_pair_recommends_nothing_or_skips() {
-                let Some(ffmpeg) = ffmpeg_or_skip() else {
-                    return;
-                };
-                let dir = tempfile::tempdir().unwrap();
-                let src = stereo_pair(
-                    &ffmpeg,
-                    dir.path(),
-                    "balanced.wav",
-                    (&sine(3.0), "volume=6.06dB"), // −12 dBFS
-                    (&sine(3.0), "volume=5.06dB"), // −13 dBFS
-                );
-                let (code, mode) = analyse(&ffmpeg, &src);
-                assert_eq!(code, "balanced");
-                assert_eq!(mode, "none");
-                eprintln!("channel diagnosis: −12/−13 dBFS → {code} / {mode}");
-            }
-
-            /// A stereo repair on a MONO file is refused: it has nothing to repair
-            /// (the chain skips it), so the export says no rather than return an
-            /// untouched file the UI calls "repaired".
-            #[test]
-            fn mono_source_refuses_a_stereo_only_repair_or_skips() {
-                let Some(ffmpeg) = ffmpeg_or_skip() else {
-                    return;
-                };
-                let dir = tempfile::tempdir().unwrap();
-                let src = dir.path().join("mono.wav");
-                let r#gen = std::process::Command::new(&ffmpeg)
-                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", &sine(3.0)])
-                    .args(["-ac", "1", "-y"])
-                    .arg(&src)
-                    .output()
-                    .expect("ffmpeg should generate the mono source");
-                assert!(r#gen.status.success());
-                let src = src.to_string_lossy().into_owned();
-
-                // The seam refuses to build it.
-                let mut req =
-                    super::export_request(&src, &dir.path().to_string_lossy(), "mp3", &[], 3.0);
-                req.channel_repair = Some(crate::editor::EditorChannelRepair {
-                    mode: "monoMix".into(),
-                    left_db: 0.0,
-                    right_db: 0.0,
-                });
-                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
-                    .expect("ffprobe sidecar sits next to the ffmpeg one");
-                let engine = ExportEngine::new();
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let err = {
-                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                    unsafe {
-                        std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-                    }
-                    let r = rt.block_on(export(&engine, &req, &req.inputs, false, |_, _| {}));
-                    unsafe {
-                        std::env::remove_var("SUNDAYREC_FFMPEG");
-                        std::env::remove_var("SUNDAYREC_FFPROBE");
-                    }
-                    r.expect_err("a stereo-only repair on a mono file must be refused")
-                };
-                assert!(
-                    err.to_string().contains("channel_repair_needs_stereo"),
-                    "the refusal must carry the code the shell has a sentence \
-                     for; got {err}"
-                );
-                eprintln!("channel repair: mono + monoMix is refused by the export");
-            }
         }
     }
 }

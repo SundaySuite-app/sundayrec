@@ -72,7 +72,7 @@ export const settings = signal<Settings>({ ...SETTINGS_DEFAULTS });
 let baseline: Settings = { ...SETTINGS_DEFAULTS };
 
 /** Har vi lest fra basen ennå? Falsk betyr «dette er defaults, ikke svaret». */
-export const hydrated = signal(false);
+const hydrated = signal(false);
 
 /**
  * Hvorfor lesningen mislyktes, som en katalognøkkel UNDER `error.` — ellers

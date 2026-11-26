@@ -1,4 +1,4 @@
-//! Cut-only video export (B6, docs/LYDMOTOR.md fase 6): the picture is copied, not re-encoded.
+//! Cut-only video export (B6, docs/archive/LYDMOTOR.md fase 6): the picture is copied, not re-encoded.
 //!
 //! «Behold bare prekenen» only removes parts of the recording. Re-encoding every kept frame
 //! for that took minutes on a 90-minute service; copying the compressed packets takes

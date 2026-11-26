@@ -1,7 +1,7 @@
 /**
  * Steg 2 — LYD. Tilstanden, analysen og lyttingen.
  *
- * Tabellen som gjør de tre ordene om til tall bor i `sound-profiles.ts` og er
+ * Det som sendes med eksporten (én bryter, «Podkastklar lyd») bor i `sound-recipe.ts` og er
  * ren. Her er alt som har en bivirkning: et signal per ting treet viser, ÉN
  * memoisert kanalanalyse per fil, og lyttingen på avspillingsmotoren.
  *
@@ -23,7 +23,7 @@
  *     som regel ikke venter;
  *   - «Før» venter på ingenting: økta åpnes uten kjede, og kjeden settes inn når den er klar.
  *
- * Bytter man profil eller mikser mens det spiller, bygger motoren den nye kjeden ved
+ * Slår man bryteren av og på mens det spiller, bygger motoren den nye kjeden ved
  * siden av den gamle og krysstoner (`playback/producer.rs`): ingen klikk, ingen pause,
  * og den nye høres etter høyst et halvt sekund.
  *
@@ -41,95 +41,40 @@
  */
 
 import { computed, effect, signal } from "@preact/signals";
-import type {
-  ExportChannelRepair,
-  MasterPreviewParams,
-} from "@lib/pages/editor/export-params";
-import { defaultProcessing, type Processing } from "@lib/pages/editor/mixer";
+import type { MasterPreviewParams } from "@lib/pages/editor/export-params";
 
 import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
 import { isRecording } from "../state/recording";
 import type { EditorListenEvent } from "@legacy/bindings/EditorListenEvent";
+import { resetChannelCheck } from "./channel-check";
 import { cuts, E } from "./model";
-import { sermonWindow } from "./editor-core";
+import { keepWindow } from "./editor-core";
 import {
-  DEFAULT_SOUND_PROFILE,
+  DEFAULT_PODCAST_AUDIO,
   LISTEN_SPAN_SEC,
   listenStartSec,
   soundExportFields,
-  type SoundProfile,
-} from "./sound-profiles";
+} from "./sound-recipe";
 
 // ── Valget ──────────────────────────────────────────────────────────────────
 
-/** Profilen som gjelder. `none` er også det bryteren AV betyr — ÉN sannhet, to
- *  måter å uttrykke den på i UI-et, slik canvasen tegnet det. */
-export const soundProfile = signal<SoundProfile>(DEFAULT_SOUND_PROFILE);
+/** «Podkastklar lyd». Av betyr at fila eksporteres slik den ble tatt opp. */
+export const podcastAudio = signal(DEFAULT_PODCAST_AUDIO);
 
-/** Profilen bryteren skal slå TILBAKE til. Uten den ville «av, så på» kastet
- *  et valg brukeren tok: en som står på «Tale og musikk» og slår av og på
- *  igjen skal ikke havne på «Tale». */
-const lastActiveProfile = signal<SoundProfile>(DEFAULT_SOUND_PROFILE);
-
-/** Har brukeren VÆRT på steget? Haken i stegstripa venter på det: «Tale» er
+/** Har brukeren VÆRT på steget? Haken i stegstripa venter på det: «På» er
  *  standarden, og en hake fra første sekund ville påstått at noen bestemte
  *  seg. */
 export const soundVisited = signal(false);
 
-export function setSoundProfile(next: SoundProfile): void {
-  soundProfile.value = next;
-  if (next !== "none") lastActiveProfile.value = next;
+/** Bryteren «Podkastklar lyd». */
+export function setPodcastAudio(on: boolean): void {
+  podcastAudio.value = on;
 }
 
-/** Bryteren «Automatisk lydforbedring». AV = «Ingen». */
-export function setAutoEnhance(on: boolean): void {
-  soundProfile.value = on ? lastActiveProfile.value : "none";
-}
+// ── «Tale»-analysen ─────────────────────────────────────────────────────────
 
-// ── Den avanserte mikseren ──────────────────────────────────────────────────
-
-/** Er mikseren i bruk? Da ERSTATTER den profilen — se `soundExportFields`. */
-export const useMixer = signal(false);
-/** Er mikserpanelet åpent? Å lukke panelet slår ikke av mikseren. */
-export const mixerOpen = signal(false);
-
-/**
- * Mikserens tilstand.
- *
- * Startverdiene er `defaultProcessing()` fra legacys mikser — det ENE stedet i
- * repoet der `VocalChain::default()` er speilet i TypeScript. Å skrive et andre
- * speil her ville vært et tredje sted de samme tallene kan bli uenige.
- */
-export const mixer = signal<Processing>(defaultProcessing());
-
-export function patchMixer(patch: Partial<Processing>): void {
-  mixer.value = { ...mixer.value, ...patch };
-}
-
-/** Sett forsterkningen på ett EQ-bånd. Bånd med 0 dB fjernes ved sending. */
-export function setEqBand(freqHz: number, gainDb: number, q: number): void {
-  const rest = mixer.value.eq.filter((b) => b.freqHz !== freqHz);
-  mixer.value = {
-    ...mixer.value,
-    eq: [...rest, { freqHz, gainDb, q }].sort((a, b) => a.freqHz - b.freqHz),
-  };
-}
-
-/** Nyttelastens `processing`: mikseren minus båndene som ikke gjør noe. Et
- *  equalizer-filter på 0 dB er et filter som koster tid og ikke endrer lyd. */
-export function mixerProcessing(): Processing {
-  const p = mixer.value;
-  return { ...p, eq: p.eq.filter((b) => Math.abs(b.gainDb) > 0.01) };
-}
-
-// ── Kanalanalysen ───────────────────────────────────────────────────────────
-
-/** Reparasjonen `editor_auto_process` anbefalte, eller `null`. */
-export const channelRepair = signal<ExportChannelRepair | null>(null);
-/** Diagnosens kode (`balanced`, `dead_left`, …), for den ene ærlige linja. */
-export const channelCode = signal<string | null>(null);
-export const analyzingSound = signal(false);
-/** B3b: hva «Tale» gjorde med fila — kodene fra `editor_tale_said`, eller `null`
+const analyzingSound = signal(false);
+/** B3b: hva «Podkastklar lyd» gjorde med fila — kodene fra `editor_tale_said`, eller `null`
  *  før svaret er inne (og når analysen ikke kunne kjøres). */
 export const taleSaid = signal<EditorTaleSaid | null>(null);
 
@@ -137,17 +82,12 @@ let analysisFor = "";
 let analysis: Promise<void> | null = null;
 
 /**
- * Kjør kanalanalysen ÉN gang per fil, og la alle vente på den samme.
+ * Be om «Tale»-analysen ÉN gang per fil, og la alle vente på den samme.
  *
- * Den koster en full `astats`-passering over opptaket, så den startes når
- * lyd-steget åpnes (ikke ved filåpning, der bølgeform-uttrekket og
- * segmentanalysen allerede konkurrerer om den samme fila) — og eksporten
- * venter på den, slik at en frivillig som går rett til steg 3 får den samme
- * reparasjonen som en som stoppet innom.
- *
- * En feilet analyse er ikke en feiltilstand: da er det ingen reparasjon å
- * anbefale, og eksporten går uten. Bakenden svarer `null` i en bygging uten
- * `editor`-featuren, og det er nøyaktig det samme svaret.
+ * Analysen deles med forhåndslytting og eksport i bakenden (én lesing av fila), og startes
+ * når lyd-steget åpnes, ikke ved filåpning: der konkurrerer bølgeform-uttrekket og
+ * segmentanalysen allerede om den samme fila. En feilet analyse er ikke en feiltilstand: da
+ * står det ingen setning om hva som ble gjort, og lyden behandles likevel.
  */
 export function ensureSoundAnalysis(): Promise<void> {
   // Lappen, ikke stien: Rust slår opp opptaket med den (A2).
@@ -156,31 +96,14 @@ export function ensureSoundAnalysis(): Promise<void> {
   if (analysisFor === token && analysis) return analysis;
   analysisFor = token;
   analyzingSound.value = true;
-  // «Tale»-analysen (B3b) kjører ved siden av kanalanalysen og deler cache med
-  // forhåndslytting og eksport. Den får ikke holde igjen kanalnotatet, og en
-  // feil her er bare en setning som uteblir.
-  void (async () => {
+  analysis = (async () => {
     try {
       const said = await window.api.editorTaleSaid(token);
+      // En annen fil rakk å bli åpnet mens vi analyserte: svaret gjelder
+      // ikke lenger noe som står på skjermen.
       if (E.sourceToken === token) taleSaid.value = said;
     } catch {
       /* ingen forklaring er et gyldig svar */
-    }
-  })();
-  analysis = (async () => {
-    try {
-      const res = await window.api.editorAutoProcess(token);
-      // En annen fil rakk å bli åpnet mens vi analyserte: svaret gjelder
-      // ikke lenger noe som står på skjermen.
-      if (E.sourceToken !== token) return;
-      const rec = res?.diagnosis?.recommended;
-      channelCode.value = res?.diagnosis?.code ?? null;
-      channelRepair.value =
-        rec && rec.mode && rec.mode !== "none"
-          ? { mode: rec.mode, leftDb: rec.leftDb, rightDb: rec.rightDb }
-          : null;
-    } catch {
-      /* ingen anbefaling er et gyldig svar */
     } finally {
       if (E.sourceToken === token) analyzingSound.value = false;
     }
@@ -206,21 +129,16 @@ export const listenPreparing = computed(
   () => listenStale.value && listenSide.value === "after",
 );
 
-/** Hvor lyttingen begynner (kildesekunder): midt i prekenen. Linja «0:21:08 — fra prekenen». */
+/** Hvor lyttingen begynner (kildesekunder): midt i det som beholdes. Linja «0:21:08 — midt i utdraget». */
 export const listenStart = signal(0);
 /** Spillehodet slik motoren melder det (kildesekunder), eller `null` før første melding. */
 export const listenAt = signal<number | null>(null);
 /** Hull i lyden motoren har telt (ringen gikk tom mens det spilte). Til diagnose. */
-export const listenUnderruns = signal(0);
+const listenUnderruns = signal(0);
 
-/** Regn ut hvor lyttingen begynner, ut fra prekenvinduet slik det står NÅ. */
+/** Regn ut hvor lyttingen begynner, ut fra vinduet slik det står NÅ. */
 export function refreshListenStart(): void {
-  const window = sermonWindow({
-    cuts: E.cuts,
-    duration: E.duration,
-    suggestion: E.suggestion,
-    applied: E.applied,
-  });
+  const window = keepWindow({ cuts: E.cuts, duration: E.duration });
   listenStart.value = listenStartSec(window, E.duration);
 }
 
@@ -322,6 +240,7 @@ function onListenEvent(raw: unknown): void {
 /** Forespørselen uten lyd: kuttene og lengden og hvor man begynner. Det økta åpnes med. */
 function bareRequest(start: number): MasterPreviewParams {
   return {
+    podcastAudio: false,
     cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
     fullLengthSec: E.duration,
     startSec: start,
@@ -330,7 +249,7 @@ function bareRequest(start: number): MasterPreviewParams {
 }
 
 /** Åpne økta hvis den ikke er åpen. Venter ikke på noe annet enn at lydkortet er åpnet.
- *  `startSec`: hvor den står (kildesekunder) når den åpnes; lyd-steget starter midt i prekenen,
+ *  `startSec`: hvor den står (kildesekunder) når den åpnes; lyd-steget starter midt i det som beholdes,
  *  Klipp-steget der spillehodet står. */
 export function openEngine(startSec?: number): Promise<boolean> {
   return ensureSession(startSec);
@@ -513,17 +432,10 @@ export async function toggleListen(): Promise<void> {
  * gir noe å høre («Ingen»).
  */
 export function listenRequest(start: number): MasterPreviewParams | null {
-  const fields = soundExportFields({
-    profile: soundProfile.value,
-    useMixer: useMixer.value,
-    processing: useMixer.value ? mixerProcessing() : undefined,
-    repair: channelRepair.value,
-  });
-  if (!fields.masterPreset && !fields.processing) return null;
+  const fields = soundExportFields(podcastAudio.value);
+  if (!fields.podcastAudio) return null;
   return {
-    presetId: fields.masterPreset,
-    processing: fields.processing,
-    channelRepair: fields.channelRepair,
+    podcastAudio: true,
     cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
     fullLengthSec: E.duration,
     startSec: start,
@@ -533,7 +445,7 @@ export function listenRequest(start: number): MasterPreviewParams | null {
 
 // ── Lyttingen gjøres klar i bakgrunnen ──────────────────────────────────────
 
-/** Ventetid etter siste endring før målingen starter. En glidebryter i mikseren gir mange
+/** Ventetid etter siste endring før målingen starter. Flere kutt på rad gir mange
  *  endringer, og hver av dem ville ellers startet (og avbrutt) et helt kjedepass. */
 export const PREPARE_DEBOUNCE_MS = 800;
 
@@ -586,9 +498,8 @@ async function prepareNow(): Promise<void> {
   }
 }
 
-/** Planlegg en måling om `delayMs`; en ny planlegging erstatter den forrige. Kanalanalysen
- *  avgjør forespørselen (reparasjonen er en del av den), så målingen venter på den. */
-export function scheduleListenPrepare(delayMs: number): void {
+/** Planlegg en måling om `delayMs`; en ny planlegging erstatter den forrige. */
+function scheduleListenPrepare(delayMs: number): void {
   cancelListenPrepare();
   if (isRecording.peek() || !E.sourceToken) return;
   prepareTimer = window.setTimeout(() => {
@@ -597,16 +508,16 @@ export function scheduleListenPrepare(delayMs: number): void {
   }, delayMs);
 }
 
-export function cancelListenPrepare(): void {
+function cancelListenPrepare(): void {
   window.clearTimeout(prepareTimer);
   prepareTimer = 0;
 }
 
 /**
  * Hold «Etter» klar mens steget er åpent: mål programmet med en gang, og på nytt (med
- * ventetid) når valget, mikseren, kanalreparasjonen eller kuttene endres. Under et opptak
+ * ventetid) når bryteren eller kuttene endres. Under et opptak
  * startes ingenting, og når opptaket er over, tas det igjen. Er økta åpen, settes den nye
- * kjeden inn når den er målt — det er det som gjør profilbytte midt i avspilling.
+ * kjeden inn når den er målt — det er det som gjør at bryteren virker midt i avspilling.
  * Returnerer en funksjon som avslutter overvåkingen; en måling som alt pågår i bakenden får
  * gå ferdig.
  */
@@ -614,14 +525,7 @@ export function watchListenPrepare(): () => void {
   let first = true;
   const dispose = effect(() => {
     // Det som avgjør forespørselen. `cuts` er speilet av `E.cuts`; resten er signaler.
-    void [
-      soundProfile.value,
-      useMixer.value,
-      mixer.value,
-      channelRepair.value,
-      cuts.value,
-      isRecording.value,
-    ];
+    void [podcastAudio.value, cuts.value, isRecording.value];
     // Spiller økta den gamle kjeden, er den nye ikke inne før målingen er ferdig.
     if (session) listenStale.value = true;
     scheduleListenPrepare(first ? 0 : PREPARE_DEBOUNCE_MS);
@@ -636,14 +540,9 @@ export function watchListenPrepare(): () => void {
 /** Glem alt som hørte til ÉN fil. */
 export function resetSound(): void {
   stopListen();
-  soundProfile.value = DEFAULT_SOUND_PROFILE;
-  lastActiveProfile.value = DEFAULT_SOUND_PROFILE;
+  resetChannelCheck();
+  podcastAudio.value = DEFAULT_PODCAST_AUDIO;
   soundVisited.value = false;
-  useMixer.value = false;
-  mixerOpen.value = false;
-  mixer.value = defaultProcessing();
-  channelRepair.value = null;
-  channelCode.value = null;
   taleSaid.value = null;
   analyzingSound.value = false;
   listenSide.value = "after";

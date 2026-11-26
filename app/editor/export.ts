@@ -32,11 +32,6 @@
  * (`fraction === null`) helt til et ekte tall kommer, og ETA-estimatoren fôres
  * ikke med en brøk som ikke er en brøk.
  *
- * Den ENE fasen som ikke er bakendens er `EXPORT_PHASE_PREPARING`
- * («Analyserer lyden…»), og den finnes fordi kjøringen begynner FØR bakenden
- * hører om den: kanalanalysen er en full passering over opptaket. Se
- * `runExport`.
- *
  * ## Abonnementet varer så lenge eksporten varer
  *
  * Ett abonnement per kjøring, revet ned i `finally`. Et modulnivå-abonnement
@@ -51,13 +46,11 @@ import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress
 import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness";
 import type { ChosenPlace } from "@legacy/bindings/ChosenPlace";
 
-import { locale } from "../i18n";
 import { isRecording } from "../state/recording";
-import { settings } from "../state/settings";
+import { patchSettings, settings } from "../state/settings";
 import {
   bitrateKbps,
   exportErrorKey,
-  EXPORT_PHASE_PREPARING,
   isCancelled,
   localIsoDate,
   parseSavedContent,
@@ -67,17 +60,11 @@ import {
   type ExportFormat,
 } from "./export-core";
 import { DEFAULT_EXPORT_FORMAT } from "./export-core";
-import { renderDescription } from "./publish-core";
+import { jingleFlags, jinglePatch, type JingleSlot } from "./jingles-core";
 import { clearDirty, E, mediaInfo } from "./model";
 import { clearDraft } from "./cuts";
-import {
-  channelRepair,
-  ensureSoundAnalysis,
-  mixerProcessing,
-  soundProfile,
-  useMixer,
-} from "./sound";
-import { soundExportFields } from "./sound-profiles";
+import { podcastAudio } from "./sound";
+import { soundExportFields } from "./sound-recipe";
 
 // ── Valgene ─────────────────────────────────────────────────────────────────
 
@@ -107,42 +94,14 @@ export const exportTitle = signal("");
 export const exportSpeaker = signal("");
 /** Fritekst. Blir `comment`-taggen. Les den gjennom `currentDescription()`. */
 export const exportDescription = signal("");
-/**
- * Følger beskrivelsen fortsatt malen fra Oppsett?
- *
- * Sann til noen skriver i feltet selv — da er teksten deres, og malen røres
- * ikke igjen — eller til en lagret, ikke-tom beskrivelse leses inn fra
- * `.meta.json`.
- * Mens den er sann, fylles `{tittel}`, `{taler}` og de andre inn LIVE: en
- * tittel skrevet etter at siden åpnet, står i beskrivelsen med én gang.
- */
-export const descriptionFollowsTemplate = signal(true);
-
-/**
- * Beskrivelsen slik den står i feltet og slik den blir sendt.
- *
- * Malen (`settings.publishDescriptionTemplate`) med feltene fylt inn så lenge
- * ingen har skrevet i beskrivelsen selv og malen ikke er tom; ellers det som
- * står i `exportDescription`.
- */
+/** Beskrivelsen slik den står i feltet og slik den blir sendt. */
 export function currentDescription(): string {
-  const template = settings.value.publishDescriptionTemplate ?? "";
-  if (!descriptionFollowsTemplate.value || template.trim() === "") {
-    return exportDescription.value;
-  }
-  return renderDescription(template, {
-    title: exportTitle.value,
-    speaker: exportSpeaker.value,
-    date: localIsoDate(E.startedAtMs),
-    church: settings.value.churchName ?? "",
-    locale: locale.value,
-  });
+  return exportDescription.value;
 }
 
 /** Brukeren skrev i beskrivelsen: teksten er deres herfra. */
 export function editDescription(next: string): void {
   exportDescription.value = next;
-  descriptionFollowsTemplate.value = false;
 }
 
 // ── Kjøringen ───────────────────────────────────────────────────────────────
@@ -167,13 +126,6 @@ export const exportedSeconds = signal(0);
 export const exportedBytes = signal<number | null>(null);
 /** Mappen fila havnet i. */
 export const exportedFolder = signal("");
-/**
- * Innholdet slik det ble SENDT med eksporten, eller `null`.
- *
- * Et øyeblikksbilde, ikke feltene: kvitteringen skal si hva som faktisk står i
- * fila, også om noen redigerer tittelen etterpå uten å eksportere på nytt.
- */
-export const exportedContent = signal<ExportContent | null>(null);
 /**
  * Hva mastringen faktisk gjorde med nivået, eller `null`.
  *
@@ -232,32 +184,13 @@ export function exportExtension(): string {
   return isVideoExport() ? VIDEO_FORMAT : exportFormat.value;
 }
 
-/**
- * Hvilken KJØRING som gjelder.
- *
- * `E.loadSeq` svarer på «er det fortsatt den samme FILA»; denne svarer på «er
- * det fortsatt den samme EKSPORTEN». De to er ikke det samme spørsmålet siden
- * F2-A-B: `runExport` setter `exporting` FØR kanalanalysen, og i det vinduet
- * (30–60 s på en gudstjeneste) kan brukeren rekke å trykke Avbryt uten at fila
- * har byttet. Bakenden har ingen ffmpeg å drepe da, så det er DENNE telleren
- * som gjør at kjøringen faktisk stopper i stedet for å eksportere videre etter
- * en avbryting som så ut til å virke.
- *
- * Bumpes av `cancelExport` og av `resetExport` — altså av alt som sier «det som
- * var i gang, gjelder ikke lenger».
- */
-let runSeq = 0;
-
 export function resetExport(): void {
-  // Enhver kjøring som fortsatt henger i en `await` er foreldreløs herfra.
-  runSeq += 1;
   exportFormat.value = DEFAULT_EXPORT_FORMAT;
   exportFolder.value = null;
   includeVideo.value = false;
   exportTitle.value = "";
   exportSpeaker.value = "";
   exportDescription.value = "";
-  descriptionFollowsTemplate.value = true;
   exporting.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
@@ -269,7 +202,6 @@ export function resetExport(): void {
   exportedBytes.value = null;
   exportedFolder.value = "";
   exportedLoudness.value = null;
-  exportedContent.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFailed.value = false;
@@ -278,20 +210,15 @@ export function resetExport(): void {
 /**
  * Fyll «Innhold» for fila som nettopp ble åpnet.
  *
- * Det som er lagret i `.meta.json` vinner. Finnes det ingenting, og opptaket
- * er fra en kjent helligdag, foreslås dagens navn som tittel («1. påskedag») —
- * fra den samme tabellen som gir opptakene navn (`editor_church_day_name`).
- * En vanlig søndag får INGEN tittel: appen vet ikke hva prekenen het, og en
- * gjettet tittel ville gitt hver eneste eksport et nytt filnavn.
- *
- * Dagnavnene er norske, så forslaget gis bare når appen står på norsk.
+ * Det som er lagret i `.meta.json` vinner. Finnes det ingenting, står
+ * feltene tomme: appen vet ikke hva prekenen het, og en gjettet tittel ville
+ * gitt hver eneste eksport et nytt filnavn.
  *
  * `seq` er `E.loadSeq` fra åpningen; en fil som byttes mens vi venter, får
  * ikke den forriges innhold. Og et felt noen rakk å skrive i, overskrives ikke.
  */
 export async function loadExportContent(
   sourceToken: string,
-  startedAtMs: number | null,
   seq: number,
 ): Promise<void> {
   let saved: ExportContent | null = null;
@@ -308,20 +235,7 @@ export async function loadExportContent(
     exportTitle.value = saved.title;
     exportSpeaker.value = saved.speaker;
     exportDescription.value = saved.description;
-    // Det som ble sendt sist, er fasiten — også en beskrivelse som en gang
-    // kom fra malen. En mal endret i mellomtiden skal ikke skrive om den.
-    // Men en TOM beskrivelse er ingen tekst å verne om: den som eksporterte
-    // med bare en tittel før malen fantes, skal få malen neste gang.
-    descriptionFollowsTemplate.value = saved.description.trim() === "";
-    return;
   }
-  const date = localIsoDate(startedAtMs);
-  if (!date || locale.peek() !== "no") return;
-  const day = await window.api
-    .editorChurchDayName(date)
-    .catch((): string | null => null);
-  if (seq !== E.loadSeq || !day || exportTitle.peek()) return;
-  exportTitle.value = day;
 }
 
 /**
@@ -376,12 +290,47 @@ export async function pickExportFolder(): Promise<void> {
   exportFailed.value = false;
 }
 
+/**
+ * «Velg lydfil …» for intro eller outro: Rust åpner filvelgeren, sjekker fila
+ * og lagrer den i innstillingene — siden sender ingenting og får tilbake de
+ * lagrede innstillingene. Avbrutt = ingenting endret. En avvisning blir
+ * banneret over valgene, og det forrige valget står (samme form som
+ * `pickExportFolder`).
+ */
+export async function pickJingle(slot: JingleSlot): Promise<void> {
+  const answer = await window.api.settingsPickEditorClip(slot);
+  if (!answer.ok) {
+    exportWasCancelled.value = false;
+    exportErrorText.value = exportErrorKey(answer.error);
+    exportFailed.value = true;
+    console.warn("[export] jingle-valget ble avvist:", answer.error);
+    return;
+  }
+  if (!answer.settings) return;
+  patchSettings(jinglePatch(answer.settings));
+  exportErrorText.value = null;
+  exportWasCancelled.value = false;
+  exportFailed.value = false;
+}
+
+/** «Fjern»: Rust glemmer klippet, og eksporten går uten det til et nytt velges. */
+export async function clearJingle(slot: JingleSlot): Promise<void> {
+  try {
+    const stored = await window.api.settingsClearEditorClip(slot);
+    patchSettings(jinglePatch(stored));
+  } catch (err) {
+    console.warn("[export] kunne ikke fjerne jingelen:", err);
+    exportWasCancelled.value = false;
+    exportErrorText.value = null;
+    exportFailed.value = true;
+  }
+}
+
 /** Legg kvitteringen bort og kom tilbake til valgene, med dem stående. */
 export function exportAgain(): void {
   exportedPath.value = null;
   exportedRevealToken.value = null;
   exportedLoudness.value = null;
-  exportedContent.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFailed.value = false;
@@ -394,29 +343,7 @@ export async function cancelExport(): Promise<void> {
   // mens eksporten gikk til ende. Et andre klikk er ufarlig — avbryting er
   // idempotent.
   cancelling.value = true;
-  // Avbryt FØR bakenden har hørt om eksporten i det hele tatt.
-  //
-  // I forberedelsesfasen finnes det ingen ffmpeg å drepe — kjøringen henger i
-  // kanalanalysen — så `editor_cancel_export` svarer et sant «nei, ingenting
-  // kjørte», og uten dette gikk eksporten videre etter en avbryting som SÅ ut
-  // til å virke. Kjøringsnummeret er det som stopper den; kvitteringen under er
-  // ordrett den bakenden ville gitt, så flaten ikke kan se forskjell på hvilken
-  // side av spawnen brukeren rakk å trykke.
-  if (exportPhase.peek() === EXPORT_PHASE_PREPARING) {
-    runSeq += 1;
-    exporting.value = false;
-    cancelling.value = false;
-    exportPhase.value = null;
-    exportFraction.value = null;
-    exportEtaMs.value = null;
-    exportWasCancelled.value = true;
-    exportErrorText.value = "errCancelled";
-    exportFailed.value = false;
-  }
   try {
-    // Kalles UANSETT fase: en eksport skallet tror er i forberedelse, men som
-    // bakenden faktisk har spawnet (en tilstand bare en feil kan lage), skal
-    // ikke overleve fordi flaten var sikker på at den ikke fantes.
     await window.api.editorCancelExport();
   } catch {
     /* ingenting kjørte, eller bakenden svarte ikke — samme utfall for brukeren */
@@ -446,20 +373,11 @@ export async function cancelExport(): Promise<void> {
  * etter HVER `await`, FØR noe skrives — samme mønster som `loader.ts` og
  * `sermon.ts`.
  *
- * ## Vakten må stå FØR analysen, ikke etter (F2-2)
+ * ## Vakten står først
  *
- * `exporting`-vakten på første linje var sann — og verdiløs, fordi den vernet
- * om et flagg som ble satt LANGT senere. `ensureSoundAnalysis()` er en full
- * `astats`-passering over hele opptaket; på en 90 minutters gudstjeneste tar
- * den 30–60 sekunder. I hele det vinduet så «Eksporter» uberørt ut, og et
- * andre klikk gikk rett gjennom vakten, ventet på den SAMME memoiserte
- * analysen, og sendte en andre `editor_export`. Hva to eksporter på én motor
- * gjør med hverandres filer står i `ExportEngine`s `in_flight`-felt; kort sagt
- * meldte den ene suksess på en trunkert fil og den andre «avbrutt» på en hel.
- *
- * Så: flagget settes først, fasen sier «Analyserer lyden…», og Kjører-visningen
- * står med en ubestemt bar og en Avbryt-knapp som faktisk avbryter (se
- * `cancelExport`). Analysen kommer etterpå.
+ * `exporting`-flagget settes før noe annet skjer, så et andre klikk på «Eksporter» (eller et
+ * dobbeltklikk) aldri sender en andre `editor_export` til den samme motoren. Hva to eksporter
+ * på én motor gjør med hverandres filer står i `ExportEngine`s `in_flight`-felt.
  */
 /** Kuttlista som en sammenlignbar verdi. Håndtaksdrag endrer elementene på
  *  stedet, så en referanse-sammenligning ville ikke sett dem. */
@@ -487,7 +405,6 @@ export async function runExport(
     return;
   }
   const seq = E.loadSeq;
-  const run = ++runSeq;
 
   exporting.value = true;
   cancelling.value = false;
@@ -499,36 +416,16 @@ export async function runExport(
   exportFailed.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
-  // Skallets egen fase: det finnes ingen ffmpeg å melde prosent for ennå.
-  exportPhase.value = EXPORT_PHASE_PREPARING;
-
-  // Kanalanalysen: en frivillig som gikk rett fra Klipp til Eksporter skal få
-  // den samme reparasjonen som en som stoppet innom Lyd. Den er memoisert, så
-  // den koster ingenting når steget har vært åpent.
-  if (soundProfile.value !== "none") await ensureSoundAnalysis();
-  // Fila kan ha byttet MENS analysen ventet. Ingenting er skrevet ennå — bare
-  // gå stille ut, som om eksporten aldri ble bedt om. Og RØR IKKE signalene:
-  // `openFile`/`closeFile` har alt nullstilt dem for fila som står nå.
-  if (seq !== E.loadSeq) return;
-  // …eller brukeren rakk å trykke Avbryt mens analysen gikk. `cancelExport`
-  // har skrevet kvitteringen; det eneste som gjenstår er å ikke eksportere.
-  if (run !== runSeq) return;
-
-  // Forberedelsen er over; herfra er fasen bakendens egen. `null` og ikke
-  // «encoding»: den koden skal komme fra Rust, ikke gjettes her.
+  // Fasen er bakendens egen. `null` og ikke «encoding»: den koden skal komme fra Rust,
+  // ikke gjettes her.
   exportPhase.value = null;
 
   const video = isVideoExport();
-  const sound = soundExportFields({
-    profile: soundProfile.value,
-    useMixer: useMixer.value,
-    processing: useMixer.value ? mixerProcessing() : undefined,
-    repair: channelRepair.value,
-  });
+  const sound = soundExportFields(podcastAudio.value);
 
-  // Innholdet slik det står NÅ, trimmet i endene. Datoen og menighetsnavnet
-  // følger med uansett om noe er skrevet: `date`/`album`-taggene er sanne for
-  // enhver eksport av et opptak vi vet når ble tatt.
+  // Innholdet slik det står NÅ, trimmet i endene. Datoen følger med uansett
+  // om noe er skrevet: `date`-taggen er sann for enhver eksport av et opptak
+  // vi vet når ble tatt.
   // Lappen peker ut både kilden og sidevognen («Innhold», A3): Rust avleder
   // `<stem>.meta.json` selv. Stien sendes ingen steder.
   const sourceToken = E.sourceToken;
@@ -556,9 +453,11 @@ export async function runExport(
     metadata: {
       ...content,
       date: localIsoDate(E.startedAtMs),
-      album: settings.value.churchName?.trim() || null,
     },
     ...sound,
+    // Intro og outro er innstillinger Rust leser selv: her sier vi bare JA eller
+    // NEI (og alltid nei for video — motoren legger dem rundt lydsporet).
+    ...jingleFlags(video, settings.value),
   });
 
   // Estimatoren eies av JOBBEN og ikke av stripa: en bar som forsvinner og
@@ -635,7 +534,6 @@ export async function runExport(
     exportedSeconds.value = keptSeconds;
     exportedBytes.value = video ? null : estimate;
     exportedLoudness.value = result.loudness ?? null;
-    exportedContent.value = content;
     // Eksporten lyktes — utkastet har gjort jobben sin. Men bare hvis den
     // eksporterte det som står nå: et kutt lagt til MENS den gikk er ikke i
     // fila, og da må både «ulagrede endringer» og utkastet stå igjen (audit

@@ -129,7 +129,7 @@ What that means for the ring:
       navigation is three destinations now, and the runbook's own translation
       table is at the top of that file. Its «Flater som ikke finnes lenger»
       section is what stops a missing screen being filed as a regression.
-- [ ] Know the open ends before the Sunday, not after — `docs/APP-SHELL.md`
+- [ ] Know the open ends before the Sunday, not after — `docs/archive/APP-SHELL.md`
       §«Etter byttet» lists them. The one that can cost a recording: on a Mac
       that needs an administrator prompt to write a power event, wake-from-sleep
       is never armed, because the interactive path has no caller. A rig that
@@ -220,7 +220,7 @@ minimum bar is what v0.12.0 actually met:
       men bare så en installasjon som allerede kom fra den kan oppdatere seg.**
       (Eier avgjorde 2026-10-04, F-W7.) En manglende `.msi` på et stabilt utkast
       er derfor fortsatt en feil, og `-setup.exe` skal være det som pekes på
-      overfor nye brukere (`docs/FRIVILLIG.md`). Hvorfor ikke MSI helt bort — fra
+      overfor nye brukere (`docs/archive/FRIVILLIG.md`). Hvorfor ikke MSI helt bort — fra
       kildene til Tauri-versjonene `Cargo.lock` og `package-lock.json` låser
       (`tauri-plugin-updater` 2.11.0, `tauri-utils` 2.9.3, tauri-cli 2.11.5): - Bundleren skriver bundle-typen inn i selve exe-en for hver pakke (hver pakke
       bygges fra sin egen patchede kopi; tauri-bundlers `bundle.rs`
@@ -267,7 +267,7 @@ minimum bar is what v0.12.0 actually met:
       (`bundle.windows.webviewInstallMode: embedBootstrapper`, ~1,8 MB større).
       Merk at den fortsatt trenger nettilgang for å hente selve runtimen —
       bare `offlineInstaller` gjør ikke det, og den er bevisst valgt bort
-      (+127 MB på hver oppdatering). Se `docs/NEEDS-RICHARD.md`
+      (+127 MB på hver oppdatering). Se `docs/archive/NEEDS-RICHARD.md`
       §«Eierbeslutninger fra F2».
 
 ### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)

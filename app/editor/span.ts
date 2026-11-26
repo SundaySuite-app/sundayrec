@@ -7,9 +7,8 @@
  * betyr «Preken · 4 min» rett under «… — 3 min 30 s». To tall om det samme,
  * samtidig, på samme skjerm.
  *
- * Tre `tf()`-nøkler og ingen `tn()`. Pausen var én grunn til det (F2-S6
- * avsluttet den); den som består er at «s», «min» og «t» er INVARIANTE
- * forkortelser i alle sju språk, i hele tallområdet de faktisk vises for.
+ * Tre `tf()`-nøkler og ingen `tn()`: «s», «min» og «t» er INVARIANTE
+ * forkortelser i begge språk, i hele tallområdet de faktisk vises for.
  */
 
 import { tf } from "../i18n";

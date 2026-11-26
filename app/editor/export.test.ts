@@ -15,24 +15,18 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 import { isRecording } from "../state/recording";
-import { settings } from "../state/settings";
 import {
-  cancelExport,
   currentDescription,
-  descriptionFollowsTemplate,
   editDescription,
   exportDescription,
   exportedBytes,
-  exportedContent,
   exportedFolder,
   exportedPath,
   exportedSeconds,
   exportErrorText,
   exportFailed,
   exporting,
-  exportPhase,
   exportSpeaker,
   exportTitle,
   exportWasCancelled,
@@ -42,9 +36,7 @@ import {
   resetExport,
   runExport,
 } from "./export";
-import { EXPORT_PHASE_PREPARING } from "./export-core";
 import { dirty, E, resetFileState } from "./model";
-import { soundProfile } from "./sound";
 
 /** Lappene til de to opptakene testene bytter mellom. Sidevognene (A3) navngir
  *  opptaket med lappen, aldri stien. */
@@ -104,15 +96,11 @@ beforeEach(() => {
   E.sourceToken = TOKEN_A;
   E.duration = 3600;
   E.cuts = [];
-  // "none" holder testen unna `ensureSoundAnalysis()` — en annen await, med
-  // sin egen vakt (se export.ts), men ikke den denne fila tester.
-  soundProfile.value = "none";
 });
 
 afterEach(() => {
   resetExport();
   resetFileState();
-  soundProfile.value = "none";
   dirty.value = false;
   isRecording.value = false;
   delete (globalThis as unknown as { window?: unknown }).window;
@@ -286,142 +274,55 @@ describe("runExport — generasjonsvakten", () => {
     expect(exportErrorText.value).toBe("errCancelled");
     expect(exportFailed.value).toBe(false);
   });
-
-  // Den ANDRE awaiten — kanalanalysen, ikke selve eksportkallet. Samme vakt,
-  // sjekket der også: se filhodet i export.ts.
-  it("et filbytte MENS kanalanalysen henger starter aldri selve eksporten", async () => {
-    const analysis = deferred<{ diagnosis?: unknown }>();
-    let exportCalls = 0;
-    (globalThis as unknown as { window: unknown }).window = {
-      api: {
-        editorAutoProcess: () => analysis.promise,
-        editorExportFile: () => {
-          exportCalls += 1;
-          return Promise.resolve({ ok: true, outputPath: "/uventet.mp3" });
-        },
-        editorDeleteCutsDraft: () => Promise.resolve(),
-      },
-    };
-    // "speech" (ikke "none") — ellers hopper `runExport` rett over analysen.
-    soundProfile.value = "speech";
-
-    const run = runExport(120, 1_000_000);
-    switchToFileB();
-    analysis.resolve({});
-    await run;
-
-    // Vakten fanget den FØRSTE awaiten — eksportkallet ble aldri gjort.
-    expect(exportCalls).toBe(0);
-    expect(exporting.value).toBe(false);
-    expect(exportedPath.value).toBeNull();
-  });
 });
 
 /**
  * F2-A-B: ÉN eksport om gangen, og bare når det er lov å eksportere.
  *
- * Granskningens F2-2 og F2-11. Den første prøven er den viktigste, og den er
- * bygget på nøyaktig den samme utsatte-analyse-formen som prøven over: en
- * hengende `editorAutoProcess` er dobbeltklikkets vindu, ikke en oppfinnelse
- * for testen.
+ * Granskningens F2-2 og F2-11. Vinduet der et andre klikk kunne slippe gjennom var før F3 en
+ * kanalanalyse; nå er det selve `editor_export`-kallet, som også kan ta minutter.
  */
 describe("runExport — én om gangen", () => {
-  /** `window.api` med en analyse testen selv holder igjen, og en teller på
-   *  eksportkallene. */
-  function heldAnalysis(): {
-    resolve: (v: { diagnosis?: unknown }) => void;
+  /** `window.api` med et eksportkall testen selv holder igjen, og tellere. */
+  function heldExport(): {
+    resolve: (v: { ok: boolean; outputPath?: string }) => void;
     calls: () => number;
-    cancels: () => number;
   } {
-    const analysis = deferred<{ diagnosis?: unknown }>();
+    const held = deferred<{ ok: boolean; outputPath?: string }>();
     let exportCalls = 0;
-    let cancels = 0;
     (globalThis as unknown as { window: unknown }).window = {
       api: {
-        editorAutoProcess: () => analysis.promise,
         editorExportFile: () => {
           exportCalls += 1;
-          return Promise.resolve({ ok: true, outputPath: "/ut.mp3" });
+          return held.promise;
         },
-        editorCancelExport: () => {
-          cancels += 1;
-          return Promise.resolve(false);
-        },
+        editorCancelExport: () => Promise.resolve(false),
         editorDeleteCutsDraft: () => Promise.resolve(),
       },
     };
-    // "speech" (ikke "none") — ellers hopper `runExport` rett over analysen,
-    // og da finnes ikke vinduet denne fila handler om.
-    soundProfile.value = "speech";
-    return {
-      resolve: analysis.resolve,
-      calls: () => exportCalls,
-      cancels: () => cancels,
-    };
+    return { resolve: held.resolve, calls: () => exportCalls };
   }
 
-  // MUTASJONSPRØVEN: flytt `exporting.value = true` tilbake til ETTER
-  // `await ensureSoundAnalysis()` — der den sto — og denne blir rød med
+  // MUTASJONSPRØVEN: ta `exporting.value`-vakten ut av `runExport`, og denne blir rød med
   // `exportCalls === 2`. Det er dobbelteksporten, ordrett.
-  it("et andre klikk MENS kanalanalysen henger gir ÉN eksport, ikke to", async () => {
-    const api = heldAnalysis();
+  it("et andre klikk MENS eksporten går gir ÉN eksport, ikke to", async () => {
+    const api = heldExport();
 
     const first = runExport(120, 1_000_000);
-    // Vinduet er ekte: `astats` over en 90 minutters gudstjeneste tar 30–60 s,
-    // og knappen sto uberørt hele veien.
     expect(exporting.value).toBe(true);
     const second = runExport(120, 1_000_000);
 
-    api.resolve({});
+    api.resolve({ ok: true, outputPath: "/ut.mp3" });
     await Promise.all([first, second]);
 
     expect(api.calls()).toBe(1);
-  });
-
-  it("forberedelsesfasen har sin egen tekst, så baren ikke later som den koder", async () => {
-    const api = heldAnalysis();
-    const run = runExport(120, 1_000_000);
-
-    // FØR analysen svarer finnes det ingen ffmpeg å melde prosent for.
-    expect(exportPhase.value).toBe(EXPORT_PHASE_PREPARING);
-
-    api.resolve({});
-    await run;
-    // Etterpå er fasen bakendens igjen — `null` til den sier noe selv.
-    expect(exportPhase.value).toBeNull();
-  });
-
-  // Prisen for å sette `exporting` tidlig: Avbryt-knappen er synlig i 30–60 s
-  // FØR bakenden vet at det finnes en eksport. Uten dette svarte
-  // `editor_cancel_export` et sant «nei, ingenting kjørte» og eksporten gikk
-  // videre — en avbryting som SÅ ut til å virke.
-  it("Avbryt i forberedelsesfasen stopper kjøringen, selv om bakenden ikke har noe å drepe", async () => {
-    const api = heldAnalysis();
-    const run = runExport(120, 1_000_000);
-
-    await cancelExport();
-    // Kvitteringen er ordrett den bakenden ville gitt for en ekte avbryting.
-    expect(exporting.value).toBe(false);
-    expect(exportWasCancelled.value).toBe(true);
-    expect(exportErrorText.value).toBe("errCancelled");
-    expect(exportFailed.value).toBe(false);
-    // …og bakenden ble spurt uansett: en eksport skallet TROR er i
-    // forberedelse, men som bakenden har spawnet, skal ikke overleve.
-    expect(api.cancels()).toBe(1);
-
-    api.resolve({});
-    await run;
-
-    // Det avgjørende: analysen kom tilbake, og ingen eksport ble sendt.
-    expect(api.calls()).toBe(0);
-    expect(exportedPath.value).toBeNull();
   });
 
   // F2-11. Begge er full-fil ffmpeg-arbeid over den samme CPU-en
   // capture-tråden trenger; et stall der er tapte samples i gudstjenesten som
   // tas opp NÅ (målt 2026-07-31: 15–56 %).
   it("eksport UNDER opptak sendes aldri, og sier hvorfor", async () => {
-    const api = heldAnalysis();
+    const api = heldExport();
     isRecording.value = true;
 
     await runExport(120, 1_000_000);
@@ -544,7 +445,7 @@ describe("mappen er en lapp fra Rust", () => {
  * Feltene fantes i `EditorExportRequest` siden P2b; skallet sendte dem aldri.
  */
 describe("runExport — innholdet", () => {
-  it("sender tittel, taler og beskrivelse trimmet, med dato og menighet", async () => {
+  it("sender tittel, taler og beskrivelse trimmet, med dato", async () => {
     installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
     E.startedAtMs = new Date(2026, 8, 27, 11, 0).getTime();
     exportTitle.value = "  Den gode hyrde ";
@@ -559,12 +460,6 @@ describe("runExport — innholdet", () => {
       speaker: "Kari",
       description: "Joh 10",
       date: "2026-09-27",
-    });
-    // Kvitteringen leser øyeblikksbildet, ikke feltene.
-    expect(exportedContent.value).toEqual({
-      title: "Den gode hyrde",
-      speaker: "Kari",
-      description: "Joh 10",
     });
   });
 
@@ -625,61 +520,25 @@ describe("runExport — innholdet", () => {
 
     expect(savedContent).toEqual([]);
     expect(deletedContent).toEqual([]);
-    expect(exportedContent.value).toBeNull();
   });
 });
 
 /**
- * Den faste beskrivelsen fra Oppsett — fylt inn LIVE til noen skriver selv.
+ * «Innhold»s beskrivelse er bare det som er skrevet — ingen mal fra Oppsett.
  */
-describe("beskrivelsesmalen i «Innhold»", () => {
-  const TEMPLATE = "«{tittel}» — {taler}, {kirke}.";
-
-  beforeEach(() => {
-    settings.value = {
-      ...SETTINGS_DEFAULTS,
-      churchName: "Sentrumskirken",
-      publishDescriptionTemplate: TEMPLATE,
-    };
-  });
-
-  afterEach(() => {
-    settings.value = { ...SETTINGS_DEFAULTS };
-  });
-
-  it("følger tittel og taler mens de skrives", () => {
-    exportTitle.value = "Nåde";
-    expect(currentDescription()).toBe("«Nåde» — , Sentrumskirken.");
-    exportSpeaker.value = "Ola";
-    expect(currentDescription()).toBe("«Nåde» — Ola, Sentrumskirken.");
-  });
-
-  it("slutter å følge malen i det noen skriver i beskrivelsen", () => {
-    exportTitle.value = "Nåde";
-    editDescription("Min egen tekst");
-    exportTitle.value = "Noe annet";
-    expect(descriptionFollowsTemplate.value).toBe(false);
-    expect(currentDescription()).toBe("Min egen tekst");
-  });
-
-  it("uten mal er beskrivelsen bare det som er skrevet", () => {
-    settings.value = { ...SETTINGS_DEFAULTS, publishDescriptionTemplate: "" };
-    exportDescription.value = "Fritekst";
-    expect(currentDescription()).toBe("Fritekst");
-  });
-
-  it("det som sendes, er den utfylte malen", async () => {
+describe("beskrivelsen i «Innhold»", () => {
+  it("er det som står i feltet, og det som sendes", async () => {
     installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
-    exportTitle.value = "Nåde";
-    exportSpeaker.value = "Ola";
+    editDescription("Min egen tekst");
+    expect(currentDescription()).toBe("Min egen tekst");
 
     await runExport(120, 1_000_000);
 
     const metadata = exportRequests[0]?.metadata as Record<string, unknown>;
-    expect(metadata.description).toBe("«Nåde» — Ola, Sentrumskirken.");
+    expect(metadata.description).toBe("Min egen tekst");
   });
 
-  it("en lagret beskrivelse vinner over malen — også om malen er endret siden", async () => {
+  it("en lagret beskrivelse leses inn ved åpning", async () => {
     (globalThis as unknown as { window: unknown }).window = {
       api: {
         editorReadContent: () =>
@@ -688,34 +547,15 @@ describe("beskrivelsesmalen i «Innhold»", () => {
             speaker: "",
             description: "Slik den ble sendt",
           }),
-        editorChurchDayName: () => Promise.resolve(null),
       },
     };
-    await loadExportContent(E.sourceToken, null, E.loadSeq);
-    expect(descriptionFollowsTemplate.value).toBe(false);
+    await loadExportContent(E.sourceToken, E.loadSeq);
     expect(currentDescription()).toBe("Slik den ble sendt");
   });
 
-  it("en lagret, men TOM beskrivelse gir malen plass", async () => {
-    (globalThis as unknown as { window: unknown }).window = {
-      api: {
-        editorReadContent: () =>
-          Promise.resolve({
-            title: "Bare tittel",
-            speaker: "",
-            description: "",
-          }),
-        editorChurchDayName: () => Promise.resolve(null),
-      },
-    };
-    await loadExportContent(E.sourceToken, null, E.loadSeq);
-    expect(descriptionFollowsTemplate.value).toBe(true);
-    expect(currentDescription()).toBe("«Bare tittel» — , Sentrumskirken.");
-  });
-
-  it("en ny fil følger malen igjen", () => {
+  it("en ny fil starter med en tom beskrivelse", () => {
     editDescription("Min egen tekst");
     resetExport();
-    expect(descriptionFollowsTemplate.value).toBe(true);
+    expect(currentDescription()).toBe("");
   });
 });

@@ -18,8 +18,8 @@
  *
  * ## Forhåndslytting er den eneste modusen
  *
- * Én knapp, og den hopper alltid over kuttene: en frivillig som nettopp har trykket «Behold
- * bare prekenen» vil høre RESULTATET.
+ * Én knapp, og den hopper alltid over kuttene: en frivillig som nettopp har lagt inn et kutt
+ * vil høre RESULTATET.
  *
  * ## Spillehodet er det motoren sier
  *
@@ -93,7 +93,7 @@ let stopCutWatch: (() => void) | null = null;
 let cutsTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Fortell modellen hvordan avspillingen faktisk går. */
-export function setPlaybackSource(source: PlaybackSource): void {
+function setPlaybackSource(source: PlaybackSource): void {
   E.playbackSource = source;
   playbackSource.value = source;
 }
@@ -113,7 +113,7 @@ export function teardownPlayback(): void {
 
 /** Kutt er hopp-soner. Et spillehode som hviler inne i ett er meningsløst —
  *  det spilles ingen lyd der. Legacys `snapOutOfCut`, ordrett. */
-export function snapOutOfCut(sec: number): number {
+function snapOutOfCut(sec: number): number {
   for (const cut of E.cuts) {
     if (sec >= cut.start && sec < cut.end) return Math.min(E.duration, cut.end);
   }

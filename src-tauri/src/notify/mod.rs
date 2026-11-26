@@ -80,8 +80,8 @@ impl MissedSlot {
     /// This occurrence's row in the `notify_seen` ledger, under
     /// [`sundayrec_core::notify::SeenScope::Missed`].
     ///
-    /// The label is HASHED rather than spelled out: a special recording's name
-    /// is something a person typed ("Bryllup Kari og Ola"), and a ledger that
+    /// The label is HASHED rather than spelled out: a label
+    /// is something a person may have typed, and a ledger that
     /// keeps names is a second place a name lives for no gain — the key only
     /// ever has to be compared with itself. `at` stays legible because a
     /// timestamp is the one part somebody debugging this actually needs to read.
@@ -329,8 +329,9 @@ mod tests {
         let slot = MissedSlot {
             at: "2026-09-06T11:00:00".into(),
             label: "Bryllup Kari og Ola".into(),
-            kind: sundayrec_core::schedule::MissedKind::Special {
-                name: Some("Bryllup Kari og Ola".into()),
+            kind: sundayrec_core::schedule::MissedKind::Weekly {
+                start: "11:00".into(),
+                stop: "13:00".into(),
             },
         };
         let key = slot.seen_key();

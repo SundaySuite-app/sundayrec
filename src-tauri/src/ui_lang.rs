@@ -32,7 +32,7 @@
 //! ## Staleness, honestly
 //!
 //! The value can lag by exactly one settings write: a volunteer who switches
-//! the app to Polish and, in the same second, unplugs the mixer, may get one
+//! the app to English and, in the same second, unplugs the mixer, may get one
 //! Norwegian notification. [`crate::settings::load`] runs on the scheduler's
 //! every supervisor pass and on every dispatch, so the window closes on its
 //! own; the renderer's `tray_set_language` closes it immediately. A stale
@@ -56,11 +56,6 @@ fn index_of(lang: Lang) -> u8 {
     match lang {
         Lang::No => 0,
         Lang::En => 1,
-        Lang::De => 2,
-        Lang::Sv => 3,
-        Lang::Da => 4,
-        Lang::Pl => 5,
-        Lang::Fr => 6,
     }
 }
 
@@ -105,7 +100,7 @@ pub fn set(lang: Lang) {
     store(&UI_LANG, lang);
 }
 
-/// Remember the language behind a settings code (`"pl"`, `None`, `"xx"` …).
+/// Remember the language behind a settings code (`"en"`, `None`, `"xx"` …).
 ///
 /// Called from [`crate::settings::load`] (so any settings read warms it) and
 /// from the `tray_set_language` command (so a language change lands at once).
@@ -162,7 +157,7 @@ mod tests {
         // An unknown code and "follow the OS" both mean Norwegian, exactly like
         // `Lang::from_code` — the fallback the whole module rests on.
         for code in [Some("xx"), Some(""), None] {
-            store(&cell, Lang::Pl);
+            store(&cell, Lang::En);
             note_into(&cell, code);
             assert_eq!(read(&cell), Lang::No, "{code:?}");
         }

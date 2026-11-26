@@ -16,7 +16,7 @@ ok: boolean, verdict: SelfTestVerdict,
  * WHY, in ENGLISH prose, rendered verbatim by whoever shows the report.
  *
  * ⚠️ These sentences are written HERE, in Rust, and the quality banner
- * showed them word for word in all seven UI languages — a German volunteer
+ * showed them word for word in both UI languages — an English volunteer
  * read «Svakt signal — vurder å øke gain». Rust cannot translate them
  * (the UI language lives in the settings row, and this function is pure),
  * so the fix was to stop asking it to: [`Self::reason_codes`] carries the

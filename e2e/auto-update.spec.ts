@@ -134,7 +134,7 @@ test.describe("auto-update toggle", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // Parked exactly where #11 lived: the shell has rendered and installed
@@ -194,7 +194,7 @@ test.describe("auto-update toggle", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // Running: the startup check fired and the repeat is armed.
@@ -226,7 +226,7 @@ test.describe("auto-update toggle", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // Off: the boot armed nothing.
@@ -261,7 +261,7 @@ test.describe("oppdateringsbanneret", () => {
         update_check: { phase: "available", version: "0.16.0" },
       },
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-update");
@@ -285,7 +285,7 @@ test.describe("oppdateringsbanneret", () => {
 
     // Den følger med til de andre destinasjonene: en oppdatering hører ikke
     // til noen side.
-    await page.getByTestId("nav-edit").click();
+    await page.getByTestId("nav-recordings").click();
     await expect(page.getByTestId("banner-update")).toBeVisible();
   });
 
@@ -309,7 +309,7 @@ test.describe("oppdateringsbanneret", () => {
       // under Avansert er den andre knappen som leser den samme fasen. To
       // flater som er uenige om hvorvidt man kan oppdatere er nøyaktig
       // skjøtefeilen `state/update-core.ts` ble skrevet for å hindre.
-      goto: "settings:general",
+      goto: "settings",
     });
 
     const reason = "Kan ikke oppdatere mens det tas opp";
@@ -341,7 +341,7 @@ test.describe("oppdateringsbanneret", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, update_check: { phase: "upToDate" } },
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-start")).toBeVisible();
     await expect(page.getByTestId("banner-update")).toHaveCount(0);
@@ -362,7 +362,7 @@ test.describe("oppdateringsbanneret", () => {
         update_check: { phase: "available", version: "0.17.2-beta.1", notes },
       },
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     // Banneret, over siden — kort notat, altså INGEN «Vis mer»: hele notatet
@@ -412,7 +412,7 @@ noe har flyttet seg.`;
         update_check: { phase: "available", version: "0.17.2-beta.1", notes },
       },
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-update");
@@ -443,7 +443,7 @@ test.describe("manual check answers", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
-      goto: "settings:general",
+      goto: "settings",
     });
     await page.getByTestId("adv-update-check").click();
     await expect(page.getByTestId("adv-update-state")).toHaveText(
@@ -468,7 +468,7 @@ test.describe("manual check answers", () => {
         ),
       },
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
-      goto: "settings:general",
+      goto: "settings",
     });
     await page.getByTestId("adv-update-check").click();
     await expect(page.getByTestId("adv-update-error")).toHaveText(

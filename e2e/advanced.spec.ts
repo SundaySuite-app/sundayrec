@@ -31,8 +31,8 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
         autoRecordEnabled: true,
         slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
       },
-      // D2: tidsplanen er et kort i kontrollrommet på OPPTAK.
-      goto: "home",
+      // F5: tidsplanen er PLAN.
+      goto: "plan",
     });
 
     const toggle = page.getByTestId("setup-auto-toggle");
@@ -82,7 +82,7 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
           { days: [2], start: "19:00", stop: "20:00", max: null },
         ],
       },
-      goto: "home",
+      goto: "plan",
     });
 
     await page.getByTestId("setup-auto-toggle").click();
@@ -98,7 +98,7 @@ test.describe("opptaksradene", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, preRollSeconds: 0, splitMinutes: 0 },
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await page.getByTestId("adv-preroll-control-input").selectOption("30");
@@ -140,7 +140,7 @@ test.describe("opptaksradene", () => {
         deviceId: "x32",
         deviceName: "Behringer X32",
       },
-      goto: "settings:audio",
+      goto: "settings:sound",
     });
     // D2: `?goto=settings:audio` folder ut kilde-kortet i kontrollrommet, og
     // lenken nederst på den skjermen går til raden under Innstillinger.
@@ -158,20 +158,19 @@ test.describe("opptaksradene", () => {
   test("Avansert er halve Innstillinger, ikke en lenke til et sjuende sted", async ({
     page,
   }) => {
-    // P1a lot lenken være ute med vilje, fordi siden ikke fantes. D2 gikk et
-    // hakk lenger: Avansert ER Innstillinger-flaten, sammen med kirkeprofilen,
-    // og tannhjulet er hele veien dit. Ingen lenke å ikke stole på.
+    // Opptaksvalgene er en seksjon på Innstillinger-flaten, ikke en lenke til
+    // et annet sted.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("setup-language")).toBeVisible();
     // Resten er delt i seksjoner med overskrift (og en innholdsliste øverst).
     await expect(page.getByTestId("setup-toc")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Opptaket", level: 2 }),
+      page.getByRole("heading", { name: "Opptaksvalg", level: 2 }),
     ).toBeVisible();
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
   });
@@ -184,7 +183,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
   // and `TestWakeRow`'s doc comment in ScheduleCard.tsx). These four prove
   // the reopened door end to end, fixture-tailored per the reachability
   // audit's own words for why it was left dark: "rig tools waiting for a Mac
-  // where the wake actually fails" (docs/APP-SHELL.md).
+  // where the wake actually fails" (docs/archive/APP-SHELL.md).
 
   test("planlegger en ekte vekking, og «Avbryt» tar raden tilbake", async ({
     page,
@@ -202,7 +201,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
         wake_cancel_test: true,
       },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "plan",
     });
 
     // Ingen historikk ennå — den ærlige tomtilstanden, ikke en tom liste som
@@ -244,7 +243,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
         },
       },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await page.getByTestId("adv-wake-test").click();
@@ -263,7 +262,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, wake_failure_history: [] },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await expect(page.getByTestId("adv-wake-test")).toBeEnabled();
@@ -304,7 +303,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
         ),
       },
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "plan",
     });
 
     await expect(page.getByTestId("adv-wake-history-empty")).toHaveCount(0);

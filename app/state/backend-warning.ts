@@ -26,8 +26,8 @@
  * ## Data, ikke tekst — også her
  *
  * Køen bærer koden og motorens `params`, aldri en ferdig setning. Siden
- * oversetter, med `notify.*`-nøklene legacy hadde i alle sju katalogene (de er
- * hentet tilbake ordrett — en tekst som allerede er oversatt til sju språk
+ * oversetter, med `notify.*`-nøklene legacy hadde i begge katalogene (de er
+ * hentet tilbake ordrett — en tekst som allerede er oversatt til to språk
  * skrives ikke på nytt). Er koden UKJENT for denne katalogen, brukes motorens
  * egen `msg` ordrett: en sann setning på feil språk er bedre enn stillhet, og
  * stillhet er nøyaktig det denne fila finnes for å avslutte.

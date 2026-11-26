@@ -7,7 +7,7 @@ Opphavsrett: ArtCraft Team and the FilmCraft contributors.
 
 Det er et bevisst unntak fra «avhengighet før kopi» i
 [`docs/AVHENGIGHETER.md`](../../docs/AVHENGIGHETER.md) (eiers beslutning
-2026-10-11). Bakgrunn: [`docs/LYDMOTOR.md`](../../docs/LYDMOTOR.md).
+2026-10-11). Bakgrunn: [`docs/archive/LYDMOTOR.md`](../../docs/archive/LYDMOTOR.md).
 
 ## Låst commit
 

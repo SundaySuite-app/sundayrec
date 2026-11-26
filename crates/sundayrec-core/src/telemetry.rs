@@ -9,11 +9,10 @@
 //!
 //! ## The discipline: the payload cannot carry what the type cannot hold
 //!
-//! [`crate::diagnostics`] made the same argument for the diagnose report (module
-//! docs :12-19): the Electron build hand-picked which fields to print, we went
-//! one better and gave the input type no field a secret could sit in. The
-//! telemetry payload is a stricter case, because it leaves the machine — so the
-//! rule here is sharpened into a classification every field must satisfy:
+//! The Electron build hand-picked which fields to print; here the types give a
+//! secret no field to sit in. The telemetry payload is a strict case, because
+//! it leaves the machine — so the rule is a classification every field must
+//! satisfy:
 //!
 //!   1. **a number or a bool** — `u64`, `f64`, `i64`, `bool`. A counter, a
 //!      duration, a timestamp, a flag. These cannot hold text at all, so most of
@@ -23,7 +22,7 @@
 //!      smuggle anything, and it drops the timezone offset as a bonus.
 //!   2. **a closed enum** — [`TelemetryOs`], [`CrashKind`], [`QualityReason`],
 //!      [`CounterName`], and the reused [`crate::selftest::SelfTestVerdict`] /
-//!      [`crate::diagnostics::DiagnosticSeverity`] / [`crate::settings`] tags.
+//!      [`DiagnosticSeverity`] / [`crate::settings`] tags.
 //!      The set of possible values is written down in this file; no runtime
 //!      input can widen it.
 //!   3. **a String produced by exactly ONE sanitizer in this module** —
@@ -48,8 +47,7 @@
 //!
 //!   - **Backtraces are not sent in v1.** The crash ring keeps them
 //!     ([`crash::CrashRecord::backtrace`] in `src-tauri`, path-scrubbed at write
-//!     time), and the diagnose report can hand them over when the operator
-//!     chooses to. But a backtrace is the single largest and least predictable
+//!     time), and the operator can hand them over by hand. But a backtrace is the single largest and least predictable
 //!     free-text field we have: 8000 characters naming every source file the
 //!     stack walked through, including checkouts under roots the scrubber's list
 //!     does not know (a network share, an external volume, a corporate profile
@@ -86,21 +84,16 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::diagnostics::{DiagnosticFinding, DiagnosticSeverity};
 use crate::redact::{USER_PLACEHOLDER, redact_secrets, scrub_paths};
 use crate::selftest::{
-    FAIL_DROPS, FAIL_GAP_SEC, FAIL_XRUNS, RecordingTelemetry, SelfTestReport, SelfTestVerdict,
-    WARN_GAP_SEC,
+    FAIL_DROPS, FAIL_GAP_SEC, FAIL_XRUNS, RecordingTelemetry, SelfTestReport, SelfTestSignal,
+    SelfTestVerdict, WARN_GAP_SEC, classify_signal, size_is_plausible,
 };
 use crate::settings::{ChannelMode, FileFormat, FilenamePattern, SampleRate, Settings};
-use crate::test_recording::{TestRecordingSignal, classify_signal, size_is_plausible};
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
 pub mod consent;
-pub mod corrections;
 pub mod queue;
-
-pub use corrections::{CorrectionReport, MAX_CORRECTIONS};
 
 /// The payload schema version. Bumped when a field changes MEANING (a new
 /// optional field does not need it); the receiving endpoint keys its parsing off
@@ -120,7 +113,7 @@ pub const TELEMETRY_SCHEMA: u32 = 1;
 pub const MAX_CRASHES: usize = 20;
 /// Quality records per payload. Matches the recording-telemetry history's cap.
 pub const MAX_QUALITY: usize = 20;
-/// Diagnose findings per payload (code + severity only — the whole SR-* space is
+/// Findings per payload (code + severity only — the whole SR-* space is
 /// far smaller than this).
 pub const MAX_FINDINGS: usize = 40;
 /// Wake-failure records per payload. Matches the `wake_failure` table's cap.
@@ -295,9 +288,6 @@ pub enum CounterName {
     /// The pre-roll buffer was armed.
     #[serde(rename = "recording.preroll.started")]
     RecordingPrerollStarted,
-    /// A test recording / capture self-test was run.
-    #[serde(rename = "recording.selftest")]
-    RecordingSelftest,
 
     // ── Editor ───────────────────────────────────────────────────────────────
     /// The editor was opened on a recording.
@@ -317,17 +307,6 @@ pub enum CounterName {
     /// Mastering was applied to a recording.
     #[serde(rename = "editor.master.applied")]
     EditorMasterApplied,
-    /// «Legg ut» opened an upload page, by channel. The numbers that say
-    /// whether a real SoundCloud integration would ever pay for itself —
-    /// the channel is a closed enum too, never the church's own link.
-    #[serde(rename = "editor.publish.soundcloud")]
-    EditorPublishSoundcloud,
-    #[serde(rename = "editor.publish.youtube")]
-    EditorPublishYoutube,
-    #[serde(rename = "editor.publish.spotify")]
-    EditorPublishSpotify,
-    #[serde(rename = "editor.publish.custom")]
-    EditorPublishCustom,
     // (v0.15: `editor.chapters.detected`, `transcribe.run` and `companion.build`
     // left the vocabulary with chapter detection, whisper transcription and the
     // AI companion. Same rule as v0.14 below: removing the SENDER is enough.)
@@ -345,9 +324,6 @@ pub enum CounterName {
     // feature. Removing the SENDER is enough — the Worker treats counter names
     // as opaque strings, and an old client still sending it is simply a name
     // this enum no longer parses.)
-    /// The diagnose report was run.
-    #[serde(rename = "diagnose.run")]
-    DiagnoseRun,
     /// An update was downloaded and installed.
     #[serde(rename = "update.installed")]
     UpdateInstalled,
@@ -385,7 +361,6 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::RecordingStartedScheduled,
     CounterName::RecordingStopped,
     CounterName::RecordingPrerollStarted,
-    CounterName::RecordingSelftest,
     CounterName::EditorOpened,
     CounterName::EditorExportMp3,
     CounterName::EditorExportWav,
@@ -393,13 +368,8 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorExportVideo,
     CounterName::EditorExportOther,
     CounterName::EditorMasterApplied,
-    CounterName::EditorPublishSoundcloud,
-    CounterName::EditorPublishYoutube,
-    CounterName::EditorPublishSpotify,
-    CounterName::EditorPublishCustom,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
-    CounterName::DiagnoseRun,
     CounterName::UpdateInstalled,
     CounterName::AppdataMoved,
     CounterName::AppdataFellBack,
@@ -420,7 +390,6 @@ impl CounterName {
             Self::RecordingStartedScheduled => "recording.started.scheduled",
             Self::RecordingStopped => "recording.stopped",
             Self::RecordingPrerollStarted => "recording.preroll.started",
-            Self::RecordingSelftest => "recording.selftest",
             Self::EditorOpened => "editor.opened",
             Self::EditorExportMp3 => "editor.export.mp3",
             Self::EditorExportWav => "editor.export.wav",
@@ -428,13 +397,8 @@ impl CounterName {
             Self::EditorExportVideo => "editor.export.video",
             Self::EditorExportOther => "editor.export.other",
             Self::EditorMasterApplied => "editor.master.applied",
-            Self::EditorPublishSoundcloud => "editor.publish.soundcloud",
-            Self::EditorPublishYoutube => "editor.publish.youtube",
-            Self::EditorPublishSpotify => "editor.publish.spotify",
-            Self::EditorPublishCustom => "editor.publish.custom",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
-            Self::DiagnoseRun => "diagnose.run",
             Self::UpdateInstalled => "update.installed",
             Self::AppdataMoved => "appdata.move.moved",
             Self::AppdataFellBack => "appdata.move.fallback",
@@ -790,8 +754,8 @@ fn spaced_continuation(text: &str, at: usize) -> Option<usize> {
 ///     → `kunne ikke åpne <path> 9. november.wav`
 ///
 /// That tail is a name someone typed. The generated `filenamePattern` names are
-/// date/time only, but `FilenameParams::custom_name` — a special recording's
-/// title — goes through `sanitize_filename`, which replaces the path-illegal
+/// date/time only, but `FilenameParams::custom_name` — a title the operator typed
+/// — goes through `sanitize_filename`, which replaces the path-illegal
 /// characters and trims the ends but keeps INTERIOR spaces. So this is reachable
 /// in practice, not theoretical.
 ///
@@ -1006,14 +970,24 @@ pub struct QualityReport {
     pub reasons: Vec<QualityReason>,
 }
 
-/// One diagnose finding, projected onto the wire: the STABLE code and its
-/// severity, and nothing else.
+/// Severity of a [`FindingReport`].
 ///
-/// [`DiagnosticFinding::detail`] is deliberately absent. It is where the useful
-/// specifics live — and where a device name ("Fant ikke «Qu-5»"), a free-GB
-/// figure for a named volume, or a save folder ends up. The code alone is enough
-/// to count how often each situation occurs across installs, which is the only
-/// question aggregate telemetry can honestly answer.
+/// The diagnose page that produced findings left with the rent-bord pruning
+/// (F2); the Worker still REQUIRES the `findings` key on every payload, so the
+/// collection stays on the wire, always empty. This enum survives only because
+/// the wire type names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "DiagnosticSeverity.ts")]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticSeverity {
+    Ok,
+    Info,
+    Warning,
+    Critical,
+}
+
+/// One support-code finding, projected onto the wire: the STABLE code and its
+/// severity, and nothing else — never a device name or a folder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "FindingReport.ts")]
 #[serde(rename_all = "camelCase")]
@@ -1054,23 +1028,18 @@ pub struct CounterReport {
 
 /// The wire-safe projection of the user's settings.
 ///
-/// [`crate::diagnostics::SettingsSummary`] is NOT reusable here: it carries
-/// `device_name` and `save_folder` because a LOCAL report a person reads needs
-/// them. This is a strictly narrower type for the strictly stricter context, and
-/// the exclusions are the point:
+/// The full [`Settings`] is NOT reusable here: it carries `device_name` and
+/// `save_folder`, which a LOCAL screen needs. This is a strictly narrower type
+/// for the strictly stricter context, and the exclusions are the point:
 ///
 ///   - `deviceName` / `videoDeviceName` — a device name is chosen by the user
 ///     and routinely contains a person's or a room's name ("Kari sin mikrofon").
 ///   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
-///   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
-///     an install outright.
-///   - `slots` / `specialRecordings` — user-authored labels and a congregation's
-///     weekly rhythm. Only their COUNTS travel.
+///   - `slots` — a congregation's weekly rhythm. Only their COUNT travels.
 ///
 /// What IS here is configuration shape: the choices that explain a quality
-/// record. `filenamePattern` is included because it is a four-variant enum, not
-/// free text — the `Church` variant says "this install names files after its
-/// congregation", never what that congregation is called.
+/// record. `filenamePattern` is included because it is a three-variant enum, not
+/// free text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "WireSettings.ts")]
 #[serde(rename_all = "camelCase")]
@@ -1130,12 +1099,13 @@ pub struct WireSettings {
     /// reader — the scheduler and both wake commands — must go through
     /// `active_slots`.
     pub slot_count: u32,
-    /// How many one-off special recordings are configured.
+    /// WIRE-FROZEN since F2 (see `input_volume`): the special recordings left
+    /// the app, so the constant is `0`.
     pub special_count: u32,
 }
 
 /// The WIRE-FROZEN settings values (see the field docs on [`WireSettings`]):
-/// the settings left the app (v0.15, A5b, C3b), the keys the Worker requires
+/// the settings left the app (v0.15, A5b, C3b, F2), the keys the Worker requires
 /// did not. These are the values every install reported before the
 /// fields were removed, i.e. the defaults — so the aggregate's distribution
 /// for them simply stops moving rather than shifting.
@@ -1144,6 +1114,7 @@ pub const WIRE_TRIM_SILENCE: bool = false;
 pub const WIRE_SHOW_LIVE_LEVELS: bool = true;
 pub const WIRE_CLASSIC_FFMPEG_AUDIO: bool = false;
 pub const WIRE_CLASSIC_DIRECTSHOW: bool = false;
+pub const WIRE_SPECIAL_COUNT: u32 = 0;
 
 impl WireSettings {
     /// Project the full [`Settings`] down to the wire-safe subset. The single,
@@ -1175,7 +1146,7 @@ impl WireSettings {
             // rides along, so the receiver can tell "configured but disarmed"
             // from "never set up".
             slot_count: s.slots.len() as u32,
-            special_count: s.special_recordings.len() as u32,
+            special_count: WIRE_SPECIAL_COUNT,
         }
     }
 }
@@ -1216,16 +1187,10 @@ pub struct TelemetryPayload {
     pub quality: Vec<QualityReport>,
     pub findings: Vec<FindingReport>,
     pub wake_failures: Vec<WakeFailureReport>,
-    /// Editor corrections, as coarse bands and counts — see
-    /// [`corrections`] for the boundaries and the argument for them.
-    ///
-    /// Collected under consent v2 and no earlier. The endpoint accepts this
-    /// field as OPTIONAL and always will: an install still running a build from
-    /// before it existed sends a payload without it, and a 400 there would be
-    /// dropped without retry and never surface anywhere. See
-    /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`, which states
-    /// the same rule from the receiving side and the deploy order it implies.
-    pub corrections: Vec<CorrectionReport>,
+    // (The banded `corrections` collection left the wire with the learning
+    // loop. It was INDEPENDENTLY optional on the receiving side, so a payload
+    // without it is accepted by the Worker exactly as a pre-E8 payload always
+    // was; no schema bump.)
     // (v0.15: `companionOutcomes` left the wire with the AI companion. It was
     // INDEPENDENTLY optional on the receiving side — `sunday-telemetry/src/
     // schema.ts` `OPTIONAL_PAYLOAD_KEYS` — so a payload without it is accepted
@@ -1252,13 +1217,12 @@ impl TelemetryPayload {
             quality: Vec::new(),
             findings: Vec::new(),
             wake_failures: Vec::new(),
-            corrections: Vec::new(),
         }
     }
 
     /// Whether this payload carries anything worth sending. A payload with no
-    /// crashes, no quality records, no findings, no wake failures, no banded
-    /// correction and no non-zero counter is just a
+    /// crashes, no quality records, no findings, no wake failures
+    /// and no non-zero counter is just a
     /// header — sending it would be a ping, and a ping is not what the user
     /// consented to.
     ///
@@ -1273,10 +1237,6 @@ impl TelemetryPayload {
             && self.findings.is_empty()
             && self.wake_failures.is_empty()
             && self.counters.iter().all(|c| c.value == 0)
-            // Zero-count entries are empty for the same reason zero-valued
-            // counters are: the accumulator never emits one, so a payload
-            // holding only zeroes is a header wearing a collection.
-            && self.corrections.iter().all(|c| c.count == 0)
     }
 
     /// Trim every collection to its cap, keeping the NEWEST records (the ends of
@@ -1287,11 +1247,6 @@ impl TelemetryPayload {
         keep_last(&mut self.quality, MAX_QUALITY);
         keep_last(&mut self.findings, MAX_FINDINGS);
         keep_last(&mut self.wake_failures, MAX_WAKE_FAILURES);
-        // Bounded by construction rather than by policy — the collection is
-        // keyed by three closed enums, so it cannot hold more entries than their
-        // product. Trimmed anyway, because "cannot happen" is the wrong thing to
-        // rest a size cap on when the endpoint rejects an oversized array.
-        keep_last(&mut self.corrections, MAX_CORRECTIONS);
     }
 }
 
@@ -1392,16 +1347,6 @@ pub fn quality_report(t: &RecordingTelemetry, at: i64) -> QualityReport {
     }
 }
 
-/// Project one diagnose finding onto the wire — code + severity, never `detail`.
-/// `None` when the code does not survive [`sanitize_code`] (which would mean a
-/// finding with no code at all, and a bare severity is not worth a row).
-pub fn finding_report(f: &DiagnosticFinding) -> Option<FindingReport> {
-    Some(FindingReport {
-        code: sanitize_code(&f.code)?,
-        severity: f.severity,
-    })
-}
-
 /// Project one wake-failure entry onto the wire — kind, time, reason token and
 /// delta; never the label or the scheduled local time.
 pub fn wake_failure_report(e: &WakeFailureEntry) -> WakeFailureReport {
@@ -1428,7 +1373,7 @@ pub fn derive_reason_codes(r: &SelfTestReport) -> Vec<QualityReason> {
     if !size_is_plausible(r.size_bytes) {
         out.push(QualityReason::NoAudioCaptured);
     }
-    if signal == TestRecordingSignal::Silent {
+    if signal == SelfTestSignal::Silent {
         out.push(QualityReason::SilentTake);
     }
     if r.gap_sec >= FAIL_GAP_SEC {
@@ -1447,7 +1392,7 @@ pub fn derive_reason_codes(r: &SelfTestReport) -> Vec<QualityReason> {
     if (WARN_GAP_SEC..FAIL_GAP_SEC).contains(&r.gap_sec) {
         out.push(QualityReason::SmallGap);
     }
-    if signal == TestRecordingSignal::Low {
+    if signal == SelfTestSignal::Low {
         out.push(QualityReason::LowSignal);
     }
     if (1..FAIL_DROPS).contains(&r.drops) || (1..FAIL_XRUNS).contains(&r.xruns) {
@@ -1503,10 +1448,6 @@ mod tests {
         ("quality", "nested QualityReport[]"),
         ("findings", "nested FindingReport[]"),
         ("wakeFailures", "nested WakeFailureReport[]"),
-        (
-            "corrections",
-            "nested CorrectionReport[] — bands and counts, never seconds",
-        ),
         // ── CrashReport ──────────────────────────────────────────────────────
         ("kind", "enum CrashKind / WakeFailureKind"),
         ("at", "num — unix ms UTC"),
@@ -1561,27 +1502,6 @@ mod tests {
         // ── CounterReport ────────────────────────────────────────────────────
         ("name", "enum CounterName — the closed allow-list"),
         ("value", "num"),
-        // ── CorrectionReport ─────────────────────────────────────────────────
-        //
-        // Four fields, three of them closed enums and one a count. What is NOT
-        // here is the point of the whole collection: no `deltaSec`, no `at`, no
-        // recording. A band is a magnitude with the precision taken out of it
-        // (`corrections::CORRECTION_BAND_EDGES_SEC`), and a wall-clock time is
-        // never sent as part of a correction — a time of day next to a duration
-        // identifies one service at one church.
-        (
-            "signal",
-            "enum CorrectionSignal — which guess was corrected",
-        ),
-        (
-            "direction",
-            "enum CorrectionDirection — earlier|later, never a sign bit",
-        ),
-        (
-            "band",
-            "enum CorrectionBand — a coarse bucket, never a number of seconds",
-        ),
-        ("count", "num — how many records had that shape"),
         // ── WireSettings ─────────────────────────────────────────────────────
         ("channels", "enum ChannelMode"),
         ("sampleRateMode", "enum SampleRate"),
@@ -1590,7 +1510,7 @@ mod tests {
         ("bitrateKbps", "num"),
         (
             "filenamePattern",
-            "enum FilenamePattern — 4 tags, not free text",
+            "enum FilenamePattern — 3 tags, not free text",
         ),
         ("inputVolume", "num"),
         ("videoEnabled", "num(bool)"),
@@ -1607,10 +1527,7 @@ mod tests {
         ("launchAtLogin", "num(bool)"),
         ("wakeFromSleep", "num(bool)"),
         ("slotCount", "num — how many slots, never their labels"),
-        (
-            "specialCount",
-            "num — how many specials, never their labels",
-        ),
+        ("specialCount", "num — frozen at 0 since F2"),
     ];
 
     /// Key names that must NEVER appear on the wire. Exact keys, not substrings:
@@ -1715,24 +1632,6 @@ mod tests {
                 reason: Some("no_resume".into()),
                 delta_sec: Some(-12),
             }],
-            corrections: vec![
-                CorrectionReport::new(
-                    corrections::CorrectionKey {
-                        signal: corrections::CorrectionSignal::SermonStart,
-                        direction: corrections::CorrectionDirection::Earlier,
-                        band: corrections::CorrectionBand::From30To60s,
-                    },
-                    2,
-                ),
-                CorrectionReport::new(
-                    corrections::CorrectionKey {
-                        signal: corrections::CorrectionSignal::SermonPickEnd,
-                        direction: corrections::CorrectionDirection::Later,
-                        band: corrections::CorrectionBand::Over120s,
-                    },
-                    1,
-                ),
-            ],
         }
     }
 
@@ -1872,14 +1771,7 @@ mod tests {
         let root = json.as_object().expect("payload is an object");
         check("payload", vec![root]);
         check("settings", vec![root["settings"].as_object().unwrap()]);
-        for list in [
-            "counters",
-            "crashes",
-            "quality",
-            "findings",
-            "wakeFailures",
-            "corrections",
-        ] {
+        for list in ["counters", "crashes", "quality", "findings", "wakeFailures"] {
             let items: Vec<_> = root[list]
                 .as_array()
                 .unwrap_or_else(|| panic!("{list} is not an array"))
@@ -1921,8 +1813,6 @@ mod tests {
             device_name: Some("Kari sin Qu-5".into()),
             video_device_name: Some("Ola sitt kamera".into()),
             save_folder: Some("/Users/kari/Menigheten/Opptak".into()),
-            church_name: "Nordstrand menighet".into(),
-            responsible_person: "Kari Nordmann".into(),
             editor_intro_path: Some("/Users/kari/intro.wav".into()),
             ..Default::default()
         });
@@ -1945,16 +1835,10 @@ mod tests {
             reason: Some("no_resume".into()),
             delta_sec: None,
         }));
-        p.findings.push(
-            finding_report(&DiagnosticFinding {
-                code: "SR-AUDIO-02".into(),
-                severity: DiagnosticSeverity::Warning,
-                title: "Valgt lydenhet finnes ikke".into(),
-                detail: "«Kari sin Qu-5» ble ikke funnet".into(),
-                hint: "Velg enheten på nytt".into(),
-            })
-            .expect("a well-formed code survives"),
-        );
+        p.findings.push(FindingReport {
+            code: "SR-AUDIO-02".into(),
+            severity: DiagnosticSeverity::Warning,
+        });
 
         let text = serde_json::to_string(&p).expect("serialise");
         for needle in [
@@ -2725,20 +2609,6 @@ mod tests {
         assert!(q2.reasons.is_empty());
     }
 
-    #[test]
-    fn a_finding_without_a_usable_code_is_dropped() {
-        assert!(
-            finding_report(&DiagnosticFinding {
-                code: "«»".into(),
-                severity: DiagnosticSeverity::Critical,
-                title: String::new(),
-                detail: String::new(),
-                hint: String::new(),
-            })
-            .is_none()
-        );
-    }
-
     // ── The payload itself ───────────────────────────────────────────────────
 
     #[test]
@@ -2752,31 +2622,6 @@ mod tests {
         }];
         assert!(p.is_empty());
         p.counters[0].value = 1;
-        assert!(!p.is_empty());
-    }
-
-    #[test]
-    fn a_payload_carrying_only_corrections_is_worth_sending() {
-        // The other half of the ratchet below. A payload whose ONLY content is a
-        // banded correction has to be both sent AND labelled non-empty: if
-        // `is_empty` missed this collection, the preview would print the bands on
-        // screen under the caption «ingenting å sende akkurat nå», which is the
-        // transparency affordance contradicting itself.
-        let mut p = TelemetryPayload::new(NIL_INSTALL_ID, 2, "0.10.0", 0);
-        assert!(p.is_empty());
-        p.corrections = vec![CorrectionReport::new(
-            corrections::CorrectionKey {
-                signal: corrections::CorrectionSignal::SermonStart,
-                direction: corrections::CorrectionDirection::Earlier,
-                band: corrections::CorrectionBand::From30To60s,
-            },
-            0,
-        )];
-        assert!(
-            p.is_empty(),
-            "a zero count is a header, like a zero counter"
-        );
-        p.corrections[0].count = 1;
         assert!(!p.is_empty());
     }
 
@@ -2796,14 +2641,7 @@ mod tests {
         // way to make it pass was to teach `is_empty` to consult it. The same
         // ratchet runs the other way: `stale` below is what caught the
         // companion collection leaving the payload.
-        const CONSULTED: &[&str] = &[
-            "counters",
-            "crashes",
-            "quality",
-            "findings",
-            "wakeFailures",
-            "corrections",
-        ];
+        const CONSULTED: &[&str] = &["counters", "crashes", "quality", "findings", "wakeFailures"];
 
         let value = serde_json::to_value(maximal_payload()).expect("serialise");
         let Value::Object(map) = value else {
@@ -2871,9 +2709,9 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_projection_is_strictly_narrower_than_the_diagnose_summary() {
-        // A guard against the tempting shortcut of reusing SettingsSummary: it
-        // has fields this projection must never grow.
+    fn the_settings_projection_is_strictly_narrower_than_the_settings() {
+        // A guard against the tempting shortcut of reusing the full settings
+        // summary: it has fields this projection must never grow.
         let json = serde_json::to_value(WireSettings::default()).expect("serialise");
         let obj = json.as_object().expect("object");
         for banned in ["deviceName", "saveFolder", "videoDeviceName", "language"] {

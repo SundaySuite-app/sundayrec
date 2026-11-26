@@ -305,9 +305,9 @@ mod tests {
     #[test]
     fn consuming_more_than_exists_saturates() {
         let _g = guard();
-        count(CounterName::DiagnoseRun);
+        count(CounterName::TrashMoved);
         consume(&[CounterReport {
-            name: CounterName::DiagnoseRun,
+            name: CounterName::TrashMoved,
             value: 99,
         }]);
         assert!(snapshot().is_empty());
@@ -382,7 +382,7 @@ mod tests {
     async fn purging_clears_memory_and_storage() {
         let _g = guard();
         let (pool, _d) = temp_pool().await;
-        count(CounterName::DiagnoseRun);
+        count(CounterName::TrashMoved);
         persist(&pool).await.unwrap();
         purge(&pool).await.unwrap();
         assert!(snapshot().is_empty());

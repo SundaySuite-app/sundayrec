@@ -65,28 +65,6 @@
   letter-spacing: -0.4px;
 }
 
-/*
- * Kirken, bak en tynn skillelinje. Streken er CSS og ikke et tegn i treet:
- * en «·» i JSX er tekst en oversetter aldri får se, og en gate som teller
- * bokstavsekvenser har rett i å rope på den.
- */
-.church {
-  padding-left: var(--sp-3);
-  border-left: 1px solid var(--line-2);
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
-  /* Et langt kirkenavn får ikke skyve topplinja bredere enn vinduet. */
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* «Ikke satt opp ennå» er gult: det er noe som må gjøres, ikke en opplysning. */
-.churchUnset {
-  color: var(--warn);
-}
-
 /* ── Siden ───────────────────────────────────────────────────────────────── */
 
 .main {

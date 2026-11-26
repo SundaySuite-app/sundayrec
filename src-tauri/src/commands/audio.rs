@@ -46,7 +46,6 @@ use tauri::{AppHandle, State};
 use serde::{Deserialize, Serialize};
 use sundayrec_core::audio::{VuStartAction, mic_owner, vu_start_action};
 use sundayrec_core::capture::CameraMode;
-use sundayrec_core::diagnostics::AudioDiagnostics;
 use ts_rs::TS;
 
 use crate::audio::asio::{TaggedAudioInput, list_asio_devices, merge_audio_inputs};
@@ -80,7 +79,7 @@ pub async fn list_audio_devices() -> AppResult<Vec<TaggedAudioInput>> {
 }
 
 /// The body of [`list_audio_devices`], for a caller that is not the picker —
-/// the scheduler resolving a special recording's own device.
+/// the preflight looking up the configured device.
 ///
 /// BLOCKING: run it on a blocking thread. The host half goes through
 /// [`enumerate_inputs`], i.e. the COM-anchored cpal path
@@ -250,29 +249,6 @@ pub async fn get_camera_capabilities(
         supported_resolutions: c.supported_resolutions,
         supported_framerates: c.supported_framerates,
     })
-}
-
-/// Combined audio-probe for the settings device dropdown: the input names in a
-/// single round-trip. Since C3b these are the NATIVE inputs — the same list
-/// [`list_audio_devices`] shows and the recorder opens (cpal, plus ASIO on
-/// Windows) — where it used to be ffmpeg's avfoundation/dshow list, which the
-/// recorder no longer reads. The wire keeps its names (`dshow`, `wasapi`,
-/// `wasapiAvailable`) because the renderer reads them.
-///
-/// On an enumeration failure the list is empty (the panel shows "no devices
-/// found" rather than erroring), matching the Electron `.catch(() => [])`.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — the enumeration needs real devices.
-#[tauri::command]
-pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
-    let inputs = tokio::task::spawn_blocking(|| enumerate_tagged_inputs(true))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_default();
-    Ok(AudioDiagnostics::from_input_names(
-        inputs.into_iter().map(|d| d.name).collect(),
-    ))
 }
 
 /// Start the VU engine on `device_name` (or the host default when `None`).

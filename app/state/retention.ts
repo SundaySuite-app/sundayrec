@@ -33,10 +33,7 @@
 import { trashedPaths } from "@lib/pages/trash-core";
 
 import { exporting } from "../editor/export";
-import {
-  forgetMovedPath as forgetLastEdited,
-  loadState,
-} from "../editor/model";
+import { loadState } from "../editor/model";
 import { t, tn } from "../i18n";
 import { navigate } from "../router/router";
 import { toast } from "../ui/toast";
@@ -88,24 +85,21 @@ export async function runRetentionPass(): Promise<void> {
   // (papirkurv-tellinga, biblioteklista) allerede stemme med den.
   await Promise.all([loadTrash(), loadRecordingCount()]);
 
-  // F2-9: «sist redigert» og kvitteringen glemmer alt som nå ligger i
+  // F2-9: kvitteringen glemmer alt som nå ligger i
   // papirkurven — ikke bare det DETTE passet flyttet. Selvhelende av samme
   // grunn `list()` er det på Rust-siden: en referanse som overlevde en
   // TIDLIGERE flytting uten å bli glemt (funnet var jo at ingen kalte denne
   // funksjonen før nå) blir også fanget opp her, i stedet for å kreve at
   // hvert kall til `move_into_trash` et sted i historien fikk den med seg.
   const inTrash = [...trashedPaths([...(trashEntries.value ?? [])])];
-  forgetLastEdited(inTrash);
   forgetFinishedRecording(inTrash);
   // `trash.*`, ikke `app.*`: nøklene bor hos papirkurv-søsknene sine
-  // (`app/lib/i18n.test.ts` sveiper alle sju). Plasseringen ble avgjort mens
-  // `app.`-subtreet var pauset og derfor ikke kunne bære en flertallsgruppe;
-  // pausen er over (F2-S6), men naboskapet er fortsatt den riktige grunnen.
+  // (`app/lib/i18n.test.ts` sveiper begge).
   toast("info", tn("trash.retentionMoved", summary.moved), {
     durationMs: TOAST_MS,
     action: {
       label: t("trash.retentionShowTrash"),
-      onClick: () => navigate("edit", { tab: "trash" }),
+      onClick: () => navigate("recordings", { tab: "trash" }),
     },
   });
 }

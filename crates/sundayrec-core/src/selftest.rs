@@ -1,13 +1,17 @@
-//! Capture self-test decisions — pure, GUI-free, fs/network-free.
+//! Recording quality verdict — pure, GUI-free, fs/network-free.
 //!
-//! Completes the long-deferred "Fase 3" capture verification. Given the facts
+//! This is what is left of the capture self-test after the F2 pruning: the
+//! test-recording button, the capture bench and the diagnose page are gone, but
+//! the recorder's post-recording truth check (ffprobe duration vs. what the
+//! native engine counted) still decides `Pass | Warn | Fail` here and raises the
+//! `recording://quality` alarm. Given the facts
 //! of a capture — the native engine's own counts (frames, ring overruns, the
 //! xruns the audio system reported) and the produced file (ffprobe's duration,
 //! size, astats level) — this module decides `Pass | Warn | Fail` with concrete
 //! numbers, so audio health becomes *measurable* and a stutter fix becomes
 //! *provable* on the rig instead of a guess. The impure shell
-//! (`src-tauri/test_recording`, the recorder's session end) gathers the facts
-//! and feeds them into [`selftest_verdict`] here.
+//! (the recorder's session end) gathers the facts and feeds them into
+//! [`selftest_verdict`] here.
 //!
 //! (Until C3b this module also parsed ffmpeg's capture stderr — `drop=`/`dup=`,
 //! xrun phrases, `time=`, `silencedetect` — for the ffmpeg capture. That capture
@@ -27,7 +31,38 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::telemetry::QualityReason;
-use crate::test_recording::{TestRecordingSignal, classify_signal, size_is_plausible};
+
+// ── Signal level ────────────────────────────────────────────────────────────
+
+/// A capture smaller than this almost certainly holds no audio.
+pub const MIN_CAPTURE_SIZE_BYTES: u64 = 5_000;
+
+/// Measured signal strength of a capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfTestSignal {
+    /// Effectively muted / unplugged (RMS < −55 dB).
+    Silent,
+    /// Weak signal — gain too low or mic too far (−55 ≤ RMS < −30 dB).
+    Low,
+    /// Normal speech level.
+    Normal,
+}
+
+/// Whether a capture's byte size is large enough to be plausible audio.
+pub fn size_is_plausible(size_bytes: u64) -> bool {
+    size_bytes >= MIN_CAPTURE_SIZE_BYTES
+}
+
+/// Classify a strongest-RMS dB value into a signal-strength bucket: < −55 dB
+/// silent, < −30 dB low, else normal. `None` (unmeasured) maps to `Normal` so a
+/// working capture isn't mislabelled.
+pub fn classify_signal(strongest_rms_db: Option<f64>) -> SelfTestSignal {
+    match strongest_rms_db {
+        Some(db) if db < -55.0 => SelfTestSignal::Silent,
+        Some(db) if db < -30.0 => SelfTestSignal::Low,
+        _ => SelfTestSignal::Normal,
+    }
+}
 
 // ── Verdict ─────────────────────────────────────────────────────────────────
 
@@ -89,7 +124,7 @@ pub struct SelfTestReport {
     /// WHY, in ENGLISH prose, rendered verbatim by whoever shows the report.
     ///
     /// ⚠️ These sentences are written HERE, in Rust, and the quality banner
-    /// showed them word for word in all seven UI languages — a German volunteer
+    /// showed them word for word in both UI languages — an English volunteer
     /// read «Svakt signal — vurder å øke gain». Rust cannot translate them
     /// (the UI language lives in the settings row, and this function is pure),
     /// so the fix was to stop asking it to: [`Self::reason_codes`] carries the
@@ -181,7 +216,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
             &mut verdict,
         );
     }
-    if signal == TestRecordingSignal::Silent {
+    if signal == SelfTestSignal::Silent {
         escalate(
             SelfTestVerdict::Fail,
             "silent recording — no signal (check the device/gain)".to_string(),
@@ -237,7 +272,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
             &mut verdict,
         );
     }
-    if signal == TestRecordingSignal::Low {
+    if signal == SelfTestSignal::Low {
         escalate(
             SelfTestVerdict::Warn,
             "weak signal — consider raising the gain".to_string(),
@@ -422,7 +457,7 @@ pub fn duration_loss_pct(expected_sec: f64, measured_sec: f64) -> f64 {
 /// unit-tested [`selftest_verdict`] engine judges live sessions (its first real
 /// caller — it sat unwired while recordings lost 15–56 % of their samples).
 /// RMS/silence facts are unmeasured on the live path (`None`/0), which
-/// [`crate::test_recording::classify_signal`] treats as not-silent.
+/// [`classify_signal`] treats as not-silent.
 pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTestFacts {
     SelfTestFacts {
         expected_sec: (t.expected_sec - CAPTURE_STARTUP_ALLOWANCE_SEC).max(0.0),
@@ -464,6 +499,21 @@ pub fn push_capped<T>(ring: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn size_floor_is_five_kilobytes() {
+        assert!(!size_is_plausible(4_999));
+        assert!(size_is_plausible(5_000));
+    }
+
+    #[test]
+    fn signal_classes_follow_the_documented_boundaries() {
+        assert_eq!(classify_signal(Some(-60.0)), SelfTestSignal::Silent);
+        assert_eq!(classify_signal(Some(-55.0)), SelfTestSignal::Low); // not < -55
+        assert_eq!(classify_signal(Some(-40.0)), SelfTestSignal::Low);
+        assert_eq!(classify_signal(Some(-30.0)), SelfTestSignal::Normal);
+        assert_eq!(classify_signal(None), SelfTestSignal::Normal);
+    }
 
     #[test]
     fn native_telemetry_fields_default_and_degrade() {
@@ -510,7 +560,7 @@ mod tests {
     #[test]
     fn no_audio_fails() {
         let mut f = good_facts();
-        f.size_bytes = 100; // below MIN_TEST_SIZE_BYTES
+        f.size_bytes = 100; // below MIN_CAPTURE_SIZE_BYTES
         let r = selftest_verdict(&f);
         assert_eq!(r.verdict, SelfTestVerdict::Fail);
         assert!(!r.ok);
@@ -786,7 +836,7 @@ mod tests {
 
     #[test]
     fn every_prose_reason_carries_its_code() {
-        // The banner rendered these Norwegian sentences verbatim in all seven UI
+        // The banner rendered these Norwegian sentences verbatim in both UI
         // languages. The codes are what the renderer translates instead — so
         // there must be exactly one per sentence, always, or the banner would
         // silently drop or invent a line.

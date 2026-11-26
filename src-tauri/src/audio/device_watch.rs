@@ -89,7 +89,7 @@
 //! ## Cameras (C5a)
 //!
 //! [`camera_change_signal`] is the same idea for the camera session's own
-//! reconnect (`camera::Capture`, docs/VIDEOMOTOR.md §C5): ONE process-wide
+//! reconnect (`camera::Capture`, docs/archive/VIDEOMOTOR.md §C5): ONE process-wide
 //! listener that says "a camera appeared or disappeared", and nothing else. It
 //! never says WHICH — the camera session reads the device list and looks for its
 //! own stable id (`sundayrec_core::camera_reconnect`), so a signal is only ever a

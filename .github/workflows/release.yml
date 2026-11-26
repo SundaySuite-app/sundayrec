@@ -19,7 +19,7 @@
 # sets `uploadUpdaterJson: true` so `latest.json` ships with every release.
 # The only missing pieces are the CI secrets TAURI_SIGNING_PRIVATE_KEY (+
 # password) — until they exist the updater artifacts are unsigned and installed
-# clients won't accept them. See docs/NEEDS-RICHARD.md item 4.
+# clients won't accept them. See docs/archive/NEEDS-RICHARD.md item 4.
 
 name: release
 

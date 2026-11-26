@@ -32,66 +32,27 @@ pub struct MasterPreset {
     pub filters: String,
 }
 
-/// The built-in presets, verbatim from `MASTER_PRESETS`. The four cover the
-/// common church-service publishing targets (natural → punchy speech, plus a
-/// dynamics-preserving music+speech chain).
-pub fn master_presets() -> Vec<MasterPreset> {
-    vec![
-        MasterPreset {
-            id: "speech-natural".into(),
-            label: "Tale — naturlig".into(),
-            description: "Lett polering. Bra for opptak som allerede er gode.".into(),
-            target_lufs: -19.0,
-            target_lra: 7.0,
-            true_peak_db: -1.0,
-            filters:
-                "highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=5:release=50:makeup=2dB"
-                    .into(),
-        },
-        MasterPreset {
-            id: "speech-clear".into(),
-            label: "Tale — tydelig (anbefalt)".into(),
-            description:
-                "Standard mastering for taler og prekener. Tydeligere stemme, jevnere lyd.".into(),
-            target_lufs: -16.0,
-            target_lra: 8.0,
-            true_peak_db: -1.0,
-            filters: "highpass=f=80,equalizer=f=200:t=q:w=2:g=-1.5,equalizer=f=3000:t=q:w=1:g=2,\
-                      equalizer=f=7000:t=q:w=1.5:g=-2,\
-                      acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80:makeup=1.5dB"
-                .into(),
-        },
-        MasterPreset {
-            id: "speech-punchy".into(),
-            label: "Tale — kraftig".into(),
-            description: "For weak voices or noisy recordings. Stronger processing.".into(),
-            target_lufs: -14.0,
-            target_lra: 6.0,
-            true_peak_db: -1.0,
-            filters: "highpass=f=100,equalizer=f=200:t=q:w=2:g=-2,equalizer=f=2500:t=q:w=1:g=3,\
-                      equalizer=f=7000:t=q:w=1.5:g=-3,\
-                      acompressor=threshold=-24dB:ratio=4:attack=3:release=50:makeup=2dB,\
-                      acompressor=threshold=-12dB:ratio=2:attack=50:release=300:makeup=1dB"
-                .into(),
-        },
-        MasterPreset {
-            id: "music-speech".into(),
-            label: "Musikk + tale".into(),
-            description: "For gudstjenester med salmer eller annen musikk. Bevarer dynamikk."
-                .into(),
-            target_lufs: -16.0,
-            target_lra: 11.0,
-            true_peak_db: -1.0,
-            filters:
-                "highpass=f=50,acompressor=threshold=-22dB:ratio=2:attack=10:release=100:makeup=1dB"
-                    .into(),
-        },
-    ]
-}
+/// The id of the one mastering recipe the app has: podcast-ready speech.
+pub const PODCAST_PRESET_ID: &str = "speech-clear";
 
-/// Find a preset by id. Mirrors `getPresetById`.
-pub fn get_preset_by_id(id: &str) -> Option<MasterPreset> {
-    master_presets().into_iter().find(|p| p.id == id)
+/// The one mastering recipe (F3): podcast-ready speech at −16 LUFS, true peak capped at
+/// −1 dBTP. The export has this or nothing — «Podkastklar lyd» on or off. The other presets
+/// the app once carried (`speech-natural`, `speech-punchy`, `music-speech`) are gone, and a
+/// stored id of any of them reads as this one: there is nothing else to choose.
+pub fn podcast_preset() -> MasterPreset {
+    MasterPreset {
+        id: PODCAST_PRESET_ID.into(),
+        label: "Podkastklar lyd".into(),
+        description: "Tydeligere stemme, jevnere lyd og riktig volum for podkast (−16 LUFS)."
+            .into(),
+        target_lufs: -16.0,
+        target_lra: 8.0,
+        true_peak_db: -1.0,
+        filters: "highpass=f=80,equalizer=f=200:t=q:w=2:g=-1.5,equalizer=f=3000:t=q:w=1:g=2,\
+                  equalizer=f=7000:t=q:w=1.5:g=-2,\
+                  acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80:makeup=1.5dB"
+            .into(),
+    }
 }
 
 /// The triangular-dither resample, as one ffmpeg filter string.
@@ -236,19 +197,11 @@ mod tests {
     // ── presets ────────────────────────────────────────────────────────────────
 
     #[test]
-    fn four_presets_with_unique_ids() {
-        let presets = master_presets();
-        assert_eq!(presets.len(), 4);
-        let mut ids: Vec<&str> = presets.iter().map(|p| p.id.as_str()).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        assert_eq!(ids.len(), 4);
-    }
-
-    #[test]
-    fn lookup_by_id() {
-        assert_eq!(get_preset_by_id("speech-clear").unwrap().target_lufs, -16.0);
-        assert!(get_preset_by_id("nope").is_none());
+    fn the_one_preset_is_the_podcast_recipe() {
+        let p = podcast_preset();
+        assert_eq!(p.id, PODCAST_PRESET_ID);
+        assert_eq!(p.target_lufs, -16.0);
+        assert_eq!(p.true_peak_db, -1.0);
     }
 
     // ── filter builders ──────────────────────────────────────────────────────────
@@ -259,7 +212,7 @@ mod tests {
         // with modest makeup, NOT the old aggressive 3:1/+2 dB. (Subjective; the
         // exact values are RIGG-VERIFIER'd, this just guards against regressing to
         // the harsher defaults.)
-        let clear = get_preset_by_id("speech-clear").unwrap();
+        let clear = podcast_preset();
         assert!(
             clear.filters.contains("ratio=2.5"),
             "speech-clear compressor should be gentle (2.5:1); got: {}",
@@ -276,14 +229,6 @@ mod tests {
             "makeup must carry the dB suffix or the value is a linear factor; got: {}",
             clear.filters
         );
-        // The opt-in punchy preset stays aggressive but with less first-stage
-        // makeup to curb pumping.
-        let punchy = get_preset_by_id("speech-punchy").unwrap();
-        assert!(punchy.filters.contains("ratio=4"), "punchy stays strong");
-        assert!(
-            !punchy.filters.contains("makeup=3"),
-            "less makeup → less pumping"
-        );
     }
 
     #[test]
@@ -295,7 +240,7 @@ mod tests {
         // +6.02 dB and a bare `0.5` is not quiet — it is an "out of range"
         // ERROR that kills the export. Every `makeup=` we ship must therefore
         // end in `dB`.
-        for p in master_presets() {
+        for p in [podcast_preset()] {
             for frag in p.filters.split(',') {
                 for arg in frag.split(':') {
                     let Some(v) = arg.strip_prefix("makeup=") else {

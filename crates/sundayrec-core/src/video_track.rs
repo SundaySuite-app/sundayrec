@@ -1,4 +1,4 @@
-//! The native video track (C3a, docs/VIDEOMOTOR.md §C3): the pure half.
+//! The native video track (C3a, docs/archive/VIDEOMOTOR.md §C3): the pure half.
 //!
 //! The native engine records a video session as TWO files per fragment, side
 //! by side in the capture folder: the WAV the audio engine writes (the

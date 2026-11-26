@@ -8,8 +8,8 @@
 //! `editor_open_recording`, `commands::settings`' intro/outro pickers), so the
 //! lists live where they are used.
 //!
-//! The names are a SEVEN-LANGUAGE catalogue — the `match` makes the compiler
-//! demand all seven — which is why this file, and not `commands::editor`, is the
+//! The names are a TWO-LANGUAGE catalogue — the `match` makes the compiler
+//! demand both — which is why this file, and not `commands::editor`, is the
 //! one the Norwegian-in-Rust gate allows (`scripts/rust-norwegian-baseline.json`).
 
 use sundayrec_core::lang::Lang;
@@ -33,11 +33,6 @@ pub fn media_filter_names(lang: Lang) -> (&'static str, &'static str, &'static s
     match lang {
         Lang::No => ("Alle støttede medier", "Lyd", "Video"),
         Lang::En => ("All supported media", "Audio", "Video"),
-        Lang::De => ("Alle unterstützten Medien", "Audio", "Video"),
-        Lang::Sv => ("Alla medier som stöds", "Ljud", "Video"),
-        Lang::Da => ("Alle understøttede medier", "Lyd", "Video"),
-        Lang::Pl => ("Wszystkie obsługiwane media", "Audio", "Wideo"),
-        Lang::Fr => ("Tous les médias pris en charge", "Audio", "Vidéo"),
     }
 }
 
@@ -77,5 +72,17 @@ mod tests {
         every.sort();
         every.dedup();
         assert_eq!(every.len(), before, "an extension is listed twice");
+    }
+
+    /// The jingle pickers (`settings_pick_editor_intro`/`_outro`) filter by `AUDIO_EXT`:
+    /// the formats a church actually has its jingle in must be in it.
+    #[test]
+    fn the_jingle_picker_accepts_the_common_audio_formats() {
+        for ext in ["wav", "flac", "mp3", "m4a", "aac", "ogg", "aiff", "aif"] {
+            assert!(
+                AUDIO_EXT.contains(&ext),
+                "{ext} is not pickable as a jingle"
+            );
+        }
     }
 }

@@ -2,7 +2,7 @@
  * Eksportens avgjørelser — filnavnet, størrelsen og feilen, som ren aritmetikk.
  *
  * Atlasets §3d teller ti rader i eksportmodalen, med bitrate, bitdybde,
- * videokodek og «Bithybde» (skrivefeilen som er sendt ut i alle sju språk).
+ * videokodek og «Bithybde» (skrivefeilen som er sendt ut i begge språk).
  * Canvasens 4.3 er to spørsmål: hvilket format, og hvor. Alt annet følger av
  * kvalitetsvalget i Oppsett eller av fila selv, og det som følger av noe skal
  * regnes ut ett sted og testes der.
@@ -25,27 +25,9 @@ export const VIDEO_FORMAT = "mp4";
 /** Kodeken video-eksporten bruker. H.264 er den universelle. */
 export const VIDEO_CODEC = "h264";
 
-/**
- * Fasen FØR bakenden har hørt om eksporten i det hele tatt.
- *
- * De to andre fasekodene (`measuring`, `encoding`) er BAKENDENS, festet mot
- * Rust-siden av `export_phase_codes_match_the_renderer_literals`. Denne er
- * skallets egen, og den finnes fordi F2-2s vindu er ekte: `runExport` venter på
- * kanalanalysen — en full `astats`-passering, 30–60 s på en 90-minutters
- * gudstjeneste — FØR det finnes en ffmpeg å melde prosent for. Fram til F2-A-B
- * var det vinduet en knapp som så uberørt ut, og et andre klikk der var hele
- * dobbelteksporten.
- *
- * Den bor i det samme signalet som bakendens koder, ikke i et eget: flaten
- * spør «hva gjør eksporten nå», og det er ETT spørsmål med tre svar. Prisen er
- * at koden må være en Rust ALDRI sender — derav «preparing», som ingen av
- * ffmpeg-passeringene heter.
- */
-export const EXPORT_PHASE_PREPARING = "preparing";
-
 /** Bitraten mp3 får når `settings.bitrate` er tom eller tull. Legacys eget
  *  tall, og det `QualityPage` skriver for «God». */
-export const FALLBACK_BITRATE_KBPS = 256;
+const FALLBACK_BITRATE_KBPS = 256;
 
 /** Les bitraten ut av innstillingene. Samme regel som `app/state/disk.ts`:
  *  et ubrukelig tall faller tilbake på 256 i stedet for på 0. */
@@ -149,7 +131,7 @@ export function predictedOutputName(
 
 /** Lengste tittel, i tegn, et filnavn får bære. Samme tall som
  *  `EXPORT_TITLE_MAX_CHARS` i kjernen. */
-export const EXPORT_TITLE_MAX_CHARS = 100;
+const EXPORT_TITLE_MAX_CHARS = 100;
 
 /** Windows' reserverte enhetsnavn — `WIN_RESERVED` i `filename.rs`. */
 const WIN_RESERVED = new Set([
@@ -331,10 +313,6 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["file_not_found", "errFileNotFound"],
   ["disk_full", "errDiskFull"],
   ["invalid_duration", "errCutData"],
-  // Reparasjonen leser høyre inngangskanal på en fil som ikke har en. ffmpeg
-  // avviser den IKKE — den gjengir 6 dB ned uten et ord — så sømmen stopper
-  // eksporten, og da må det stå hvorfor.
-  ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
   ["export_already_running", "errExportAlreadyRunning"],
   // Bakendens opptaksvakt (audit 2026-10): skjermen sjekker `isRecording` bare
@@ -353,6 +331,9 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["source_missing", "errFileNotFound"],
   ["source_refused", "errSourceRefused"],
   ["export_clip_unusable", "errExportClipUnusable"],
+  // Jingle-dialogen (`settings_pick_editor_intro`/`_outro`) svarer med disse.
+  ["clip_refused", "errClipRefused"],
+  ["clip_missing", "errClipMissing"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

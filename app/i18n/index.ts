@@ -36,78 +36,53 @@ import {
   currentLang,
   loadLocaleCatalogue,
   t as legacyT,
-  tArr as legacyTArr,
   tf as legacyTf,
   tn as legacyTn,
 } from "@lib/i18n";
 
-/** De sju katalogene som finnes i `legacy/locales`. */
-export type Locale = "no" | "en" | "sv" | "da" | "de" | "fr" | "pl";
+/** De to katalogene som finnes i `legacy/locales` (F4: bare norsk og engelsk). */
+export type Locale = "no" | "en";
 
 /**
- * De samme sju, som en LISTE.
- *
- * Typen alene kan ikke gås gjennom av en test, og noen ting må gjelde for alle
- * sju og ikke bare for de aktive — navnet på språket, for eksempel. Uten det
- * hadde `app.language`-subtreet bare de to aktive kodene i katalogen, og
- * `tDyn('app.language', 'de')` ville kastet i DEV og rendret en TOM etikett i
- * prod den dagen et pauset språk ble tatt i bruk. En tabelltest over denne
- * lista er det som fanger hullet før brukeren gjør det.
+ * De samme to, som en LISTE: rekkefølgen er den valgboksen viser, og det er
+ * den en tabelltest går gjennom.
  */
-export const ALL_LOCALES: readonly Locale[] = [
-  "no",
-  "en",
-  "sv",
-  "da",
-  "de",
-  "fr",
-  "pl",
-];
+export const ALL_LOCALES: readonly Locale[] = ["no", "en"];
 
 /**
- * Språkene `app/` faktisk tilbyr i språkvelgeren.
- *
- * ALLE SJU siden F2-S6 (2026-09): språkrunden fylte sv/da/de/fr/pl med hele
- * nøkkelsettet, og `PAUSED_KEYS` i `legacy/locales/parity.test.ts` er tom.
- * Rekkefølgen er den samme som `ALL_LOCALES` — det er den valgboksen viser.
- *
- * At de to listene er like NÅ er en tilstand, ikke en sannhet. PAUSE-
- * mekanismen står (`PAUSED_LOCALES` / `PAUSED_KEYS` der, `languageOptions` /
- * `isPausedLanguage` i `app/pages/setup/church-core.ts`), fordi et språk som
- * ikke rekker en runde skal kunne tas ut herfra uten at noen må finne opp
- * håndteringen på nytt. Derfor er dette fortsatt sin egen liste og ikke et
- * alias for `ALL_LOCALES`.
+ * Systemregelen: et norsk system (bokmål, nynorsk eller «no») gir norsk, alt annet gir
+ * engelsk. Leser den første av `navigator.languages`, ellers `navigator.language`. `typeof
+ * navigator` fordi enhetsgaten kjører i node, der svaret er engelsk.
  */
-export const ACTIVE_LOCALES: readonly Locale[] = [
-  "no",
-  "en",
-  "sv",
-  "da",
-  "de",
-  "fr",
-  "pl",
-];
+export function systemLocale(
+  languages: readonly string[] | undefined = typeof navigator === "undefined"
+    ? undefined
+    : navigator.languages?.length
+      ? navigator.languages
+      : [navigator.language],
+): Locale {
+  const first = languages?.[0] ?? "";
+  return /^(nb|nn|no)(-|_|$)/i.test(first) ? "no" : "en";
+}
 
 /**
  * Hvilket språk skallet skal starte på, gitt det som står lagret.
  *
- * Alle sju er aktive, så et lagret språk som er ett av dem brukes NÅ direkte —
- * en profil migrert fra legacy med tysk starter på tysk. Nabospråk-mappingen
- * (sv/da → no, resten → en) hørte pausen til: den fantes fordi et pauset språk
- * ville rendret de redesignede nøklene som TOM tekst, og `t()` sier ikke fra
- * når en nøkkel mangler. Nå finnes teksten, så det er ingenting å skjerme mot.
- *
- * Funksjonen består likevel, og gjør fortsatt det ingen `?? 'no'` gjør:
- * `settings.language` er `string | null` i wire-typen, ikke innsnevret til de
- * sju kodene. En korrupt eller håndredigert rad ender på «no» her, i stedet
- * for å bli sendt videre som en kode ingen katalog har.
+ * `no` og `en` brukes som de er. Ingenting lagret (`null`, den ekte førstegangsinstallasjonen)
+ * følger systemet: norsk på et norsk system, ellers engelsk. Et lagret språk som ikke finnes lenger — sv, da, de, fr, pl fra før
+ * F4, eller en korrupt eller håndredigert rad — faller STILLE tilbake på systemregelen
+ * ([`systemLocale`]): norsk på et norsk system, ellers engelsk. Ingen feilmelding og ingen
+ * skriving tilbake til basen: den lagrede verdien står, og blir bare ikke brukt.
  */
-export function resolveStartupLocale(stored: string | null): Locale {
-  if (!stored) return "no";
-  if ((ACTIVE_LOCALES as readonly string[]).includes(stored)) {
+export function resolveStartupLocale(
+  stored: string | null,
+  system: Locale = systemLocale(),
+): Locale {
+  if (!stored) return system;
+  if ((ALL_LOCALES as readonly string[]).includes(stored)) {
     return stored as Locale;
   }
-  return "no";
+  return system;
 }
 
 /**
@@ -116,11 +91,6 @@ export function resolveStartupLocale(stored: string | null): Locale {
  * være lastet først.
  */
 export const locale = signal<Locale>(currentLang as Locale);
-
-/** Tom liste for `tArr`. Frossen og delt: den returneres aldri til noen som
- *  har lov til å endre den, og en ny array per kall ville gitt et nytt
- *  identitetsbytte i hver render. */
-const NO_ITEMS: readonly string[] = Object.freeze([]);
 
 /**
  * Les signalet uten å bruke verdien.
@@ -157,12 +127,6 @@ export function tn(
 ): string {
   track();
   return legacyTn(key, count, params);
-}
-
-/** Oversett en nøkkel som er en LISTE i katalogen. */
-export function tArr(key: string): string[] {
-  track();
-  return legacyTArr(key, NO_ITEMS as string[]);
 }
 
 /**

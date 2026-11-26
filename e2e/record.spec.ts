@@ -124,7 +124,7 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("record-no-source")).toBeVisible();
@@ -163,7 +163,7 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
       // Enheten er valgt, men bare den innebygde finnes nå.
       fixtures: { ...FIXTURES, list_audio_devices: [BUILT_IN] },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
 
     await expect(page.getByTestId("record-source-missing")).toBeVisible();
@@ -194,7 +194,7 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
   test("kilden er valgt og til stede: Start kaller start_recording én gang — uten sti", async ({
     page,
   }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await expect(page.getByTestId("record-source-value")).toHaveText(
       "Behringer X32",
@@ -224,7 +224,7 @@ test.describe("«Lytter»-brikka", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, preroll_start: false },
       settings: { ...CHOSEN, preRollSeconds: 15 },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-vu")).toBeVisible();
     await expect(page.getByTestId("record-listening")).toHaveCount(0);
@@ -232,7 +232,7 @@ test.describe("«Lytter»-brikka", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, preroll_start: true },
       settings: { ...CHOSEN, preRollSeconds: 15 },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-listening")).toHaveText("Lytter");
   });
@@ -250,7 +250,7 @@ test.describe("opptaksoverlegget", () => {
     // mens det gikk videre. Nå er den en advarsel, og dette er flatebeviset:
     // overlegget står, og stripa sier hva som skjer.
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
@@ -274,7 +274,7 @@ test.describe("opptaksoverlegget", () => {
     // fyrte sist visket ut den andre: en enhet som falt ut og kom tilbake stille
     // viste bare én av de to tingene som var galt med opptaket.
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
@@ -307,7 +307,7 @@ test.describe("opptaksoverlegget", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
 
     // Planleggeren startet opptaket. Skjermen skal følge motoren — ellers står
@@ -330,7 +330,7 @@ test.describe("opptaksoverlegget", () => {
   test("bekreftelsen har «Fortsett å ta opp» som primærvalg", async ({
     page,
   }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
@@ -364,7 +364,7 @@ test.describe("opptaksoverlegget", () => {
     // Bekreftelsens hele poeng — at et uhell skal koste ett klikk til, ikke
     // opptaket — holder ikke hvis tastaturets egen «lukk dette»-tast er det
     // ene uhellet den ikke tåler.
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
@@ -393,7 +393,7 @@ test.describe("opptaksoverlegget", () => {
     // `cancelId` også når sløret klikkes (`onMouseDown` på `event.currentTarget`
     // alene — se DialogHost.tsx). Ett klikk like utenfor en liten dialogboks
     // midt i et fullskjerms overlegg er lett å gjøre ved et uhell.
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
@@ -426,7 +426,7 @@ test.describe("opptaksoverlegget", () => {
         ],
       },
       settings: { ...CHOSEN, saveFolder: "/Users/test/Opptak" },
-      goto: "home",
+      goto: "record",
     });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
@@ -490,7 +490,7 @@ test.describe("opptaksoverlegget", () => {
         }`),
       },
       settings: { ...CHOSEN, saveFolder: "/Users/test/Opptak" },
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-finished", {
       file_path: "/Users/test/Opptak/2026-08-23.mp3",
@@ -514,7 +514,7 @@ test.describe("opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, recordings_list: [] },
       settings: { ...CHOSEN, saveFolder: "/Users/test/Opptak" },
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-finished", {
       file_path: "/Users/test/Opptak/2026-08-23.mp3",
@@ -540,7 +540,7 @@ test.describe("bannerne på opptakssiden", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await emit(page, "recording-error", {
       code: "device_disconnected",
@@ -568,7 +568,7 @@ test.describe("bannerne på opptakssiden", () => {
     // regel som `state/backend-warning.ts` bruker for `msg`. En sann setning
     // på feil språk er bedre enn en generisk på riktig.
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await emit(page, "recording-error", {
       code: "codec_from_the_future",
@@ -590,7 +590,7 @@ test.describe("bannerne på opptakssiden", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     expect(
       await emitEvent(page, "scheduler://missed", [
@@ -632,7 +632,7 @@ test.describe("bannerne på opptakssiden", () => {
         ],
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-preflight");
@@ -652,7 +652,7 @@ test.describe("bannerne på opptakssiden", () => {
         get_disk_space: { freeBytes: 200_000_000, totalBytes: 500e9 },
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-low-disk");
@@ -660,45 +660,13 @@ test.describe("bannerne på opptakssiden", () => {
     await expect(banner).toHaveAttribute("data-tone", "warn");
     await expect(banner).toContainText("Plass til 1 t 44 min");
 
-    // D2: «Frigjør plass» folder ut mappe-kortet der man står. Skjermen bak er
-    // den samme; det er reisen dit som er blitt null skjermbytter.
+    // F5: «Frigjør plass» fører til Lagringsmappe i Innstillinger.
     await page.getByTestId("banner-low-disk-free").click();
-    await expect(page.getByTestId("control-folder")).toHaveAttribute(
-      "data-expanded",
-      "true",
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "settings",
     );
     await expect(page.getByTestId("setup-folder")).toBeVisible();
-  });
-
-  test("e-postvarslene er borte: beskjeden står til den er lest, og så aldri mer", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: {
-        ...FIXTURES,
-        // Bakenden la beskjeden klar ved oppstart fordi e-postvarsel VAR på
-        // (`settings::email_cleanup`). «OK» skal nå bakenden, ikke bare
-        // skjermen — ellers står banneret der igjen ved neste oppstart.
-        notice_email_removed_pending: true,
-        notice_email_removed_dismiss: fn(`() => {
-          window.__E2E_NOTICE_DISMISSED__ =
-            (window.__E2E_NOTICE_DISMISSED__ ?? 0) + 1;
-        }`),
-      },
-      settings: CHOSEN,
-      goto: "home",
-    });
-
-    const banner = page.getByTestId("banner-email-removed");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText("E-postvarsler er fjernet");
-    await expect(banner).toContainText("et varsel på skjermen");
-
-    await page.getByTestId("banner-email-removed-ok").click();
-    await expect(banner).toHaveCount(0);
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_NOTICE_DISMISSED__))
-      .toBe(1);
   });
 });
 
@@ -714,7 +682,7 @@ test.describe("bakendens egne advarsler (backend://warning)", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     expect(
       await emit(page, "backend-warning", {
@@ -775,7 +743,7 @@ test.describe("bakendens egne advarsler (backend://warning)", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, preroll_start: true },
       settings: { ...CHOSEN, preRollSeconds: 15 },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-listening")).toHaveText("Lytter");
 
@@ -799,7 +767,7 @@ test.describe("bakendens egne advarsler (backend://warning)", () => {
       // sitt eget «Finner ikke Behringer X32».
       fixtures: { ...FIXTURES, list_audio_devices: [BUILT_IN] },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-source-missing")).toBeVisible();
 
@@ -836,7 +804,7 @@ test.describe("kvalitetsalarmens årsaker", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await emit(page, "recording-quality", {
       measuredSec: 3120,
@@ -864,7 +832,7 @@ test.describe("kvalitetsalarmens årsaker", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await emit(page, "recording-quality", {
       measuredSec: 3120,
@@ -880,7 +848,7 @@ test.describe("kvalitetsalarmens årsaker", () => {
     page,
   }) => {
     await spyEvents(page);
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
 
     await emit(page, "recording-quality", {
       measuredSec: 10,
@@ -923,7 +891,7 @@ test.describe("auto-stoppen kan skyves", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-overlay-stop", {
       state: "recording",
@@ -937,7 +905,7 @@ test.describe("auto-stoppen kan skyves", () => {
     await boot(page, {
       fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     // Et opptak uten auto-stopp: ingen nedtelling, og derfor heller ingen
     // knapper å lure på midt i en gudstjeneste.
@@ -1007,7 +975,7 @@ test.describe("auto-stoppen kan skyves", () => {
         ),
       },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-overlay-stop", {
       state: "recording",
@@ -1048,7 +1016,7 @@ test.describe("nedtellingen rehydreres når overlegget monteres uten den", () =>
     await boot(page, {
       fixtures: { ...FIXTURES, ...REHYDRATE_SPY },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     // Kartlagt fra `recording://started` — INGEN nyttelast, se
     // `state/recording.ts`s `recording-overlay-start`-håndterer.
@@ -1068,7 +1036,7 @@ test.describe("nedtellingen rehydreres når overlegget monteres uten den", () =>
     await boot(page, {
       fixtures: { ...FIXTURES, ...REHYDRATE_SPY },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     // `recording://state` bærer alltid `scheduled_stop_ms` i SAMME nyttelast
     // — rehydreringen er for de payload-løse veien, ikke for denne.
@@ -1138,7 +1106,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-start")).toBeVisible();
     await expect(page.getByTestId("record-camera-preview")).toHaveCount(0);
@@ -1151,7 +1119,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     const frame = page.getByTestId("record-camera-preview");
     // Ingen bilder ennå: rammen sier det, i stedet for å stå tom.
@@ -1181,7 +1149,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     // Et MJPEG-kamera sender sin egen uskalerte JPEG (C4a).
     await pushColorFrame(page, "#00aa00", [1920, 1080]);
@@ -1211,7 +1179,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: { ...WITH_CAMERA, videoFlip: true },
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     const frame = page.getByTestId("record-camera-preview");
@@ -1231,7 +1199,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
@@ -1250,7 +1218,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("denied") },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     const frame = page.getByTestId("record-camera-preview");
     await expect(frame).toHaveAttribute("data-phase", "denied");
@@ -1261,7 +1229,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("failed") },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
       "data-phase",
@@ -1275,7 +1243,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: { ...WITH_CAMERA, videoDeviceName: "Blackmagic ATEM" },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
       "data-phase",
@@ -1299,13 +1267,10 @@ test.describe("kamera-preview på Opptak", () => {
         list_devices: fn("() => { throw new Error('ffmpeg svarte ikke') }"),
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
       "Kunne ikke hente kameraliste — sjekk tillatelser",
-    );
-    await expect(page.getByTestId("setup-camera-summary")).toHaveText(
-      "Feil ved lasting",
     );
 
     // Og den ekte tomme listen sier fortsatt det den skal.
@@ -1316,7 +1281,7 @@ test.describe("kamera-preview på Opptak", () => {
         list_devices: { video_inputs: [] },
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
       "Ingen kameraer funnet — sjekk tilkobling",
@@ -1342,7 +1307,7 @@ test.describe("kamera-preview på Opptak", () => {
         ...CALL_SPIES,
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     const tile = page.getByTestId("record-camera-preview");
     await expect(tile).toHaveAttribute("data-phase", "starting");
@@ -1408,7 +1373,7 @@ test.describe("kamera-preview på Opptak", () => {
         start_recording: fn("() => { throw { code: 'no_save_folder' } }"),
       },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     const frame = page.getByTestId("record-camera-preview");
     await pushColorFrame(page, "#ff0000");
@@ -1429,7 +1394,7 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
@@ -1461,7 +1426,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#00aa00", [1920, 1080]);
     await emit(page, "recording-overlay-stop", {
@@ -1493,7 +1458,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-overlay-stop", {
       state: "recording",
@@ -1518,7 +1483,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     await emit(page, "recording-overlay-stop", {
@@ -1553,7 +1518,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     await emit(page, "recording-overlay-stop", {
@@ -1602,7 +1567,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
-      goto: "home",
+      goto: "record",
     });
     await pushColorFrame(page, "#ff0000");
     await emit(page, "recording-overlay-stop", {
@@ -1652,7 +1617,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await boot(page, {
       fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: CHOSEN,
-      goto: "home",
+      goto: "record",
     });
     await emit(page, "recording-overlay-stop", {
       state: "recording",
@@ -1674,7 +1639,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
 // «Start opptak» går gjennom, se `router/router.ts`s `pendingAction`.
 test.describe("F2-T3: tastatursnarveier på Opptak", () => {
   test("Space starter opptaket når Start er aktiv", async ({ page }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await expect(page.getByTestId("record-source-value")).toHaveText(
       "Behringer X32",
     );
@@ -1692,7 +1657,7 @@ test.describe("F2-T3: tastatursnarveier på Opptak", () => {
   });
 
   test("R starter opptaket akkurat som Space", async ({ page }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.keyboard.press("r");
     await expect.poll(() => calls(page)).toEqual(STARTED_ONCE);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
@@ -1704,7 +1669,7 @@ test.describe("F2-T3: tastatursnarveier på Opptak", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
-      goto: "home",
+      goto: "record",
     });
     await expect(page.getByTestId("record-start")).toHaveAttribute(
       "aria-disabled",
@@ -1718,7 +1683,7 @@ test.describe("F2-T3: tastatursnarveier på Opptak", () => {
   test("Space gjør ingenting mens et opptak går — stopp er et bevisst klikk", async ({
     page,
   }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
     const before = await calls(page);

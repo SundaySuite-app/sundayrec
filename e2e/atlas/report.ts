@@ -304,7 +304,7 @@ med designrunden i november 2026 oppå — **luft** (tetthetstokens på 4/8-rute
 og en maksbredde på sidene), **handlingslinje** (Start, «Neste» og eksport står
 fast nederst), **seksjoner** (Innstillinger delt i Kirke og språk · Tidsplan ·
 Legg ut · Opptaket · Oppdateringer og personvern · Hjelp og feilsøking · Om)
-og **ny tekst** på alle sju språk (ordlista: lydkilde, miksebord, lydjustering,
+og **ny tekst** på begge språk (ordlista: lydkilde, miksebord, lydjustering,
 opptaksmotor). Ingenting her er et forslag — dette er den visuelle
 regresjonsbasen. Scene-id-ene er uendret fra før runden, så de to
 atlasene kan sammenlignes fil for fil, også der navnet på stedet er byttet

@@ -40,7 +40,6 @@ import {
 } from "@lib/pages/trash-core";
 
 import { locale, t, tf, tn } from "../../i18n";
-import { navigate } from "../../router/router";
 import { loadRecordingCount } from "../../state/recordings";
 import { loadTrash, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
@@ -49,6 +48,7 @@ import { confirmDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
 import { formatBytes } from "../record/record-core";
 import { dueLine } from "./library-core";
+import { RecordingsTabs } from "./LibraryPage";
 import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
 
@@ -111,9 +111,7 @@ export function TrashPage() {
     if (busy) return;
     const ok = await confirmDialog({
       // Antallet står i tittelen: forskjellen på å slette 2 og 200 opptak er
-      // hele beslutningen. Katalognøkkelen er legacys egen og finnes i alle sju
-      // språk — en ny tellende nøkkel ville krevd polske flertallsformer midt i
-      // pausen som finnes for å slippe akkurat det.
+      // hele beslutningen. Katalognøkkelen finnes i begge språk.
       title: tn("trash.confirmEmpty", count),
       message: t("trash.confirmEmptyBody"),
       confirmLabel: t("trash.deleteForever"),
@@ -135,17 +133,11 @@ export function TrashPage() {
 
   return (
     <div class={styles.page}>
+      <RecordingsTabs value="trash" />
       <div class={styles.trashHead}>
         <p data-testid="trash-lede" class={styles.sub}>
           {tf("app.library.trashLede", { n: TRASH_KEEP_DAYS })}
         </p>
-        <Button
-          variant="ghost"
-          testId="trash-back"
-          onClick={() => navigate("edit")}
-        >
-          {t("app.library.back")}
-        </Button>
       </div>
 
       {rows === null ? (
@@ -257,7 +249,7 @@ function Row({
 }
 
 /** «i dag» / «i går» / «3 dager siden». `trash-core` tar ordene utenfra så den
- *  slipper i18n-importen; alle tre finnes i alle sju språk. */
+ *  slipper i18n-importen; alle tre finnes i begge språk. */
 function ageWords(): {
   today: string;
   yesterday: string;

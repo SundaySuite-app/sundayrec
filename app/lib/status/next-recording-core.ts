@@ -10,9 +10,7 @@
  *                                settings copy promised "~2 min")
  *   4. the sidebar status label (its own getNextRecording call + its own format,
  *                                overwritten again by the recording overlay)
- *   5. the Tidsplan preview     (hand-rolled weekday arithmetic that ignored
- *                                one-off specials entirely — a Christmas Eve
- *                                service simply did not exist to it)
+ *   5. the Tidsplan preview     (hand-rolled weekday arithmetic)
  *
  * Every one of them now renders THIS state, which is fed by the scheduler
  * events the backend has been emitting all along. The formatters live here,
@@ -48,18 +46,6 @@ export type TranslateN = (
 ) => string;
 
 /**
- * The little of a one-off special this module needs. Structural on purpose: the
- * renderer's `SpecialRecording` (optional `id`) and the ts-rs binding (nullable
- * `id`) are not assignable to each other, and matching a start time needs
- * neither.
- */
-export interface SpecialLike {
-  date: string;
-  name: string;
-  start: string;
-}
-
-/**
  * How many minutes before a scheduled start the OS wake timer is armed.
  *
  * This is not a guess: it MIRRORS `WAKE_LEAD_MINUTES` in
@@ -75,10 +61,6 @@ export interface NextRecording {
   at: string;
   /** `at` parsed once, in epoch ms. */
   atMs: number;
-  /** The special recording's name, when this start comes from one. */
-  label?: string;
-  /** True when a one-off special — not a weekly slot — produced this start. */
-  isSpecial?: boolean;
 }
 
 /** When (and whether) the machine wakes itself for `next`. */
@@ -107,8 +89,8 @@ export interface NextRecordingState {
   next: NextRecording | null;
   /** A take is running right now (from the recorder's own state events). */
   isRecording: boolean;
-  /** Any weekly slot or one-off special exists at all — distinguishes "nothing
-   *  scheduled ahead" from "this app has never been set up". */
+  /** Any weekly slot exists at all — distinguishes "nothing scheduled ahead"
+   *  from "this app has never been set up". */
   hasAnySchedule: boolean;
   wake: WakeInfo | null;
   /** Scheduled recordings that never ran (`scheduler://missed`). */
@@ -139,30 +121,15 @@ export function parseLocalIso(at: string): number {
   return new Date(at).getTime();
 }
 
-/** `YYYY-MM-DDTHH:MM` prefix — enough to match a special's date + start. */
-function minutePrefix(at: string): string {
-  return at.slice(0, 16);
-}
-
 /**
- * Turn the raw `scheduler://next` payload into a [`NextRecording`], naming it
- * when a one-off special produced it. The backend event carries only a
- * timestamp, but "Julaften-gudstjeneste 16:00" tells a volunteer far more than
- * "torsdag 16:00" — and the specials list is already in settings, so the name
- * costs nothing.
+ * Turn the raw `scheduler://next` payload into a [`NextRecording`]. The backend
+ * event carries only a timestamp.
  */
-export function buildNext(
-  at: string | null | undefined,
-  specials: SpecialLike[] = [],
-): NextRecording | null {
+export function buildNext(at: string | null | undefined): NextRecording | null {
   if (!at) return null;
   const atMs = parseLocalIso(at);
   if (!Number.isFinite(atMs)) return null;
-  const key = minutePrefix(at);
-  const special = specials.find((s) => s && `${s.date}T${s.start}` === key);
-  return special
-    ? { at, atMs, label: special.name, isSpecial: true }
-    : { at, atMs };
+  return { at, atMs };
 }
 
 /** The wake point for `next`, or null when nothing is scheduled. */
@@ -325,14 +292,14 @@ export function formatNextTitle(
   );
 }
 
-/** Hero date line: "torsdag 7. juni" — with the special's name when it has one. */
+/** Hero date line: "torsdag 7. juni". */
 export function formatNextDate(
   state: NextRecordingState,
   ctx: FormatCtx,
 ): string {
   if (!state.next) return "—";
   const p = ctx.parts(state.next.atMs);
-  return state.next.label ? `${p.dateLong} · ${state.next.label}` : p.dateLong;
+  return p.dateLong;
 }
 
 /**
@@ -471,8 +438,7 @@ export function formatWakeHint(
 /**
  * Tidsplan preview: "Neste opptak: torsdag 7. juni kl. 11:00".
  *
- * Same source as the hero, so a special recording now shows up here too — the
- * old hand-rolled weekday loop only ever looked at weekly slots.
+ * Same source as the hero.
  */
 export function formatSchedulePreview(
   state: NextRecordingState,
@@ -481,8 +447,7 @@ export function formatSchedulePreview(
   if (!state.next) return "";
   const p = ctx.parts(state.next.atMs);
   const when = `${p.dateLong} ${ctx.t("schedule.atTime", "kl.")} ${p.time}`;
-  const line = `${ctx.t("schedule.nextPreviewPrefix", "Neste opptak")}: ${when}`;
-  return state.next.label ? `${line} — ${state.next.label}` : line;
+  return `${ctx.t("schedule.nextPreviewPrefix", "Neste opptak")}: ${when}`;
 }
 
 /** Missed-recording summary line: "Søndag 11:00 ble ikke tatt opp". */

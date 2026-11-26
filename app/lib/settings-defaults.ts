@@ -75,17 +75,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   // planning its stored slots.
   autoRecordEnabled: true,
   slots: [],
-  specialRecordings: [],
-
-  // Church profile
-  churchName: "",
-  responsiblePerson: "",
-
-  // «Legg ut» — the channel the export receipt opens, and the fixed
-  // description «Innhold» starts from. See `sundayrec_core::publish`.
-  publishTarget: "soundcloud",
-  publishCustomUrl: "",
-  publishDescriptionTemplate: "",
 
   // Notifications
   notifyStart: true,

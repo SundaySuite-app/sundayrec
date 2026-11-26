@@ -46,7 +46,7 @@ export interface ToastItem {
  * noe: en FEIL forsvinner ikke av seg selv. Den ene meldingen du ikke har råd
  * til å gå glipp av skal ikke være den som forsvinner mens du ser en annen vei.
  */
-export const DEFAULT_MS: Record<ToastKind, number> = {
+const DEFAULT_MS: Record<ToastKind, number> = {
   info: 3200,
   success: 2600,
   warn: 5000,

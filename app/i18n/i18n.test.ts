@@ -2,10 +2,10 @@ import { effect } from "@preact/signals";
 import { describe, expect, it } from "vitest";
 
 import {
-  ACTIVE_LOCALES,
   ALL_LOCALES,
   locale,
   resolveStartupLocale,
+  systemLocale,
   setLocale,
   t,
   tDyn,
@@ -21,23 +21,11 @@ describe("app i18n", () => {
   // measuring the catalogue instead of the app.
   it("starts on the catalogue the shell bundles eagerly", () => {
     expect(locale.value).toBe("no");
-    expect(t("app.page.record")).toBe("Opptak");
+    expect(t("app.page.recordings")).toBe("Opptak");
   });
 
-  it("offers all seven languages, in the ALL_LOCALES order", () => {
-    // F2-S6: the translation round filled sv/da/de/fr/pl, `PAUSED_KEYS` is
-    // empty, and the picker offers every catalogue that exists. Pinned as a
-    // LIST, not as `toEqual(ALL_LOCALES)`: the order is what the picker shows,
-    // and "active" is still its own decision — see `ACTIVE_LOCALES`.
-    expect([...ACTIVE_LOCALES]).toEqual([
-      "no",
-      "en",
-      "sv",
-      "da",
-      "de",
-      "fr",
-      "pl",
-    ]);
+  it("offers exactly Norwegian and English, in the ALL_LOCALES order", () => {
+    expect([...ALL_LOCALES]).toEqual(["no", "en"]);
   });
 
   it("a signal change gives t() the new text, and wakes a subscriber", async () => {
@@ -45,17 +33,17 @@ describe("app i18n", () => {
     // still re-runs when it changes. This is what a component gets for free.
     const seen: string[] = [];
     const dispose = effect(() => {
-      seen.push(t("app.page.record"));
+      seen.push(t("app.page.recordings"));
     });
     expect(seen).toEqual(["Opptak"]);
 
     await setLocale("en");
 
     expect(locale.value).toBe("en");
-    expect(t("app.page.record")).toBe("Record");
+    expect(t("app.page.recordings")).toBe("Recordings");
     expect(seen, "the effect did not re-run on the language change").toEqual([
       "Opptak",
-      "Record",
+      "Recordings",
     ]);
     dispose();
   });
@@ -68,8 +56,8 @@ describe("app i18n", () => {
     const mismatches: string[] = [];
     const dispose = effect(() => {
       const lang = locale.value;
-      const heading = t("app.page.record");
-      const expected = lang === "en" ? "Record" : "Opptak";
+      const heading = t("app.page.recordings");
+      const expected = lang === "en" ? "Recordings" : "Opptak";
       if (heading !== expected) mismatches.push(`${lang} → ${heading}`);
     });
     await setLocale("no");
@@ -82,7 +70,7 @@ describe("app i18n", () => {
   it("falls back to Norwegian for an unknown language, and says so", async () => {
     await setLocale("kv" as never);
     expect(locale.value).toBe("no");
-    expect(t("app.page.record")).toBe("Opptak");
+    expect(t("app.page.recordings")).toBe("Opptak");
   });
 
   it("tf interpolates and tn picks the count-aware form", async () => {
@@ -96,9 +84,9 @@ describe("app i18n", () => {
 
   it("tDyn resolves a dynamic suffix under a static prefix", async () => {
     await setLocale("no");
-    expect(tDyn("app.page", "record")).toBe("Opptak");
+    expect(tDyn("app.page", "recordings")).toBe("Opptak");
     await setLocale("en");
-    expect(tDyn("app.page", "record")).toBe("Record");
+    expect(tDyn("app.page", "recordings")).toBe("Recordings");
     await setLocale("no");
   });
 
@@ -109,16 +97,12 @@ describe("app i18n", () => {
     expect(() => tDyn("app.nothing", "record")).toThrow(/finnes ikke/);
   });
 
-  // `app.language.<code>` hadde bare de to AKTIVE kodene. Hullet var latent
-  // mens fem språk stod pauset — men `tDyn` KASTER i DEV på en suffiks-bom og
-  // rendrer en tom etikett i prod, så det ville blitt en tom eller krasjende
-  // valgboks den dagen de kom i bruk. Den dagen er nå (F2-S6): alle sju står i
-  // `ACTIVE_LOCALES`, og hver av dem må ha et navn i hver av de sju
-  // katalogene — 49 oppslag, ikke to.
+  // `tDyn` KASTER i DEV på en suffiks-bom og rendrer en tom etikett i prod, så hver kode i
+  // valgboksen må ha et navn i hver katalog som finnes: 4 oppslag.
   it.each([...ALL_LOCALES])(
-    "språkvelgeren har et navn for «%s», i alle sju katalogene",
+    "språkvelgeren har et navn for «%s», i begge katalogene",
     async (code) => {
-      for (const shown of ACTIVE_LOCALES) {
+      for (const shown of ALL_LOCALES) {
         await setLocale(shown);
         expect(tDyn("app.language", code)).not.toBe("");
       }
@@ -127,25 +111,13 @@ describe("app i18n", () => {
   );
 
   // Forhåndsbufferen står PÅ som standard (15 s), og det betyr at mikrofonen
-  // holdes åpen i bakgrunnen på en fersk installasjon. Eiervalget «pre-roll på
-  // og usynlig» står — men da må TEKSTEN si hva det innebærer, ellers er det
-  // appen som holder mikrofonen åpen uten at noen sa fra. Rust-doccen advarte
-  // ordrett; katalogen sa ingenting.
-  //
-  // F2-S6: alle sju, ikke to. Setningen er den ene personvernopplysningen i
-  // appen som IKKE har en bryter ved siden av seg, og en oversettelse som
-  // korter den ned til «lyd fra før du trykket Start» tar den bort for alle som
-  // leser appen på det språket — uten at noen gate ser forskjell på en kortere
-  // setning og en fattigere.
+  // holdes åpen i bakgrunnen på en fersk installasjon. Setningen er den ene
+  // personvernopplysningen i appen som IKKE har en bryter ved siden av seg, og en
+  // oversettelse som korter den ned tar den bort for alle som leser appen på det språket.
   it.each([
     ["no", /mikrofonen er åpen/i],
     ["en", /microphone stays open/i],
-    ["sv", /mikrofonen är öppen/i],
-    ["da", /mikrofonen er åben/i],
-    ["de", /Mikrofon bleibt offen/i],
-    ["fr", /microphone reste ouvert/i],
-    ["pl", /mikrofon pozostaje otwarty/i],
-  ] as Array<[(typeof ACTIVE_LOCALES)[number], RegExp]>)(
+  ] as Array<[(typeof ALL_LOCALES)[number], RegExp]>)(
     "forhåndsbufferen sier at den holder mikrofonen åpen (%s)",
     async (lang, needle) => {
       await setLocale(lang);
@@ -154,24 +126,33 @@ describe("app i18n", () => {
     },
   );
 
+  // [navn, lagret, system, forventet]
   it.each([
-    ["nothing stored", null, "no"],
-    ["norsk", "no", "no"],
-    ["engelsk", "en", "en"],
-    // F2-S6: alle sju er aktive, så et lagret språk brukes som det står. Den
-    // gamle nabospråk-mappingen (sv/da → no, resten → en) hørte pausen til, og
-    // ville i dag ha vært en app som stille nekter å starte på det språket
-    // brukeren faktisk valgte.
-    ["svensk", "sv", "sv"],
-    ["dansk", "da", "da"],
-    ["tysk", "de", "de"],
-    ["fransk", "fr", "fr"],
-    ["polsk", "pl", "pl"],
-    // …men en verdi som ikke er en av de sju er fortsatt ikke et språk.
-    // `settings.language` er `string | null` i wire-typen.
-    ["noe helt annet", "kv", "no"],
-    ["tom streng", "", "no"],
-  ])("startup locale for %s", (_name, stored, expected) => {
-    expect(resolveStartupLocale(stored)).toBe(expected);
+    ["nothing stored, english system", null, "en", "en"],
+    ["nothing stored, norwegian system", null, "no", "no"],
+    ["norsk", "no", "en", "no"],
+    ["engelsk", "en", "no", "en"],
+    // F4: et lagret språk som ikke finnes lenger faller STILLE på systemregelen.
+    ["svensk, norsk system", "sv", "no", "no"],
+    ["svensk, engelsk system", "sv", "en", "en"],
+    ["tysk, engelsk system", "de", "en", "en"],
+    ["fransk, norsk system", "fr", "no", "no"],
+    ["noe helt annet, engelsk system", "kv", "en", "en"],
+    ["tom streng, engelsk system", "", "en", "en"],
+  ])("startup locale for %s", (_name, stored, system, expected) => {
+    expect(resolveStartupLocale(stored, system as "no" | "en")).toBe(expected);
+  });
+
+  it.each([
+    [["nb-NO"], "no"],
+    [["nn-NO", "en"], "no"],
+    [["no"], "no"],
+    [["en-US", "nb"], "en"],
+    [["sv-SE"], "en"],
+    [["da-DK"], "en"],
+    [[], "en"],
+    [undefined, "en"],
+  ])("systemregelen for %j er %s", (languages, expected) => {
+    expect(systemLocale(languages as string[] | undefined)).toBe(expected);
   });
 });

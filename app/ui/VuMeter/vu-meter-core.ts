@@ -13,7 +13,7 @@ import { VU_FLOOR_DB } from "@lib/audio/vu-feed-core";
 export const STALE_MS = 1000;
 
 /** A dB step below this is invisible at bar width — not worth a repaint. */
-export const REPAINT_EPSILON_DB = 0.05;
+const REPAINT_EPSILON_DB = 0.05;
 
 /**
  * The level the bars should chase. While packets flow it is the last packet's

@@ -37,7 +37,7 @@ step "frontend — tsc --noEmit";        npm run typecheck
 # dynamic eval would build fine and be a blank window in WKWebView.
 step "frontend build — dist has no dynamic eval"; npm run build
 if grep -rqE 'eval\(|new[[:space:]]+Function' dist; then
-  printf "\033[1;31m✗ dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md.\033[0m\n"
+  printf "\033[1;31m✗ dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/archive/APP-SHELL.md.\033[0m\n"
   grep -rnE 'eval\(|new[[:space:]]+Function' dist | head -20
   exit 1
 fi
@@ -76,18 +76,6 @@ step "command reachability regression"; npm run reachability
 # and `cargo check` alone let four such findings live on main for weeks.
 step "rust — clippy (feature-off)"
 cargo clippy --workspace --all-targets --no-default-features -- -D warnings
-
-# ci.yml's "Rust clippy + tests (vad feature)" step. E9's neural VAD is
-# default-off, so EVERY step above compiles the seam out — these tests are the
-# only place the model's failure modes (a 512-sample window instead of 576, `sr`
-# at 8000, inputs bound by index, a lost symbolic batch dim) are ever exercised,
-# and the only place the feature-ON side is held to `-D warnings`. It was
-# missing here while ci.yml had it, so this mirror reported green over an
-# untested seam — exactly the "a step in only one place" gap this script exists
-# to prevent.
-step "rust — clippy + tests (vad feature)"
-cargo clippy --workspace --all-targets --features vad -- -D warnings
-cargo test --workspace --features vad vad::
 
 step "tauri build (no bundle)";        npm run tauri build -- --no-bundle
 

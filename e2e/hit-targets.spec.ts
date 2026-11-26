@@ -47,7 +47,7 @@ import { editorFixtures, RECORDING_ID } from "./editor-fixtures";
 //     altså ikke tom — den vet om det trangeste stedet i appen.
 //
 // Tallene her er også målt i en EKTE WKWebView (Swift-vert, samme probe): 44,5
-// og 40,5. Se `docs/APP-SHELL.md` §«Treffflatene».
+// og 40,5. Se `docs/archive/APP-SHELL.md` §«Treffflatene».
 //
 // F1-UX1/W2: ghost-knappene («Slett», «Vis i Finder», «Endre», …) og
 // Bibliotekets rader lagt til med SAMME metode. De hadde ingen egen flate å
@@ -254,6 +254,12 @@ const X32 = {
   isDefault: true,
 };
 
+/** Tallene målt på de to flatene — se `assertHitTargets`. */
+const SETTINGS_TOGGLES = 7;
+const SETTINGS_GHOSTS = 9;
+const PLAN_TOGGLES = 3;
+const PLAN_GHOSTS = 0;
+
 const FIXTURES: Fixtures = { ...BOOT_FIXTURES, list_audio_devices: [X32] };
 
 const CHOSEN = {
@@ -264,113 +270,75 @@ const CHOSEN = {
 };
 
 test.describe("treffflater", () => {
-  test("kontrollrommet: bryterne og utfoldingsknappene, lukket", async ({
-    page,
-  }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
-    await expect(page.getByTestId("control-folder-expand")).toBeVisible();
-    // Kamera og auto-opptak er de to kortene som har en bryter i lead-en, og
-    // de står ved siden av hverandre i stabelen — 6 px fra hverandre. Det er
-    // nettopp der en for grådig flate ville tatt naboens bryter.
+  test("TA OPP: kilden og planlinja", async ({ page }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await expect(page.getByTestId("record-change-source")).toBeVisible();
+    // Ingen brytere og ingen utfoldingsknapper etter F5; de to ghost-knappene
+    // er kildens «Endre» og planlinjas «Plan».
     await assertHitTargets(page, "record", {
-      toggles: 2,
-      expands: 3,
-      ghosts: 1,
+      toggles: 0,
+      expands: 0,
+      ghosts: 2,
     });
   });
 
-  test("kontrollrommet: med et kort foldet ut", async ({ page }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
-    // Utfoldet er det verste tilfellet for utfoldingsknappen: kroppen kommer
-    // rett under den, og flaten stikker 7 px ned i den.
-    // (`::after` er −8 px fra padding-boksen; kanten spiser 1 av dem.)
-    await page.getByTestId("control-notify-expand").click();
-    await expect(page.getByTestId("setup-notify")).toBeVisible();
-    // Kroppen har én bryter (varsel på maskinen). Tre ghost-knapper:
-    // kilde-kortets «Endre», og «Send testvarsel» og «Åpne innstillinger» på
-    // raden som sier om OS-et viser varslene (begge ghost når de er slått på).
-    await assertHitTargets(page, "record/notify", {
-      toggles: 3,
-      expands: 3,
-      ghosts: 3,
-    });
-  });
-
-  test("kontrollrommet: kvalitet og mappe foldet ut samtidig", async ({
+  test("INNSTILLINGER: bryterne og knappene på hele flaten", async ({
     page,
   }) => {
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
-    await page.getByTestId("control-folder-expand").click();
-    await page.getByTestId("control-quality-expand").click();
-    await expect(page.getByTestId("setup-quality")).toBeVisible();
-    await assertHitTargets(page, "record/folder+quality", {
-      toggles: 2,
-      expands: 3,
-      ghosts: 1,
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: CHOSEN,
+      goto: "settings",
+    });
+    await expect(page.getByTestId("setup-sec-about")).toBeVisible();
+    await assertHitTargets(page, "settings", {
+      toggles: SETTINGS_TOGGLES,
+      expands: 0,
+      ghosts: SETTINGS_GHOSTS,
     });
   });
 
-  // F2-T4: sjekklistas rader folder ut PÅ STEDET nå, og knappen som gjør det
-  // er husets `Button` og ikke kontrollrommets lille `.expand` — den har ingen
-  // usynlig flate, og trenger ingen: boksen er husets faste 40,3 px. Det er
-  // gulvet denne testen LÅSER, sammen med det som faktisk er nytt her — at en
-  // utfoldet kropp inne i en rad ikke stjeler et eneste midtpunkt fra
-  // kontrollene rundt seg.
+  test("PLAN: bryteren og radene", async ({ page }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
+      },
+      goto: "plan",
+    });
+    await expect(page.getByTestId("setup-auto-body")).toBeVisible();
+    await assertHitTargets(page, "plan", {
+      toggles: PLAN_TOGGLES,
+      expands: 0,
+      ghosts: PLAN_GHOSTS,
+    });
+  });
+
+  // Første gang, steg 3: ukevisningen og bryterkortet må ha treffflater som
+  // ikke stjeler midtpunktet fra naboene.
   //
   // ⚠️ Booter UTEN `?goto=`: api-shim tvinger `onboardingDone` sann når
   // parameteren finnes, så en dyplenket oppstart kan aldri se første gang.
-  test("første gang: sjekklistas rader, med ett kort foldet ut", async ({
-    page,
-  }) => {
+  test("første gang: steg 3, bryterkortet og knappene", async ({ page }) => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...CHOSEN, onboardingDone: false },
     });
     await page.getByTestId("first-run-skip-sound").click();
-    for (let i = 0; i < 4; i += 1) {
-      await page.getByTestId("first-run-next").click();
-    }
-    await expect(page.getByTestId("first-run-row-folder")).toBeVisible();
+    await page.getByTestId("first-run-next").click();
+    await expect(page.getByTestId("first-run-plan")).toBeVisible();
 
-    const rows = await measure(
-      page,
-      '[data-testid^="first-run-row-"][data-testid$="-action"]',
-    );
-    // Fem rader = fem knapper. Uten tallet ville en sjekkliste som ikke rakk
-    // å rendre gitt en grønn test om en tom skjerm.
-    expect(rows.length, "first-run: antall radknapper målt").toBe(5);
-    for (const r of rows) {
-      expect(r.hitH, `first-run/${r.id}: treffhøyde`).toBeGreaterThanOrEqual(
-        GHOST_FLOOR - PROBE_STEP,
-      );
-    }
-    await nobodyStolen(page);
-
-    // …og med kroppen ute, som er den ene tilstanden der noe nytt kan legge
-    // seg over en nabo.
-    await page.getByTestId("first-run-row-notify-action").click();
-    await expect(page.getByTestId("setup-notify")).toBeVisible();
-    const open = await measure(
-      page,
-      '[data-testid^="first-run-row-"][data-testid$="-action"]',
-    );
-    for (const r of open) {
-      expect(
-        r.hitH,
-        `first-run/notify/${r.id}: treffhøyde`,
-      ).toBeGreaterThanOrEqual(GHOST_FLOOR - PROBE_STEP);
-    }
     const toggles = await measure(page, 'button[role="switch"]');
-    // ÉN: varslingskortets bryter for varsel på maskinen. Påminnelsen står
-    // bak en `Gate` som er `inert` uten en armert tid, og telles derfor ikke —
-    // se `measure`. Samme tall som kortet bidrar med i kontrollrommet.
-    expect(toggles.length, "first-run/notify: antall brytere målt").toBe(1);
+    // To: «Ta opp automatisk» og «Start automatisk med maskinen».
+    expect(toggles.length, "first-run/plan: antall brytere målt").toBe(2);
     for (const t of toggles) {
       expect(
         t.hitH,
-        `first-run/notify/${t.id}: treffhøyde`,
+        `first-run/plan/${t.id}: treffhøyde`,
       ).toBeGreaterThanOrEqual(TOGGLE_FLOOR - PROBE_STEP);
-      expect(t.boxH, `first-run/notify/${t.id}: boksen står stille`).toBe(22);
+      expect(t.boxH, `first-run/plan/${t.id}: boksen står stille`).toBe(22);
     }
     await nobodyStolen(page);
   });
@@ -393,11 +361,11 @@ test.describe("treffflater", () => {
       expect(t.boxH, `advanced/${t.id}: boksen står stille`).toBe(22);
     }
     // F1-UX1/W2: den TETTESTE siden i appen er også den med flest ghost-
-    // knapper (kopier, forhåndsvis, eksporter/importer, diagnose, …) — samme
+    // knapper (kopier, forhåndsvis, vis, fjern, …) — samme
     // gulv, og `toBeGreaterThanOrEqual` av samme grunn som toggle-tallet over:
     // denne siden vokser oftest.
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    expect(ghosts.length).toBeGreaterThanOrEqual(9);
+    expect(ghosts.length).toBeGreaterThanOrEqual(5);
     for (const g of ghosts) {
       expect(g.hitH, `advanced/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
         GHOST_FLOOR - PROBE_STEP,
@@ -410,7 +378,7 @@ test.describe("treffflater", () => {
     await boot(page, {
       fixtures: editorFixtures(),
       settings: SETTLED_SETTINGS,
-      goto: "editor",
+      goto: "recordings",
     });
     await page.evaluate(
       (f) =>
@@ -424,19 +392,19 @@ test.describe("treffflater", () => {
       "ready",
     );
     await page.getByTestId("editor-steps-row-sound").click();
-    await expect(page.getByTestId("editor-auto-toggle")).toBeVisible();
+    await expect(page.getByTestId("editor-podcast-toggle")).toBeVisible();
 
     const toggles = await measure(page, 'button[role="switch"]');
-    expect(toggles.map((t) => t.id)).toContain("editor-auto-toggle");
+    expect(toggles.map((t) => t.id)).toContain("editor-podcast-toggle");
     for (const t of toggles) {
       expect(t.hitH, `editor/${t.id}: treffhøyde`).toBeGreaterThanOrEqual(
         TOGGLE_FLOOR - PROBE_STEP,
       );
       expect(t.boxH, `editor/${t.id}: boksen står stille`).toBe(22);
     }
-    // F1-UX1/W2: to — «Lukk» øverst og mikserens «Åpne miksepanelet».
+    // F1-UX1/W2: én — «Lukk» øverst (mikserens «Åpne miksepanelet» er borte siden F3).
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    expect(ghosts.length).toBe(2);
+    expect(ghosts.length).toBe(1);
     for (const g of ghosts) {
       expect(g.hitH, `editor/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
         GHOST_FLOOR - PROBE_STEP,
@@ -459,13 +427,13 @@ test.describe("treffflater", () => {
         ],
       },
       settings: CHOSEN,
-      goto: "search",
+      goto: "recordings",
     });
     await expect(page.getByTestId("library-row")).toHaveCount(2);
 
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    // «Endre» (autoslett) + «Papirkurv».
-    expect(ghosts.length).toBe(2);
+    // «Endre» (autoslett) — papirkurven er en fane nå, ikke en ghost-knapp.
+    expect(ghosts.length).toBe(1);
     // To rader × «Vis i Finder» + «Slett»: dempede knapper (`quiet`), med
     // samme treffgulv som ghost-knappene.
     const quiets = await measure(page, 'button[data-variant="quiet"]');

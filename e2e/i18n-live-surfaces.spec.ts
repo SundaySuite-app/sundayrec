@@ -42,9 +42,8 @@ test.describe("language switch keeps live-painted state", () => {
         language: "no",
         deviceId: "dev-that-left",
         deviceName: "Behringer X32",
-        churchName: "Bryn menighet",
       },
-      goto: "home",
+      goto: "record",
     });
 
     // Den LEVENDE tilstanden står på skjermen på norsk: kortet navngir enheten
@@ -55,17 +54,17 @@ test.describe("language switch keeps live-painted state", () => {
     await expect(page.getByTestId("status-text")).toHaveText(
       "Lyden er ikke koblet til",
     );
-    await expect(page.getByTestId("control-quality-summary")).toHaveText("God");
+    await expect(page.getByTestId("nav-recordings")).toContainText("Opptak");
 
     // Bytt språk under Innstillinger — den ene flaten som eier språkvalget.
-    await page.getByTestId("nav-setup").click();
-    await page.getByTestId("church-language-control-input").selectOption("en");
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("language-control-input").selectOption("en");
 
     // 1. En innstillings-malt flate er malt om PÅ ENGELSK — ikke stående på
     //    norsk, og ikke nullstilt til noe generisk.
     await page.getByTestId("nav-record").click();
-    await expect(page.getByTestId("control-quality-summary")).toHaveText(
-      "Good",
+    await expect(page.getByTestId("nav-recordings")).toContainText(
+      "Recordings",
     );
 
     // 2. Sidefeltet beholdt sin live-tilstand, i det nye språket.
@@ -105,7 +104,7 @@ test.describe("notify toggles persist", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS, // both toggles default ON
-      goto: "settings:sharing",
+      goto: "settings:notify",
     });
 
     const toggle = page.getByTestId("notify-os-control-input");
@@ -123,11 +122,11 @@ test.describe("notify toggles persist", () => {
       })
       .toEqual([false, false]);
 
-    // Fold kortet sammen og ut igjen — kontrollen rives ut av treet og kobles
-    // på nytt fra innstillingene, som er den samme påstanden et skjermbytte var.
-    await page.getByTestId("control-notify-expand").click();
+    // Forlat siden og kom tilbake — kontrollen rives ut av treet og kobles på
+    // nytt fra innstillingene.
+    await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("setup-notify")).toHaveCount(0);
-    await page.getByTestId("control-notify-expand").click();
+    await page.getByTestId("nav-settings").click();
 
     await expect(page.getByTestId("notify-os-control-input")).toHaveAttribute(
       "aria-checked",
@@ -176,7 +175,7 @@ test.describe("engine codes render as catalogue sentences", () => {
         },
       },
       settings: { ...SETTLED_SETTINGS, language: "no" },
-      goto: "settings:general",
+      goto: "plan",
     });
 
     const notes = page.getByTestId("adv-wake-notes");
@@ -191,7 +190,10 @@ test.describe("engine codes render as catalogue sentences", () => {
     // rød — rå-koder på skjermen er nøyaktig det oppslaget finnes for å unngå.
     await expect(notes).not.toContainText("winS5NeedsBios");
 
-    await page.getByTestId("church-language-control-input").selectOption("en");
+    // Språket byttes der det bor: Innstillinger.
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("nav-plan").click();
 
     await expect(notes).toContainText("it disappears");
     await expect(notes).toContainText("startup settings (BIOS)");
@@ -227,7 +229,7 @@ test.describe("engine codes render as catalogue sentences", () => {
         deviceId: "dev-1",
         deviceName: "Behringer X32",
       },
-      goto: "home",
+      goto: "record",
     });
 
     const banner = page.getByTestId("banner-preflight");
@@ -239,12 +241,12 @@ test.describe("engine codes render as catalogue sentences", () => {
 
     // …og oppslaget skjer ved RENDER, så et språkbytte etterpå virker. F2-W9
     // oversatte ved mottak; da hadde denne stått igjen på norsk.
-    await page.getByTestId("nav-setup").click();
-    await page.getByTestId("church-language-control-input").selectOption("de");
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("language-control-input").selectOption("en");
     await page.getByTestId("nav-record").click();
 
     await expect(page.getByTestId("banner-preflight")).toContainText(
-      "Nur 0.4 GB frei auf dem Speicherlaufwerk",
+      "Only 0.4 GB free on the save disk",
     );
   });
 
@@ -276,30 +278,10 @@ test.describe("engine codes render as catalogue sentences", () => {
         run_preflight: [finding],
       },
       settings: { ...SETTLED_SETTINGS, language: "no" },
-      goto: "home",
+      goto: "record",
     });
 
-  test("a special recording's missing device is named on the preflight row", async ({
-    page,
-  }) => {
-    await bootWithFinding(
-      page,
-      missingDevice("specialDeviceMissing", { device: "Zoom H6" }),
-    );
-    const banner = page.getByTestId("banner-preflight");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText(
-      "Lydkilden «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
-        "Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden.",
-    );
-    // MUTASJONSPRØVEN: slå opp `deviceMissing` for begge kodene i `preflightText`,
-    // og linja over blir rød; la `specialDeviceMissing` falle ut av katalogen,
-    // og enhetstesten i `app/pages/record/preflight-text.test.ts` gjør det.
-    await expect(banner).not.toContainText("valgt i innstillingene");
-    await expect(banner).not.toContainText("English reserve");
-  });
-
-  test("the global device's missing finding keeps the sentence it always had", async ({
+  test("the missing device finding is translated on its code", async ({
     page,
   }) => {
     await bootWithFinding(page, missingDevice("deviceMissing", {}));
@@ -308,6 +290,6 @@ test.describe("engine codes render as catalogue sentences", () => {
     await expect(banner).toContainText(
       "Lydkilden som er valgt i innstillingene er ikke tilkoblet.",
     );
-    await expect(banner).not.toContainText("spesialopptaket");
+    await expect(banner).not.toContainText("English reserve");
   });
 });

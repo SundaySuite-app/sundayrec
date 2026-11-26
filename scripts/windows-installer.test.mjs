@@ -1,6 +1,6 @@
 // Windows-installasjonens oppsett som ikke kan bevises lokalt (ingen Windows-
 // bygg på Mac-en) men KAN holdes fast: konfigen og release-workflowen sier det
-// vi bestemte 2026-10-04 (docs/NEEDS-RICHARD.md §«Eierbeslutninger fra F2»).
+// vi bestemte 2026-10-04 (docs/archive/NEEDS-RICHARD.md §«Eierbeslutninger fra F2»).
 //
 // Disse testene beviser ikke at installereren virker — det gjør bare
 // release-bygget og riggen. De sørger for at ingen i det stille fjerner

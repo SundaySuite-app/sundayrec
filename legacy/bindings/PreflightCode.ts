@@ -6,7 +6,7 @@
  * Was six hardcoded Norwegian sentences (F2-I18N-R2). The findings are
  * rendered verbatim in the app's preflight card AND in the native
  * notification the scheduler fires half an hour before a service, so the
- * prose was the app's own voice in exactly one of its seven languages.
+ * prose was the app's own voice in exactly one of its two languages.
  *
  * The code is the contract now, and it has TWO catalogues because it has two
  * surfaces — which is the rule, not an exception to it:
@@ -20,4 +20,4 @@
  * [`Self::as_str`] is the ENGLISH reserve — the log line, and the text field
  * a shell older than the code would fall back on.
  */
-export type PreflightCode = "ffmpegMissing" | "deviceMissing" | "folderNotWritable" | "diskLow" | "micDenied" | "cameraDenied" | "saveFolderSynced" | "specialDeviceMissing";
+export type PreflightCode = "ffmpegMissing" | "deviceMissing" | "folderNotWritable" | "diskLow" | "micDenied" | "cameraDenied" | "saveFolderSynced";

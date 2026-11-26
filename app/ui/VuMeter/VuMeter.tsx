@@ -71,7 +71,7 @@ import { effectiveLevel, needsRepaint, STALE_MS } from "./vu-meter-core";
 
 /**
  * Enheten på tallene under Avansert. En konstant, ikke tekst i treet: «dBFS»
- * er en SI-lignende enhet som er lik på alle sju språk, men prosa-gaten kan
+ * er en SI-lignende enhet som er lik på begge språk, men prosa-gaten kan
  * ikke vite det og skal ikke måtte gjette.
  */
 const UNIT_DBFS = "dBFS";

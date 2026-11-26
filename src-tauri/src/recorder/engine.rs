@@ -772,7 +772,7 @@ pub fn late_start_verdict(state: RecorderState) -> LateStart {
 
 /// The wire code of the start-time warning for a blocked camera (macOS TCC).
 /// The same code the renderer and `AlertText` already have texts for in all
-/// seven languages.
+/// two languages.
 pub(crate) const CAMERA_BLOCKED_CODE: &str = "camera_permission_denied";
 
 /// Does this camera permission status make the session audio-only?
@@ -913,25 +913,17 @@ pub(crate) mod tests {
         }
     }
 
-    /// S1-B: the warning has a real, distinct sentence in all seven languages.
+    /// S1-B: the warning has a real, distinct sentence in both languages.
     #[test]
     fn the_camera_warning_has_text_in_every_language() {
         use sundayrec_core::lang::Lang;
         let mut seen = std::collections::HashSet::new();
-        for lang in [
-            Lang::No,
-            Lang::En,
-            Lang::De,
-            Lang::Sv,
-            Lang::Da,
-            Lang::Pl,
-            Lang::Fr,
-        ] {
+        for lang in [Lang::No, Lang::En] {
             let t = camera_blocked_text(lang);
             assert!(!t.is_empty());
             assert!(seen.insert(t), "{lang:?} reuses another language's text");
         }
-        assert_eq!(seen.len(), 7);
+        assert_eq!(seen.len(), 2);
     }
 
     #[test]

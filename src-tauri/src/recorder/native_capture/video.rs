@@ -1,4 +1,4 @@
-//! The native engine's optional video track (C3a, docs/VIDEOMOTOR.md §C3).
+//! The native engine's optional video track (C3a, docs/archive/VIDEOMOTOR.md §C3).
 //!
 //! **The audio clock is the boss.** A native video session records exactly
 //! like an audio-only one — cpal → ring → [`super::writer`] → WAV, with every

@@ -3,7 +3,7 @@
 # GUI-free domain core (`crates/sundayrec-core`). The core is unit-testable
 # without a webview or a display, which is exactly where the recorder logic
 # (ffmpeg argument hardening, error classification, silence state machine)
-# belongs — see docs/MIGRATION-TAURI2.md, "Tverrgående standarder".
+# belongs — see docs/archive/MIGRATION-TAURI2.md, "Tverrgående standarder".
 #
 # `crates/camera-*` (C1b) er Caps kamera-crates for Windows (MIT), tatt inn
 # låst til én commit — se UPSTREAM.md i hver. `crates/mf-util` er vår egen

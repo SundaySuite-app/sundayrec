@@ -1,4 +1,4 @@
-//! The playback engine (B5a, `docs/LYDMOTOR.md` fase 5): real-time listening to a recording, with
+//! The playback engine (B5a, `docs/archive/LYDMOTOR.md` fase 5): real-time listening to a recording, with
 //! its cuts and its audio chain, on the sound card.
 //!
 //! ```text

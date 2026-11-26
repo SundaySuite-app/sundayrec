@@ -66,10 +66,13 @@ use ts_rs::TS;
 /// apart from the one they already answered.
 ///
 /// - **v1** — crashes, quality verdicts, feature counters, technical settings.
-/// - **v2** — quality data may additionally carry COARSE SIZE BANDS for editor
-///   corrections ("the sermon start was moved 30–60 seconds earlier"), not only
-///   a count of them. A band is a magnitude, and v1 promised counts only, so it
-///   is a new category no matter how anonymous it is.
+/// - **v2** — quality data could additionally carry COARSE SIZE BANDS for
+///   editor corrections. That collection was removed in F1 (with the learning
+///   loop it served), so nothing carries bands any more: v2 now describes the
+///   same scope as v1 — crashes, quality verdicts, feature counters, technical
+///   settings. The version stays at 2 on purpose (bumping it would re-prompt
+///   everybody over a REMOVAL); the re-prompt copy and `PRIVACY.md` say only
+///   what is collected today.
 pub const CONSENT_VERSION: u32 = 2;
 
 /// The persisted consent record. Absent from storage = never asked.

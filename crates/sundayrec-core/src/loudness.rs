@@ -1,4 +1,4 @@
-//! Loudness in Rust (B1a, docs/LYDMOTOR.md fase 1): measurement and gain plan.
+//! Loudness in Rust (B1a, docs/archive/LYDMOTOR.md fase 1): measurement and gain plan.
 //!
 //! The level is set in Rust, in steps we steer ourselves (the ffmpeg filter this replaced is gone, B1b):
 //!
@@ -319,7 +319,7 @@ pub fn apply_to_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mastering::get_preset_by_id;
+    use crate::mastering::podcast_preset;
 
     fn loud(i: f64, tp: f64) -> Loudness {
         Loudness {
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn gain_is_target_minus_measured() {
-        let p = get_preset_by_id("speech-clear").unwrap(); // −16 LUFS, −1 dBTP
+        let p = podcast_preset(); // −16 LUFS, −1 dBTP
         let plan = plan_gain(&loud(-24.0, -10.0), &p);
         assert!((plan.gain_db - 8.0).abs() < 1e-12);
         assert_eq!(plan.limiter, None, "−10 + 8 = −2 dBTP fits under −1");
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn limiter_only_when_peaks_would_pass_the_ceiling() {
-        let p = get_preset_by_id("speech-clear").unwrap();
+        let p = podcast_preset();
         // −24 → −16 is +8 dB; a −5 dBTP peak lands at +3: 4 dB over the −1 ceiling.
         let plan = plan_gain(&loud(-24.0, -5.0), &p);
         assert!(
@@ -355,23 +355,18 @@ mod tests {
     }
 
     #[test]
-    fn every_preset_uses_its_own_target_and_ceiling() {
-        for p in crate::mastering::master_presets() {
-            let plan = plan_gain(&loud(-30.0, -3.0), &p);
-            assert!(
-                (plan.gain_db - (p.target_lufs + 30.0)).abs() < 1e-12,
-                "{}",
-                p.id
-            );
-            assert_eq!(plan.target_lufs, p.target_lufs);
-            let over = -3.0 + plan.gain_db - p.true_peak_db;
-            assert_eq!(plan.limiter.is_some(), over > 0.0, "{}", p.id);
-        }
+    fn the_preset_uses_its_own_target_and_ceiling() {
+        let p = crate::mastering::podcast_preset();
+        let plan = plan_gain(&loud(-30.0, -3.0), &p);
+        assert!((plan.gain_db - (p.target_lufs + 30.0)).abs() < 1e-12);
+        assert_eq!(plan.target_lufs, p.target_lufs);
+        let over = -3.0 + plan.gain_db - p.true_peak_db;
+        assert_eq!(plan.limiter.is_some(), over > 0.0);
     }
 
     #[test]
     fn silence_and_room_tone_are_left_alone() {
-        let p = get_preset_by_id("speech-clear").unwrap();
+        let p = podcast_preset();
         for m in [
             loud(f64::NEG_INFINITY, f64::NEG_INFINITY),
             loud(-57.2, -38.2),
@@ -386,7 +381,7 @@ mod tests {
 
     #[test]
     fn already_on_target_is_unity() {
-        let p = get_preset_by_id("music-speech").unwrap();
+        let p = podcast_preset();
         let plan = plan_gain(&loud(p.target_lufs, -6.0), &p);
         assert!(plan.gain_db.abs() < 1e-12);
         assert_eq!(plan.limiter, None);

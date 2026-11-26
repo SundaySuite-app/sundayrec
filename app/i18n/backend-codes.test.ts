@@ -5,7 +5,7 @@
  *
  * Runden flyttet brukervendt norsk prosa ut av Rust og erstattet den med
  * stabile koder. Det virker bare så lenge appen har en setning for hver kode,
- * på alle sju språk — og de to sidene vet ingenting om hverandre:
+ * på begge språk — og de to sidene vet ingenting om hverandre:
  *
  *   • Rust kan legge til en variant uten at noe i TypeScript merker det.
  *   • Katalogen kan miste en nøkkel uten at noe i Rust merker det.
@@ -25,9 +25,9 @@
  * ## MUTASJONSPRØVEN
  *
  * Legg en variant til i et av enumene i Rust uten å skrive setningen i
- * katalogene, eller slett en nøkkel i ett av de sju språkene: begge blir røde
+ * katalogene, eller slett en nøkkel i ett av de to språkene: begge blir røde
  * her. Legg en nøkkel til som ingen kode peker på: også rød — en setning ingen
- * ser må likevel oversettes til sju språk og holdes i paritet.
+ * ser må likevel oversettes til to språk og holdes i paritet.
  */
 
 import { readFileSync } from "node:fs";
@@ -127,7 +127,7 @@ describe("plassholderparitet", () => {
 });
 
 /**
- * `NATIVE_ERRORS` ⇢ `recording.<suffiks>` i alle sju.
+ * `NATIVE_ERRORS` ⇢ `recording.<suffiks>` i begge.
  *
  * `scripts/check-error-codes.mjs` beviser den ENE halvdelen: at hver kode
  * motoren sender står i tabellen. Den kan ikke se om SUFFIKSET tabellen peker

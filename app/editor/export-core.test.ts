@@ -146,15 +146,6 @@ describe("feilkodene", () => {
     expect(exportErrorKey("validation: invalid_duration")).toBe("errCutData");
   });
 
-  it("mono-avvisningen har sin egen setning — ikke den generelle", () => {
-    // Sømmen stopper en reparasjon som leser høyre inngangskanal på en
-    // monofil. Uten raden her får den frivillige den generelle setningen om
-    // at «noe gikk galt», for den ene feilen som har et konkret svar.
-    expect(exportErrorKey("validation: channel_repair_needs_stereo")).toBe(
-      "errChannelRepairNeedsStereo",
-    );
-  });
-
   it("path_guard-meldingen matcher fortsatt på innhold — den har ingen kode", () => {
     expect(exportErrorKey("path must be absolute: ../ut")).toBe(
       "errPathNotAbsolute",
@@ -273,7 +264,7 @@ describe("feilkodene", () => {
   });
 
   // F2-A-A: den tidligere fallbacken søkte med `includes` over HELE
-  // meldingen for alle sju kodene, ikke bare de flerords-fraser som aldri
+  // meldingen for begge kodene, ikke bare de flerords-fraser som aldri
   // kan bli `lead` — så et ord som «timeout» eller «cancelled» i 500 tegn rå
   // ffmpeg-prosa (helt urelatert til vår egen `timeout`/`cancelled`-kode) ga
   // feil setning. Den er nå strammet til KUN å gjelde koder med mellomrom.

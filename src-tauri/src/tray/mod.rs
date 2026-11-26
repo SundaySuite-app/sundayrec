@@ -61,7 +61,6 @@ pub fn action_id(action: TrayAction) -> &'static str {
         TrayAction::StopRecording => "stop-recording",
         TrayAction::OpenRecordingsFolder => "open-recordings-folder",
         TrayAction::RunPreflight => "run-preflight",
-        TrayAction::RunDiagnostics => "run-diagnostics",
         TrayAction::Quit => "quit",
     }
 }
@@ -76,7 +75,6 @@ pub fn action_from_id(id: &str) -> Option<TrayAction> {
         "stop-recording" => TrayAction::StopRecording,
         "open-recordings-folder" => TrayAction::OpenRecordingsFolder,
         "run-preflight" => TrayAction::RunPreflight,
-        "run-diagnostics" => TrayAction::RunDiagnostics,
         "quit" => TrayAction::Quit,
         _ => return None,
     })
@@ -216,7 +214,7 @@ impl<R: Runtime> TrayController<R> {
 /// The tray image for `state`: the app's own window icon, with a red (recording)
 /// or amber (error) dot painted into its bottom-right corner.
 ///
-/// Dedicated tray assets were never bundled (docs/NEEDS-RICHARD.md PU-2). Rather
+/// Dedicated tray assets were never bundled (docs/archive/NEEDS-RICHARD.md PU-2). Rather
 /// than block "the icon reflects what the app is doing" on three PNGs, the badge
 /// is composited at runtime from the icon's own RGBA buffer — the compositing is
 /// the pure, unit-tested `sundayrec_core::tray::with_status_badge`. Idle returns
@@ -427,7 +425,6 @@ mod tests {
             TrayAction::StopRecording,
             TrayAction::OpenRecordingsFolder,
             TrayAction::RunPreflight,
-            TrayAction::RunDiagnostics,
             TrayAction::Quit,
         ] {
             assert_eq!(action_from_id(action_id(action)), Some(action));

@@ -11,10 +11,8 @@
 // ratchet), because the property is about what the code SAYS, not what one
 // runtime path happens to do.
 //
-// The single, explicitly-allowlisted exception: the one-shot migration
-// (`migrate-legacy-settings-core.ts` names the key; api-shim's
-// `migrateLegacySettingsOnce` reads/removes it via that constant). A future
-// release deletes the migration and shrinks the allowlist to nothing.
+// No exceptions: the one-shot migration that used to name the key was deleted
+// with the rent-bord pruning (F2), so the allowlist is empty.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -76,8 +74,8 @@ function rendererSources(): string[] {
 /** Repo-relative, so an offender in either tree is named unambiguously. */
 const rel = (p: string): string => relative(REPO_ROOT, p);
 
-/** Files allowed to name the legacy key: the migration, and nothing else. */
-const ALLOWLIST = new Set(["app/lib/migrate-legacy-settings-core.ts"]);
+/** Files allowed to name the legacy key: none. */
+const ALLOWLIST = new Set<string>();
 
 describe("settings store pin — sqlite is the ONE store", () => {
   it("covers BOTH the shell and the ported inventory — a pin that scans an empty set proves nothing", () => {
@@ -93,7 +91,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     expect(scanned.some((p) => p.endsWith(".tsx"))).toBe(true);
   });
 
-  it("no renderer source names the legacy localStorage key (migration excepted)", () => {
+  it("no renderer source names the legacy localStorage key", () => {
     const offenders = rendererSources()
       .filter((p) => !ALLOWLIST.has(rel(p)))
       .filter((p) => codeOf(p).includes(LEGACY_KEY))
@@ -106,10 +104,8 @@ describe("settings store pin — sqlite is the ONE store", () => {
   });
 
   it("api-shim itself touches no localStorage at all", () => {
-    // The shim is where the old store lived. After R4 its only localStorage
-    // client is the migration MODULE (separate file, allowlisted above) — the
-    // shim calling localStorage again would be the split growing back at its
-    // root. (Pages may use localStorage for pure UI prefs — remembered tab,
+    // The shim is where the old store lived — the shim calling localStorage
+    // again would be the split growing back at its root. (Pages may use localStorage for pure UI prefs — remembered tab,
     // preview size — that is not settings state and not covered by this pin.)
     const source = codeOf(join(LIB_ROOT, "api-shim.ts"));
     expect(
@@ -118,7 +114,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     ).toBe(false);
   });
 
-  it("the old vocabulary lives ONLY in the migration mapper", () => {
+  it("the old vocabulary is gone", () => {
     // The retired settings-field names, as bare quoted strings. R4's promise is
     // "no living compat code elsewhere" — the rename table exists in ONE place
     // (mapLegacyBlob), so a stale `'videoSeparate'` in a page is either dead
@@ -136,7 +132,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     expect(
       offenders,
       "these files use a retired settings-field name — the unified vocabulary is " +
-        "outputMode / keepSeparateAudio; renames live only in mapLegacyBlob",
+        "outputMode / keepSeparateAudio",
     ).toEqual([]);
   });
 

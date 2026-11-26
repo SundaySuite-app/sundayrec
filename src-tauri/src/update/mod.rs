@@ -57,7 +57,7 @@
 //! Behind the **`updater`** cargo feature — nowadays part of `default` (and of
 //! the release feature lists), since a real update needs a SIGNED release + an
 //! updater keypair in `tauri.conf.json` and both exist (see
-//! docs/NEEDS-RICHARD.md; the feature started life default-off while they
+//! docs/archive/NEEDS-RICHARD.md; the feature started life default-off while they
 //! didn't). The DTO + [`UpdateEngine`] + the public entry points
 //! compile either way; when the feature is OFF, [`check`]/[`download`]
 //! return a clear `feature_disabled` error so the renderer surfaces "auto-update
@@ -68,7 +68,7 @@
 //! Under `--features updater` the feed fetch, signature verify, download and
 //! relaunch are wired but unproven — they need a signed release + the public key
 //! configured. Only the `sundayrec_core::update` decisions are unit-tested. See
-//! docs/SMOKE-TEST.md §R7 and docs/NEEDS-RICHARD.md.
+//! docs/SMOKE-TEST.md §R7 and docs/archive/NEEDS-RICHARD.md.
 
 mod install_ratchet;
 

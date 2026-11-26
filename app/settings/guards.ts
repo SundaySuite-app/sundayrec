@@ -33,7 +33,7 @@ import type { GuardDescriptor } from "./use-setting-core";
  * render, og et abonnement herfra ville knyttet en komponent til noe den ikke
  * viser.
  */
-export function recordingImminentGuard(
+function recordingImminentGuard(
   what: string,
 ): (value: SettingValue) => GuardDescriptor | null {
   return () => {

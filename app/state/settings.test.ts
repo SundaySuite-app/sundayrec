@@ -35,7 +35,7 @@ describe("innstillinger er skrivebeskyttet mens lesingen står som feilet", () =
     expect(hydrateError.value).toBe("settingsLoadFailed");
 
     // Brukeren flipper en bryter: i minnet er det standardverdier + endringen.
-    patchSettings({ churchName: "Domkirken" });
+    patchSettings({ deviceName: "Domkirken" });
     expect(await saveSettingsDebounced(0)).toBe(false);
     expect(saveSettings).not.toHaveBeenCalled();
   });
@@ -55,7 +55,7 @@ describe("innstillinger er skrivebeskyttet mens lesingen står som feilet", () =
     const saveSettings = withApi(() =>
       fail
         ? Promise.reject(new Error("db locked"))
-        : Promise.resolve({ ...SETTINGS_DEFAULTS, churchName: "Domkirken" }),
+        : Promise.resolve({ ...SETTINGS_DEFAULTS, deviceName: "Domkirken" }),
     );
     await hydrateSettings();
     expect(hydrateError.value).toBe("settingsLoadFailed");
@@ -63,8 +63,8 @@ describe("innstillinger er skrivebeskyttet mens lesingen står som feilet", () =
     fail = false;
     await hydrateSettings();
     expect(hydrateError.value).toBeNull();
-    expect(settings.value.churchName).toBe("Domkirken");
-    patchSettings({ churchName: "Annen kirke" });
+    expect(settings.value.deviceName).toBe("Domkirken");
+    patchSettings({ deviceName: "Annen kirke" });
     expect(await saveSettingsDebounced(0)).toBe(true);
     expect(saveSettings).toHaveBeenCalledTimes(1);
   });
@@ -90,7 +90,7 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 describe("lagringen sender bare det som er endret", () => {
   it("en utdatert kopi skriver ikke over felt den ikke har rørt", async () => {
     const saveSettings = withApi(() =>
-      Promise.resolve({ ...SETTINGS_DEFAULTS, churchName: "Domkirken" }),
+      Promise.resolve({ ...SETTINGS_DEFAULTS, deviceName: "Domkirken" }),
     );
     await hydrateSettings();
     patchSettings({ language: "en" });
@@ -117,10 +117,10 @@ describe("lagringen sender bare det som er endret", () => {
     );
     saveSettings.mockRejectedValueOnce(new Error("db locked"));
     await hydrateSettings();
-    patchSettings({ churchName: "Domkirken" });
+    patchSettings({ deviceName: "Domkirken" });
     expect(await saveSettingsDebounced(0)).toBe(false);
     expect(await saveSettingsDebounced(0)).toBe(true);
-    expect(saveSettings).toHaveBeenLastCalledWith({ churchName: "Domkirken" });
+    expect(saveSettings).toHaveBeenLastCalledWith({ deviceName: "Domkirken" });
   });
 });
 
@@ -129,7 +129,7 @@ describe("lagringskøen: hver byge får sitt eget svar", () => {
     const { saveSettings, held } = withHeldSaves();
     await hydrateSettings();
 
-    patchSettings({ churchName: "Første" });
+    patchSettings({ deviceName: "Første" });
     const first = saveSettingsDebounced(0);
     await tick();
     expect(saveSettings).toHaveBeenCalledTimes(1);

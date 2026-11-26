@@ -24,10 +24,8 @@
  * `ResizeObserver`-en `WaveformHost` uansett har, og av scroll/resize.
  */
 
-import { limitPulse, resetHaptics, snapPulse } from "@lib/pages/editor/haptics";
-
-import { addCut, commitCutEdges, setSermonWindow } from "./cuts";
-import { dragHandle, sermonWindow } from "./editor-core";
+import { addCut, commitCutEdges, setKeepWindow } from "./cuts";
+import { dragHandle, keepWindow } from "./editor-core";
 import { clampToFile, grabThreshold, secToX, xToSec } from "./geometry";
 import { dragWindow, E, syncCuts, type Range } from "./model";
 import { seekTo, stopPlay } from "./playback";
@@ -57,7 +55,6 @@ export function onCanvasPointerDown(event: PointerEvent): void {
   // Én fersk måling per interaksjon: et drag som starter fra et foreldet
   // rektangel søker til feil sekund, og det er ikke en kostnad verdt å spare.
   invalidateCanvasRect();
-  resetHaptics();
   const box = rect(canvas);
   const x = event.clientX - box.left;
   const y = event.clientY - box.top;
@@ -145,7 +142,7 @@ export function onMinimapPointerDown(event: PointerEvent): void {
   });
 }
 
-// ── Håndtakene på prekenvinduet ─────────────────────────────────────────────
+// ── Håndtakene på vinduet ─────────────────────────────────────────────
 
 /**
  * Et gullhåndtak ble tatt tak i.
@@ -153,7 +150,7 @@ export function onMinimapPointerDown(event: PointerEvent): void {
  * Kalles fra `WaveformHost` — håndtakene er ekte DOM-knapper og ikke tegnede
  * piksler, slik at en tastaturbruker også kan flytte dem.
  */
-/** Drar musa et preken-håndtak akkurat nå? Tastaturet deler `dragWindow`
+/** Drar musa et vindushåndtak akkurat nå? Tastaturet deler `dragWindow`
  *  med musa og må vite hvem som eier det. */
 let windowPointerDrag = false;
 export function isWindowPointerDrag(): boolean {
@@ -163,30 +160,20 @@ export function isWindowPointerDrag(): boolean {
 export function beginWindowHandleDrag(
   side: "start" | "end",
   event: PointerEvent,
-  applied: boolean,
 ): void {
   const canvas = E.canvas;
   if (!canvas || E.duration <= 0) return;
   const target = event.currentTarget as HTMLElement | null;
   if (!target) return;
   invalidateCanvasRect();
-  resetHaptics();
   const box = rect(canvas);
-  let window_ = sermonWindow({
-    cuts: E.cuts,
-    duration: E.duration,
-    suggestion: E.suggestion,
-    applied,
-  });
+  let window_ = keepWindow({ cuts: E.cuts, duration: E.duration });
   if (!window_) return;
   windowPointerDrag = true;
 
   const move = (e: PointerEvent): void => {
     const raw = xToSec(e.clientX - box.left, box.width);
-    const snapped = e.shiftKey ? raw : snapToSegmentBoundary(raw, box.width);
-    snapPulse(raw, snapped);
-    const next = dragHandle(window_ as Range, side, snapped, E.duration);
-    if (next[side] !== snapped) limitPulse();
+    const next = dragHandle(window_ as Range, side, raw, E.duration);
     window_ = next;
     // Under draget skrives bare DRAG-speilet, ikke kuttlista: et kuttflett per
     // pekerhendelse ville lagt et øyeblikksbilde i angrestabelen 125 ganger
@@ -198,7 +185,7 @@ export function beginWindowHandleDrag(
   const up = (): void => {
     windowPointerDrag = false;
     dragWindow.value = null;
-    if (window_) setSermonWindow(window_, applied);
+    if (window_) setKeepWindow(window_);
   };
 
   capture(target, event, move, up);
@@ -218,16 +205,11 @@ function startCutEdgeDrag(
     const cut = E.cuts[index];
     if (!cut) return;
     const raw = xToSec(e.clientX - box.left, box.width);
-    const snapped = e.shiftKey ? raw : snapToSegmentBoundary(raw, box.width);
-    snapPulse(raw, snapped);
-    const applied =
+    const clamped =
       side === "start"
-        ? Math.max(0, Math.min(cut.end - 0.1, snapped))
-        : Math.min(E.duration, Math.max(cut.start + 0.1, snapped));
-    // Pinnet mot den andre kanten eller mot minstebredden: et hakk, ikke et
-    // snapp. Et annet mønster, fordi det betyr «du kommer ikke lenger».
-    if (applied !== snapped) limitPulse();
-    cut[side] = applied;
+        ? Math.max(0, Math.min(cut.end - 0.1, raw))
+        : Math.min(E.duration, Math.max(cut.start + 0.1, raw));
+    cut[side] = clamped;
     syncCuts();
     scheduleDraw();
   };
@@ -260,10 +242,7 @@ function onSelectUp(event: PointerEvent): void {
   E.dragEndSec = -1;
 
   if (Math.abs(at - from) > 0.1) {
-    const s = event.shiftKey ? from : snapToSegmentBoundary(from, box.width);
-    const e = event.shiftKey ? at : snapToSegmentBoundary(at, box.width);
-    snapPulse(at, e);
-    addCut(s, e);
+    addCut(from, at);
     return;
   }
   // Et klikk, ikke et drag: flytt spillehodet dit.
@@ -323,31 +302,4 @@ function capture(
   el.addEventListener("pointermove", onMove);
   el.addEventListener("pointerup", finish);
   el.addEventListener("pointercancel", finish);
-}
-
-/**
- * Snapp et sekundtall til nærmeste grense analysen fant.
- *
- * Legacys egen, med legacys terskel: den skalerer med zoomen (~8 piksler), så
- * den er stram når man er langt inne og romslig når man er langt ute, og et
- * grovt drag finner grensen likevel.
- */
-export function snapToSegmentBoundary(sec: number, W: number): number {
-  if (E.segments.length === 0) return sec;
-  const threshold = Math.max(
-    0.15,
-    ((E.vpEnd - E.vpStart) / Math.max(1, W)) * 8,
-  );
-  let closest = sec;
-  let best = threshold;
-  for (const seg of E.segments) {
-    for (const at of [seg.start, seg.end]) {
-      const d = Math.abs(sec - at);
-      if (d < best) {
-        best = d;
-        closest = at;
-      }
-    }
-  }
-  return closest;
 }

@@ -1,5 +1,5 @@
 //! The sentences the app says to a person who is not looking at the screen —
-//! in the seven languages SundayRec ships (F1 finding A8).
+//! in the two languages SundayRec ships, Norwegian and English (F1 finding A8; F4 cut the other five).
 //!
 //! ## The hole this closes
 //!
@@ -14,8 +14,8 @@
 //!     "Planlagt opptak startet ikke (tidsavbrudd) — sjekk kamera/mikrofon.")
 //! ```
 //!
-//! A Polish volunteer who set the app to Polish, whose church runs an
-//! unattended 11:00 service, got a Polish interface — and this sentence, in
+//! An English-reading volunteer who set the app to English, whose church runs an
+//! unattended 11:00 service, got an English interface — and this sentence, in
 //! Norwegian, as the one line that told them what had actually happened.
 //!
 //! ## The shape
@@ -23,9 +23,9 @@
 //! One [`AlertText`] variant per SENTENCE, and a `(variant, language)` match
 //! that the compiler checks for exhaustiveness. That check is the whole point:
 //! a new alert cannot be added in one language, because the code will not build
-//! until all seven arms exist. No runtime "did somebody forget?" test can make
+//! until both arms exist. No runtime "did somebody forget?" test can make
 //! that promise, and the tests below therefore spend themselves on what the
-//! compiler cannot see — that the seven strings are actually seven *different*
+//! compiler cannot see — that the two strings are actually two *different*
 //! strings, and that a template's `{placeholder}` survived translation.
 //!
 //! Templates are filled with [`AlertText::fill`], the same `{name}` convention
@@ -36,7 +36,7 @@
 //!
 //! - **Log lines and diagnostics.** `tracing::warn!("scheduler: …")` stays
 //!   English. A log is read by whoever is debugging, not by the volunteer, and
-//!   a seven-language log is a seven-language grep.
+//!   a two-language log is a two-language grep.
 //! - **Toast warnings** (`notify::warn` → `BackendWarning`). Those carry a
 //!   stable CODE and parameters, and the renderer localizes them from
 //!   `legacy/locales` — the message string is a fallback detail, not the text a
@@ -49,10 +49,6 @@
 //!   the language, so a volunteer who switches from Norwegian to English is
 //!   told about the same missed Sunday a second time — the exact bug
 //!   `notify::MissedSlot`'s two time fields exist to prevent.
-//! - **Holiday names** ([`crate::church_calendar`]) and the SR-code reserve in
-//!   [`crate::diagnostics`]. Data and a documented backlog item respectively;
-//!   both are allowlisted in the `check-rust-norwegian.mjs` ratchet with the
-//!   reason spelled out there.
 
 use crate::lang::Lang;
 
@@ -102,11 +98,6 @@ pub enum AlertText {
     PreflightCameraDenied,
     /// Preflight body: the save folder is inside a OneDrive-synced tree (F2-W9).
     PreflightSaveFolderSynced,
-    /// Preflight body: a ONE-OFF recording's own audio device is not connected
-    /// — `PreflightDeviceMissing` for the device the special chose rather than
-    /// the one in settings, named, because that is the one to go and find.
-    /// `{device}`
-    PreflightSpecialDeviceMissing,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -123,9 +114,6 @@ pub enum AlertText {
     ScheduledPrepareFailed,
     /// The late-start net's recovery attempt failed too. `{detail}`
     ScheduledLateStartFailed,
-    /// A special recording's own audio device was not available at its start,
-    /// so it is recording on the usual (global) device instead. `{device}`
-    ScheduledSpecialDeviceFallback,
     /// The pre-service reminder. `{min}`
     Reminder,
     /// Exactly one scheduled occurrence was never recorded. `{label}` `{at}`
@@ -134,8 +122,6 @@ pub enum AlertText {
     MissedMany,
     /// What a missed weekly slot is called in the sentence. `{start}` `{stop}`
     MissedWeeklyLabel,
-    /// What a missed special recording without a name is called.
-    MissedSpecialLabel,
 
     // ── Recorder (terminal failures that reach the native notification) ────
     /// The reconnect policy gave up.
@@ -220,7 +206,6 @@ impl AlertText {
         AlertText::PreflightMicDenied,
         AlertText::PreflightCameraDenied,
         AlertText::PreflightSaveFolderSynced,
-        AlertText::PreflightSpecialDeviceMissing,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -228,12 +213,10 @@ impl AlertText {
         AlertText::ScheduledStartTimeout,
         AlertText::ScheduledPrepareFailed,
         AlertText::ScheduledLateStartFailed,
-        AlertText::ScheduledSpecialDeviceFallback,
         AlertText::Reminder,
         AlertText::MissedOne,
         AlertText::MissedMany,
         AlertText::MissedWeeklyLabel,
-        AlertText::MissedSpecialLabel,
         AlertText::RecordingNotRecovered,
         AlertText::RecordingStartTimeout,
         AlertText::RecordingStartTimeoutMic,
@@ -307,8 +290,6 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
-            AlertText::ScheduledSpecialDeviceFallback
-            | AlertText::PreflightSpecialDeviceMissing => &["device"],
             AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
@@ -329,11 +310,6 @@ impl AlertText {
             // ── SchedulerTaskTitle ──────────────────────────────────────────
             (A::SchedulerTaskTitle, L::No) => "SundayRec — planlegger-feil",
             (A::SchedulerTaskTitle, L::En) => "SundayRec — scheduler fault",
-            (A::SchedulerTaskTitle, L::De) => "SundayRec — Planerfehler",
-            (A::SchedulerTaskTitle, L::Sv) => "SundayRec — schemaläggarfel",
-            (A::SchedulerTaskTitle, L::Da) => "SundayRec — planlæggerfejl",
-            (A::SchedulerTaskTitle, L::Pl) => "SundayRec — błąd harmonogramu",
-            (A::SchedulerTaskTitle, L::Fr) => "SundayRec — erreur du planificateur",
 
             // ── SchedulerTaskBody ───────────────────────────────────────────
             (A::SchedulerTaskBody, L::No) => {
@@ -342,30 +318,10 @@ impl AlertText {
             (A::SchedulerTaskBody, L::En) => {
                 "The scheduler has a persistent fault and may miss scheduled recordings. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting."
             }
-            (A::SchedulerTaskBody, L::De) => {
-                "Der Planer hat einen anhaltenden Fehler und verpasst möglicherweise geplante Aufnahmen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche."
-            }
-            (A::SchedulerTaskBody, L::Sv) => {
-                "Schemaläggaren har ett ihållande fel och kan missa schemalagda inspelningar. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning."
-            }
-            (A::SchedulerTaskBody, L::Da) => {
-                "Planlæggeren har en vedvarende fejl og kan gå glip af planlagte optagelser. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding."
-            }
-            (A::SchedulerTaskBody, L::Pl) => {
-                "Harmonogram ma trwały błąd i może pominąć zaplanowane nagrania. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów."
-            }
-            (A::SchedulerTaskBody, L::Fr) => {
-                "Le planificateur a une erreur persistante et risque de manquer des enregistrements programmés. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage."
-            }
 
             // ── TrashSweepTaskTitle ─────────────────────────────────────────
             (A::TrashSweepTaskTitle, L::No) => "SundayRec — opprydding stoppet",
             (A::TrashSweepTaskTitle, L::En) => "SundayRec — cleanup stopped",
-            (A::TrashSweepTaskTitle, L::De) => "SundayRec — Aufräumen gestoppt",
-            (A::TrashSweepTaskTitle, L::Sv) => "SundayRec — rensningen stoppade",
-            (A::TrashSweepTaskTitle, L::Da) => "SundayRec — oprydningen er stoppet",
-            (A::TrashSweepTaskTitle, L::Pl) => "SundayRec — czyszczenie zatrzymane",
-            (A::TrashSweepTaskTitle, L::Fr) => "SundayRec — nettoyage arrêté",
 
             // ── TrashSweepTaskBody ──────────────────────────────────────────
             (A::TrashSweepTaskBody, L::No) => {
@@ -373,21 +329,6 @@ impl AlertText {
             }
             (A::TrashSweepTaskBody, L::En) => {
                 "Automatic emptying of the trash has a persistent fault, so deleted recordings stay on disk and take up space. Restart the app; if it persists, use “Check this computer” under Settings → Help and troubleshooting."
-            }
-            (A::TrashSweepTaskBody, L::De) => {
-                "Das automatische Leeren des Papierkorbs hat einen anhaltenden Fehler, sodass gelöschte Aufnahmen liegen bleiben und Platz belegen. Starten Sie die App neu; hält es an, nutzen Sie „Computer prüfen“ unter Einstellungen → Hilfe und Fehlersuche."
-            }
-            (A::TrashSweepTaskBody, L::Sv) => {
-                "Den automatiska tömningen av papperskorgen har ett ihållande fel, så raderade inspelningar blir kvar och tar plats. Starta om appen; kvarstår det, använd ”Kontrollera datorn” under Inställningar → Hjälp och felsökning."
-            }
-            (A::TrashSweepTaskBody, L::Da) => {
-                "Den automatiske tømning af papirkurven har en vedvarende fejl, så slettede optagelser bliver liggende og optager plads. Genstart appen; fortsætter det, brug »Tjek computeren« under Indstillinger → Hjælp og fejlfinding."
-            }
-            (A::TrashSweepTaskBody, L::Pl) => {
-                "Automatyczne opróżnianie kosza ma trwały błąd, więc usunięte nagrania pozostają na dysku i zajmują miejsce. Uruchom aplikację ponownie; jeśli to nie pomoże, użyj „Sprawdź komputer” w Ustawienia → Pomoc i rozwiązywanie problemów."
-            }
-            (A::TrashSweepTaskBody, L::Fr) => {
-                "Le vidage automatique de la corbeille a une erreur persistante : les enregistrements supprimés restent sur le disque et occupent de l'espace. Redémarrez l'application ; si cela persiste, utilisez « Vérifier l’ordinateur » dans Réglages → Aide et dépannage."
             }
 
             // ── QualityTaskRestarted ────────────────────────────────────────
@@ -397,30 +338,10 @@ impl AlertText {
             (A::QualityTaskRestarted, L::En) => {
                 "The background task for quality reports restarted."
             }
-            (A::QualityTaskRestarted, L::De) => {
-                "Die Hintergrundaufgabe für Qualitätsberichte wurde neu gestartet."
-            }
-            (A::QualityTaskRestarted, L::Sv) => {
-                "Bakgrundsuppgiften för kvalitetsrapporter startade om."
-            }
-            (A::QualityTaskRestarted, L::Da) => {
-                "Baggrundsopgaven for kvalitetsrapporter startede forfra."
-            }
-            (A::QualityTaskRestarted, L::Pl) => {
-                "Zadanie w tle dla raportów jakości zostało uruchomione ponownie."
-            }
-            (A::QualityTaskRestarted, L::Fr) => {
-                "La tâche d'arrière-plan des rapports de qualité a redémarré."
-            }
 
             // ── PreflightTitle ──────────────────────────────────────────────
             (A::PreflightTitle, L::No) => "SundayRec — sjekk før opptak",
             (A::PreflightTitle, L::En) => "SundayRec — check before recording",
-            (A::PreflightTitle, L::De) => "SundayRec — Prüfung vor der Aufnahme",
-            (A::PreflightTitle, L::Sv) => "SundayRec — kontroll före inspelning",
-            (A::PreflightTitle, L::Da) => "SundayRec — tjek før optagelse",
-            (A::PreflightTitle, L::Pl) => "SundayRec — sprawdź przed nagraniem",
-            (A::PreflightTitle, L::Fr) => "SundayRec — vérification avant l'enregistrement",
 
             // ── PreflightFfmpegMissing ──────────────────────────────────────
             (A::PreflightFfmpegMissing, L::No) => {
@@ -428,21 +349,6 @@ impl AlertText {
             }
             (A::PreflightFfmpegMissing, L::En) => {
                 "The ffmpeg binary is missing. SundayRec must be installed again."
-            }
-            (A::PreflightFfmpegMissing, L::De) => {
-                "Die ffmpeg-Datei fehlt. SundayRec muss neu installiert werden."
-            }
-            (A::PreflightFfmpegMissing, L::Sv) => {
-                "ffmpeg-filen saknas. SundayRec måste installeras om."
-            }
-            (A::PreflightFfmpegMissing, L::Da) => {
-                "ffmpeg-filen mangler. SundayRec skal installeres igen."
-            }
-            (A::PreflightFfmpegMissing, L::Pl) => {
-                "Brakuje pliku ffmpeg. Trzeba ponownie zainstalować SundayRec."
-            }
-            (A::PreflightFfmpegMissing, L::Fr) => {
-                "Le binaire ffmpeg est absent. SundayRec doit être réinstallé."
             }
 
             // ── PreflightDeviceMissing ──────────────────────────────────────
@@ -452,36 +358,10 @@ impl AlertText {
             (A::PreflightDeviceMissing, L::En) => {
                 "The sound source selected in settings is not connected."
             }
-            (A::PreflightDeviceMissing, L::De) => {
-                "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen."
-            }
-            (A::PreflightDeviceMissing, L::Sv) => {
-                "Ljudenheten som är vald i inställningarna är inte ansluten."
-            }
-            (A::PreflightDeviceMissing, L::Da) => {
-                "Lydenheden, der er valgt i indstillingerne, er ikke tilsluttet."
-            }
-            (A::PreflightDeviceMissing, L::Pl) => {
-                "Urządzenie audio wybrane w ustawieniach nie jest podłączone."
-            }
-            (A::PreflightDeviceMissing, L::Fr) => {
-                "Le périphérique audio choisi dans les réglages n'est pas connecté."
-            }
 
             // ── PreflightFolderNotWritable ──────────────────────────────────
             (A::PreflightFolderNotWritable, L::No) => "Lagringsmappen kan ikke skrives.",
             (A::PreflightFolderNotWritable, L::En) => "The save folder cannot be written to.",
-            (A::PreflightFolderNotWritable, L::De) => {
-                "In den Speicherordner kann nicht geschrieben werden."
-            }
-            (A::PreflightFolderNotWritable, L::Sv) => {
-                "Det går inte att skriva till lagringsmappen."
-            }
-            (A::PreflightFolderNotWritable, L::Da) => "Der kan ikke skrives til lagringsmappen.",
-            (A::PreflightFolderNotWritable, L::Pl) => "Nie można zapisywać w folderze zapisu.",
-            (A::PreflightFolderNotWritable, L::Fr) => {
-                "Impossible d'écrire dans le dossier d'enregistrement."
-            }
 
             // ── PreflightDiskLow ────────────────────────────────────────────
             (A::PreflightDiskLow, L::No) => {
@@ -489,21 +369,6 @@ impl AlertText {
             }
             (A::PreflightDiskLow, L::En) => {
                 "Only {gb} GB free on the save disk — perhaps not enough for a whole recording."
-            }
-            (A::PreflightDiskLow, L::De) => {
-                "Nur {gb} GB frei auf dem Speicherlaufwerk — vielleicht nicht genug für eine ganze Aufnahme."
-            }
-            (A::PreflightDiskLow, L::Sv) => {
-                "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning."
-            }
-            (A::PreflightDiskLow, L::Da) => {
-                "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse."
-            }
-            (A::PreflightDiskLow, L::Pl) => {
-                "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie."
-            }
-            (A::PreflightDiskLow, L::Fr) => {
-                "Seulement {gb} Go libres sur le disque d'enregistrement — peut-être pas assez pour un enregistrement entier."
             }
 
             // ── PreflightMicDenied ──────────────────────────────────────────
@@ -513,30 +378,10 @@ impl AlertText {
             (A::PreflightMicDenied, L::En) => {
                 "Microphone access has not been granted. Open System Settings → Privacy → Microphone."
             }
-            (A::PreflightMicDenied, L::De) => {
-                "Der Mikrofonzugriff ist nicht erteilt. Öffnen Sie Systemeinstellungen → Datenschutz → Mikrofon."
-            }
-            (A::PreflightMicDenied, L::Sv) => {
-                "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon."
-            }
-            (A::PreflightMicDenied, L::Da) => {
-                "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon."
-            }
-            (A::PreflightMicDenied, L::Pl) => {
-                "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon."
-            }
-            (A::PreflightMicDenied, L::Fr) => {
-                "L'accès au microphone n'est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone."
-            }
 
             // ── PreflightCameraDenied ───────────────────────────────────────
             (A::PreflightCameraDenied, L::No) => "Kameratilgang er ikke gitt.",
             (A::PreflightCameraDenied, L::En) => "Camera access has not been granted.",
-            (A::PreflightCameraDenied, L::De) => "Der Kamerazugriff ist nicht erteilt.",
-            (A::PreflightCameraDenied, L::Sv) => "Kameraåtkomst har inte getts.",
-            (A::PreflightCameraDenied, L::Da) => "Der er ikke givet adgang til kameraet.",
-            (A::PreflightCameraDenied, L::Pl) => "Nie przyznano dostępu do kamery.",
-            (A::PreflightCameraDenied, L::Fr) => "L'accès à la caméra n'est pas accordé.",
 
             // ── PreflightSaveFolderSynced ──────────────────────────────────────────────
             (A::PreflightSaveFolderSynced, L::No) => {
@@ -545,39 +390,14 @@ impl AlertText {
             (A::PreflightSaveFolderSynced, L::En) => {
                 "The save folder is synced by OneDrive, which can interfere with a recording in progress."
             }
-            (A::PreflightSaveFolderSynced, L::De) => {
-                "Der Speicherordner wird von OneDrive synchronisiert, was eine laufende Aufnahme stören kann."
-            }
-            (A::PreflightSaveFolderSynced, L::Sv) => {
-                "Lagringsmappen synkroniseras av OneDrive, vilket kan störa en pågående inspelning."
-            }
-            (A::PreflightSaveFolderSynced, L::Da) => {
-                "Lagringsmappen synkroniseres af OneDrive, hvilket kan forstyrre en igangværende optagelse."
-            }
-            (A::PreflightSaveFolderSynced, L::Pl) => {
-                "Folder zapisu jest synchronizowany przez OneDrive, co może zakłócić trwające nagrywanie."
-            }
-            (A::PreflightSaveFolderSynced, L::Fr) => {
-                "Le dossier d’enregistrement est synchronisé par OneDrive, ce qui peut perturber un enregistrement en cours."
-            }
 
             // ── ScheduledStarted ────────────────────────────────────────────
             (A::ScheduledStarted, L::No) => "Planlagt opptak startet.",
             (A::ScheduledStarted, L::En) => "Scheduled recording started.",
-            (A::ScheduledStarted, L::De) => "Geplante Aufnahme gestartet.",
-            (A::ScheduledStarted, L::Sv) => "Schemalagd inspelning startade.",
-            (A::ScheduledStarted, L::Da) => "Planlagt optagelse startet.",
-            (A::ScheduledStarted, L::Pl) => "Zaplanowane nagranie rozpoczęte.",
-            (A::ScheduledStarted, L::Fr) => "Enregistrement programmé démarré.",
 
             // ── ScheduledStopped ────────────────────────────────────────────
             (A::ScheduledStopped, L::No) => "Planlagt opptak avsluttet.",
             (A::ScheduledStopped, L::En) => "Scheduled recording finished.",
-            (A::ScheduledStopped, L::De) => "Geplante Aufnahme beendet.",
-            (A::ScheduledStopped, L::Sv) => "Schemalagd inspelning avslutad.",
-            (A::ScheduledStopped, L::Da) => "Planlagt optagelse afsluttet.",
-            (A::ScheduledStopped, L::Pl) => "Zaplanowane nagranie zakończone.",
-            (A::ScheduledStopped, L::Fr) => "Enregistrement programmé terminé.",
 
             // ── ScheduledSkippedBusy ────────────────────────────────────────
             (A::ScheduledSkippedBusy, L::No) => {
@@ -586,34 +406,10 @@ impl AlertText {
             (A::ScheduledSkippedBusy, L::En) => {
                 "Scheduled recording skipped — a recording is already running."
             }
-            (A::ScheduledSkippedBusy, L::De) => {
-                "Geplante Aufnahme übersprungen — eine Aufnahme läuft bereits."
-            }
-            (A::ScheduledSkippedBusy, L::Sv) => {
-                "Schemalagd inspelning hoppades över — en inspelning pågår redan."
-            }
-            (A::ScheduledSkippedBusy, L::Da) => {
-                "Planlagt optagelse sprunget over — en optagelse er allerede i gang."
-            }
-            (A::ScheduledSkippedBusy, L::Pl) => {
-                "Pominięto zaplanowane nagranie — nagrywanie już trwa."
-            }
-            (A::ScheduledSkippedBusy, L::Fr) => {
-                "Enregistrement programmé ignoré — un enregistrement est déjà en cours."
-            }
 
             // ── ScheduledStartFailed ────────────────────────────────────────
             (A::ScheduledStartFailed, L::No) => "Planlagt opptak startet ikke: {detail}",
             (A::ScheduledStartFailed, L::En) => "The scheduled recording did not start: {detail}",
-            (A::ScheduledStartFailed, L::De) => "Die geplante Aufnahme startete nicht: {detail}",
-            (A::ScheduledStartFailed, L::Sv) => {
-                "Den schemalagda inspelningen startade inte: {detail}"
-            }
-            (A::ScheduledStartFailed, L::Da) => "Den planlagte optagelse startede ikke: {detail}",
-            (A::ScheduledStartFailed, L::Pl) => "Zaplanowane nagranie nie rozpoczęło się: {detail}",
-            (A::ScheduledStartFailed, L::Fr) => {
-                "L'enregistrement programmé n'a pas démarré : {detail}"
-            }
 
             // ── ScheduledStartTimeout ───────────────────────────────────────
             (A::ScheduledStartTimeout, L::No) => {
@@ -622,45 +418,11 @@ impl AlertText {
             (A::ScheduledStartTimeout, L::En) => {
                 "The scheduled recording did not start (timed out) — check the camera/microphone."
             }
-            (A::ScheduledStartTimeout, L::De) => {
-                "Die geplante Aufnahme startete nicht (Zeitüberschreitung) — prüfen Sie \
-                 Kamera/Mikrofon."
-            }
-            (A::ScheduledStartTimeout, L::Sv) => {
-                "Den schemalagda inspelningen startade inte (tidsgräns) — kontrollera \
-                 kamera/mikrofon."
-            }
-            (A::ScheduledStartTimeout, L::Da) => {
-                "Den planlagte optagelse startede ikke (tidsudløb) — tjek kamera/mikrofon."
-            }
-            (A::ScheduledStartTimeout, L::Pl) => {
-                "Zaplanowane nagranie nie rozpoczęło się (przekroczono czas) — sprawdź \
-                 kamerę/mikrofon."
-            }
-            (A::ScheduledStartTimeout, L::Fr) => {
-                "L'enregistrement programmé n'a pas démarré (délai dépassé) — vérifiez la \
-                 caméra/le microphone."
-            }
 
             // ── ScheduledPrepareFailed ──────────────────────────────────────
             (A::ScheduledPrepareFailed, L::No) => "Planlagt opptak kunne ikke forberedes: {detail}",
             (A::ScheduledPrepareFailed, L::En) => {
                 "The scheduled recording could not be prepared: {detail}"
-            }
-            (A::ScheduledPrepareFailed, L::De) => {
-                "Die geplante Aufnahme konnte nicht vorbereitet werden: {detail}"
-            }
-            (A::ScheduledPrepareFailed, L::Sv) => {
-                "Den schemalagda inspelningen kunde inte förberedas: {detail}"
-            }
-            (A::ScheduledPrepareFailed, L::Da) => {
-                "Den planlagte optagelse kunne ikke forberedes: {detail}"
-            }
-            (A::ScheduledPrepareFailed, L::Pl) => {
-                "Nie udało się przygotować zaplanowanego nagrania: {detail}"
-            }
-            (A::ScheduledPrepareFailed, L::Fr) => {
-                "L'enregistrement programmé n'a pas pu être préparé : {detail}"
             }
 
             // ── ScheduledLateStartFailed ────────────────────────────────────
@@ -670,90 +432,6 @@ impl AlertText {
             (A::ScheduledLateStartFailed, L::En) => {
                 "The late start of the scheduled recording failed: {detail}"
             }
-            (A::ScheduledLateStartFailed, L::De) => {
-                "Der verspätete Start der geplanten Aufnahme schlug fehl: {detail}"
-            }
-            (A::ScheduledLateStartFailed, L::Sv) => {
-                "Den försenade starten av den schemalagda inspelningen misslyckades: {detail}"
-            }
-            (A::ScheduledLateStartFailed, L::Da) => {
-                "Den forsinkede start af den planlagte optagelse mislykkedes: {detail}"
-            }
-            (A::ScheduledLateStartFailed, L::Pl) => {
-                "Opóźnione uruchomienie zaplanowanego nagrania nie powiodło się: {detail}"
-            }
-            (A::ScheduledLateStartFailed, L::Fr) => {
-                "Le démarrage tardif de l'enregistrement programmé a échoué : {detail}"
-            }
-
-            // ── PreflightSpecialDeviceMissing ───────────────────────────────
-            // Half an hour before a one-off recording on its own device. Says
-            // what will happen if nobody acts, in the same words the start's
-            // fallback notice uses.
-            (A::PreflightSpecialDeviceMissing, L::No) => {
-                "Lydkilden «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke til før start, tas opptaket fra den vanlige lydkilden."
-            }
-            (A::PreflightSpecialDeviceMissing, L::En) => {
-                "The sound source “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual sound source is used."
-            }
-            (A::PreflightSpecialDeviceMissing, L::De) => {
-                "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
-                 Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
-                 verwendet."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Sv) => {
-                "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts \
-                 den inte före start, används den vanliga ljudenheten."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Da) => {
-                "Lydenheden »{device}« til enkeltoptagelsen er ikke tilsluttet. Bliver den ikke \
-                 tilsluttet før start, bruges den sædvanlige lydenhed."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Pl) => {
-                "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. \
-                 Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe \
-                 urządzenie audio."
-            }
-            (A::PreflightSpecialDeviceMissing, L::Fr) => {
-                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'est pas \
-                 connecté. S'il n'est pas connecté avant le début, le périphérique audio \
-                 habituel sera utilisé."
-            }
-
-            // ── ScheduledSpecialDeviceFallback ──────────────────────────────
-            // The recording DID start — on the usual device. The sentence says
-            // both halves, so nobody goes looking for a lost recording, and
-            // names the device that was not there, so somebody can go and find
-            // it before the next one. The one-off terms match the renderer's
-            // `app.setup.advanced.specialsTitle` in each language.
-            (A::ScheduledSpecialDeviceFallback, L::No) => {
-                "Lydkilden «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
-                 bruker den vanlige lydkilden i stedet."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::En) => {
-                "The sound source \"{device}\" for the one-off recording was not available — \
-                 recording from the usual sound source instead."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::De) => {
-                "Das Audiogerät „{device}“ für die einmalige Aufnahme war nicht verfügbar — \
-                 die Aufnahme verwendet stattdessen das übliche Audiogerät."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Sv) => {
-                "Ljudenheten ”{device}” för den enstaka inspelningen var inte tillgänglig — \
-                 inspelningen använder den vanliga ljudenheten i stället."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Da) => {
-                "Lydenheden »{device}« til enkeltoptagelsen var ikke tilgængelig — \
-                 optagelsen bruger den sædvanlige lydenhed i stedet."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Pl) => {
-                "Urządzenie audio „{device}” dla nagrania jednorazowego było niedostępne — \
-                 nagranie korzysta zamiast tego ze zwykłego urządzenia audio."
-            }
-            (A::ScheduledSpecialDeviceFallback, L::Fr) => {
-                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'était pas \
-                 disponible — l'enregistrement utilise le périphérique audio habituel."
-            }
 
             // ── Reminder ────────────────────────────────────────────────────
             // Byte-for-byte the Electron `REMINDER_LABELS` map these were ported
@@ -762,22 +440,10 @@ impl AlertText {
             // gains nothing from a fresh translation of it.
             (A::Reminder, L::No) => "Opptak starter om {min} minutter",
             (A::Reminder, L::En) => "Recording starts in {min} minutes",
-            (A::Reminder, L::De) => "Aufnahme beginnt in {min} Minuten",
-            (A::Reminder, L::Sv) => "Inspelning börjar om {min} minuter",
-            (A::Reminder, L::Da) => "Optagelse starter om {min} minutter",
-            (A::Reminder, L::Pl) => "Nagranie rozpocznie się za {min} minut",
-            (A::Reminder, L::Fr) => "Enregistrement dans {min} minutes",
 
             // ── MissedOne ───────────────────────────────────────────────────
             (A::MissedOne, L::No) => "Planlagt opptak ble ikke gjort: {label} ({at}).",
             (A::MissedOne, L::En) => "A scheduled recording was not made: {label} ({at}).",
-            (A::MissedOne, L::De) => "Eine geplante Aufnahme wurde nicht gemacht: {label} ({at}).",
-            (A::MissedOne, L::Sv) => "En schemalagd inspelning blev inte gjord: {label} ({at}).",
-            (A::MissedOne, L::Da) => "En planlagt optagelse blev ikke lavet: {label} ({at}).",
-            (A::MissedOne, L::Pl) => "Zaplanowane nagranie nie zostało wykonane: {label} ({at}).",
-            (A::MissedOne, L::Fr) => {
-                "Un enregistrement programmé n'a pas eu lieu : {label} ({at})."
-            }
 
             // ── MissedMany ──────────────────────────────────────────────────
             (A::MissedMany, L::No) => {
@@ -786,50 +452,13 @@ impl AlertText {
             (A::MissedMany, L::En) => {
                 "{count} scheduled recordings were not made. The oldest: {label} ({at})."
             }
-            (A::MissedMany, L::De) => {
-                "{count} geplante Aufnahmen wurden nicht gemacht. Die älteste: {label} ({at})."
-            }
-            (A::MissedMany, L::Sv) => {
-                "{count} schemalagda inspelningar blev inte gjorda. Den äldsta: {label} ({at})."
-            }
-            (A::MissedMany, L::Da) => {
-                "{count} planlagte optagelser blev ikke lavet. Den ældste: {label} ({at})."
-            }
-            (A::MissedMany, L::Pl) => {
-                "Nie wykonano {count} zaplanowanych nagrań. Najstarsze: {label} ({at})."
-            }
-            (A::MissedMany, L::Fr) => {
-                "{count} enregistrements programmés n'ont pas eu lieu. Le plus ancien : {label} \
-                 ({at})."
-            }
 
             // ── MissedWeeklyLabel ───────────────────────────────────────────
             (A::MissedWeeklyLabel, L::No) => "Ukentlig opptak ({start}–{stop})",
             (A::MissedWeeklyLabel, L::En) => "Weekly recording ({start}–{stop})",
-            (A::MissedWeeklyLabel, L::De) => "Wöchentliche Aufnahme ({start}–{stop})",
-            (A::MissedWeeklyLabel, L::Sv) => "Veckoinspelning ({start}–{stop})",
-            (A::MissedWeeklyLabel, L::Da) => "Ugentlig optagelse ({start}–{stop})",
-            (A::MissedWeeklyLabel, L::Pl) => "Cotygodniowe nagranie ({start}–{stop})",
-            (A::MissedWeeklyLabel, L::Fr) => "Enregistrement hebdomadaire ({start}–{stop})",
-            // ── MissedSpecialLabel ──────────────────────────────────────────
-            // The renderer's own word for these (`specialsTitle`), singular.
-            (A::MissedSpecialLabel, L::No) => "Spesialopptak",
-            (A::MissedSpecialLabel, L::En) => "One-off recording",
-            (A::MissedSpecialLabel, L::De) => "Einmalige Aufnahme",
-            (A::MissedSpecialLabel, L::Sv) => "Engångsinspelning",
-            (A::MissedSpecialLabel, L::Da) => "Enkeltoptagelse",
-            (A::MissedSpecialLabel, L::Pl) => "Nagranie jednorazowe",
-            (A::MissedSpecialLabel, L::Fr) => "Enregistrement ponctuel",
             // ── RecordingNotRecovered ───────────────────────────────────────
             (A::RecordingNotRecovered, L::No) => "Opptaket kunne ikke gjenopprettes",
             (A::RecordingNotRecovered, L::En) => "The recording could not be recovered",
-            (A::RecordingNotRecovered, L::De) => {
-                "Die Aufnahme konnte nicht wiederhergestellt werden"
-            }
-            (A::RecordingNotRecovered, L::Sv) => "Inspelningen kunde inte återupptas",
-            (A::RecordingNotRecovered, L::Da) => "Optagelsen kunne ikke genoprettes",
-            (A::RecordingNotRecovered, L::Pl) => "Nie udało się przywrócić nagrania",
-            (A::RecordingNotRecovered, L::Fr) => "L'enregistrement n'a pas pu être rétabli",
 
             // ── RecordingStartTimeout (camera + microphone) ─────────────────
             (A::RecordingStartTimeout, L::No) => {
@@ -839,27 +468,6 @@ impl AlertText {
             (A::RecordingStartTimeout, L::En) => {
                 "The recording did not start in time — check that the camera/microphone are \
                  connected and that the app has access (System Settings → Privacy)."
-            }
-            (A::RecordingStartTimeout, L::De) => {
-                "Die Aufnahme startete nicht rechtzeitig — prüfen Sie, ob Kamera/Mikrofon \
-                 angeschlossen sind und die App Zugriff hat (Systemeinstellungen → Datenschutz)."
-            }
-            (A::RecordingStartTimeout, L::Sv) => {
-                "Inspelningen startade inte i tid — kontrollera att kamera/mikrofon är anslutna \
-                 och att appen har åtkomst (Systeminställningar → Integritet)."
-            }
-            (A::RecordingStartTimeout, L::Da) => {
-                "Optagelsen startede ikke i tide — tjek at kamera/mikrofon er tilsluttet, og at \
-                 appen har adgang (Systemindstillinger → Anonymitet)."
-            }
-            (A::RecordingStartTimeout, L::Pl) => {
-                "Nagranie nie rozpoczęło się na czas — sprawdź, czy kamera/mikrofon są \
-                 podłączone i czy aplikacja ma dostęp (Ustawienia systemowe → Prywatność)."
-            }
-            (A::RecordingStartTimeout, L::Fr) => {
-                "L'enregistrement n'a pas démarré à temps — vérifiez que la caméra/le microphone \
-                 sont connectés et que l'application a l'autorisation (Réglages Système → \
-                 Confidentialité)."
             }
 
             // ── RecordingStartTimeoutMic (audio only) ───────────────────────
@@ -871,27 +479,6 @@ impl AlertText {
                 "The recording did not start in time — check that the microphone is connected \
                  and that the app has access (System Settings → Privacy)."
             }
-            (A::RecordingStartTimeoutMic, L::De) => {
-                "Die Aufnahme startete nicht rechtzeitig — prüfen Sie, ob das Mikrofon \
-                 angeschlossen ist und die App Zugriff hat (Systemeinstellungen → Datenschutz)."
-            }
-            (A::RecordingStartTimeoutMic, L::Sv) => {
-                "Inspelningen startade inte i tid — kontrollera att mikrofonen är ansluten och \
-                 att appen har åtkomst (Systeminställningar → Integritet)."
-            }
-            (A::RecordingStartTimeoutMic, L::Da) => {
-                "Optagelsen startede ikke i tide — tjek at mikrofonen er tilsluttet, og at appen \
-                 har adgang (Systemindstillinger → Anonymitet)."
-            }
-            (A::RecordingStartTimeoutMic, L::Pl) => {
-                "Nagranie nie rozpoczęło się na czas — sprawdź, czy mikrofon jest podłączony i \
-                 czy aplikacja ma dostęp (Ustawienia systemowe → Prywatność)."
-            }
-            (A::RecordingStartTimeoutMic, L::Fr) => {
-                "L'enregistrement n'a pas démarré à temps — vérifiez que le microphone est \
-                 connecté et que l'application a l'autorisation (Réglages Système → \
-                 Confidentialité)."
-            }
 
             // ── RecordingDiskFull ───────────────────────────────────────────
             (A::RecordingDiskFull, L::No) => {
@@ -899,24 +486,6 @@ impl AlertText {
             }
             (A::RecordingDiskFull, L::En) => {
                 "Little free disk space — stopping the recording safely before the disk fills up."
-            }
-            (A::RecordingDiskFull, L::De) => {
-                "Wenig freier Speicherplatz — die Aufnahme wird sicher gestoppt, bevor die \
-                 Festplatte voll ist."
-            }
-            (A::RecordingDiskFull, L::Sv) => {
-                "Lite ledigt diskutrymme — stoppar inspelningen säkert innan disken blir full."
-            }
-            (A::RecordingDiskFull, L::Da) => {
-                "Lidt ledig diskplads — stopper optagelsen sikkert, før disken bliver fuld."
-            }
-            (A::RecordingDiskFull, L::Pl) => {
-                "Mało wolnego miejsca na dysku — bezpiecznie zatrzymuję nagranie, zanim dysk się \
-                 zapełni."
-            }
-            (A::RecordingDiskFull, L::Fr) => {
-                "Peu d'espace disque libre — arrêt sécurisé de l'enregistrement avant saturation \
-                 du disque."
             }
 
             // ── RecordingEmptyOutput ────────────────────────────────────────
@@ -926,21 +495,6 @@ impl AlertText {
             (A::RecordingEmptyOutput, L::En) => {
                 "The recording came out empty or damaged — no file was saved."
             }
-            (A::RecordingEmptyOutput, L::De) => {
-                "Die Aufnahme war leer oder beschädigt — es wurde keine Datei gespeichert."
-            }
-            (A::RecordingEmptyOutput, L::Sv) => {
-                "Inspelningen blev tom eller skadad — ingen fil sparades."
-            }
-            (A::RecordingEmptyOutput, L::Da) => {
-                "Optagelsen blev tom eller beskadiget — ingen fil blev gemt."
-            }
-            (A::RecordingEmptyOutput, L::Pl) => {
-                "Nagranie było puste lub uszkodzone — nie zapisano pliku."
-            }
-            (A::RecordingEmptyOutput, L::Fr) => {
-                "L'enregistrement était vide ou endommagé — aucun fichier n'a été enregistré."
-            }
 
             // ── RecordingDeviceNotFound ──────────────────────────────────────
             (A::RecordingDeviceNotFound, L::No) => {
@@ -949,21 +503,6 @@ impl AlertText {
             (A::RecordingDeviceNotFound, L::En) => {
                 "Sound source not found — check the USB connection"
             }
-            (A::RecordingDeviceNotFound, L::De) => {
-                "Audiogerät nicht gefunden — USB-Verbindung prüfen"
-            }
-            (A::RecordingDeviceNotFound, L::Sv) => {
-                "Ljudenheten hittades inte — kontrollera USB-anslutningen"
-            }
-            (A::RecordingDeviceNotFound, L::Da) => {
-                "Lydenheden blev ikke fundet — tjek USB-forbindelsen"
-            }
-            (A::RecordingDeviceNotFound, L::Pl) => {
-                "Nie znaleziono urządzenia audio — sprawdź połączenie USB"
-            }
-            (A::RecordingDeviceNotFound, L::Fr) => {
-                "Périphérique audio introuvable — vérifiez la connexion USB"
-            }
             // ── RecordingPermissionDenied ────────────────────────────────────
             (A::RecordingPermissionDenied, L::No) => {
                 "Mikrofontilgang nektet — åpne Systeminnstillinger og gi tilgang"
@@ -971,54 +510,15 @@ impl AlertText {
             (A::RecordingPermissionDenied, L::En) => {
                 "Microphone access denied — open System Settings and grant access"
             }
-            (A::RecordingPermissionDenied, L::De) => {
-                "Mikrofonzugriff verweigert — öffnen Sie die Systemeinstellungen und erteilen Sie den Zugriff"
-            }
-            (A::RecordingPermissionDenied, L::Sv) => {
-                "Mikrofonåtkomst nekad — öppna Systeminställningar och ge åtkomst"
-            }
-            (A::RecordingPermissionDenied, L::Da) => {
-                "Mikrofonadgang nægtet — åbn Systemindstillinger og giv adgang"
-            }
-            (A::RecordingPermissionDenied, L::Pl) => {
-                "Odmowa dostępu do mikrofonu — otwórz Ustawienia systemu i udziel dostępu"
-            }
-            (A::RecordingPermissionDenied, L::Fr) => {
-                "Accès au microphone refusé — ouvrez les Réglages système et accordez l’accès"
-            }
             // ── RecordingDeviceBusy ──────────────────────────────────────────
             (A::RecordingDeviceBusy, L::No) => "Lydkilden er i bruk av et annet program",
             (A::RecordingDeviceBusy, L::En) => "The sound source is in use by another application",
-            (A::RecordingDeviceBusy, L::De) => {
-                "Das Audiogerät wird von einem anderen Programm verwendet"
-            }
-            (A::RecordingDeviceBusy, L::Sv) => "Ljudenheten används av ett annat program",
-            (A::RecordingDeviceBusy, L::Da) => "Lydenheden bruges af et andet program",
-            (A::RecordingDeviceBusy, L::Pl) => "Urządzenie audio jest używane przez inną aplikację",
-            (A::RecordingDeviceBusy, L::Fr) => {
-                "Le périphérique audio est déjà utilisé par une autre application"
-            }
             // ── RecordingDeviceError ─────────────────────────────────────────
             (A::RecordingDeviceError, L::No) => {
                 "Feil ved åpning av lydkilden — prøv å koble til på nytt"
             }
             (A::RecordingDeviceError, L::En) => {
                 "Error opening the sound source — try reconnecting it"
-            }
-            (A::RecordingDeviceError, L::De) => {
-                "Fehler beim Öffnen des Audiogeräts — versuchen Sie, es erneut anzuschließen"
-            }
-            (A::RecordingDeviceError, L::Sv) => {
-                "Fel vid öppning av ljudenheten — försök att ansluta den på nytt"
-            }
-            (A::RecordingDeviceError, L::Da) => {
-                "Fejl ved åbning af lydenheden — prøv at tilslutte den igen"
-            }
-            (A::RecordingDeviceError, L::Pl) => {
-                "Błąd otwarcia urządzenia audio — spróbuj podłączyć je ponownie"
-            }
-            (A::RecordingDeviceError, L::Fr) => {
-                "Erreur à l’ouverture du périphérique audio — essayez de le rebrancher"
             }
             // ── RecordingDeviceDisconnected ──────────────────────────────────
             (A::RecordingDeviceDisconnected, L::No) => {
@@ -1027,42 +527,12 @@ impl AlertText {
             (A::RecordingDeviceDisconnected, L::En) => {
                 "The sound source was disconnected during recording — check the connection"
             }
-            (A::RecordingDeviceDisconnected, L::De) => {
-                "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen"
-            }
-            (A::RecordingDeviceDisconnected, L::Sv) => {
-                "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen"
-            }
-            (A::RecordingDeviceDisconnected, L::Da) => {
-                "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen"
-            }
-            (A::RecordingDeviceDisconnected, L::Pl) => {
-                "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie"
-            }
-            (A::RecordingDeviceDisconnected, L::Fr) => {
-                "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion"
-            }
             // ── RecordingEngineExited ────────────────────────────────────────
             (A::RecordingEngineExited, L::No) => {
-                "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og bruk «Sjekk maskinen» (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg."
+                "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og hent feilloggen (Innstillinger → Hjelp og feilsøking) hvis det gjentar seg."
             }
             (A::RecordingEngineExited, L::En) => {
-                "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and use “Check this computer” (Settings → Help and troubleshooting) if it happens again."
-            }
-            (A::RecordingEngineExited, L::De) => {
-                "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und nutzen Sie „Computer prüfen“ (Einstellungen → Hilfe und Fehlersuche), wenn es sich wiederholt."
-            }
-            (A::RecordingEngineExited, L::Sv) => {
-                "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning och använd ”Kontrollera datorn” (Inställningar → Hjälp och felsökning) om det upprepas."
-            }
-            (A::RecordingEngineExited, L::Da) => {
-                "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og brug »Tjek computeren« (Indstillinger → Hjælp og fejlfinding), hvis det gentager sig."
-            }
-            (A::RecordingEngineExited, L::Pl) => {
-                "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i użyj „Sprawdź komputer” (Ustawienia → Pomoc i rozwiązywanie problemów), jeśli to się powtórzy."
-            }
-            (A::RecordingEngineExited, L::Fr) => {
-                "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et utilisez « Vérifier l’ordinateur » (Réglages → Aide et dépannage) si cela se répète."
+                "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and get the error log (Settings → Help and troubleshooting) if it happens again."
             }
             // ── RecordingVideoCapture ────────────────────────────────────────
             (A::RecordingVideoCapture, L::No) => {
@@ -1071,42 +541,12 @@ impl AlertText {
             (A::RecordingVideoCapture, L::En) => {
                 "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again."
             }
-            (A::RecordingVideoCapture, L::De) => {
-                "Die Kamera lieferte kein Bild — der Ton wurde gespeichert und liegt in der Bibliothek. Prüfen Sie die Kameraverbindung, bevor Sie wieder mit Video aufnehmen."
-            }
-            (A::RecordingVideoCapture, L::Sv) => {
-                "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen."
-            }
-            (A::RecordingVideoCapture, L::Da) => {
-                "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen."
-            }
-            (A::RecordingVideoCapture, L::Pl) => {
-                "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo."
-            }
-            (A::RecordingVideoCapture, L::Fr) => {
-                "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo."
-            }
             // ── RecordingCameraFormat ────────────────────────────────────────
             (A::RecordingCameraFormat, L::No) => {
                 "Kameraet støtter ikke valgt bilderate eller oppløsning — velg en annen videoinnstilling og prøv igjen."
             }
             (A::RecordingCameraFormat, L::En) => {
                 "The camera does not support the chosen frame rate or resolution — pick another video setting and try again."
-            }
-            (A::RecordingCameraFormat, L::De) => {
-                "Die Kamera unterstützt die gewählte Bildrate oder Auflösung nicht — wählen Sie eine andere Videoeinstellung und versuchen Sie es erneut."
-            }
-            (A::RecordingCameraFormat, L::Sv) => {
-                "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen."
-            }
-            (A::RecordingCameraFormat, L::Da) => {
-                "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen."
-            }
-            (A::RecordingCameraFormat, L::Pl) => {
-                "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie."
-            }
-            (A::RecordingCameraFormat, L::Fr) => {
-                "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez."
             }
             // ── RecordingCameraPermission ────────────────────────────────────
             (A::RecordingCameraPermission, L::No) => {
@@ -1115,42 +555,12 @@ impl AlertText {
             (A::RecordingCameraPermission, L::En) => {
                 "Camera access denied — open System Settings and give the app access to the camera"
             }
-            (A::RecordingCameraPermission, L::De) => {
-                "Kamerazugriff verweigert — öffnen Sie die Systemeinstellungen und geben Sie der App Zugriff auf die Kamera"
-            }
-            (A::RecordingCameraPermission, L::Sv) => {
-                "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran"
-            }
-            (A::RecordingCameraPermission, L::Da) => {
-                "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet"
-            }
-            (A::RecordingCameraPermission, L::Pl) => {
-                "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery"
-            }
-            (A::RecordingCameraPermission, L::Fr) => {
-                "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra"
-            }
             // ── RecordingCameraBusy ──────────────────────────────────────────
             (A::RecordingCameraBusy, L::No) => {
                 "Kameraet er i bruk av et annet program — lukk det (Teams, Zoom) og prøv igjen"
             }
             (A::RecordingCameraBusy, L::En) => {
                 "The camera is in use by another program — close it (Teams, Zoom) and try again"
-            }
-            (A::RecordingCameraBusy, L::De) => {
-                "Die Kamera wird von einem anderen Programm verwendet — schließen Sie es (Teams, Zoom) und versuchen Sie es erneut"
-            }
-            (A::RecordingCameraBusy, L::Sv) => {
-                "Kameran används av ett annat program — stäng det (Teams, Zoom) och försök igen"
-            }
-            (A::RecordingCameraBusy, L::Da) => {
-                "Kameraet bruges af et andet program — luk det (Teams, Zoom), og prøv igen"
-            }
-            (A::RecordingCameraBusy, L::Pl) => {
-                "Kamera jest używana przez inny program — zamknij go (Teams, Zoom) i spróbuj ponownie"
-            }
-            (A::RecordingCameraBusy, L::Fr) => {
-                "La caméra est utilisée par un autre programme — fermez-le (Teams, Zoom) et réessayez"
             }
             // ── RecordingMux ─────────────────────────────────────────────────
             (A::RecordingMux, L::No) => {
@@ -1159,42 +569,12 @@ impl AlertText {
             (A::RecordingMux, L::En) => {
                 "Audio and video could not be combined — both raw files were kept in the save folder, so nothing is lost."
             }
-            (A::RecordingMux, L::De) => {
-                "Ton und Bild konnten nicht zusammengesetzt werden — beide Rohdateien sind im Speicherordner erhalten, es ist also nichts verloren."
-            }
-            (A::RecordingMux, L::Sv) => {
-                "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat."
-            }
-            (A::RecordingMux, L::Da) => {
-                "Lyd og billede kunne ikke sættes sammen — begge råfiler er beholdt i lagringsmappen, så ingenting er tabt."
-            }
-            (A::RecordingMux, L::Pl) => {
-                "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło."
-            }
-            (A::RecordingMux, L::Fr) => {
-                "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu."
-            }
             // ── RecordingFailedUnknown ───────────────────────────────────────
             (A::RecordingFailedUnknown, L::No) => {
                 "Noe gikk galt under opptak — sjekk at lydkilde og lagringsmappe er klare"
             }
             (A::RecordingFailedUnknown, L::En) => {
                 "Something went wrong during recording — check that the sound source and save folder are ready"
-            }
-            (A::RecordingFailedUnknown, L::De) => {
-                "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind"
-            }
-            (A::RecordingFailedUnknown, L::Sv) => {
-                "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo"
-            }
-            (A::RecordingFailedUnknown, L::Da) => {
-                "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar"
-            }
-            (A::RecordingFailedUnknown, L::Pl) => {
-                "Coś poszło nie tak podczas nagrywania — sprawdź, czy urządzenie audio i folder zapisu są gotowe"
-            }
-            (A::RecordingFailedUnknown, L::Fr) => {
-                "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts"
             }
             // ── TakeSilence ───────────────────────────────────────────────────
             (A::TakeSilence, L::No) => {
@@ -1203,41 +583,11 @@ impl AlertText {
             (A::TakeSilence, L::En) => {
                 "The recording is silent — check that sound is reaching SundayRec."
             }
-            (A::TakeSilence, L::De) => {
-                "Die Aufnahme ist still — prüfe, ob der Ton bei SundayRec ankommt."
-            }
-            (A::TakeSilence, L::Sv) => {
-                "Inspelningen är tyst — kontrollera att ljudet når SundayRec."
-            }
-            (A::TakeSilence, L::Da) => {
-                "Optagelsen er stille — tjek at lyden når frem til SundayRec."
-            }
-            (A::TakeSilence, L::Pl) => {
-                "Nagranie jest ciche — sprawdź, czy dźwięk dociera do SundayRec."
-            }
-            (A::TakeSilence, L::Fr) => {
-                "L'enregistrement est silencieux — vérifiez que le son arrive bien à SundayRec."
-            }
 
             // ── TakeQuality ───────────────────────────────────────────────────
             (A::TakeQuality, L::No) => "Opptaket mangler lyd — åpne SundayRec og se hva som skjer.",
             (A::TakeQuality, L::En) => {
                 "The recording is missing sound — open SundayRec and check what is happening."
-            }
-            (A::TakeQuality, L::De) => {
-                "Der Aufnahme fehlt Ton — öffne SundayRec und prüfe, was passiert."
-            }
-            (A::TakeQuality, L::Sv) => {
-                "Inspelningen saknar ljud — öppna SundayRec och se vad som händer."
-            }
-            (A::TakeQuality, L::Da) => {
-                "Optagelsen mangler lyd — åbn SundayRec og se, hvad der sker."
-            }
-            (A::TakeQuality, L::Pl) => {
-                "W nagraniu brakuje dźwięku — otwórz SundayRec i sprawdź, co się dzieje."
-            }
-            (A::TakeQuality, L::Fr) => {
-                "Il manque du son dans l'enregistrement — ouvrez SundayRec pour voir ce qui se passe."
             }
 
             // ── TakeReconnecting ──────────────────────────────────────────────
@@ -1247,49 +597,16 @@ impl AlertText {
             (A::TakeReconnecting, L::En) => {
                 "The audio source disappeared — SundayRec is trying to reconnect."
             }
-            (A::TakeReconnecting, L::De) => {
-                "Die Tonquelle ist verschwunden — SundayRec versucht, sich neu zu verbinden."
-            }
-            (A::TakeReconnecting, L::Sv) => {
-                "Ljudkällan försvann — SundayRec försöker ansluta igen."
-            }
-            (A::TakeReconnecting, L::Da) => {
-                "Lydkilden forsvandt — SundayRec prøver at forbinde igen."
-            }
-            (A::TakeReconnecting, L::Pl) => {
-                "Źródło dźwięku zniknęło — SundayRec próbuje połączyć się ponownie."
-            }
-            (A::TakeReconnecting, L::Fr) => {
-                "La source audio a disparu — SundayRec tente de se reconnecter."
-            }
 
             // ── TakeCameraLost ────────────────────────────────────────────────
             (A::TakeCameraLost, L::No) => "Kameraet falt ut — lyden tas fortsatt opp",
             (A::TakeCameraLost, L::En) => {
                 "The camera dropped out — the audio is still being recorded"
             }
-            (A::TakeCameraLost, L::De) => {
-                "Die Kamera ist ausgefallen — der Ton wird weiter aufgenommen"
-            }
-            (A::TakeCameraLost, L::Sv) => "Kameran föll bort — ljudet spelas fortfarande in",
-            (A::TakeCameraLost, L::Da) => "Kameraet faldt ud — lyden optages stadig",
-            (A::TakeCameraLost, L::Pl) => "Kamera przestała działać — dźwięk nadal jest nagrywany",
-            (A::TakeCameraLost, L::Fr) => {
-                "La caméra s'est déconnectée — le son continue d'être enregistré"
-            }
 
             // ── TakeLevelWeak ─────────────────────────────────────────────────
             (A::TakeLevelWeak, L::No) => "Opptaket er svært svakt — er mikseren dempet?",
             (A::TakeLevelWeak, L::En) => "The recording is very quiet — is the mixer turned down?",
-            (A::TakeLevelWeak, L::De) => {
-                "Die Aufnahme ist sehr leise — ist das Mischpult heruntergeregelt?"
-            }
-            (A::TakeLevelWeak, L::Sv) => "Inspelningen är mycket svag — är mixern nedskruvad?",
-            (A::TakeLevelWeak, L::Da) => "Optagelsen er meget svag — er mixeren skruet ned?",
-            (A::TakeLevelWeak, L::Pl) => "Nagranie jest bardzo ciche — czy mikser jest wyciszony?",
-            (A::TakeLevelWeak, L::Fr) => {
-                "L'enregistrement est très faible — la table de mixage est-elle baissée ?"
-            }
 
             // ── TakeDiskLow ───────────────────────────────────────────────────
             (A::TakeDiskLow, L::No) => {
@@ -1297,21 +614,6 @@ impl AlertText {
             }
             (A::TakeDiskLow, L::En) => {
                 "Low disk space — {gb} GB left. The recording stops when the disk is full."
-            }
-            (A::TakeDiskLow, L::De) => {
-                "Wenig Speicherplatz — noch {gb} GB. Die Aufnahme stoppt, wenn die Festplatte voll ist."
-            }
-            (A::TakeDiskLow, L::Sv) => {
-                "Lite diskutrymme — {gb} GB kvar. Inspelningen stoppar när disken är full."
-            }
-            (A::TakeDiskLow, L::Da) => {
-                "Lidt diskplads — {gb} GB tilbage. Optagelsen stopper, når disken er fuld."
-            }
-            (A::TakeDiskLow, L::Pl) => {
-                "Mało miejsca na dysku — zostało {gb} GB. Nagranie zatrzyma się, gdy dysk się zapełni."
-            }
-            (A::TakeDiskLow, L::Fr) => {
-                "Espace disque faible — il reste {gb} Go. L'enregistrement s'arrête quand le disque est plein."
             }
 
             // ── WakeNotArmed ──────────────────────────────────────────────────
@@ -1321,21 +623,6 @@ impl AlertText {
             (A::WakeNotArmed, L::En) => {
                 "SundayRec can't set up a wake-up before the next recording. Leave the computer on."
             }
-            (A::WakeNotArmed, L::De) => {
-                "SundayRec kann vor der nächsten Aufnahme kein Aufwecken einrichten. Lass den Computer eingeschaltet."
-            }
-            (A::WakeNotArmed, L::Sv) => {
-                "SundayRec kan inte ställa in väckning före nästa inspelning. Låt datorn vara på."
-            }
-            (A::WakeNotArmed, L::Da) => {
-                "SundayRec kan ikke sætte vækning op før næste optagelse. Lad computeren være tændt."
-            }
-            (A::WakeNotArmed, L::Pl) => {
-                "SundayRec nie może ustawić wybudzenia przed następnym nagraniem. Zostaw komputer włączony."
-            }
-            (A::WakeNotArmed, L::Fr) => {
-                "SundayRec ne peut pas programmer le réveil avant le prochain enregistrement. Laissez l'ordinateur allumé."
-            }
 
             // ── TestNotification ──────────────────────────────────────────────
             (A::TestNotification, L::No) => {
@@ -1343,21 +630,6 @@ impl AlertText {
             }
             (A::TestNotification, L::En) => {
                 "This is a test notification. This is how SundayRec tells you if something goes wrong."
-            }
-            (A::TestNotification, L::De) => {
-                "Dies ist eine Testbenachrichtigung. So meldet sich SundayRec, wenn etwas schiefgeht."
-            }
-            (A::TestNotification, L::Sv) => {
-                "Det här är en testavisering. Så säger SundayRec till om något går fel."
-            }
-            (A::TestNotification, L::Da) => {
-                "Dette er en testnotifikation. Sådan siger SundayRec til, hvis noget går galt."
-            }
-            (A::TestNotification, L::Pl) => {
-                "To jest powiadomienie testowe. Tak SundayRec daje znać, gdy coś pójdzie nie tak."
-            }
-            (A::TestNotification, L::Fr) => {
-                "Ceci est une notification de test. C'est ainsi que SundayRec vous prévient en cas de problème."
             }
         }
     }
@@ -1395,16 +667,13 @@ impl AlertText {
 /// What a missed occurrence is called in the notification, in `lang`.
 ///
 /// The CANONICAL label ([`crate::schedule::MissedRecording::label`]) stays
-/// Norwegian because it is a key; this is the words. A named special recording
-/// keeps the name a person typed — it is theirs, not ours to translate.
+/// Norwegian because it is a key; this is the words.
 pub fn missed_label(kind: &crate::schedule::MissedKind, lang: Lang) -> String {
     use crate::schedule::MissedKind;
     match kind {
         MissedKind::Weekly { start, stop } => {
             AlertText::MissedWeeklyLabel.fill(lang, &[("start", start), ("stop", stop)])
         }
-        MissedKind::Special { name: Some(name) } => name.clone(),
-        MissedKind::Special { name: None } => AlertText::MissedSpecialLabel.text(lang),
     }
 }
 
@@ -1438,7 +707,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            52,
+            49,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1448,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn all_seven_languages_have_a_sentence_for_every_alert() {
+    fn both_languages_have_a_sentence_for_every_alert() {
         for &a in AlertText::ALL {
             for &lang in Lang::ALL {
                 let t = a.template(lang);
@@ -1463,7 +732,7 @@ mod tests {
     #[test]
     fn every_language_says_it_differently() {
         // THE test that catches the actual failure mode: a hurried translation
-        // pass that copies the Norwegian into the six other arms. Seven
+        // pass that copies the Norwegian into the other arm. Two
         // pairwise-distinct strings per sentence is a property this catalog can
         // hold — no two of these languages spell any of these sentences the
         // same way — so the check is exact rather than "at least a few differ".
@@ -1483,8 +752,8 @@ mod tests {
     #[test]
     fn a_translation_never_drops_a_placeholder() {
         // The failure this prevents: «Recording starts in  minutes». The
-        // Norwegian is the source, `params()` is the declared contract, and all
-        // seven must carry exactly the declared set — no more (a translator
+        // Norwegian is the source, `params()` is the declared contract, and both
+        // must carry exactly the declared set — no more (a translator
         // inventing `{church}`), no fewer.
         for &a in AlertText::ALL {
             let declared: std::collections::BTreeSet<String> =
@@ -1520,7 +789,7 @@ mod tests {
 
     #[test]
     fn the_reminder_is_byte_identical_to_the_electron_port() {
-        // These seven shipped in Electron and then in `scheduler::reminder_body`
+        // These shipped in Electron and then in `scheduler::reminder_body`
         // (which this replaced). Re-translating them would change what a
         // volunteer has read every Sunday for a year, for no gain — so the
         // wording is pinned here rather than left to the next tidy-up.
@@ -1531,26 +800,6 @@ mod tests {
         assert_eq!(
             AlertText::Reminder.fill(Lang::En, &[("min", "15")]),
             "Recording starts in 15 minutes"
-        );
-        assert_eq!(
-            AlertText::Reminder.fill(Lang::De, &[("min", "5")]),
-            "Aufnahme beginnt in 5 Minuten"
-        );
-        assert_eq!(
-            AlertText::Reminder.fill(Lang::Sv, &[("min", "5")]),
-            "Inspelning börjar om 5 minuter"
-        );
-        assert_eq!(
-            AlertText::Reminder.fill(Lang::Da, &[("min", "5")]),
-            "Optagelse starter om 5 minutter"
-        );
-        assert_eq!(
-            AlertText::Reminder.fill(Lang::Pl, &[("min", "5")]),
-            "Nagranie rozpocznie się za 5 minut"
-        );
-        assert_eq!(
-            AlertText::Reminder.fill(Lang::Fr, &[("min", "5")]),
-            "Enregistrement dans 5 minutes"
         );
     }
 
@@ -1578,11 +827,6 @@ mod tests {
         let catalogues = [
             (Lang::No, include_str!("../../../legacy/locales/no.json")),
             (Lang::En, include_str!("../../../legacy/locales/en.json")),
-            (Lang::De, include_str!("../../../legacy/locales/de.json")),
-            (Lang::Sv, include_str!("../../../legacy/locales/sv.json")),
-            (Lang::Da, include_str!("../../../legacy/locales/da.json")),
-            (Lang::Pl, include_str!("../../../legacy/locales/pl.json")),
-            (Lang::Fr, include_str!("../../../legacy/locales/fr.json")),
         ];
         let pairs = [
             (AlertText::RecordingDeviceNotFound, "errorDeviceNotFound"),
@@ -1655,7 +899,7 @@ mod tests {
         // Norwegian notifications are byte-identical to before: the words for a
         // Norwegian volunteer ARE the canonical label. Another language gets
         // its own words, and the key underneath does not move.
-        use crate::schedule::{MissedKind, ScheduleSlot, missed_recordings};
+        use crate::schedule::{ScheduleSlot, missed_recordings};
         use chrono::NaiveDateTime;
         let slot = ScheduleSlot {
             days: vec![6],
@@ -1666,7 +910,6 @@ mod tests {
         let now = NaiveDateTime::parse_from_str("2026-06-07 15:00", "%Y-%m-%d %H:%M").unwrap();
         let missed = missed_recordings(
             std::slice::from_ref(&slot),
-            &[],
             now,
             &[],
             &[],
@@ -1678,72 +921,26 @@ mod tests {
             missed_label(&missed[0].kind, Lang::En),
             "Weekly recording (11:00–13:00)"
         );
-        assert_eq!(
-            missed_label(&MissedKind::Special { name: None }, Lang::No),
-            "Spesialopptak",
-            "the unnamed special's Norwegian word is its canonical label too"
-        );
-        assert_eq!(
-            missed_label(
-                &MissedKind::Special {
-                    name: Some("Bryllup Kari og Ola".into())
-                },
-                Lang::Fr
-            ),
-            "Bryllup Kari og Ola",
-            "a name somebody typed is not ours to translate"
-        );
     }
 
     #[test]
-    fn the_polish_volunteers_missed_sunday_is_polish() {
+    fn the_english_volunteers_missed_sunday_is_english() {
         // The scenario finding A8 is about, end to end: a church whose app is
-        // set to Polish, whose machine slept through the 11:00 service. Before
+        // set to English, whose machine slept through the 11:00 service. Before
         // this module the sentence below was Norwegian — the ONE line telling
         // them the service was not recorded.
         let s = AlertText::MissedOne.fill(
-            Lang::from_code(Some("pl")),
+            Lang::from_code(Some("en")),
             &[
                 ("label", "Ukentlig opptak (11:00–13:00)"),
                 ("at", "2026-09-06T11:00:00"),
             ],
         );
-        assert!(
-            s.starts_with("Zaplanowane nagranie nie zostało wykonane:"),
-            "{s}"
-        );
+        assert!(s.starts_with("A scheduled recording was not made:"), "{s}");
         assert!(s.contains("2026-09-06T11:00:00"));
         // …and the slot LABEL is deliberately not translated — see the module
         // header: it is hashed into the durable `notify_seen` key.
         assert!(s.contains("Ukentlig opptak (11:00–13:00)"));
-    }
-
-    #[test]
-    fn the_special_device_fallback_names_the_missing_device_in_every_language() {
-        // The operator needs WHICH device to go and find — a sentence that lost
-        // the name in translation is "something was not available", which
-        // nobody can act on before the next one-off recording.
-        for &lang in Lang::ALL {
-            let s =
-                AlertText::ScheduledSpecialDeviceFallback.fill(lang, &[("device", "Rode NT-USB")]);
-            assert!(s.contains("Rode NT-USB"), "{lang:?}: {s}");
-        }
-        assert_eq!(
-            AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Rode NT-USB")]),
-            "Lydkilden «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
-             bruker den vanlige lydkilden i stedet."
-        );
-    }
-
-    #[test]
-    fn the_special_device_preflight_names_the_device_not_the_settings() {
-        for &lang in Lang::ALL {
-            let s = AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", "Zoom H6")]);
-            assert!(s.contains("Zoom H6"), "{lang:?}: {s}");
-            assert_ne!(s, AlertText::PreflightDeviceMissing.text(lang));
-        }
-        let no = AlertText::PreflightSpecialDeviceMissing.fill(Lang::No, &[("device", "Zoom H6")]);
-        assert!(!no.contains("innstillingene"), "{no}");
     }
 
     #[test]

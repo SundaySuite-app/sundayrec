@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use sundayrec_core::chain::Chain;
 use sundayrec_core::editor::KeepSegment;
 use sundayrec_core::loudness::{GainPlan, LimiterPlan};
-use sundayrec_core::mastering::master_presets;
+use sundayrec_core::mastering::podcast_preset;
 use sundayrec_core::playback::{CutPlan, PcmOpener, PcmStream};
 
 use super::rt::RtRenderer;
@@ -353,10 +353,7 @@ fn new_cuts_while_playing_restart_on_the_new_programme() {
 /// alone 18–21× on the cloud box, 42× on the Mac) is checked on the Mac by the runner, not here.
 #[test]
 fn the_producer_keeps_ahead_of_real_time() {
-    let preset = master_presets()
-        .into_iter()
-        .find(|p| p.id == "speech-clear")
-        .unwrap();
+    let preset = podcast_preset();
     let chain = Chain::from_master_preset(&preset).unwrap();
     let rate = 44_100;
     let plan = CutPlan::new(&keeps(&[(0.0, 4.0), (5.0, 9.0)]), 9.0, rate);
@@ -512,10 +509,7 @@ fn dry_and_wet_are_the_same_frames() {
 #[test]
 fn a_preset_chain_lines_up_with_the_dry_layer() {
     let rate = 48_000;
-    let preset = master_presets()
-        .into_iter()
-        .find(|p| p.id == "speech-clear")
-        .unwrap();
+    let preset = podcast_preset();
     // The preset, and a limiter behind it (the export's gain stage) for look-ahead latency.
     let chain = Chain::from_master_preset(&preset)
         .unwrap()
