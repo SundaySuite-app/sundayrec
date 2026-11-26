@@ -27,7 +27,7 @@ import { Card } from "../../ui/Card/Card";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { qualityIdFor, type QualityId } from "./decisions-core";
-import styles from "./setup.module.css";
+import styles from "./settings.module.css";
 import { SubPage } from "./SubPage";
 
 /** De tre kortene, og hva hvert av dem SKRIVER. */

@@ -85,7 +85,7 @@ import { TrashPage } from "./pages/library/TrashPage";
 import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
-import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
+import { FirstRun, firstRunHeading } from "./pages/firstrun/FirstRun";
 import { PlanPage } from "./pages/plan/PlanPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 import {

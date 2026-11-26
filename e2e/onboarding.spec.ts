@@ -63,16 +63,14 @@ function consentSpy(): { fixtures: Fixtures } {
   };
 }
 
-/** Walk the five questions to the checklist. Step 1 is gated on hearing sound;
- *  a browser has no backend to hear with, so it takes the grey emergency exit —
+/** Walk the three steps to the last one. Step 1 is gated on hearing sound; a
+ *  browser has no backend to hear with, so it takes the grey emergency exit —
  *  the same one a real operator has when the mixer is not on yet. */
 async function reachChecklist(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("first-run")).toBeVisible();
   await page.getByTestId("first-run-skip-sound").click();
-  for (let i = 0; i < 4; i += 1) {
-    await page.getByTestId("first-run-next").click();
-  }
-  await expect(page.getByTestId("first-run-open")).toBeVisible();
+  await page.getByTestId("first-run-next").click();
+  await expect(page.getByTestId("first-run-later")).toBeVisible();
 }
 
 test.describe("onboarding", () => {
@@ -218,7 +216,7 @@ test.describe("onboarding", () => {
     // checklist still says the same five things, and «Åpne SundayRec» still
     // ends first-run.
     await reachChecklist(page);
-    await page.getByTestId("first-run-open").click();
+    await page.getByTestId("first-run-later").click();
     await expect(page.getByTestId("first-run")).toBeHidden();
 
     await page.getByTestId("consent-card-no").click();

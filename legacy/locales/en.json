@@ -78,7 +78,6 @@
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
       "nextAutoWhen": "{day} {time}",
-      "close": "Close",
       "camera": {
         "searching": "Looking for cameras…",
         "noneFound": "No cameras found — check the connection",
@@ -94,21 +93,13 @@
       "nextNone": "No planned recordings yet."
     },
     "setup": {
-      "q1": "Which sound source?",
-      "q2": "Where are recordings saved?",
       "q3": "Which quality?",
-      "q4": "Which language?",
-      "q5": "Who gets told if something goes wrong?",
-      "notSetUp": "Not set up",
-      "onMachine": "On the computer",
-      "notificationsOff": "Notifications are off",
       "quality": {
         "mp3": "Good",
         "flac": "Best",
         "wav": "Archive"
       },
       "change": "Change",
-      "setUp": "Set up",
       "save": "Save",
       "cancel": "Cancel",
       "sound": {
@@ -166,9 +157,6 @@
         "lede": "The computer always tells you when something goes wrong — whoever is at it.",
         "os": "Notification on the computer",
         "osDesc": "When a scheduled recording starts and stops. Failures are always shown.",
-        "onMachineDesc": "Failures are always shown here, whatever the settings.",
-        "notificationsOffDesc": "Turn on notifications for SundayRec in the system settings — otherwise nobody sees that a recording failed.",
-        "onMachineUnverifiedDesc": "Failures are shown here. Send a test notification to see that they come through.",
         "remind": "Reminder before automatic recording",
         "remindDesc": "So someone has time to turn on the mixing desk.",
         "remindChip": "No set time",
@@ -415,13 +403,16 @@
       "skipSound": "Continue without sound",
       "gate": "Choose a sound source and press “Use this sound source”. “Next” opens once we hear sound.",
       "gateReason": "We don’t hear any sound yet. Speak into the microphone, or turn on the mixing desk.",
-      "readyTitle": "Ready for Sunday",
-      "readyDesc": "This is the same you will find under Settings (the gear) and on the Record page later.",
-      "fixHere": "Press “Set up” or “Change” on a row to fix it right away. You stay right here.",
-      "notifyTodo": "Notifications are off — nobody is told if a recording fails.",
       "open": "Open SundayRec",
       "progress": "Progress",
-      "resumeChip": "Continue setup"
+      "resumeChip": "Continue setup",
+      "title": {
+        "sound": "Sound card and channels",
+        "folder": "Storage folder",
+        "plan": "First weekly recording"
+      },
+      "planLede": "Add the time SundayRec should record by itself every week. Drag in the week to add a recording. To wait, choose “Later” — you will find it again under Plan.",
+      "later": "Later"
     },
     "consent": {
       "title": "Want to help make SundayRec better?",

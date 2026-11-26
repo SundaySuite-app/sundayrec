@@ -1272,7 +1272,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--1-lyd-lukket",
     page: "Første gang",
-    state: "Steg 1 av 5 — lydporten er LUKKET: «Neste» venter på lyd",
+    state: "Steg 1 av 3 — lydporten er LUKKET: «Neste» venter på lyd",
     recipe: "`onboardingDone:false`, ingen VU-pakker",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1282,7 +1282,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--1-lyd-apen",
     page: "Første gang",
-    state: "Steg 1 av 5 — lydporten er ÅPEN: vi hører noe",
+    state: "Steg 1 av 3 — lydporten er ÅPEN: vi hører noe",
     recipe: "`emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1298,7 +1298,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--2-mappe",
     page: "Første gang",
-    state: "Steg 2 av 5 — hvor skal opptakene?",
+    state: "Steg 2 av 3 — hvor skal opptakene?",
     recipe: "«Fortsett uten lyd», så ett steg fram",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
     wait: "first-run",
@@ -1309,55 +1309,10 @@ export const SCENES: Scene[] = [
     full: true,
   },
   {
-    id: "forste-gang--3-kvalitet",
+    id: "forste-gang--3-plan",
     page: "Første gang",
-    state: "Steg 3 av 5 — hvilken kvalitet?",
+    state: "Steg 3 av 3 — første faste opptak, i ukevisningen fra Plan",
     recipe: "«Fortsett uten lyd», så to steg fram",
-    boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 1);
-      await expect(page.getByTestId("setup-quality")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--4-kirke",
-    page: "Første gang",
-    state: "Steg 4 av 5 — hva heter menigheten?",
-    recipe: "«Fortsett uten lyd», så tre steg fram",
-    boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 2);
-      await expect(page.getByTestId("setup-language")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--5-varsling",
-    page: "Første gang",
-    state: "Steg 5 av 5 — hvem skal få beskjed?",
-    recipe: "«Fortsett uten lyd», så fire steg fram",
-    boot: {
-      fixtures: FIRST_RUN_FIXTURES,
-      settings: FIRST_RUN_SETTINGS,
-    },
-    wait: "first-run",
-    act: async (page) => {
-      await skipGate(page);
-      await nextSteps(page, 3);
-      await expect(page.getByTestId("setup-notify")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "forste-gang--6-sjekkliste",
-    page: "Første gang",
-    state: "«Klar til søndag» — de fem svarene, med det som mangler i gult",
-    recipe: "«Fortsett uten lyd» + fire steg; `notify` er ikke satt opp",
     boot: {
       fixtures: FIRST_RUN_FIXTURES,
       settings: {
@@ -1368,8 +1323,8 @@ export const SCENES: Scene[] = [
     wait: "first-run",
     act: async (page) => {
       await skipGate(page);
-      await nextSteps(page, 4);
-      await expect(page.getByTestId("first-run-open")).toBeVisible();
+      await nextSteps(page, 1);
+      await expect(page.getByTestId("first-run-plan")).toBeVisible();
     },
     full: true,
     narrow: true,

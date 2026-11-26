@@ -9,7 +9,7 @@
 import type { ComponentChildren } from "preact";
 
 import { tDyn } from "../../i18n";
-import styles from "../setup/setup.module.css";
+import styles from "./settings.module.css";
 
 export interface SettingsSectionProps {
   id: string;

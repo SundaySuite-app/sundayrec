@@ -78,7 +78,6 @@
       "useBuiltIn": "Bruk maskinens mikrofon",
       "nextAuto": "Neste automatiske opptak",
       "nextAutoWhen": "{day} {time}",
-      "close": "Lukk",
       "camera": {
         "searching": "Leter etter kameraer…",
         "noneFound": "Ingen kameraer funnet — sjekk tilkobling",
@@ -94,21 +93,13 @@
       "nextNone": "Ingen planlagte opptak ennå."
     },
     "setup": {
-      "q1": "Hvilken lydkilde?",
-      "q2": "Hvor lagres opptakene?",
       "q3": "Hvilken kvalitet?",
-      "q4": "Hvilket språk?",
-      "q5": "Hvem får beskjed hvis noe går galt?",
-      "notSetUp": "Ikke satt opp",
-      "onMachine": "På maskinen",
-      "notificationsOff": "Varsler er slått av",
       "quality": {
         "mp3": "God",
         "flac": "Best",
         "wav": "Arkiv"
       },
       "change": "Endre",
-      "setUp": "Sett opp",
       "save": "Lagre",
       "cancel": "Avbryt",
       "sound": {
@@ -166,9 +157,6 @@
         "lede": "Maskinen sier alltid fra når noe går galt — til den som står ved den.",
         "os": "Varsel på maskinen",
         "osDesc": "Når et planlagt opptak starter og stopper. Feil varsles alltid.",
-        "onMachineDesc": "Feil varsles alltid her, uansett innstilling.",
-        "notificationsOffDesc": "Slå på varsler for SundayRec i systeminnstillingene — ellers ser ingen at et opptak feiler.",
-        "onMachineUnverifiedDesc": "Feil varsles her. Send et testvarsel for å se at de kommer fram.",
         "remind": "Påminnelse før automatisk opptak",
         "remindDesc": "Så noen rekker å slå på miksebordet.",
         "remindChip": "Ingen fast tid",
@@ -415,13 +403,16 @@
       "skipSound": "Fortsett uten lyd",
       "gate": "Velg lydkilde og trykk «Bruk denne lydkilden». «Neste» åpnes når vi hører lyd.",
       "gateReason": "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på miksebordet.",
-      "readyTitle": "Klar til søndag",
-      "readyDesc": "Dette er det samme du finner under Innstillinger (tannhjulet) og på Opptak-siden senere.",
-      "fixHere": "Trykk «Sett opp» eller «Endre» på en rad for å rette den med én gang. Du blir stående her.",
-      "notifyTodo": "Varsler er slått av — ingen får beskjed hvis et opptak feiler.",
       "open": "Åpne SundayRec",
       "progress": "Framdrift",
-      "resumeChip": "Fortsett oppsettet"
+      "resumeChip": "Fortsett oppsettet",
+      "title": {
+        "sound": "Lydkort og kanaler",
+        "folder": "Lagringsmappe",
+        "plan": "Første faste opptak"
+      },
+      "planLede": "Legg inn tiden SundayRec skal ta opp av seg selv hver uke. Dra i uka for å legge til et opptak. Vil du vente, velg «Senere» — du finner det igjen under Plan.",
+      "later": "Senere"
     },
     "consent": {
       "title": "Vil du hjelpe oss å gjøre SundayRec bedre?",

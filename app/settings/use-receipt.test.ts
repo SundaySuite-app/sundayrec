@@ -69,7 +69,7 @@ describe("kvitteringen har én nedtelling", () => {
     const scanned = appSources().map(rel);
     expect(scanned).toContain(HELPER);
     expect(scanned.some((p) => p.endsWith(".tsx"))).toBe(true);
-    expect(scanned.some((p) => p.startsWith("app/pages/setup/"))).toBe(true);
+    expect(scanned.some((p) => p.startsWith("app/pages/settings/"))).toBe(true);
   });
 
   it("ingen annen kilde holder sin egen kvitterings-tilstand", () => {

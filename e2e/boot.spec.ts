@@ -60,7 +60,7 @@ test.describe("app shell boot", () => {
     // at level 1 and read «Oppsett» (the destination D2 renamed to
     // «Innstillinger» and moved onto the gear).
     await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvilken lydkilde?",
+      "Lydkort og kanaler",
     );
 
     const violations = await page.evaluate(
@@ -168,7 +168,7 @@ test.describe("app shell foundation", () => {
     // screen — but the heading is the first QUESTION, because that is what the
     // sequence shows. The shell stays on OPPSETT the whole way.
     await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvilken lydkilde?",
+      "Lydkort og kanaler",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",

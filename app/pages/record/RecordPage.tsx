@@ -62,7 +62,7 @@ import {
   pendingAction,
 } from "../../router/router";
 import { showTelemetryPreview } from "../settings/advanced/TelemetryRow";
-import { FirstRunResumeChip } from "../setup/FirstRunResumeChip";
+import { FirstRunResumeChip } from "../firstrun/FirstRunResumeChip";
 import { preflightText } from "./preflight-text";
 import {
   banners,

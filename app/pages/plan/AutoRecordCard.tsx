@@ -55,7 +55,7 @@ import { BoundToggle } from "../../ui/Bound/Bound";
 import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { Toggle } from "../../ui/Toggle/Toggle";
-import { autoValue, type AutoValue } from "../setup/card-values-core";
+import { autoValue, type AutoValue } from "../settings/card-values-core";
 import { autoRecordOn, DEFAULT_PLAN, slotsFromPlan } from "./schedule-core";
 
 export interface AutoRecordCardProps {

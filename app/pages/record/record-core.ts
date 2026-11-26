@@ -48,8 +48,8 @@
 import type { QualityReason } from "@legacy/bindings/QualityReason";
 import { DOT } from "@lib/ui/dot";
 
-import type { ChannelPair } from "../setup/decisions-core";
-import { channelPairFor } from "../setup/decisions-core";
+import type { ChannelPair } from "../settings/decisions-core";
+import { channelPairFor } from "../settings/decisions-core";
 import type { Settings } from "../../state/settings";
 
 /** De tre tilstandene kilde-kortet kan være i. */

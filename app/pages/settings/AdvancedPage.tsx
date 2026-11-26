@@ -48,7 +48,7 @@ import { LogRow } from "./advanced/MaintenanceRows";
 import { TelemetryRow } from "./advanced/TelemetryRow";
 import { UpdateRow } from "./advanced/UpdateRow";
 import { SettingsSection } from "./SettingsSection";
-import styles from "../setup/setup.module.css";
+import styles from "./settings.module.css";
 
 /** Sekundene forhåndsbufferen tilbyr. 0 = av — den ENE bryteren. */
 const PREROLL_CHOICES = [0, 15, 30];

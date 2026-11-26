@@ -29,7 +29,7 @@
  *
  * ## Hvorfor den bor i `app/state/` og ikke under Avansert lenger (D2)
  *
- * Den ble skrevet for ASIO-bryteren og lå derfor i `pages/setup/advanced/`. Fra
+ * Den ble skrevet for ASIO-bryteren og lå derfor i `pages/settings/advanced/`. Fra
  * D2 leser OPPSTARTEN den også: `app/main.tsx` setter `platformClass()` på
  * `documentElement`, som er det skinnen henger macOS-toppmargen for
  * trafikklysene på. En modul to sider inne i Oppsett som `main.tsx` importerer

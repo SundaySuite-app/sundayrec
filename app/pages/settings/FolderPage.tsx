@@ -51,7 +51,7 @@ import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { toast } from "../../ui/toast";
 import { folderRefusalMessage } from "./folder-refusal";
-import styles from "./setup.module.css";
+import styles from "./settings.module.css";
 import { SubPage } from "./SubPage";
 
 export function FolderPage() {

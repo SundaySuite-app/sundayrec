@@ -68,7 +68,7 @@ import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { channelPairFor, channelPairs } from "./decisions-core";
-import styles from "./setup.module.css";
+import styles from "./settings.module.css";
 import { SubPage } from "./SubPage";
 
 /**

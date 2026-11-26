@@ -235,7 +235,7 @@ test.describe("skallet", () => {
   test("første gang bytter bare innholdet — topplinja og bunnlinja står", async ({
     page,
   }) => {
-    // Sekvensen er fem skjermer inne i `<main>`, ikke en egen app. Skinnen sto
+    // Sekvensen er tre skjermer inne i `<main>`, ikke en egen app. Skinnen sto
     // gjennom hele den; de to linjene gjør det samme, og det er det som gjør at
     // en frivillig kan se hvilken app hun setter opp mens hun setter den opp.
     // ⚠️ Uten `?goto=`: dyplenken tvinger `onboardingDone` true.

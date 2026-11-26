@@ -33,7 +33,7 @@ import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { toast } from "../../ui/toast";
-import styles from "../setup/setup.module.css";
+import styles from "../settings/settings.module.css";
 import {
   testWakeWord,
   wakeArmWord,
