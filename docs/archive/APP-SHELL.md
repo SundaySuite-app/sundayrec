@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Frontend-skallet er bygd om to ganger siden (F5 fire sider, F7 førstegangsoppsett); filbeskrivelsene er utdatert. Nåværende status: [PLAN.md](../PLAN.md).
+
 # `app/` — the shell
 
 > **⚠️ THE PARALLEL PERIOD IS OVER.** Fase B made `app/` the shipped frontend:

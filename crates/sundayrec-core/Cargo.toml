@@ -41,7 +41,7 @@ regex = "1"
 # to opt out of — `no_std` here would buy nothing and diverge from the
 # resolution the rest of the graph already uses.
 semver = "1"
-# Vendored DSP (B0a, docs/LYDMOTOR.md): BS.1770 loudness meter and effects. No
+# Vendored DSP (B0a, docs/archive/LYDMOTOR.md): BS.1770 loudness meter and effects. No
 # dependencies, no unsafe, no I/O, no clock, so it keeps this crate pure.
 filmcraft-audio-dsp = { path = "../filmcraft-audio-dsp" }
 [dev-dependencies]

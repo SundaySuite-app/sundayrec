@@ -1,4 +1,4 @@
-//! One read when a recording is opened (B4a, `docs/LYDMOTOR.md` fase 4).
+//! One read when a recording is opened (B4a, `docs/archive/LYDMOTOR.md` fase 4).
 //!
 //! Until B4a a recording was decoded four times between «open» and «ready»: the waveform
 //! (8 kHz mono), the sermon search (16 kHz mono, gone in F1), the channel diagnosis (`astats`, a whole

@@ -181,6 +181,6 @@ Hvert punkt har en betingelse for når det kan tas.
   spike, maskinvare).
 - **`sunday-telemetry`: rive `notify.sundaysuite.app`** og slette lagrede
   adresser. _Når:_ flåten har oppdatert til v0.23.0 eller nyere (se
-  telemetri-oversikten). Eierens oppgave (`docs/NEEDS-RICHARD.md`).
+  telemetri-oversikten). Eierens oppgave (`docs/archive/NEEDS-RICHARD.md`).
 - **Varsel til mobil** (ntfy/Pushover) er et eget prosjekt, hvis det noen gang
   blir aktuelt.

@@ -1,5 +1,5 @@
 //! The live camera picture, made in Rust from the SAME camera session the
-//! recording uses (docs/VIDEOMOTOR.md §C4, C4a).
+//! recording uses (docs/archive/VIDEOMOTOR.md §C4, C4a).
 //!
 //! # Shape
 //!

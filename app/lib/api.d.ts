@@ -8,7 +8,7 @@
 // It is trimmed to exactly the surface that exists. 45 methods went with the
 // pages that were their only callers (`masterApply`, `updateHistoryNote`, the
 // `wake*` interactive set, the ASIO/ffmpeg device lists, …); every one of them
-// is named in the fase-B PR and in docs/APP-SHELL.md under «Etter byttet»,
+// is named in the fase-B PR and in docs/archive/APP-SHELL.md under «Etter byttet»,
 // because a Rust command whose only door closed is a decision, not a leak.
 // Declaring a method here that the shim does not install would be worse than
 // not declaring it: the type would promise a function that is `undefined` at
@@ -21,7 +21,7 @@
 // closed: nothing in the new shell reads the sleep-config diagnostics they
 // backed. The four that came back are a row on Avansert — «Test
 // vekking» — because the
-// reachability audit's own reason for leaving them dark (`docs/APP-SHELL.md`
+// reachability audit's own reason for leaving them dark (`docs/archive/APP-SHELL.md`
 // §«Og de 20 som står igjen»: "rig tools waiting for a Mac where the wake
 // actually fails") describes a gap this row exists to close, not a feature
 // nobody wanted.

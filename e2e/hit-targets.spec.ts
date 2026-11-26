@@ -47,7 +47,7 @@ import { editorFixtures, RECORDING_ID } from "./editor-fixtures";
 //     altså ikke tom — den vet om det trangeste stedet i appen.
 //
 // Tallene her er også målt i en EKTE WKWebView (Swift-vert, samme probe): 44,5
-// og 40,5. Se `docs/APP-SHELL.md` §«Treffflatene».
+// og 40,5. Se `docs/archive/APP-SHELL.md` §«Treffflatene».
 //
 // F1-UX1/W2: ghost-knappene («Slett», «Vis i Finder», «Endre», …) og
 // Bibliotekets rader lagt til med SAMME metode. De hadde ingen egen flate å

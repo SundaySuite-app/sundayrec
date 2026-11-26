@@ -164,7 +164,7 @@ preRollSeconds: number,
  * The old reasoning — "not derivable, or a user who picked a length but
  * never flipped the switch would get a background capture they never asked
  * for" — was answered by removing the second control instead: the length
- * IS the asking now. See `docs/APP-SHELL.md` («Forhåndsbufferen er ÉN
+ * IS the asking now. See `docs/archive/APP-SHELL.md` («Forhåndsbufferen er ÉN
  * kontroll nå»).
  *
  * Do NOT delete the field. Stored profiles carry `prerollEnabled`, and

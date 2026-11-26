@@ -1,5 +1,5 @@
 //! Native camera capture — the replacement for ffmpeg's `-list_devices` and the
-//! capture-mode search through ffmpeg's error messages (docs/VIDEOMOTOR.md §C1).
+//! capture-mode search through ffmpeg's error messages (docs/archive/VIDEOMOTOR.md §C1).
 //!
 //! Built in three sessions:
 //!
@@ -26,7 +26,7 @@
 //! calls [`queue::FrameQueue::push`], which never waits for the consumer: when
 //! the bounded queue is full the OLDEST frame is dropped and counted
 //! ([`CaptureStats::queue_dropped`]). That is why `start` takes a queue size
-//! where docs/VIDEOMOTOR.md sketches a callback — the callback is ours, the
+//! where docs/archive/VIDEOMOTOR.md sketches a callback — the callback is ours, the
 //! consumer reads the queue.
 //!
 //! On Windows the callback also copies the frame's bytes (one `memcpy`, no

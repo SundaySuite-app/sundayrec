@@ -7,7 +7,7 @@
 //! `silencedetect` output) while the process keeps running, and send a graceful
 //! `q` on stdin to finalise the output container cleanly instead of killing it.
 //!
-//! See `docs/MIGRATION-TAURI2.md` §0 "Fundament".
+//! See `docs/archive/MIGRATION-TAURI2.md` §0 "Fundament".
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

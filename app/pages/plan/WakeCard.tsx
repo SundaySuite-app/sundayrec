@@ -219,7 +219,7 @@ const TEST_WAKE_SECONDS_AHEAD = 120;
  * B rev bort siden som kalte dem, ikke fordi diagnosen sluttet å være verdt å
  * ha. Reachability-revisjonens egen begrunnelse for å la dem stå mørke var
  * «riggverktøy som venter på en Mac der vekkingen faktisk feiler»
- * (`docs/APP-SHELL.md`) — denne raden ER det verktøyet: en frivillig som
+ * (`docs/archive/APP-SHELL.md`) — denne raden ER det verktøyet: en frivillig som
  * lurer på om «Aktiver vekking» ovenfor faktisk holder trenger ikke vente til
  * neste søndag klokka 06:50 for å finne ut av det.
  *

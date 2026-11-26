@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Notatet om to TypeScript-er er historikk; tsconfig.json og package.json er fasit. Nåværende status: [PLAN.md](../PLAN.md).
+
 # TypeScript 7 — hvorfor `package.json` har to TypeScript-er
 
 _Innført 2026-09-19 i rammeverk-runden for desktop-appene._

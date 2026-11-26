@@ -214,7 +214,7 @@ impl<R: Runtime> TrayController<R> {
 /// The tray image for `state`: the app's own window icon, with a red (recording)
 /// or amber (error) dot painted into its bottom-right corner.
 ///
-/// Dedicated tray assets were never bundled (docs/NEEDS-RICHARD.md PU-2). Rather
+/// Dedicated tray assets were never bundled (docs/archive/NEEDS-RICHARD.md PU-2). Rather
 /// than block "the icon reflects what the app is doing" on three PNGs, the badge
 /// is composited at runtime from the icon's own RGBA buffer — the compositing is
 /// the pure, unit-tested `sundayrec_core::tray::with_status_badge`. Idle returns

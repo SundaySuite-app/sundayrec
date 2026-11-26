@@ -1,4 +1,4 @@
-//! The camera session that survives its camera (C5a, docs/VIDEOMOTOR.md §C5).
+//! The camera session that survives its camera (C5a, docs/archive/VIDEOMOTOR.md §C5).
 //!
 //! # What happens when the camera drops out
 //!

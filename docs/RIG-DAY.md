@@ -1,7 +1,7 @@
 # Riggdag — sjekkliste
 
 En sittende gjennomgang av det som `npm run check` strukturelt ikke kan se:
-ekte maskinvare, ekte krasj, ekte klokketid. `docs/NEEDS-RICHARD.md`s
+ekte maskinvare, ekte krasj, ekte klokketid. `docs/archive/NEEDS-RICHARD.md`s
 **HARDWARE-UNVERIFIED**-liste sier HVA som mangler rigg-bevis; denne sida er
 HVORDAN — én økt, i denne rekkefølgen, så dagen ikke blir å finne opp
 punktene på nytt hver gang. Sett av en hel dag: flere av punktene krever
@@ -131,7 +131,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
       `SundayRec`-oppføringer forsvinner), kansellerer ALT uansett eier (også
       testens `Test`-oppføring), eller feiler stille. Svaret avgjør om den
       gamle, delte-eier-modellen noensinne var trygg på denne maskinen.
-      Noter resultatet i `docs/NEEDS-RICHARD.md`.
+      Noter resultatet i `docs/archive/NEEDS-RICHARD.md`.
 - [ ] **(e, varsling — runde 3) Et tapt opptak sier fra tre steder.** Med
       «Vekk maskinen fra dvale» PÅ: legg inn en slot 5 minutter fram, avslutt
       SundayRec, og start den igjen godt over en time etter slot-starten.
@@ -692,7 +692,7 @@ En Fail er et funn selv om du ikke har rigget noe ennå: noter den mot punktet i
 
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
-respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+respektive PR-ene er merget; se `docs/archive/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## (v) Videomotor
 
@@ -993,7 +993,7 @@ riggdagen lenger.
 
 _(v–ix hører til resten av lydkjede-gjennomgangen (rapport C) — ingen av dem
 endte som en kodefiks i den runden. De ble eierspørsmål, og står i
-`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)».
+`docs/archive/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)».
 Eier avgjorde 2026-10-04: `-realtime 1` for VideoToolbox-opptaket er
 gjennomført (se (e2) i Mac-boksen over), mens den egne «Kirke»-mastringsprofilen
 og automatisk monolevering venter på en lyttetest. De to siste har ingenting
@@ -1163,7 +1163,7 @@ konstant-effekt-overganger. Ca. 30 min + selve gudstjenesten. Hodetelefoner.
 ## (x) Etter sømgjennomgangen (nov. 2026)
 
 Det bevisrunden (#451) og etterprøvingen ikke kunne bevise uten maskinvare.
-Bakgrunn og funn: [SOMMER-2026-11.md](SOMMER-2026-11.md). Alt under er ikke
+Bakgrunn og funn: [SOMMER-2026-11.md](archive/SOMMER-2026-11.md). Alt under er ikke
 sett på ekte maskin ennå.
 
 - [ ] **(x1) Sen kamera-synk (S1-C).** Mac og Windows, ekte kamera (FaceTime,
@@ -1215,7 +1215,7 @@ sett på ekte maskin ennå.
 
 ## Etterpå
 
-- [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
+- [ ] Oppdater `docs/archive/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
       som nettopp ble bevist, eller noter et nytt funn mot punktet det hører
       til.
       **Forventet:** bare de reelt fortsatt-uverifiserte tingene er igjen.

@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Bruksanvisningen beskrev funksjoner som er fjernet i «rent bord» (kirkeprofil, spesialopptak, «Legg ut»). Nåværende status: [PLAN.md](../PLAN.md).
+
 # SundayRec for frivillige
 
 Denne siden er for deg som skal ta opp gudstjenesten — alene, uten en
@@ -142,7 +144,7 @@ skriv til **dev@sundaysuite.app**. En ekte person leser meldingen, men
 neppe midt i søndagsformiddagen — dette er ikke en akuttlinje.
 
 (Har du funnet en **sikkerhetssårbarhet** — ikke en vanlig feil — er det en
-annen, privat kanal: se [`SECURITY.md`](../SECURITY.md). De fleste
+annen, privat kanal: se [`SECURITY.md`](../../SECURITY.md). De fleste
 frivillige trenger aldri den siden.)
 
 ## Viktig: sikkerhetskopi er IKKE en funksjon

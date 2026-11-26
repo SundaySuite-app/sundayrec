@@ -94,7 +94,7 @@ pub fn icon_for(state: &TrayState) -> TrayIcon {
 /// The status-badge colour (RGB) composited onto the base app icon for a
 /// [`TrayIcon`] variant, or `None` for [`TrayIcon::Idle`] (the bare app icon).
 ///
-/// Dedicated tray-icon assets were never bundled (docs/NEEDS-RICHARD.md PU-2),
+/// Dedicated tray-icon assets were never bundled (docs/archive/NEEDS-RICHARD.md PU-2),
 /// so instead of shipping three PNGs the shell paints a small corner dot onto
 /// the app's own icon at runtime — see [`with_status_badge`]. Red = recording
 /// (the universal record colour), amber = something is wrong.

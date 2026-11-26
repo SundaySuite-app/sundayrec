@@ -11,7 +11,7 @@ walks through creating that client so the cloud features can be smoke-tested.
 
 > The Drive/YouTube/Gmail backends are **NETWORK-UNVERIFIED** in code — only the
 > pure decision logic is unit-tested. This setup unlocks the first real wire
-> test (see [`docs/SMOKE-TEST.md`](SMOKE-TEST.md) §7).
+> test (see [`docs/SMOKE-TEST.md`](../SMOKE-TEST.md) §7).
 
 ---
 

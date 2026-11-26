@@ -3,7 +3,7 @@
 //! This crate is the *behaviour* of the recorder distilled out of the Electron
 //! main process (`src/main/recorder-utils.ts` and friends) into deterministic
 //! Rust. The Electron code is the behavioural specification; the structure here
-//! is rebuilt clean (see `docs/MIGRATION-TAURI2.md`, §2 "bygg det riktig").
+//! is rebuilt clean (see `docs/archive/MIGRATION-TAURI2.md`, §2 "bygg det riktig").
 //!
 //! Everything here is unit-testable without a display, a device, or a process —
 //! the `src-tauri` shell is a thin command/event layer on top.

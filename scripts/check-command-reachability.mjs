@@ -474,7 +474,7 @@ if (!failed && premiseHolds) {
   );
   console.log(
     `  ${stillDark.length} command(s) remain in the unreachable baseline — ` +
-      "classified, not wired. See docs/APP-SHELL.md §Etter byttet for which\n" +
+      "classified, not wired. See docs/archive/APP-SHELL.md §Etter byttet for which\n" +
       "  doors fase B closed on purpose, and docs/archive/COMMAND_AUDIT_2026-08.md §4 " +
       "for the older keep/wire/cut backlog.",
   );

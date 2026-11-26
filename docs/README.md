@@ -13,19 +13,14 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 
 ## Status og planer — levende, oppdateres når noe endres
 
-| Dokument                               | Hva                                                                                         |
-| -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                     | Registeret: alt som gjenstår, hvem sitt det er, og hvor detaljene står                      |
-| [VARSLING.md](VARSLING.md)             | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår                |
-| [NEEDS-RICHARD.md](NEEDS-RICHARD.md)   | Eierens punkter i detalj: kontoer, signering, beslutninger, uverifisert rigg                |
-| [RIG-DAY.md](RIG-DAY.md)               | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                                    |
-| [SMOKE-TEST.md](SMOKE-TEST.md)         | Maskinvare-runbook per funksjon — hva som skal skje på en ekte maskin                       |
-| [AVHENGIGHETER.md](AVHENGIGHETER.md)   | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista                |
-| [OMBYGGING.md](OMBYGGING.md)           | Hovedplanen før utrulling: beslutninger, milepæler og arbeidspakker                         |
-| [GJENNOMFORING.md](GJENNOMFORING.md)   | Ombyggingen økt for økt: PR-ene, portene, modellvalget og startmeldingene                   |
-| [LYDMOTOR.md](LYDMOTOR.md)             | Planen for redigeringens lyd i Rust, med ffmpeg bare til filer                              |
-| [VIDEOMOTOR.md](VIDEOMOTOR.md)         | Planen for videoopptak: kamera i Rust, lyden først                                          |
-| [SOMMER-2026-11.md](SOMMER-2026-11.md) | Sømgjennomgangen nov. 2026: funn, status og PR-numre (hele rapporten ligger utenfor repoet) |
+| Dokument                             | Hva                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [PLAN.md](PLAN.md)                   | Hva SundayRec er nå, hva «rent bord» bevisst fjernet, og alt som gjenstår (rigg og eier)         |
+| [VARSLING.md](VARSLING.md)           | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår                     |
+| [RIG-DAY.md](RIG-DAY.md)             | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                                         |
+| [SMOKE-TEST.md](SMOKE-TEST.md)       | Maskinvare-runbook for kjernen (Ta opp, Opptak, Plan, Innstillinger) — hva som skal skje på rigg |
+| [AVHENGIGHETER.md](AVHENGIGHETER.md) | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista                     |
+| [design/](design/)                   | Designunderlag og atlas-skjermbilder                                                             |
 
 ## Utgivelse og drift
 
@@ -40,30 +35,28 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 
 | Dokument                                     | Hva                                                          |
 | -------------------------------------------- | ------------------------------------------------------------ |
-| [FRIVILLIG.md](FRIVILLIG.md)                 | Bruksanvisningen for den som tar opp gudstjenesten           |
 | [PRO-AUDIO-WINDOWS.md](PRO-AUDIO-WINDOWS.md) | Lyd på Windows (WASAPI/ASIO) forklart for den som setter opp |
+
+Bruksanvisningen for frivillige ([FRIVILLIG.md](archive/FRIVILLIG.md)) er arkivert: den beskrev
+funksjoner som er fjernet i «rent bord», og skrives på nytt når kjernen er rigg-testet.
 
 ## Referanse — hvordan ting virker
 
 | Dokument                                                 | Hva                                                                    |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [APP-SHELL.md](APP-SHELL.md)                             | Frontend-skallet i `app/`: struktur, mønstre og historikk              |
 | [ASIO-TEST-MATRIX.md](ASIO-TEST-MATRIX.md)               | Windows-lyd: test- og utgivelsessjekkliste for WASAPI/ASIO             |
 | [BUILD_ASIO.md](BUILD_ASIO.md)                           | Bygge med ASIO-støtte på Windows                                       |
 | [WINDOWS-PROCESS-HYGIENE.md](WINDOWS-PROCESS-HYGIENE.md) | Hvorfor lydtjenesten krasjet på kirke-PC-en, og hva appen gjør med det |
-| [TYPESCRIPT-7.md](TYPESCRIPT-7.md)                       | Hvorfor `package.json` har to TypeScript-er                            |
 
 ## Historikk
 
-| Dokument                                   | Hva                                                                   |
-| ------------------------------------------ | --------------------------------------------------------------------- |
-| [MIGRATION-TAURI2.md](MIGRATION-TAURI2.md) | Beslutningen om Tauri 2 + Rust (2026-05-30) og fasene — gjennomført   |
-| [archive/](archive/)                       | Øktrapporter, ferdige revisjoner og seksjoner for fjernede funksjoner |
-
-I `archive/`: `BACKLOG-AUDIT-2026-07-07` (triagert 2026-09-28, det åpne står i
-`PLAN.md`), `NATT-AUDIT-2026-06-07`, `NATT-LYD-VU-PREKEN-2026-06-14`,
-`NEEDS-RICHARD-historikk` (fjernede funksjoner), `COMMAND_AUDIT_2026-08`,
-`COMPLETION`, `EDITOR-PORT`, `GOOGLE-OAUTH-SETUP`, `NATT-LYD-VIDEO`,
-`NATT-SEAM-AUDIT`, `PARITY-BACKEND`, `PHASE6-cloud-backup`,
-`RELEASE-AUDIT-2026-06-01`, `START-LATENCY-ANALYSIS`,
-`VIDEO-RESOLUTION-GATING`, `WINDOWS-RIGG-START`.
+[archive/](archive/) har det som ikke lenger er sant, med en linje øverst om hvorfor:
+planene og øktloggene for ombyggingen
+([OMBYGGING](archive/OMBYGGING.md), [GJENNOMFORING](archive/GJENNOMFORING.md),
+[LYDMOTOR](archive/LYDMOTOR.md), [VIDEOMOTOR](archive/VIDEOMOTOR.md)),
+[MIGRATION-TAURI2](archive/MIGRATION-TAURI2.md), [TYPESCRIPT-7](archive/TYPESCRIPT-7.md),
+[APP-SHELL](archive/APP-SHELL.md) (frontend-skallet før «rent bord»),
+[NEEDS-RICHARD](archive/NEEDS-RICHARD.md), [SOMMER-2026-11](archive/SOMMER-2026-11.md),
+[FRIVILLIG](archive/FRIVILLIG.md), og eldre revisjoner og øktrapporter
+(`BACKLOG-AUDIT-2026-07-07`, `NATT-*`, `COMMAND_AUDIT_2026-08`, `COMPLETION`,
+`EDITOR-PORT`, `PARITY-BACKEND`, `RELEASE-AUDIT-2026-06-01` m.fl.).

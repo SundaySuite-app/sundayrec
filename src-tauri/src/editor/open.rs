@@ -1,4 +1,4 @@
-//! The shell half of the open round (B4a, `docs/LYDMOTOR.md` fase 4): ONE ffmpeg read of a
+//! The shell half of the open round (B4a, `docs/archive/LYDMOTOR.md` fase 4): ONE ffmpeg read of a
 //! recording, in its own sample rate and channels, fanned out to everything that used to decode
 //! it separately.
 //!

@@ -183,7 +183,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
   // and `TestWakeRow`'s doc comment in ScheduleCard.tsx). These four prove
   // the reopened door end to end, fixture-tailored per the reachability
   // audit's own words for why it was left dark: "rig tools waiting for a Mac
-  // where the wake actually fails" (docs/APP-SHELL.md).
+  // where the wake actually fails" (docs/archive/APP-SHELL.md).
 
   test("planlegger en ekte vekking, og «Avbryt» tar raden tilbake", async ({
     page,

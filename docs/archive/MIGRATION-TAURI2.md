@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Migreringen til Tauri 2 er gjennomført. Nåværende status: [PLAN.md](../PLAN.md).
+
 # Migreringsplan: SundayRec → Tauri 2 + Rust (bygg det riktig fra bunnen)
 
 > **Beslutning (Richard, 2026-05-30):** Hele SundayRec bygges om til samme

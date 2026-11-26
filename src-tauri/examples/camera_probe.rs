@@ -1,5 +1,5 @@
 //! `camera_probe` — lists the cameras and records from them to a raw file, with
-//! statistics (C1c, docs/GJENNOMFORING.md §C1c).
+//! statistics (C1c, docs/archive/GJENNOMFORING.md §C1c).
 //!
 //! It exercises exactly the API the recorder will use (`sundayrec_lib::camera`):
 //! `list()`, `formats(id)`, `start(id, format, queue)`. Nothing here touches the

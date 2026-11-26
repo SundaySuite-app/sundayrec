@@ -5,7 +5,7 @@
 //! Until now `src-tauri/src/lib.rs` had no `on_window_event` handler at all.
 //! Closing the last window therefore produced `RunEvent::ExitRequested`, whose
 //! handler calls `RecorderEngine::stop()` — so a volunteer who closed the window
-//! mid-sermon lost the rest of the service. `docs/APP-SHELL.md` documented the
+//! mid-sermon lost the rest of the service. `docs/archive/APP-SHELL.md` documented the
 //! consequence: the overlay's "you can close the window" hint had to be REMOVED
 //! because it was a lie.
 //!
@@ -48,7 +48,7 @@
 //! * `Idle`/`Stopped`/`Failed` → **quit now**, exactly as before.
 //!
 //! A native confirmation dialog was considered and rejected (see
-//! `docs/APP-SHELL.md`): the blocking dialogs must not be called from the run
+//! `docs/archive/APP-SHELL.md`): the blocking dialogs must not be called from the run
 //! loop, and the non-blocking one turns a failed dialog into an app that cannot
 //! be quit. A refusal + a notification degrades the other way — worst case the
 //! volunteer sees no notice and presses again, which is the outcome they wanted.
@@ -159,7 +159,7 @@ fn spot_noun(spot: TraySpot, lang: Lang) -> &'static str {
 /// Cmd+Q — minutes later, for an unrelated reason — is refused again rather than
 /// silently ending a service because of a keypress nobody remembers. It is also
 /// why the confirmation needs no dialog: a dialog that fails to appear leaves an
-/// app that cannot be quit at all (the reason `docs/APP-SHELL.md` recorded this
+/// app that cannot be quit at all (the reason `docs/archive/APP-SHELL.md` recorded this
 /// as a restanse instead of shipping `tauri-plugin-dialog` inside the run loop),
 /// while a refusal that fails to notify still leaves an app that quits on the
 /// second press.

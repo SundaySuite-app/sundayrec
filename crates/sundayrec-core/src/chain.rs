@@ -1,5 +1,5 @@
 //! The audio chain in Rust — the one mastering recipe and «Tale»'s clean-up as a
-//! list of filmcraft effects (B2a, `docs/LYDMOTOR.md` phase 2; the advanced vocal chain
+//! list of filmcraft effects (B2a, `docs/archive/LYDMOTOR.md` phase 2; the advanced vocal chain
 //! and the channel repair were removed in F3).
 //!
 //! The chain is built from the preset table ([`crate::mastering::podcast_preset`]).
@@ -35,7 +35,7 @@
 //! ### A faithful translation is not a faithful result
 //!
 //! Read the denoise row twice. Measured with ffmpeg 9.0.1 in B0c
-//! (`docs/LYDMOTOR.md`, «Gjentatt på Macen»), today's `afftdn ... tn=1` takes
+//! (`docs/archive/LYDMOTOR.md`, «Gjentatt på Macen»), today's `afftdn ... tn=1` takes
 //! about 1.7 dB of a stationary noise floor whatever `nr` and `nf` are, so
 //! "voice-podcast" and "voice-noisy-room" clean next to nothing today. Carrying
 //! `nr = 10` and `nr = 20` over as filmcraft `reduction = 10` and `20` makes
@@ -116,7 +116,7 @@
 //!   comes through `Chain::speech_clean` at **+0.00 dB**; the same `denoise` at
 //!   9 dB without the gate takes it down **9.00 dB**; the floor in a 1.4 s pause
 //!   between phrases falls **8.8 dB**. The de-reverb at 70 %, rt60 0.4 s: see
-//!   `docs/LYDMOTOR.md` «Gjort (B3a)». The tests
+//!   `docs/archive/LYDMOTOR.md` «Gjort (B3a)». The tests
 //!   `a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it` and
 //!   `the_dereverb_leaves_the_same_chord_alone_too` hold the numbers.
 //! * **Known limit.** A signal whose level moves like speech (drums, a strummed

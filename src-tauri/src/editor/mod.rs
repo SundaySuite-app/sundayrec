@@ -2520,7 +2520,7 @@ where
     //     B1b: the level is set in Rust. ffmpeg decodes + cuts + runs graph G to raw f32 PCM,
     //     `sundayrec_core::pcm_stream` meters it and parks a copy in the OS temp dir (90
     //     minutes of stereo is 2 GB; the other choice, running the chain twice, was slower on
-    //     the real 90-minute file, see docs/LYDMOTOR.md). The plan is ONE linear gain to the
+    //     the real 90-minute file, see docs/archive/LYDMOTOR.md). The plan is ONE linear gain to the
     //     preset's target plus, only where the peaks need it, a true-peak limiter; the limiter's
     //     cost in loudness is corrected by dry runs over the parked copy. Pass 2 then feeds the
     //     encoder from that copy. Intro/outro are deliberately absent from the measured signal,

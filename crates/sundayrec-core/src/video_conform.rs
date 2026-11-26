@@ -1,4 +1,4 @@
-//! The conformer (C2, docs/VIDEOMOTOR.md §C2): camera frames in, a fixed frame
+//! The conformer (C2, docs/archive/VIDEOMOTOR.md §C2): camera frames in, a fixed frame
 //! rate locked to the audio clock out.
 //!
 //! **The audio clock is the boss.** The recording's timeline is the WAV, in

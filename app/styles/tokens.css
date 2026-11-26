@@ -129,7 +129,7 @@
    *
    * Så: `--font` er legacy-skallets systemstakk nå. Bytte til Hanken Grotesk
    * er ÉN endring i denne fila pluss fire filer i `app/styles/fonts/` — se
-   * `docs/APP-SHELL.md` §Fonten.
+   * `docs/archive/APP-SHELL.md` §Fonten.
    */
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 

@@ -1,4 +1,4 @@
-//! The audio clock (C2, docs/VIDEOMOTOR.md §C2): which audio sample a host-clock
+//! The audio clock (C2, docs/archive/VIDEOMOTOR.md §C2): which audio sample a host-clock
 //! instant belongs to.
 //!
 //! **The audio clock is the boss.** A recording's timeline is the WAV the

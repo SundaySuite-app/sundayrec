@@ -32,7 +32,7 @@ I tillegg:
 - **Unntaket: filmcrafts `audio-dsp`** (eiers beslutning 2026-10-11). Hele
   craten tas inn i repoet, låst til én commit, med lisensfilene og `NOTICE`,
   en `UPSTREAM.md` over lokale endringer, og testene deres i vår CI. Den
-  følges ikke fortløpende oppstrøms. Se [LYDMOTOR.md](LYDMOTOR.md).
+  følges ikke fortløpende oppstrøms. Se [LYDMOTOR.md](archive/LYDMOTOR.md).
 - **KI-skrevne prosjekter er ekstra usikre.** Vi vet ikke hvor koden kommer fra
   (den kan inneholde GPL-kode under en MIT-fil), og de er ofte svakt testet.
   En fork kan dessuten bære en annens opphavsrett (ClawScribe er Meetily med
@@ -54,7 +54,7 @@ bruker.
 
 ## Åpne punkter
 
-Alle punktene her er nå arbeidspakker i [OMBYGGING.md](OMBYGGING.md), som
+Alle punktene her er nå arbeidspakker i [OMBYGGING.md](archive/OMBYGGING.md), som
 bestemmer rekkefølgen. Detaljene står fortsatt her.
 
 ### cpal 0.17.3 → 0.18.x (pakke A3)
@@ -153,7 +153,7 @@ ikke Swift-pakken anarlog bruker til mikrofontillatelsen.
 
 Sett på: filmcraft og soundcraft (ArtCraft), Clypra, katana, Gausian, OpenCut,
 auto-editor og et knippe Tauri-redigerere. **filmcrafts `audio-dsp`** er
-grunnlaget for [LYDMOTOR.md](LYDMOTOR.md). katanas raske videoeksport
+grunnlaget for [LYDMOTOR.md](archive/LYDMOTOR.md). katanas raske videoeksport
 (`-c:v copy`) er ideen bak fase 6 der, men koden er for enkel til å bruke.
 
 ### Videoopptak (tredje runde)
@@ -161,7 +161,7 @@ grunnlaget for [LYDMOTOR.md](LYDMOTOR.md). katanas raske videoeksport
 Sett på: Caps kamera-crates, nokhwa, crabcamera, filmcrafts `platform` og
 ArtCraft-appene. ArtCraft har ingen kamerafangst. **Caps `cap-camera*`** (MIT,
 uttrykkelig unntatt fra resten av Caps AGPL) er grunnlaget for
-[VIDEOMOTOR.md](VIDEOMOTOR.md). Cap byttet selv bort fra nokhwa i 2025.
+[VIDEOMOTOR.md](archive/VIDEOMOTOR.md). Cap byttet selv bort fra nokhwa i 2025.
 `cap-mediafoundation-utils` og alt annet i Cap er AGPL og skal ikke leses.
 
 ## Notert, ikke planlagt
@@ -169,7 +169,7 @@ uttrykkelig unntatt fra resten av Caps AGPL) er grunnlaget for
 - **`earshot` som VAD-motor** er ikke lenger aktuell: den nevrale VAD-en
   (tract + Silero), skyggemodusen og prekensøket ble fjernet i F1 «rent bord»
   (se [VAD.md](archive/VAD.md)). **Lydstyrke under opptak** er pakke D3 i
-  [OMBYGGING.md](OMBYGGING.md).
+  [OMBYGGING.md](archive/OMBYGGING.md).
 - **Klippliste til DaVinci/Premiere** (FCPXML/EDL, som auto-editor og
   filmcrafts `interchange` lager). _Når:_ et medieteam vil gjøre ferdig
   redigeringen et annet sted.

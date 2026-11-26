@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Øktloggen for ombyggingen er ferdig; mange av funksjonene den beskriver er fjernet. Nåværende status: [PLAN.md](../PLAN.md).
+
 # Gjennomføringen — ombyggingen økt for økt
 
 _Skrevet 2026-10-12, ved v0.25.3. Status: **klar til å startes.**_
@@ -10,7 +12,7 @@ bevise selv, hvilken modell den skal kjøres med, og en **ferdig startmelding**
 du kan lime inn i en ny økt.
 
 Delplanene har de tekniske detaljene: [LYDMOTOR.md](LYDMOTOR.md) for B-pakkene,
-[VIDEOMOTOR.md](VIDEOMOTOR.md) for C-pakkene, [AVHENGIGHETER.md](AVHENGIGHETER.md)
+[VIDEOMOTOR.md](VIDEOMOTOR.md) for C-pakkene, [AVHENGIGHETER.md](../AVHENGIGHETER.md)
 for lisensreglene og bakgrunnen.
 
 ## Fellesreglene — gjelder alle 45 økter
@@ -27,9 +29,9 @@ Dette gjentas ikke per økt. Startmeldingene peker hit.
    med et fullt `tauri build --no-bundle`, så den er treg — kjør den likevel.
 5. **Node 22, ikke 24.** Kjør alt npm-arbeid med `nvm exec 22`. npm 11
    regenererer låsfila slik at CIs npm 10 dør på `npm ci`.
-6. **Oppdater i samme PR:** modulhodene, [SMOKE-TEST.md](SMOKE-TEST.md),
-   [RIG-DAY.md](RIG-DAY.md) med nye riggpunkter, `CHANGELOG.md` under «Uutgitt»,
-   og stryk pakkens linje i [PLAN.md](PLAN.md) når hele pakken er ferdig.
+6. **Oppdater i samme PR:** modulhodene, [SMOKE-TEST.md](../SMOKE-TEST.md),
+   [RIG-DAY.md](../RIG-DAY.md) med nye riggpunkter, `CHANGELOG.md` under «Uutgitt»,
+   og stryk pakkens linje i [PLAN.md](../PLAN.md) når hele pakken er ferdig.
 7. **Commit-meldinger på norsk**, Conventional Commits (`feat(recorder): …`).
 8. **Vent til hele CI-kjøringen er `completed`** før merge. Jobber med `needs:`
    vises ikke i `gh pr checks` før de starter, så «ingen pending» kan være løgn.
@@ -115,7 +117,7 @@ dyre modellen. Rene tillegg med gode tester gjør Sonnet like godt og billigere.
 - **Macen** — kan bevises ferdig i økta, på denne maskinen.
 - **CI** — bevises av `windows-check`-jobben; ingen maskin trengs.
 - **Riggen** — må vente på Windows-boksen eller riggdagen. Står i
-  [RIG-DAY.md](RIG-DAY.md) som et avkryssingspunkt.
+  [RIG-DAY.md](../RIG-DAY.md) som et avkryssingspunkt.
 
 ---
 
@@ -554,7 +556,7 @@ ikke ser er kryss-PR-kjeder og skjøtefeil.
 **Ser etter:**
 
 - Kryss-PR-kjeder: en endring i A3a som A5b bygger videre på feil premiss.
-- [Skjøtefeil](archive/LEARNING.md): to lag korrekte hver for seg, uenige i skjøten,
+- [Skjøtefeil](LEARNING.md): to lag korrekte hver for seg, uenige i skjøten,
   begge grønne. 9 av 11 funn i gjennomgangen i august var av denne typen.
 - At A5 ikke etterlot døde grener, og at `sweep_stale_preroll_files()` faktisk
   ble flyttet og ikke mistet.
@@ -591,7 +593,7 @@ workspace-`Cargo.toml` (`members`), `crates/sundayrec-core/Cargo.toml`
 `LICENSE-APACHE` og filmcrafts `NOTICE`.
 
 **Dette er et bevisst unntak** fra «avhengighet før kopi» i
-[AVHENGIGHETER.md](AVHENGIGHETER.md) — eiers beslutning 2026-10-11.
+[AVHENGIGHETER.md](../AVHENGIGHETER.md) — eiers beslutning 2026-10-11.
 
 **Slik velges commiten:** gjennomgangen brukte
 `0800a8b0aa4a703ba42172f415b45a61f8d8a5e1`. Velg **nyeste** commit når økta
@@ -927,7 +929,7 @@ hørbart bedre (Ørene), og **et rent opptak er hørbart uendret**.
   parametre** — løftet i [LYDMOTOR.md](LYDMOTOR.md) §Målbildet.
 - Minnebruk på 90 minutter (2 GB f32): holder noe kodepath hele fila?
 - At mikseren og presettene gir samme kjede.
-- [Skjøtefeil](archive/LEARNING.md) mellom kjernen og skallet.
+- [Skjøtefeil](LEARNING.md) mellom kjernen og skallet.
 
 **Ferdig når:** nummererte funn med alvorsgrad; 🔴/🟠 rettet før beta.
 
@@ -1290,7 +1292,7 @@ VIDEOMOTOR §C3 «Levert (C3b)».
 **Mål:** Gjøre den nye motoren synlig for den som tar opp, og for oss.
 
 **Endrer:** telemetri (`video.frames_dropped`), opptaksoverlegget,
-[SMOKE-TEST.md](SMOKE-TEST.md), [RIG-DAY.md](RIG-DAY.md) (ny «(v)
+[SMOKE-TEST.md](../SMOKE-TEST.md), [RIG-DAY.md](../RIG-DAY.md) (ny «(v)
 Videomotor»-runde).
 
 **Telleren må deployes i telemetri-Workeren FØR versjonen promoteres** — ellers
@@ -1425,7 +1427,7 @@ Windows).
 **Mål:** Den frivillige skal vite at opptaket lever, selv om bildet er borte.
 
 **Endrer:** opptakssida i `app/`, i18n for sju språk,
-[VARSLING.md](VARSLING.md).
+[VARSLING.md](../VARSLING.md).
 
 UI-et sier «Kameraet falt ut — lyden tas fortsatt opp». Er kameraet borte i over
 **60 s**, går det et varsel.
@@ -1749,12 +1751,12 @@ RIG-DAY-punkt).
 > (12a96b37) beholdes **umerget**, uten PR. Grunnen: `ab_eval` på syntetiske data
 > ga grensefeil på 330–360 s for earshot mot 0,3–0,5 s for Silero, og earshot
 > merket holdte dype toner som tale (utviklerens påstand holdt ikke).
-> Detaljer: [VAD.md](archive/VAD.md) §Beslutning 2026-10-19. Resten av denne seksjonen er
+> Detaljer: [VAD.md](VAD.md) §Beslutning 2026-10-19. Resten av denne seksjonen er
 > den opprinnelige planen og gjelder bare hvis D1 tas opp igjen.
 
 **Modell:** Sonnet · **Gren:** `ombygging/d1-earshot-vad` · **Pakke:** D1
 
-**Mål:** Samme VAD, lettere motor. Skyggemodusen og porten i [VAD.md](archive/VAD.md) er
+**Mål:** Samme VAD, lettere motor. Skyggemodusen og porten i [VAD.md](VAD.md) er
 **uendret** — den får bare en annen motor, og bestemmer fortsatt ingenting.
 
 **Endrer / sletter:**
@@ -1768,7 +1770,7 @@ RIG-DAY-punkt).
 | `vad`-jobbens modellkontroll i `ci.yml`                                     | ut                      |
 | `vad`-featuren                                                              | beholdes, men blir lett |
 | `crates/sundayrec-core/src/ab_eval.rs`, `src-tauri/examples/vad_ab_eval.rs` | ny motor                |
-| [VAD.md](archive/VAD.md)                                                    | skrives om              |
+| [VAD.md](VAD.md)                                                            | skrives om              |
 
 **Påstanden om at `earshot` slår Silero er utviklerens egen,** og sang kan bli
 tolket som tale. Det er greit: VAD-en er i skyggemodus og bestemmer ingenting
@@ -1803,8 +1805,8 @@ sammenlignes med de gamle, og VAD.md er skrevet om.
 `UNUserNotificationCenter.getNotificationSettings` kan appen si det den vet.
 
 **Endrer:** `src-tauri/src/notify/`, `src-tauri/Cargo.toml`
-(`objc2-user-notifications` — allerede i `Cargo.lock`), [VARSLING.md](VARSLING.md),
-[PLAN.md](PLAN.md).
+(`objc2-user-notifications` — allerede i `Cargo.lock`), [VARSLING.md](../VARSLING.md),
+[PLAN.md](../PLAN.md).
 
 Bare når appen kjører som `.app`. **Utenfor en bundle er svaret `unknown`, som i
 dag** — det må testes, ikke antas.
@@ -1838,7 +1840,7 @@ tilstander, og `unknown` når appen kjøres utenfor en bundle.
 **Mål:** En dempet mikser skal oppdages mens opptaket går, ikke etterpå.
 
 **Endrer:** den native motoren (måleren fra B0a kjører på den rutede
-f32-strømmen), opptaksoverlegget, historikken, [VARSLING.md](VARSLING.md).
+f32-strømmen), opptaksoverlegget, historikken, [VARSLING.md](../VARSLING.md).
 
 - Under opptak: kortsiktig LUFS ved siden av toppnivåene.
 - Etter hvert opptak: integrert LUFS i historikken.
@@ -1871,8 +1873,8 @@ gir det ikke.
 
 - **Hele kjeden fra opptak til eksport**, lest som én historie: lydkort → native
   motor → WAV → åpning → analyse → kjede → lytting → eksport → levering.
-- At [PLAN.md](PLAN.md) ikke lenger har åpne punkter for ombyggingen.
-- At alle riggpunktene fra M1–M4 er krysset av i [RIG-DAY.md](RIG-DAY.md), eller
+- At [PLAN.md](../PLAN.md) ikke lenger har åpne punkter for ombyggingen.
+- At alle riggpunktene fra M1–M4 er krysset av i [RIG-DAY.md](../RIG-DAY.md), eller
   står som bevisste unntak med grunn (opptakskortet er ett slikt).
 - At ingen nødluke, reservesti eller `classic_*`-innstilling er igjen.
 - At telemetri-tellerne fra A3c, C3c og D3 er deployet i Workeren.

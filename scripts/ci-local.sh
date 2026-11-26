@@ -37,7 +37,7 @@ step "frontend — tsc --noEmit";        npm run typecheck
 # dynamic eval would build fine and be a blank window in WKWebView.
 step "frontend build — dist has no dynamic eval"; npm run build
 if grep -rqE 'eval\(|new[[:space:]]+Function' dist; then
-  printf "\033[1;31m✗ dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md.\033[0m\n"
+  printf "\033[1;31m✗ dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/archive/APP-SHELL.md.\033[0m\n"
   grep -rnE 'eval\(|new[[:space:]]+Function' dist | head -20
   exit 1
 fi

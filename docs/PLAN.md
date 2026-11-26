@@ -1,126 +1,73 @@
-# Plan — hva gjenstår i SundayRec
+# Plan — SundayRec etter «rent bord»
 
-_Sist gått gjennom: 2026-11-14. Stabil og beta er v0.30.1 (Bevisrunden: sømrettinger, deling uten lydhull, og rammeverksløftet #438–#440; rett til stabil etter eiers ordre)._
+_Sist gått gjennom: 2026-11-26. Versjon 0.31.0 («rent bord») er klar på grenen `rent-bord`; stabil og beta er fortsatt v0.30.1 til grenen er merget og sluppet._
 
-Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
-**bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
-registeret som peker dit. Et punkt som ikke står her, er ikke planlagt.
+Én side som svarer på «hva er SundayRec nå, hva er bevisst fjernet, og hva er ikke
+gjort?». Et punkt som ikke står her, er ikke planlagt. Kartet over alle
+dokumentene er [`docs/README.md`](README.md).
 
-**Slik holdes sida i live**
+## Hva SundayRec er nå
 
-- Nytt åpent punkt → skriv det i kildedokumentet, og én linje her.
-- Ferdig → marker det i kilden, og fjern linja her i samme PR.
-- Ved hver utgivelse leses sida gjennom (`docs/RELEASE-CHECKLIST.md` §5g),
-  og datoen øverst oppdateres.
+Kjernen i fem linjer:
 
-Kartet over alle dokumentene er [`docs/README.md`](README.md).
+1. **Ta opp** gudstjenesten — én stor knapp, krasjtrygg lydfangst rett til WAV, valgfritt kamera.
+2. **Planlegg** faste opptak i en ukevisning; maskinen vekkes, tar opp og stopper uten at noen trykker.
+3. **Rediger** opptaket: bølgeform med to håndtak, klipp bort resten, «Podkastklar lyd» (−16 LUFS) som én bryter.
+4. **Eksporter** fila, med intro og outro om du vil — appen laster ikke opp noe sted; fila på disk er overleveringen.
+5. **Si fra** på maskinen når et opptak feiler eller blir stille — ingen e-post, ingen sky.
 
-## Ombyggingen — før appen rulles ut
+## De fire sidene
 
-Eierens beslutning 2026-10-11: store grep, høy risiko, gjennomført lokalt på
-Macen. Hovedplanen er [OMBYGGING.md](OMBYGGING.md), med delplanene
-[LYDMOTOR.md](LYDMOTOR.md) og [VIDEOMOTOR.md](VIDEOMOTOR.md); øktene (én PR
-hver) står i [GJENNOMFORING.md](GJENNOMFORING.md).
+| Side              | Hva                                                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ta opp**        | Kilde og nivå, den store knappen, kameraet, linja om neste planlagte opptak. Ingenting annet.                                                      |
+| **Opptak**        | Lista over opptakene; et klikk åpner redigeringen på samme side. «Eksporter» er et ark i redigeringen («Podkastklar lyd», intro/outro). Papirkurv. |
+| **Plan**          | Ukevisning med dra-blokker, «Ta opp automatisk», «Start automatisk med maskinen», vekking av maskinen.                                             |
+| **Innstillinger** | Lyd og kanaler, kamera, lagringsmappe og format, varsler, språk (norsk/engelsk), opptaksvalg, oppdatering, personvern, om og logg.                 |
 
-**Kodepakkene M1–M4 er levert og merget** (PR-nummer fra `git log`). Det er ikke
-det samme som ferdig: ingen milepæl har gått gjennom porten (merget → review →
-beta → riggdag → stabil), og 0 av 84 riggpunkter er krysset av.
+Første gang er tre steg: lydkort og kanaler (med lydport), lagringsmappe, første faste opptak.
 
-| Milepæl                      | Levert                                                                                                                                     | Utgitt                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| M1 — Grunnmuren              | A1 #349 #352, A2 #356, A3 #351 #354 #355, A4 #359, A5 #357 #358, C0 #350 #353; M1R #362 #365 #366                                          | v0.26.0-beta.1 (#378)           |
-| M2 — Ny lyd i redigeringen   | B0 #367 #374, B1 #376 #382, B2a #375, B2b #388, B3 #391 #393; M2R #395–#397 #399                                                           | v0.27.0-beta.1 (#405), B2c #430 |
-| M3 — Ny videomotor           | C1 #368 #369 #371, C2 #373 #386, C3 #377 #384 #385, C4 #387 #390, C5 #394 #398; M3R #400–#402 #416                                         | v0.27.0-beta.1 (#405)           |
-| M4 — Sanntid, fart og resten | B4 #403 #407, B5 #410 #412 #417, B6 #404, D2 #406 #409, D3 #408; M4R-rettelser #416 #420 #421 #422. **D1 er parkert, ikke levert** (under) | 0.28.0, rett til stabil         |
+## Bevisst fjernet i «rent bord» — legg det ikke inn igjen uten en eierbeslutning
 
-**Åpent fra ombyggingen** (én linje per punkt; detaljene bor i kilden):
+- **Læring:** ingen læring av rettelser, ingen prekensøk (D1/earshot og den nevrale VAD-en er avlyst), ingen forslag om hvor prekenen er.
+- **Tillegg:** Diagnose med testopptak og målebenk, «Legg ut», kirkeprofil og kirkekalender, spesialopptak, eksport/import av innstillingsprofil, overføring fra Electron-appen, haptikk, bannerboksen om e-postvarsler.
+- **Mastering:** bare én lydoppskrift — «Podkastklar lyd». Borte: «Tale og musikk», den avanserte mikseren, kanalreparasjon som valg.
+- **Språk:** bare norsk og engelsk. Svensk, dansk, tysk, fransk og polsk er fjernet (lagrede verdier leses og ignoreres).
+- **Sider:** kontrollrommet på Ta opp, Eksportsiden, «Sist redigert»-kortet, Avansert som egen flate, Sjekk maskinen i menylinja, sjekklisten «Klar til søndag», språk-/kvalitets-/varselsteg i første gang.
+- **Kommandoer og kode:** seks kommandoer uten kaller (`editor_master_cancel`, `recording_update_note`, `scheduler_check_missed`, `telemetry_count`, `telemetry_queue_status`, `wake_get_sleep_config`), pausemekanismen for språk, `DecisionCard`.
+- **Før dette igjen:** direkte strømming, sky/podkast-RSS/kanalhåndtrykk, whisper og AI-følgesvenn, e-postvarsler (fjernet i v0.14–R2).
 
-| Punkt                                                                                                                                                                                                                                                                                                                                                                                                                         | Kilde                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1 (earshot) er avlyst:** den nevrale VAD-en (Silero/tract), skyggemodusen, A/B-evalueringen og prekensøket er fjernet i F1 «rent bord»; grenen `ombygging/d1-earshot-vad` (12a96b37) står umerget og er ikke lenger aktuell                                                                                                                                                                                                | [GJENNOMFORING.md](GJENNOMFORING.md) §D1, [VAD.md](archive/VAD.md)                                                                                                                                                                                                                                                                            |
-| **F2 «rent bord»:**                                                                                                                                                                                                                                                                                                                                                                                                           | Diagnose, testopptak og målebenk, «Legg ut», kirkeprofil og kirkekalender, spesialopptak, innstillingsprofil, Electron-migreringen og haptikk er fjernet (F2). Nødlukene `classic_*` og to-prosess-videostien var allerede borte (A5a/A5b/C3b); videostien er den ene native. Kvalitetsvarselet etter opptak (`selftest_verdict`) er beholdt. |
-| **Riggpunkter:** Mac-boksen, Windows-boksen, videorunden (v1)–(v10) (klappetesten over 90 min), B5 (a)–(c) med 90 min spillehode, (w) varselstatus, (d3-mac)/(d3-rigg), Ørene                                                                                                                                                                                                                                                 | [RIG-DAY.md](RIG-DAY.md)                                                                                                                                                                                                                                                                                                                      |
-| **Designrunden nov. 2026** (luft, fast handlingslinje, seksjonene i Innstillinger, ny tekst på alle sju språk; PR #425–#427, sluppet i v0.29.0 rett til stabil): **riggtest på en ekte Mac og en Windows-PC som etterkontroll av det flåten har fått** — Start/«Neste» synlige i handlingslinja i 1180×760, «Vis i Finder»/«Vis i Utforsker», Opptak-kortene med nye spørsmål, mikseren med hverdagsord, første gang steg 1–6 | [design/atlas/INDEX.md](design/atlas/INDEX.md) §Riggtest                                                                                                                                                                                                                                                                                      |
-| **Milepælsportene:** M1–M4 gikk rett til stabil i v0.28.0 (eiers ordre), uten beta-søndag; portene er nå etterkontroll av det flåten har                                                                                                                                                                                                                                                                                      | [GJENNOMFORING.md](GJENNOMFORING.md) §Milepælsportene                                                                                                                                                                                                                                                                                         |
-| **Spillehodet går foran lyden med utgangsforsinkelsen** (Bluetooth 150–250 ms): mistenkt, avgjøres av klappetesten                                                                                                                                                                                                                                                                                                            | [LYDMOTOR.md](LYDMOTOR.md)                                                                                                                                                                                                                                                                                                                    |
-| **M3R-rester:** #7 (cpal-latens på Mac, rigg), #16 (konformeren viser bildet i snitt 0,5 bilde for sent), #17 (VIDEOMOTOR sier «summeres», målt er ett dobbelt bilde per grense), #19 (bilder før første lydpar kastes)                                                                                                                                                                                                       | [VIDEOMOTOR.md](VIDEOMOTOR.md)                                                                                                                                                                                                                                                                                                                |
-| **Video-pre-roll:** ikke planlagt. Starten fylles med svart for pre-roll-lengden (M3R #8)                                                                                                                                                                                                                                                                                                                                     | [VIDEOMOTOR.md](VIDEOMOTOR.md) §C3                                                                                                                                                                                                                                                                                                            |
+Historikken ligger i [`archive/`](archive/): [OMBYGGING](archive/OMBYGGING.md),
+[GJENNOMFORING](archive/GJENNOMFORING.md), [LYDMOTOR](archive/LYDMOTOR.md),
+[VIDEOMOTOR](archive/VIDEOMOTOR.md), [APP-SHELL](archive/APP-SHELL.md),
+[NEEDS-RICHARD](archive/NEEDS-RICHARD.md) og de andre.
 
-**Eierbeslutninger 2026-10-19:** D1 parkert (over). B6: videoeksporten kan starte
-på nøkkelbildet inntil ca. 2 s tidligere enn lyttingen, og `-aac_coder fast` er
-godtatt. D2: bannerstilen «Ingen» vises rødt. D3: bare stillhetsvarselet, og bare
-når begge vilkårene gjelder; en påminnelse etter gjenkobling er i orden.
+## Åpent — rigg trengs
 
-## Kode
+Ingenting av dette kan bevises i den headless gaten. Gå gjennom det på
+[`RIG-DAY.md`](RIG-DAY.md) / [`SMOKE-TEST.md`](SMOKE-TEST.md) og før resultatet inn her.
 
-Kan gjøres uten eier eller rigg — men flere har en betingelse.
+- [ ] **Advarselen om død kanal** i editoren på ekte maskinvare (miksebord med en kanal som er av).
+- [ ] **Eksportarket:** fokus går inn i arket og tilbake når det lukkes, i WKWebView (Mac) og WebView2 (Windows).
+- [ ] **Intro/outro:** den native fildialogen for jingle (velg, fjern, borte fil ved eksport).
+- [ ] **Ukevisningen i ekte Tauri** (ikke bare nettleserharnessen), også med berøring og penn.
+- [ ] **Qu-5 / Windows ASIO:** et langt opptak på ekte kort, kanalrekkefølge og at dødkanalvarselet stemmer.
+- [ ] **Planlagt start/stopp og vekking:** en tid noen minutter fram starter og stopper av seg selv, også fra hvilemodus (Mac: admin-ledetekst én gang; Windows: vekketimere).
+- [ ] **Første gang på en fersk maskin:** alle tre stegene, inkludert lydporten med ekte lyd og mappedialogen.
+- [ ] Øvrige riggpunkter som alt sto åpne fra v0.30.x (Mac-boksen, Windows-boksen, videorunden, klappetesten over 90 min, Bluetooth-forsinkelse på spillehodet) — se [RIG-DAY.md](RIG-DAY.md).
 
-- Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
-- Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn (151; to-prosess-videostien er slettet i C3b, #384), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
+## Åpent — eier (Richard)
 
-- Audit av redigeringen 2026-11-11 (tastatur-PR-en): 🔴/🟠 rettet i egne PR-er, 🟡 rettet i PR «plan-smaapunkter» (Før/Etter-feilen, `toggleListen`-generasjon, angre forbi 50-grensen, åpne/lukke-kappløpet i `ensureSession`, hopp uten stopp). Gjenstår: ingen Delete-snarvei (redigeringen har ikke noe «valgt kutt»). J/K/L og snarveier for å lage kutt (I/O) er ikke planlagt.
+- [ ] **Oppdater GitHub branch protection på `main`.** Kravet «Rust clippy + tests (vad feature)» finnes ikke lenger i `.github/workflows/ci.yml` (jobben ble fjernet med VAD-en), så en PR kan henge på en sjekk som aldri kommer. Jobbene som finnes nå: «Lint, typecheck & test», «Build Tauri app (no bundle)», «Playwright e2e (renderer harness)», «Windows check + test», «Dependency audit» (og, ikke påkrevd i dag: «macOS check + test», «Windows check (asio release combo)»). Fjern den døde sjekken fra lista; legg gjerne til «macOS check + test».
+- [ ] **Regenerer atlas-skjermbildene** (`npm run atlas`) — sidene, første gang (tre steg) og ukevisningen er endret siden forrige serie, og `docs/design/atlas/INDEX.md` peker på de gamle sceneid-ene.
+- [ ] Notarisering: godta Apples oppdaterte avtale, sett `NOTARIZE_MAC=true` ([NEEDS-RICHARD](archive/NEEDS-RICHARD.md) §Release blockers).
+- [ ] Windows-kodesigneringssertifikat (valgfritt; fjerner SmartScreen-advarselen).
+- [ ] Sletting av lagrede adresser og rivingen av `notify.sundaysuite.app` i `sunday-telemetry`, når flåten er på v0.23.0 eller nyere.
+- [ ] Merge `rent-bord`, slipp v0.31.0 (RELEASE-CHECKLIST) og avgjør om første søndag er helseporten.
 
-- Sømgjennomgangen nov. 2026 (sammendrag: [SOMMER-2026-11.md](SOMMER-2026-11.md); fullt i rapporten `SundayRec-SOMMER-2026-11.md` på suite-rota). #451 rettet S1-A, S1-B, S1-C, X1 (rene lydopptak) og S6-A; E1–E3 rettes i etterprøvingens PR. Gjenstår, ett punkt hver:
-  - **S6-B:** man kan lytte i redigeringen mens et opptak går, mens eksport er sperret (`editor_listen_open` har ingen opptakssperre) — rapporten §S6-B.
-  - **S4/S5-A:** diskvakta bruker lydgrensene også i videoøkter (`min_disk_headroom_bytes(false)`, `finalize_reserve_bytes(false, …)`); stopper trygt ved ca. 0,5 GB, men leveringen trenger mer — rapporten §S4/S5-A.
-  - **S5-B:** kamera borte ved Start gir et rent lydopptak uten melding, og forhåndssjekken ser ikke på kameraet — rapporten §S5-B.
-  - **S10:** flåten ser ingen av de nye motorenes feilmodi (kamerautfall, avspillingsfeil, kjedefeil, tapte bilder) — rapporten §S10.
-  - **Videoøkter stopper og åpner fortsatt ved deling** (begrenset hull, ikke målt) — rapporten §Etterprøving, X1.
-  - **Spesialopptak som viker for en slot** gir fortsatt varselet «Planlagt opptak hoppet over» — [SOMMER-2026-11.md](SOMMER-2026-11.md).
-  - **Kamera satt bare med indeks** gir en .mp4 uten at noe kamera åpnes — [SOMMER-2026-11.md](SOMMER-2026-11.md).
-  - **`_deliver_tmp` er fortsatt synlig på Windows** under koding (audit 2026-10-05, se over; X1 gjør vinduet lengre).
-  - **«Ikke avgjort» som trenger rigg** (ASIO og pre-roll, lytting mot ASIO på Windows, tall for kameraventing, back-to-back med video på Windows, foreldreløs ffmpeg etter `kill -9`, levering mot levende fangst, SMB-klokke, `empty_output` midt i en del) — [SOMMER-2026-11.md](SOMMER-2026-11.md) §Det som er åpent, riggpunktene i [RIG-DAY.md](RIG-DAY.md) §(x).
+## Kjent og akseptert
 
-## Spike / maskinvare først
-
-Kode, men bare etter et forsøk på ekte maskin.
-
-| Punkt                                                                                                                          | Kilde                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| macOS: lese om systemet viser SundayRecs varsler (kode levert i D2; **venter på eierens prøve** med varsler av/på, RIG-DAY §w) | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
-| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet                                      | [VARSLING.md](VARSLING.md) §Senere                               |
-| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)                                          | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
-
-## Eier (Richard)
-
-| Punkt                                                                                                                | Kilde                                                           |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| **Notarisering:** godta Apples oppdaterte avtale, sett `NOTARIZE_MAC=true`                                           | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Release blockers, punkt 3 |
-| Windows-kodesigneringssertifikat (valgfritt; fjerner SmartScreen-advarselen)                                         | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Signing                   |
-| Rive `notify.sundaysuite.app` i `sunday-telemetry` og slette lagrede adresser — når flåten er på v0.23.0 eller nyere | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §PU-1                      |
-| Eierbeslutninger fra F2 som står igjen: resten av språkfunnene                                                       | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Eierbeslutninger fra F2   |
-| SoundCloud-API: lagt på is; tellerne `editor.publish.*` avgjør om den tas opp igjen                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §«Legg ut»                 |
-
-## Rigg og ører
-
-Alt her står som avkryssingspunkter i [`docs/RIG-DAY.md`](RIG-DAY.md) — én
-økt, i rekkefølge: Mac-boksen, Windows-boksen, Ørene. Hva som mangler
-rigg-bevis og hvorfor: [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §A real recording
-rig. Nytt fra v0.23.0: at «Legg ut» faktisk åpner nettleseren (SMOKE-TEST
-§«Legg ut»). Nytt fra v0.24.0: tapt opptak i varsel, menylinje og
-vekkehistorikk (RIG-DAY «(e, varsling — runde 3)»). Nytt fra v0.25.0: at
-opptaksmotoren oppfører seg som før etter oppdelingen (RIG-DAY a, c, h og
-w6), «Åpne opptaksmappen» og «Vis i Finder» på Mac og Windows
-(SMOKE-TEST), og spesialopptak med eget lydkort, også reserven når det
-mangler (RIG-DAY «(c, fortsettelse) Spesialopptak med eget lydkort», inkludert
-Windows-punkt 1–4), og etter sikkerhetsrunden (#309–#315): avspilling og
-forhåndslytting i redigeringen (asset-tilgang per fil), krasjgjenoppretting på
-Mac og Windows, valg av opptaksmappe ved første oppstart, oppgradering fra
-v0.24.0, og «Vis i Finder» på opptaks- og eksportkvitteringen. **v0.25.0 gikk
-rett til stabil 2026-10-04 etter eiers ordre** (RELEASE-CHECKLIST §5, slik
-v0.12.0) — riggpunktene over er derfor etterkontroll av det flåten alt har.
-Det samme gjelder v0.25.1 (2026-10-04): flyttingen av appdata til Local
-AppData og NSIS/MSI på Windows (RIG-DAY w-appdata\*, w7) og et langt
-videoopptak på Mac under CPU-last (e2). v0.25.2 (2026-10-05, også rett til stabil)
-retter auditens 🔴/🟠-funn i planlegger, levering, innstillinger og opptaksøkt;
-første ekte søndag på den er helseporten (ROLLBACK.md). v0.25.3 (2026-10-12, også rett
-til stabil etter eiers ordre) retter auditens 🟡/🔵-funn; søndagen etter er helseporten.
-
-## Ikke planlagt
-
-Nevnt, bevisst ikke tatt:
-
-- Varsel til mobil (ntfy/Pushover) — [VARSLING.md](VARSLING.md) §Senere.
-- Kapitler i eksporten (ingen kilde siden v0.15) —
-  [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1. Kjernen kan fortsatt skrive dem;
-  en framtidig kapittelkilde trenger bare å fylle lista.
+- Intel/universal Mac-bygg finnes ikke (bare Apple Silicon).
+- Videoopptak har en kort pause ved filbytte; rene lydopptak mister ingenting.
+- Varsel til mobil (ntfy/Pushover) er ikke planlagt — se [VARSLING.md](VARSLING.md) §Senere.
+- Testen `recorder::native_capture::segment::tests::split_gap` har en gang hengt mer enn 15 minutter i `cargo test --workspace`, men går på ca. 45 s alene. Alle `split_gap`-testene og rundt førti editor-/ffmpeg-tester deler ÉN prosess-global `ENV_LOCK` (en `std::sync::Mutex` som holdes over `.await`), så de kjører etter hverandre; en treg eller sultet kjøring ser ut som et hengt. Ikke gjenskapt i F7 (full gate på 282 s). Skjer det igjen: kjør `cargo test -p sundayrec --lib recorder::native_capture -- --test-threads=1` og se hvilken test som står.

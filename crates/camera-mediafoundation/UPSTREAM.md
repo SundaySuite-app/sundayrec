@@ -1,8 +1,8 @@
 # UPSTREAM — cap-camera-mediafoundation
 
 Tatt inn fra **Cap** (<https://github.com/CapSoftware/Cap>), `crates/camera-mediafoundation/`,
-pakke C1b i ombyggingen ([docs/GJENNOMFORING.md](../../docs/GJENNOMFORING.md) §C1b,
-[docs/VIDEOMOTOR.md](../../docs/VIDEOMOTOR.md) §Kildene).
+pakke C1b i ombyggingen ([docs/archive/GJENNOMFORING.md](../../docs/archive/GJENNOMFORING.md) §C1b,
+[docs/archive/VIDEOMOTOR.md](../../docs/archive/VIDEOMOTOR.md) §Kildene).
 
 |                                       |                                                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

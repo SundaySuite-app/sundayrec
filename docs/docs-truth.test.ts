@@ -78,10 +78,6 @@ describe("docs-truth", () => {
     expect(text).not.toContain("is the newest tag");
   });
 
-  it("NEEDS-RICHARD.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
-    expect(readDoc("docs/NEEDS-RICHARD.md")).not.toMatch(/release\.yml:\d+/);
-  });
-
   it("RELEASE-CHECKLIST.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
     expect(readDoc("docs/RELEASE-CHECKLIST.md")).not.toMatch(
       /release\.yml:\d+/,
@@ -137,14 +133,12 @@ describe("docs-truth", () => {
     );
   });
 
-  it("APP-SHELL.md lister ikke recording_status/recording_scheduled_stop_ms som uleste gettere (F2-DOCS-1) — F2-T1/#236 slettet den første og koblet opp den andre", () => {
-    const text = readDoc("docs/APP-SHELL.md");
-    const uleseGettere = text.match(
-      /\*\*Gettere uten leser ennå:\*\*[\s\S]*?(?=\n- )/,
-    )?.[0];
-    expect(uleseGettere).toBeDefined();
-    expect(uleseGettere).not.toContain("recording_status");
-    expect(uleseGettere).not.toContain("recording_scheduled_stop_ms");
+  // Rent bord (F7): PLAN.md er registeret, og det skal fortelle både hva som er
+  // fjernet (så ingen legger det inn igjen) og at appen ikke laster opp noe.
+  it("PLAN.md lister det som er bevisst fjernet, og at appen ikke laster opp noe sted", () => {
+    const text = readDoc("docs/PLAN.md").replace(/\s+/g, " ");
+    expect(text).toContain("Bevisst fjernet i «rent bord»");
+    expect(text).toContain("appen laster ikke opp noe sted");
   });
 
   // F2-T4: runbooken beskrev «Sett opp» i sjekklista som en knapp som TAR DEG
@@ -158,15 +152,6 @@ describe("docs-truth", () => {
     const text = readDoc("docs/SMOKE-TEST.md").replace(/\s+/g, " ");
     expect(text).toContain("three-step first-run sequence");
     expect(text).not.toMatch(/five real question screens/i);
-  });
-
-  // Appen laster ikke opp noe: FRIVILLIG.md har løftet i to formuleringer, og
-  // den gamle «Legg ut»-seksjonen er borte med funksjonen (rent-bord F2). Løftet
-  // kan fortsatt bli usant i stillhet, så det pinnes.
-  it("FRIVILLIG.md: appen laster ikke opp noe", () => {
-    const text = readDoc("docs/FRIVILLIG.md").replace(/\s+/g, " ");
-    expect(text).toContain("SundayRec laster ikke opp noe sted");
-    expect(text).not.toContain("Legg ut på SoundCloud");
   });
 
   // A2, 2026-10: fetch-ffmpeg.mjs gikk til 9.0.1 i v0.21.0 (2026-09-28), men

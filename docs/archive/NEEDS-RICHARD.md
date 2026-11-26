@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Eierpunktene som lever videre står i docs/PLAN.md; resten er historikk. Nåværende status: [PLAN.md](../PLAN.md).
+
 # Trenger Richard — kontoer, beslutninger og rigg
 
 Det bare eieren kan gjøre: kontoer, nøkler og signering, beslutninger, og
@@ -5,11 +7,11 @@ bevis på ekte maskinvare. Koden er ferdig og grønn i `npm run check` for alt
 her. Ingen av punktene stopper standardbygget.
 
 - **Oversikten over ALT som gjenstår** (kode, eier, rigg) er
-  [`docs/PLAN.md`](PLAN.md). Denne sida har detaljene for eier-punktene.
-- **Hvordan riggpunktene bevises** i én økt: [`docs/RIG-DAY.md`](RIG-DAY.md).
+  [`docs/PLAN.md`](../PLAN.md). Denne sida har detaljene for eier-punktene.
+- **Hvordan riggpunktene bevises** i én økt: [`docs/RIG-DAY.md`](../RIG-DAY.md).
 - Seksjoner for funksjoner som er fjernet (e-post-reléet unntatt, se PU-1),
   og revisjoner som er ferdige, ligger ordrett i
-  [`docs/archive/NEEDS-RICHARD-historikk.md`](archive/NEEDS-RICHARD-historikk.md).
+  [`docs/archive/NEEDS-RICHARD-historikk.md`](NEEDS-RICHARD-historikk.md).
 
 Tre cargo-features er i `default`: `editor`, `tray` og `updater`. Planlegging
 og vekking er alltid med.
@@ -239,7 +241,7 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
     `<YYYY-MM-DD> <title>` when it has one (just `<title>` when the date is
     unknown).
   - **Chapter metadata on export — no source; moved to "Ikke planlagt" in
-    [`PLAN.md`](PLAN.md).** The core still builds the `;FFMETADATA1` chapter
+    [`PLAN.md`](../PLAN.md).** The core still builds the `;FFMETADATA1` chapter
     sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since v0.15
     nothing produces chapters — the transcript-driven detector left with the
     content cluster, and `chapters` is gone from `EditorExportRequest` — so
@@ -295,7 +297,7 @@ None of it blocks the default build or the gate.
 
 ### A real recording rig (HARDWARE-UNVERIFIED)
 
-This list is WHAT is still unverified. [`docs/RIG-DAY.md`](RIG-DAY.md) is HOW
+This list is WHAT is still unverified. [`docs/RIG-DAY.md`](../RIG-DAY.md) is HOW
 to verify it in one sitting — a checklist that walks the mixer-pull, the
 Windows camera/video restart, the `kill -9` mid-slot recovery, the WAL check
 against a real database, the wake test, an ASIO subset, and the #111

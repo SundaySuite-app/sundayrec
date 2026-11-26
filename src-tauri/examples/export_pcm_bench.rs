@@ -16,7 +16,7 @@
 //!   again.
 //!
 //! Reads `<file>`, writes only into a temp dir that is removed at the end. Prints wall time per
-//! stage. This is the measurement behind the choice recorded in docs/LYDMOTOR.md (B1b).
+//! stage. This is the measurement behind the choice recorded in docs/archive/LYDMOTOR.md (B1b).
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;

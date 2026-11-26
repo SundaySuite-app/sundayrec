@@ -85,7 +85,7 @@ jobs:
         run: |
           npm run build
           if grep -rqE 'eval\(|new[[:space:]]+Function' dist; then
-            echo "::error::dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md."
+            echo "::error::dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/archive/APP-SHELL.md."
             grep -rnE 'eval\(|new[[:space:]]+Function' dist | head -20
             exit 1
           fi
@@ -189,7 +189,7 @@ jobs:
       # The Rust suite is deliberately device-INDEPENDENT (device enumeration
       # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests)
       # so it passes on a headless runner. Hardware capture/preview is validated manually — see
-      # docs/MIGRATION-TAURI2.md, Phase 0/3 hardware matrix.
+      # docs/archive/MIGRATION-TAURI2.md, Phase 0/3 hardware matrix.
       - name: Rust fmt / clippy / tests
         working-directory: src-tauri
         # F1-M6 (D6): this job fetched the real ffmpeg/ffprobe sidecars above,

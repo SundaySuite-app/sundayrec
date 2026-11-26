@@ -3,7 +3,7 @@
 //! the work runs on a blocking thread.
 //!
 //! A mastered export is three steps (the decision between "stage the processed PCM on disk" and
-//! "run the chain twice" is in docs/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
+//! "run the chain twice" is in docs/archive/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
 //!
 //! 1. [`run_blocking`] over a [`Program`]: the cut recording is read as the playback engine plays
 //!    it (M4R #6); Rust runs the audio chain over it ([`ChainReader`], B2b), meters it and copies

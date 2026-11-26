@@ -13,31 +13,35 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 > stores them separately).
 
 > **Running this on a Sunday without a developer in the room?** This README is
-> for people working on the code. If you're the volunteer operating the app
-> instead, [`docs/FRIVILLIG.md`](docs/FRIVILLIG.md) (Norwegian) is the two-page
-> version: install, permissions, record, what the banners mean, and who to
-> call.
+> for people working on the code. The old volunteer guide
+> ([`docs/archive/FRIVILLIG.md`](docs/archive/FRIVILLIG.md), Norwegian) describes
+> features that «rent bord» removed and is archived until the core has been rig
+> tested; see [`docs/PLAN.md`](docs/PLAN.md).
 
 ## What it does
 
-Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
-finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
-export with title/speaker/description tags; the app itself uploads
-nothing), a native
-notification on the machine when a take fails, OS wake-from-sleep
-scheduling, and a menubar/tray. Most of that is in the **default** build; only the subsystems
-that need an absent SDK or an owner decision are behind default-off cargo
-features (see Architecture below). SundayRec is deliberately a RECORDING app:
-live streaming (the old Direkte page, RTMP/NDI/overlays) was removed in v0.14,
-the sharing cluster (cloud backup, podcast RSS, chat webhook, Sunday-suite
-hand-offs, cover art, the review queue) in R1 of «Frivilligen først», and the
-content cluster (whisper transcription, the AI sermon companion, chapter
-detection, the learning cards) in R2, and e-mail alerts (the SMTP alerter
-and the SundaySuite relay) after that — churches that stream have OBS and
-friends, the file on disk is the hand-off, and transcripts/summaries are
-better served by tools built for them; this app's job is the take that
-survives the Sunday, and the four jobs around it: record · edit · mix/master ·
-export.
+Four pages, one job each:
+
+- **Ta opp** — the big record button, the source and its level, the camera.
+  Crash-safe capture straight to WAV with reconnect, split and pre-roll.
+- **Opptak** — the recordings list. A click opens the editor on the same page:
+  a waveform with two handles, cut away the rest, and one «Podkastklar lyd»
+  switch (−16 LUFS). «Eksporter» is a sheet with optional intro/outro.
+- **Plan** — a week view with draggable blocks for the weekly recordings, auto
+  start with the machine, and OS wake-from-sleep so a scheduled recording
+  happens with nobody there.
+- **Innstillinger** — sound and channels, camera, save folder and format,
+  notifications, language (Norwegian or English), updates, privacy and log.
+
+First run is three steps: sound card and channels (with a live meter), save
+folder, first weekly recording. A native notification on the machine tells you
+when a take fails or goes silent; the app itself uploads nothing.
+
+SundayRec is deliberately a small RECORDING app. «Rent bord» (v0.31.0) cut it
+back to this core: no learning from your corrections, no sermon finder, no
+diagnostics/test recordings, no «Legg ut», no church profile or calendar, no
+special recordings, and only Norwegian and English. The full list of what was
+removed, and why it should stay out, is in [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Architecture
 
@@ -58,13 +62,12 @@ export.
   C/C++ toolchain dependency** (whisper-rs/libwhisper was the only one): a
   stock Rust toolchain plus the ffmpeg sidecar builds everything except the
   Windows `asio` feature (Steinberg SDK, see `docs/BUILD_ASIO.md`).
-- **`app/`** — the shipping frontend: «Frivilligen først»'s Preact shell, and
-  the Vite root. Three destinations — **Opptak · Bibliotek · Oppsett** — plus
-  **Rediger**, which a recording opens into. Signals at module scope for state,
-  CSS Modules over one token file for every colour, JSX from the compiler (no
-  Babel plugin), and one door into Tauri: `window.api`. Its own header,
-  [`docs/APP-SHELL.md`](docs/APP-SHELL.md), is the long version — the contracts,
-  the gates, and what is still owed.
+- **`app/`** — the shipping frontend: a Preact shell and the Vite root. Four
+  pages — **Ta opp · Opptak · Plan · Innstillinger** — plus first run
+  (`pages/firstrun`). Signals at module scope for state, CSS Modules over one
+  token file for every colour, JSX from the compiler (no Babel plugin), and one
+  door into Tauri: `window.api`. The long, historical description of the shell
+  before «rent bord» is [`docs/archive/APP-SHELL.md`](docs/archive/APP-SHELL.md).
 - **`app/lib/`** — the shared INVENTORY the shell reaches through the `@lib/*`
   alias, and the only part of the old Electron renderer that survived fase B:
   the IPC shim (`api-shim.ts`, the one file in the repo that imports Tauri's
@@ -75,20 +78,19 @@ export.
   never reaches it by relative path.
 - **`legacy/`** — what is left when the inventory moved out: `legacy/bindings/`,
   the committed ts-rs TypeScript bindings generated from the Rust types
-  (`npm run bindings`; CI fails if they drift), the seven locale catalogues in
+  (`npm run bindings`; CI fails if they drift), the two locale catalogues (`no`, `en`) in
   `legacy/locales/`, and the `types`/`shared` trees. `app/` reaches all of it
   through the `@legacy/*` alias. Generated code and data, in other words — the
   Electron vanilla-TS renderer that used to live here is gone entirely.
 - **`docs/`** — start at [`docs/README.md`](docs/README.md), the map of every
   document, and [`docs/PLAN.md`](docs/PLAN.md), the one register of what is
   left to do and whose it is. Beside them: hardware smoke tests
-  (`SMOKE-TEST.md`), a one-day rig checklist (`RIG-DAY.md`), the
-  volunteer-facing guide (`FRIVILLIG.md`, Norwegian), the owner's checklist
-  (`NEEDS-RICHARD.md`) and the release runbooks. Session reports and
+  (`SMOKE-TEST.md`), a one-day rig checklist (`RIG-DAY.md`) and the release
+  runbooks. Session reports and
   superseded snapshots live in `docs/archive/`.
 
 The original Electron app remains the **behavioural specification**, not a
-template. See [`docs/MIGRATION-TAURI2.md`](docs/MIGRATION-TAURI2.md) for the
+template. See [`docs/archive/MIGRATION-TAURI2.md`](docs/archive/MIGRATION-TAURI2.md) for the
 phase history.
 
 ## Build & test

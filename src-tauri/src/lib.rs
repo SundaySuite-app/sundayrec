@@ -7,7 +7,7 @@
 //!
 //! All recorder *behaviour* lives in the `sundayrec-core` crate (pure, testable
 //! Rust). This file and `commands::*` are the thin command/event layer on top —
-//! see `docs/MIGRATION-TAURI2.md` §4 "Arkitektur".
+//! see `docs/archive/MIGRATION-TAURI2.md` §4 "Arkitektur".
 //!
 //! Module map (most are placeholders until their phase):
 //!   audio     cpal backend — input-device enum + the VU metering engine

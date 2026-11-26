@@ -1,4 +1,4 @@
-//! Loudness in Rust (B1a, docs/LYDMOTOR.md fase 1): measurement and gain plan.
+//! Loudness in Rust (B1a, docs/archive/LYDMOTOR.md fase 1): measurement and gain plan.
 //!
 //! The level is set in Rust, in steps we steer ourselves (the ffmpeg filter this replaced is gone, B1b):
 //!

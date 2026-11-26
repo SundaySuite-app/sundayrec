@@ -1,4 +1,4 @@
-//! The playback engine on the real sound card — the runner that proves B5a (`docs/LYDMOTOR.md`
+//! The playback engine on the real sound card — the runner that proves B5a (`docs/archive/LYDMOTOR.md`
 //! fase 5; RIG-DAY «Avspillingsmotoren»).
 //!
 //! ```text

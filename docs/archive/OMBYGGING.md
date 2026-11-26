@@ -1,11 +1,13 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Hovedplanen for ombyggingen M1–M4 er gjennomført; appen er siden skåret ned til kjernen. Nåværende status: [PLAN.md](../PLAN.md).
+
 # Ombyggingen — store grep før SundayRec rulles ut
 
 _Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status
 2026-11-03: **M1–M4 er levert og merget** (PR-numrene står i
-[PLAN.md](PLAN.md)), med disse unntakene: **D1 er parkert** (beslutning 2026-10-19, se pakke D1), og
+[PLAN.md](../PLAN.md)), med disse unntakene: **D1 er parkert** (beslutning 2026-10-19, se pakke D1), og
 **ingenting har gått gjennom milepælsporten**: stabil er fortsatt 0.25.3, M4 er i
 ingen beta, og 0 av 84 riggpunkter er krysset av. Åpne punkter, én linje hver:
-[PLAN.md](PLAN.md) §Ombyggingen. Gjennomført i økter lokalt på Macen, én PR per
+[PLAN.md](../PLAN.md) §Ombyggingen. Gjennomført i økter lokalt på Macen, én PR per
 økt. Øktregisteret — hvilke PR-er hver pakke blir, hvilken modell som skal
 brukes, og en ferdig startmelding per økt — står i
 [GJENNOMFORING.md](GJENNOMFORING.md)._
@@ -17,7 +19,7 @@ arbeidspakker som kan tas én om gangen. To delplaner har de tekniske detaljene:
 - [LYDMOTOR.md](LYDMOTOR.md): redigeringens lyd i Rust (pakkene B0–B6)
 - [VIDEOMOTOR.md](VIDEOMOTOR.md): videoopptak med lyden først (pakkene C0–C5)
 
-Bakgrunnen og lisensreglene står i [AVHENGIGHETER.md](AVHENGIGHETER.md).
+Bakgrunnen og lisensreglene står i [AVHENGIGHETER.md](../AVHENGIGHETER.md).
 
 **Eierens ramme:** det er få faste brukere ennå, og appen skal bli så god som
 mulig før den rulles ut. Store og tøffe valg er ønsket, og risiko er akseptert.
@@ -104,7 +106,7 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
 
 **A3 — cpal 0.17.3 → 0.18.x (M–L, rigg)**
 
-- Detaljene står i [AVHENGIGHETER.md](AVHENGIGHETER.md) §cpal. Felles
+- Detaljene står i [AVHENGIGHETER.md](../AVHENGIGHETER.md) §cpal. Felles
   `Error`/`ErrorKind`, eksplisitt `start()`, konfigurasjon som verdi, ny
   `StreamInstant`.
 - Knytt de nye feiltypene til gjenkoblingen: `DeviceNotAvailable` og
@@ -211,11 +213,11 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   1.0-sperre: VAD-en står i skyggemodus og bestemmer ingenting.
 - Hvorfor: `ab_eval` på syntetiske data ga grensefeil på 330–360 s for earshot mot
   0,3–0,5 s for Silero, og earshot merket holdte dype toner som tale. Tallene ligger i
-  [VAD.md](archive/VAD.md) §Beslutning 2026-10-19.
+  [VAD.md](VAD.md) §Beslutning 2026-10-19.
 - Planen under er den opprinnelige og gjelder bare hvis D1 tas opp igjen.
 
 - Ny `VadBackend` med `earshot` (MIT/Apache, 16 kHz, 256-samples rammer).
-  Skyggemodusen og porten i [VAD.md](archive/VAD.md) er uendret. Den får bare en
+  Skyggemodusen og porten i [VAD.md](VAD.md) er uendret. Den får bare en
   annen motor.
 - `tract-onnx`, `resources/vad/`, SHA-sjekken i `build.rs` og VAD-jobbens
   modellkontroll slettes. `vad`-featuren beholdes, men blir lett.

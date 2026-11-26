@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Videomotoren er gjennomført og beskrevet i koden; planen er historikk. Nåværende status: [PLAN.md](../PLAN.md).
+
 # Videomotoren — lyden først, kameraet som et tillegg
 
 _Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status:

@@ -1,242 +1,41 @@
 # SundayRec — Smoke Test Runbook
 
-A hands-on, hardware-in-the-loop checklist for proving that the Tauri rebuild
-actually records. Everything below the line **cannot** be exercised in the
-headless CI gate — it needs a real display, microphone, and camera. This doc is
-the bridge from "compiles + unit-tests pass" to "validated on a real rig".
+A hands-on checklist for what the headless gate cannot prove: it needs a real
+display, sound card, camera and (for the schedule) a machine that can sleep.
+Written for the «rent bord» core: four pages — **Ta opp**, **Opptak**, **Plan**,
+**Innstillinger**. Everything removed in «rent bord» (see [PLAN.md](PLAN.md)) has
+no section here; older versions of this runbook are in git history.
 
-> Legend: **[HW]** = HARDWARE-UNVERIFIED in code — never run against a device in
-> the gate, only here. **[NET]** = needs network + a Google OAuth client.
-
-## The navigation this runbook walks
-
-Fase B of «Frivilligen først» replaced the shipped shell, and **D3 replaced the
-navigation inside it**. There is no rail any more. Every step below has been
-re-walked against the shell that actually ships; this table is the translation
-for anybody holding an older report.
-
-> **Where everything is, in one paragraph.** A slim **top bar** (44 px) carries
-> the SundayRec mark and the church name — and nothing you can click; it is the
-> window's drag handle. A **bottom bar** (56 px) carries everything else:
-> **the status line on the LEFT**, **three destinations CENTRED** as icons over
-> labels, in the order you do them — **Opptak · Redigering · Eksportering** —
-> and **the version plus the gear on the RIGHT**. The gear is
-> **Innstillinger**; it is deliberately not one of the three.
->
-> **Redigering and Eksportering are destinations now**, not screens something
-> opens into:
->
-> - **Redigering** shows **the recordings list** when no file is open — that IS
->   the library, with the search box, the trash and an **«Åpne fil…»** button in
->   its head. Open one (or drop a file anywhere on the page) and the same
->   destination becomes the editing workspace. Closing the file puts the list
->   back, on the same page, without navigating.
-> - **Eksportering** is where the export lives. With no file open it is not
->   empty: it offers **«Sist redigert»** with one button, a picker of the other
->   recordings, and «Åpne fil…».
->
-> Two names to unlearn: **«Bibliotek» is called Redigering**, and the editor's
-> **third step, «Eksporter», is gone** — the step strip is **Klipp → Lyd**, and
-> «Neste: Eksporter» takes you to the destination. An export that is running
-> keeps running while you look at something else.
-
-> **D2 moved settings twice, and the second move is the big one.**
->
-> 1. The destination was renamed: **Oppsett** is now a **gear**, labelled
->    **Innstillinger**. _(D2 put it at the foot of the rail; D3 deleted the rail
->    and the gear is at the **right-hand end of the bottom bar**. The route, the
->    testid and the `aria-current` are unchanged.)_
-> 2. **The five questions moved out of it.** «Hvilken lyd?», «Hvor skal
->    opptakene?», «Hvilken kvalitet?», «Ta med kamera», «Ta opp automatisk» and
->    «Hvem får beskjed hvis noe går galt?» are **cards in the control room on
->    Opptak** now. A card shows the answer that stands and folds the SAME screen
->    out in place — no navigation, and Start stays visible while you change
->    something. The gear opens what does not belong to a Sunday: the church
->    profile and Avansert.
->
-> **Names changed again in the November 2026 design round (PR 3, texts).** The
-> steps below still use the older names; read them with this key:
-> **«Redigering» → «Bibliotek»** and **«Eksportering» → «Eksport»** (the
-> destinations), **«Hvilken lyd?» → «Hvilken lydkilde?»**, **«Hvor skal
-> opptakene?» → «Hvor lagres opptakene?»**, **«Ta med kamera» → «Ta med video»**,
-> **«Velg lyd» → «Velg lydkilde»**, **«Bruk denne» → «Bruk denne lydkilden»**,
-> **«Diagnose» → «Sjekk maskinen»** with **«Kjør» → «Start sjekk»**,
-> **«Del anonym diagnostikk» → «Send anonym bruksstatistikk»**, **«Logg» →
-> «Feillogg»**, **«Avansert: åpne mikseren» → «Juster lyden selv»**
-> («Lydjustering»), and **«Vis i Finder» is «Vis i Utforsker» on Windows**.
-> **«the gear › Avansert» no longer exists**: Innstillinger is split into
-> sections (Kirke og språk · Tidsplan · Legg ut · Opptaket · Oppdateringer og
-> personvern · Hjelp og feilsøking · Om) with a «Hopp til» list on top.
-
-> The table and every step below are **written against that shell** — D2/PR4
-> swept the prose, so «Opptak › ‹card›» and «the gear › Avansert» are the walk,
-> not a translation you have to do in your head. Every old deep link still lands
-> right: `?goto=settings:audio` opens the sound card, folded out.
->
-> ⚠️ There is **no «Tillegg» heading** any more. Camera and «Ta opp
-> automatisk» are two cards in the same stack as the other three, each with its
-> toggle in the top row — the toggle IS the affordance, and the body only folds
-> out when the add-on is on.
-
-The four claims that note makes are covered, and each is a mutation-proof for a
-guard that would otherwise fail in silence:
-
-- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksformatet lagrer BÅDE format og bitrate, og seksjonen står der
-- VERIFIED-BY: e2e/settings-plan.spec.ts::?goto=settings:sound lander på Lyd og kanaler
-- VERIFIED-BY: e2e/settings-plan.spec.ts::«Endre» på kilden fører til Lyd og kanaler i Innstillinger
-- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksstart river måleren ut av TA OPP
-
-| where it used to be                              | where it is now                                                                           |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Hjem                                             | **Opptak**                                                                                |
-| Historikk (+ the search box, the chips)          | **Redigering** — the list IS the page (search kept; the chips are gone)                   |
-| Bibliotek (the destination, up to v0.16)         | **Redigering** — same list, same rows, same trash; the name is what changed               |
-| Innstillinger → Lyd (the 32-tile channel grid)   | **Opptak › «Hvilken lyd?»** — device, channel pair, hearing test, folded out beside Start |
-| Innstillinger → Filer                            | **Opptak › «Hvor skal opptakene?»** + «Hvilken kvalitet?»                                 |
-| Innstillinger → Generelt (Menighet)              | **the gear › «Hvilken kirke?»** — the one question that is not a Sunday decision          |
-| Innstillinger → Deling / Varsler                 | **Opptak › «Hvem får beskjed hvis noe går galt?»**                                        |
-| Innstillinger → Video                            | **Opptak › «Ta med kamera»** — a card in the stack, no «Tillegg» heading                  |
-| Tidsplan (month calendar + day detail)           | **Plan › the week view** (Mon–Sun columns, draggable blocks) + «Vekking» under it         |
-| Innstillinger → System (log, profile, telemetry) | **the gear › Avansert**                                                                   |
-| Oppdateringer / Oppdateringskanal                | **the gear › Avansert › Oppdateringer**                                                   |
-| E-postserver (SMTP), inside the alerts card      | **removed** with e-mail alerts — see «Flater som ikke finnes lenger»                      |
-| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Redigering**, two STEPS (Klipp → Lyd) — the third became a destination                  |
-| The export MODAL                                 | **Eksportering**, the third destination — no modal, and no step 3                         |
-| «Åpne fil…» in the editor's empty state          | **Redigering**'s head, always — and dropping a file anywhere on the page does the same    |
-| «Nåværende versjon» in Generelt                  | the version, in the **bottom bar**, left of the gear                                      |
-
-Surfaces that were removed rather than moved are listed at the bottom of this
-file under **«Flater som ikke finnes lenger»** — read that before reporting a
-missing screen as a bug.
-
----
+> Legend: a `VERIFIED-BY:` line is a claim the automated suite already proves
+> (`npm run smoke-verified` checks that the test still exists). What is left
+> in each section is what a person must see on a rig. Open rig points are
+> listed in [PLAN.md](PLAN.md) and walked in [RIG-DAY.md](RIG-DAY.md).
 
 ## 0. Prerequisites
 
-| Tool      | Version            | Check             |
-| --------- | ------------------ | ----------------- |
-| Node.js   | 20 LTS or newer    | `node --version`  |
-| Rust      | stable (1.77+)     | `rustc --version` |
-| Xcode CLT | (macOS, for build) | `xcode-select -p` |
-
-ffmpeg/ffprobe are **not** installed system-wide — they are fetched as bundled
-sidecars by `scripts/fetch-ffmpeg.mjs` (the `predev`/`pretauri` npm hooks run it
-automatically). To fetch them manually:
-
-```bash
-npm run ffmpeg         # downloads ffmpeg 9.0.1 → src-tauri/binaries/<name>-<host-triple>
-ls src-tauri/binaries  # expect ffmpeg-… and ffprobe-… for your host triple
-```
-
-The download is version-pinned and SHA-256-verified twice (archive, then the
-unpacked binary — see the script header). A sidecar that is already correct is
-left alone, so repeat runs cost a fraction of a second;
-`node scripts/fetch-ffmpeg.mjs --force` re-fetches.
-
-The binaries are git-ignored (`.gitignore` → `src-tauri/binaries`) and re-fetched
-per machine/platform; the recorder + MJPEG preview resolve them by host triple at
-runtime (`SUNDAYREC_TARGET_TRIPLE`).
-
-### macOS privacy permissions (REQUIRED — first-capture blocker)
-
-`src-tauri/Info.plist` ships `NSMicrophoneUsageDescription` +
-`NSCameraUsageDescription`. Tauri 2 merges this into the dev app, so the first
-mic/camera access triggers the normal macOS consent prompt. **Click Allow.** If
-you ever denied it, re-enable under _System Settings → Privacy & Security →
-Microphone / Camera → SundayRec_ and relaunch. Without these strings macOS kills
-the app at capture time with no error — that is the symptom to watch for.
-
-It also ships `NSCameraUseContinuityCameraDeviceType` (C1a): on macOS 14+ an
-iPhone used as a webcam is then listed as a Continuity camera instead of as a
-built-in one. The native camera capture (`src-tauri/src/camera/`) is what
-every video recording reads the camera through since C3b — and the camera
-picker and its «what this camera delivers» line read the same list. Its hardware check is RIG-DAY (c1a), a one-line
-`cargo test … -- --ignored` from a terminal that has camera access.
-
----
+- A Mac and a Windows PC, a real USB/ASIO interface (a mixer such as the Qu-5
+  or X32 is the real test), a camera.
+- `npm run ffmpeg` has fetched the sidecars; `npm run tauri dev` (or an
+  installed build).
+- macOS: microphone, camera and notification permission granted to SundayRec
+  on first use (System Settings → Privacy & Security).
 
 ## 1. Pre-gate (headless, do this first)
 
 ```bash
-npm run check          # prettier + eslint + tsc + rustfmt + clippy + cargo test
-npx playwright test    # the browser tier — every screen, driven the way a volunteer would
-cargo build            # debug build of the Tauri binary
-npm run build          # tsc + vite → dist/ (the shell a release bundles)
+npm run check          # format, lint, types, vitest, i18n, cargo fmt/clippy/test, bindings, reachability
+npx playwright test    # renderer harness (start vite on :1420 first)
 ```
 
-All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest**
-frontend suite (pure logic like the editor cut-history state machine; grows as
-more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
-in isolation — `cargo build -p sundayrec --features <flag>` for
-`tray`/`editor`/`updater`. (Since R2 «Frivilligen først» the
-workspace has no C/C++ toolchain dependency: `whisper` is gone.)
+Expect both green before spending time on a rig.
 
-⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
-sets `default = ["editor", "tray", "updater"]`,
-so **all three are ON in a plain `npm run tauri dev` / `cargo build` and in every
-release**. The `--features <flag>` lines below them are redundant, not
-prerequisites, and a `feature_disabled` response from any of those three is a BUG
-to report — not the expected result. Only `asio` is genuinely
-default-off and needs an explicit `--features`. To exercise a disabled path
-deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
-`bridge` were removed with the Direkte page — their old §R3/§R3b sections are
-gone from this runbook. R1 «Frivilligen først» 2026-08-23: cloud backup (§7),
-podcast RSS + `publish` (§10), the live cue bridge (§10c), the review queue
-(§PU-6) and the Sunday-suite integrations (§P2b) followed; §8 e-post is
-SMTP-only and §9's deep links are gone. R2 «Frivilligen først» 2026-08-23:
-whisper transcription (§10b), the AI companion + chapters (§12 step 9 and the
-chapter half of the editor), the learning cards (§R7 settings completeness, step 2)
-and the Video tab's quality knobs (§12 step 4c) followed; §6b is a metadata
-search only. The `email` feature — the SMTP alerter — was removed together
-with the SundaySuite e-mail relay; §8 is a stub.)
+## 2. First launch and first run
 
----
-
-## 2. Launch [HW]
-
-```bash
-npm run tauri dev
-```
-
-`predev` fetches ffmpeg if needed; vite serves on the fixed port **1420**
-(`strictPort`); Tauri opens the window titled "SundayRec".
-
-**What proves the bridge is up.** The **top bar** paints the SundayRec mark,
-«SundayRec» and the church name; the **bottom bar** carries **Opptak ·
-Redigering · Eksportering** centred, the version and the **Innstillinger** gear
-at its right end, and the status line at its LEFT end says one of five things —
-«Alt er klart» (green), «Lyden er ikke koblet til» / «Lite plass igjen»
-(amber), «Neste opptak …» (grey) or «Tar opp» (red). A status line at all means `settings_get` answered and the database
-opened without panicking; the old header's literal "backend OK" is gone, because
-a line that only ever says one thing is not a status. If `settings_get` actually
-FAILED, the shell says so out loud rather than rendering factory defaults as if
-they were yours — that is `hydrateError`, and it is the one case where a
-factory-fresh screen would otherwise be indistinguishable from a broken store.
-
-**Where logs go:** the backend uses `tracing` to **stderr** of the terminal
-running `tauri dev`. Bump verbosity with the env filter:
-
-```bash
-RUST_LOG=debug npm run tauri dev          # everything
-RUST_LOG=sundayrec=debug npm run tauri dev # just our crates
-```
-
-Expect at boot: `SundayRec backend ready (db at …/sundayrec.sqlite)` and no
-repeated background-task log spam.
-
-**First run:** a fresh install (no `onboardingDone`) boots into the three-step
-first-run sequence; a settled install goes straight to **Ta opp**. Step 1 is
-sound card and channels with the live meter — «Neste» stays locked until the app
-hears sound, with «Fortsett uten lyd» as the emergency exit. Step 2 is the
-storage folder (native folder dialog). Step 3 is the first weekly recording in
-the Plan week view; adding the first time switches on «Ta opp automatisk» and
-«Start automatisk med maskinen», and «Senere» skips the step. The
-«Fortsett oppsettet» chip returns to exactly the step you left. The consent
-question (E3.6) asks with the «Aldri»-list on display, records the answer —
-yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal,
-and cannot trap the operator if the backend rejects the answer. The renderer half of all of that is pinned in the browser
-tier; only the native window/DB boot itself stays a rig observation:
+- [ ] Fresh install (no `onboardingDone`): the three-step first-run sequence opens; a settled install goes straight to **Ta opp**.
+- [ ] Step 1 (sound card and channels): pick the real device, speak into the mic — the meter moves and «Neste» opens only once sound is heard. «Fortsett uten lyd» is the emergency exit.
+- [ ] Step 2: «Velg mappe» opens the native folder dialog; a folder the app refuses (its own data folder) is refused with a sentence.
+- [ ] Step 3: add a weekly slot in the week view — «Ta opp automatisk» and «Start automatisk med maskinen» switch on; «Senere» skips the step. Quit mid-sequence and relaunch: first run comes back.
+- [ ] The consent card on **Ta opp** asks once; «Nei takk» is as good as «Ja».
 
 - VERIFIED-BY: e2e/first-run.spec.ts::den første tiden slår på «Ta opp automatisk» og automatisk start
 - VERIFIED-BY: e2e/first-run.spec.ts::bunnlinja forlater sekvensen, og chippen fører tilbake til steget man sto på
@@ -245,605 +44,162 @@ tier; only the native window/DB boot itself stays a rig observation:
 - VERIFIED-BY: e2e/onboarding.spec.ts::«Ja, del anonymt» grants consent and finishes the wizard
 - VERIFIED-BY: e2e/onboarding.spec.ts::«Nei takk» declines — and the app is otherwise identical
 - VERIFIED-BY: e2e/onboarding.spec.ts::a backend that cannot record the answer does not trap the operator
-
----
-
-## 3. «Hvilken lyd?» → the meter moves → the channel pair [HW]
-
-Fase B folded the 32-tile channel grid into ONE screen with three things on it:
-which device, which channel pair, and a hearing test that answers the only
-question a volunteer actually has — _do we hear it?_
-
-1. On **Opptak**, press **«Endre»** on the source card in the left column (or
-   **«Velg lyd»** if nothing is chosen) — the whole «Hvilken lyd?» screen folds
-   out in place, under the card, with Start still visible.
-   - **Expected:** the devices are listed as cards — «Maskinens egen mikrofon»
-     (marked "Kun for test, eller hvis dere ikke har mikser"), «USB / Ekstern»,
-     and any mixer as «Miksebord · N kanaler». A device the machine no longer
-     has says «Finner ikke {name}» in amber, not «Tilkoblet ✓».
-2. Speak / tap the mic (or send signal on a mixer channel).
-   - **Expected:** the meter moves and the WORD under it changes — «Vi hører
-     ingenting» → «Vi hører lyd» → «For høyt». The word is read from PEAK, not
-     RMS, so "too loud" is about the peaks. A dead-flat meter while you speak =
-     the OS denied mic access (see §0) or the wrong device is active.
-3. On a multi-channel device, pick the **channel pair** («Hvilke kanaler?» —
-   the ones with signal light up), then press **«Bruk denne»**.
-   - **Expected:** device, name, channel count and pair land in ONE save with
-     ONE «Lagret ✓». They are four keys that must arrive together, so this is a
-     deliberate button rather than an auto-apply: `useSetting` owns one key and
-     has one receipt, and four keys landing separately is how half a device
-     choice gets stored. Pressing it with nothing changed says «Ingenting er
-     endret.» instead of a false receipt.
-   - **Expected:** the status line and the question agree. «Alt er klart» while
-     question 1 sits amber saying «Finner ikke Behringer X32» is the seam P1a
-     closed — if you ever see the two disagree, that is a bug worth the report.
-4. With no device at all: **«Finner ingen lydenheter»** and a **«Søk igjen»**
-   button — not an empty list that looks like a still-loading one.
-5. **D2, and it is a hardware rule, not cosmetics:** with the card folded out
-   there are **two meters** on screen — the card's own and the page's. They are
-   one refcounted session on the device. Press **«Start opptak»** with the card
-   still open.
-   - **Expected:** the card collapses and BOTH meters leave the tree before the
-     engine is asked for the device. A meter left standing would hold the
-     refcount above zero and ask for exactly the device the recorder just took,
-     in the middle of a service.
-
----
-
-## 4. Camera — the picture, and then the file [HW]
-
-There is a live camera picture in two places — **Opptak** and the recording
-overlay — and since **C4b** both come from the SAME source: the backend's one
-camera session (`camera_preview_start`). The backend opens the camera when the
-Opptak page shows the camera card, makes a small JPEG (≤ 640 px, ~4 per second)
-from it, and the recording then records from that very session. Nothing hands
-the camera over: not at **Start**, not at **Stopp**, and not at the fragment
-boundaries of a long recording. The webview never opens the camera
-(`getUserMedia` is gone), so the picture you see and the file you get come from
-the same camera by construction.
-
-1. On **Opptak**, turn on the **«Ta med kamera»** card's toggle and pick the
-   camera in the body that folds out under it.
-   - **Expected:** the toggle opens the body by itself — there is no separate
-     «Endre» button on the two add-on cards, because a second affordance beside
-     a toggle that already opens the body is two ways to do one thing.
-   - **Expected:** the card states what that camera can deliver («Kameraet
-     leverer maks 1080p · 30 bilder i sekundet»), or says plainly that it could
-     not read that rather than promising a resolution it has not checked.
-   - **Expected:** turn the add-on OFF again and the card's value line changes
-     to what the add-on _does_ («Ta opp video sammen med lyden.») — never the
-     name of a camera that is not going to be used. A camera name on a switched-
-     off add-on reads as «this is what will happen».
-2. Look at the top of the right-hand column (you are already on **Opptak** —
-   nothing to navigate to).
-   - **Expected:** a 16:9 frame above the card stack showing what the camera
-     sees, moving (~4 pictures a second). With «speilvend» on in the camera
-     body the picture is mirrored, as the recording will be.
-   - **Expected on a denied permission:** «Kameratilgang nektet — sjekk
-     Systeminnstillinger», never a blank box and never «Ingen kameraer funnet»
-     (§0).
-   - VERIFIED-BY: e2e/record.spec.ts::kamera på og valgt: bakenden bes om kameraet ved NAVN, og bildet fra økta står i rammen
-   - VERIFIED-BY: e2e/record.spec.ts::speilvendt opptak ⇒ speilvendt bilde: det som vises er det som tas opp
-   - VERIFIED-BY: e2e/record.spec.ts::nektet tilgang og «svarte ikke» er TO svar, ikke ett
-3. Start a recording (§5 with video) and let it run ~30 s.
-   - **Expected:** the picture does NOT blink as you press Start: the overlay
-     comes up with the picture already in its frame, next to the meter (plus
-     the «Kamera <name>» chip, which is still only a claim about the setting),
-     and it keeps moving. No «Starter kamera…», no black gap.
-   - **Expected if the picture never arrives:** the frame keeps saying «Starter
-     kamera…». That is the honest state — the camera session has delivered no
-     frame — and it is the first place a dead camera shows up.
-   - VERIFIED-BY: e2e/record.spec.ts::⚠️ bildet blinker IKKE ved Start og Stopp: én økt, aldri lukket, aldri «Starter kamera…»
-   - VERIFIED-BY: e2e/record.spec.ts::viser økta sitt bilde og måler seg på headeren
-   - **Windows (C0a):** the FIRST video recording on a machine probes the
-     hardware encoders (`h264_nvenc` → `h264_qsv` → `h264_amf` → `h264_mf` →
-     `libx264`) with a 0.2 s test clip and stores the first that works in
-     `video-encoder.json` (Local AppData, per machine). **Expected:** the start
-     takes a few seconds longer that one time; the next start does not. Task
-     Manager shows far less CPU than software x264 did. The probe cannot run on
-     a Mac (no such encoders in the macOS sidecar); the argv per encoder is
-     covered by golden tests in `video_encoder.rs`, the CPU claim by
-     `docs/RIG-DAY.md` (c0a). If the stored hardware encoder fails on the first
-     frame, the video track falls back to libx264 by itself and the stored
-     choice is forgotten (C3b, `note_encoder_fallback`).
-   - **Keyframe every 2 s (C0b):** every video recording is encoded with
-     `-g <2×fps> -keyint_min <fps>`, whatever the encoder. **Check:** after a
-     30 s video recording, `ffprobe -v error -select_streams v -skip_frame nokey
--show_entries frame=pts_time -of csv=p=0 <file>.mp4` lists a keyframe at
-     0, 2, 4, 6 … seconds (x264 may add one early on a hard scene cut, never
-     later than 2 s after the previous). Proven on a Mac with `testsrc2`
-     through the exact argv (see the PR); the real-camera run is the
-     `docs/RIG-DAY.md` (c0b) item.
-   - **Camera drops out and comes back (C5a):** pull the USB cable of the
-     recording camera (or, on a Mac, move the Continuity iPhone away) and put
-     it back after ~10 s, while the recording runs. **Expected:** the sound has
-     no gap and the recording does not stop or split; the picture freezes for 2 s,
-     goes black, and returns by itself within a few seconds of the camera being
-     back, on the SAME camera (a different camera in the same port is not taken
-     over). The log says `camera reconnect: the camera has dropped out …` and
-     `… is back — session re-opened on the same id`. Unit-proven with a synthetic
-     camera (`camera::reconnect::tests`, and the end-to-end
-     `camera::preview::tests::a_camera_that_drops_out_mid_recording_…`); the
-     real-camera runs are `docs/RIG-DAY.md` (v7) and (v8).
-   - **Dropped frames (C3c):** if the encoder falls behind, the video track
-     drops the oldest camera frame (never the audio) and counts it. The
-     recording overlay then shows a calm note, «Kameraet henger litt etter, så
-     noen bilder er hoppet over. Lyden er ikke berørt.», without a number and
-     without an alert. On a healthy machine it must NOT appear during a smoke
-     test. The count also feeds the opt-in `video.frames_dropped` telemetry
-     counter. The long runs are `docs/RIG-DAY.md` (v).
-4. Stop, and open the file.
-   - **Expected:** the mp4 has a video stream with picture in it. The preview is
-     evidence that frames reached the ENGINE; only the file proves they were
-     written.
-5. Stop, and look at **Opptak** straight away.
-   - **Expected:** the picture is already there and never went away — no 3 s
-     wait (`PREVIEW_RESTART_MS` is gone): the recording gives the same running
-     camera back to the preview when it stops.
-   - **Expected on a long recording:** the picture does not stutter at a
-     fragment boundary (a reconnect or the 4 GiB split); the next fragment
-     records from the same session.
-6. App still alive but no video in the file = check camera permission (§0). App
-   vanishes = permission string missing/denied and the OS killed it.
-
----
-
-## 5. Record 30 s → stop → history row [HW]
-
-Since **v0.6.0** audio capture is the **native Rust engine** (cpal → ring
-buffer → own WAV writer) — ffmpeg is not in the audio capture path, and since
-A5b there is no setting or fallback that puts it back (`classic_ffmpeg_audio` is
-gone). Since **C3b** video sessions record the same way: the sound through the
-native engine, the camera read natively beside it, and ffmpeg only encoding the
-picture (one video-only ffmpeg per fragment). There is no ffmpeg capture left.
-
-1. On **Opptak**, press **«Start opptak»** (there is no modal any more — the
-   source, the camera and the filename are answered by the cards on this very
-   screen, so start is one button).
-   - **Expected:** the overlay comes up and the status line turns red («Tar
-     opp» — red never means anything else in this app); with `RUST_LOG=debug`
-     the progress you see comes from the **native writer's byte counter** (for
-     video sessions too, since C3b).
-   - **Also expected, before you press it:** with no source chosen the button
-     is off AND says why («Start er sperret til lyden er valgt…») — it is
-     `aria-disabled`, so a keyboard user can still reach it to hear the reason.
-     A grey button with no explanation is the failure this replaced.
-   - The start seam (`start_recording`, once), and the refusal path where the
-     engine says no and the operator gets the localized reason on a screen
-     that stays put:
-   - VERIFIED-BY: e2e/recorder.spec.ts::manual start flips the app into the recording overlay
-   - VERIFIED-BY: e2e/recorder.spec.ts::a start the engine refuses keeps the modal open and says why
-   - The page sends a name, a cap and the video toggle — **never a path**.
-     Since security finding E1 the recording's folder and file name are
-     planned in Rust, from the profile, and a path smuggled into the request
-     goes nowhere:
-   - VERIFIED-BY: e2e/record.spec.ts::kilden er valgt og til stede: Start kaller start_recording én gang — uten sti
-   - VERIFIED-BY: app/lib/api-shim-record.test.ts::sender aldri en sti — heller ikke når noen gir shimmen en
-   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::a_renderer_supplied_path_never_reaches_the_engine
-   - …and the file still lands exactly where, and as, it did before that fix:
-     the opts reaching the engine are byte-identical to what the old
-     plan-then-start round trip delivered, for default and Norwegian names,
-     a cap, video on/off, Core Audio / ASIO / WASAPI devices, a special with
-     its own sound card in the profile, and a same-day `_2` collision:
-   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_matches_what_main_planned
-   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_equals_the_old_plan_then_start_round_trip
-2. Let it run ~30 seconds, talking so the silence-watcher does **not** fire.
-3. Stop the recording.
-   - **Expected:** the confirmation is the way round it should be — **«Fortsett
-     å ta opp» is the primary button and the Enter choice**, «Stopp» is the
-     secondary. A dialog whose default answer ends the service recording is the
-     one this replaced.
-   - **Expected:** a graceful stop — the engine raises the stop flag and does a
-     **bounded join** of the capture/writer threads (no process kill). ffmpeg
-     only appears at stop if a **delivery encode** (e.g. WAV → FLAC/AAC) runs.
-     The finalizing overlay stays up and says the file is safe meanwhile; then
-     a **«Opptaket er lagret»** card stays on screen (it does not fade like the
-     old toast did), and a **new row** appears in **Redigering** with a plausible
-     **duration (~30 s)** and **file size (> 0)**.
-   - The stop seam (confirm guard → `stop_recording` once → an explicit
-     finalizing overlay that waits for a terminal engine event):
-   - VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
-4. Confirm the file exists on disk at the path shown — **«Vis i Finder»** on
-   the receipt card is the shortest way, and it says so honestly («Fant ikke
-   fila på disken.») if the file is not where the row claims. The card's
-   **«Rediger»** and **«Vis i Finder»** act on the history ROW id that
-   `recording://finished` carries (Rust wrote the row just before it); with no
-   row they are off, with the same reason on hover, and never silently do
-   nothing.
-   - VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
-   - VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
-   - VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id
-   - **Expected:** in the save folder from Oppsett, named by the profile's
-     filename pattern — the same folder and name a build from before
-     security finding E1 gave (RIG-DAY «(e1)» / «(we1)»).
-
-**Also worth doing once, because it is the promise the window makes:** start a
-recording and then close the window with the red button. The recording must
-keep running (the app lives on in the tray) — that sentence was untrue until
-P3 made it true in Rust. Then press ⌘Q while recording: it must ask ONE more
-time, and on «Stopp» it waits until the file is safely written before the
-process exits.
-
-> [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device
-> (preroll runs on the native buffer only since A5a). A basic single-segment 30 s capture is the
-> smoke-test target here.
-
----
-
-## 5b. Recording-health telemetry — prove the stutter/lag fixes [HW]
-
-This is the **verification loop** for the 2026-06 perf/stability work. The app now
-records its own health automatically during every recording (Pillar 0).
-**Scope note (C3b):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
-xrun/discontinuity lines — only exist in history rows recorded BEFORE C3b (the
-ffmpeg capture is gone). **Every session now** reports `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
-WASAPI themselves report through cpal 0.18 — counted by the engine, no stderr
-involved; part of `xruns` in the file) plus an **exact
-frame-count cross-check**
-(frames written vs ffprobe/wall clock, with a verdict + REC-LOSS alarm). The
-key "recording mode lags" signal — how often the live-levels IPC channel was
-**full** (`levels_dropped`) — applies to both. Everything persists to
-`last-recording.json` + a rolling `recording-telemetry-history.json`.
-
-⚠️ **The Diagnose screen is gone** (removed in the rent-bord pruning, F2): there
-is no «Kjør diagnose», no «Test-opptak» button and no capture bench any more.
-The numbers are still written to disk after every recording — read them there.
-
-**Read the numbers after a normal recording:**
-
-1. Record a service (or ~15 s of speech) normally, then stop.
-2. Read `<app-data>/last-recording.json` (and the rolling
-   `<app-data>/recording-telemetry-history.json` for the trend). `<app-data>`
-   is resolved in §13's table.
-   - **Expected:** the fields `drops`, `xruns`, `levelsDropped` (the live-levels
-     IPC channel was full) and `exitOk`, with the newest recording first in the
-     history file.
-   - **Healthy target:** `levelsDropped 0` + clean exit, and per session
-     type: **native audio** → `ring_overrun_samples 0`, `xruns 0` (this is
-     `native_xruns` — a real count from the audio system) + the frame-count
-     cross-check verdict exact (video sessions too, since C3b; `drops` stays 0 —
-     it only ever counted the ffmpeg capture).
-   - A degraded recording raises the persistent `recording://quality` alarm (the
-     verdict is `selftest_verdict`, kept for exactly this check).
-
-**Prove the telemetry has teeth (it must DETECT a bad recording):**
-
-3. Start a CPU hog (e.g. `yes > /dev/null &` ×4, or a heavy export), record ~15 s,
-   stop, re-read the file.
-   - **Expected:** the numbers rise — `levelsDropped` and/or `drops`/`xruns` go
-     up. If they DON'T move under deliberate stress, the instrumentation is
-     wrong — report that.
-4. Kill the hog, record again → numbers return toward 0.
-
-**Per-lever check (paste the before/after numbers into the PR / release notes):**
-
-| Lever                                    | What changed                          | Look at                                    | Expected                                  |
-| ---------------------------------------- | ------------------------------------- | ------------------------------------------ | ----------------------------------------- |
-| **B** scrolling-waveform redraw → 30 fps | less main-thread work while recording | `levelsDropped` (`levels_dropped`)         | lower than before, esp. under load        |
-| **A** forced sample-rate surfacing       | resampling = a stutter cause          | the stored `sampleRateMode`                | `auto` = no resampling; a forced rate may |
-| **C/D/E** (data-gated)                   | buffer/back-pressure/disk             | only pursue if the above numbers stay high | —                                         |
-
-> [HW] The Pass/Warn/Fail thresholds (`selftest::FAIL_GAP_SEC` …) are
-> conservative defaults — calibrate them from the FIRST known-good capture on the
-> Behringer rig (a clean 15 s take's numbers are the reference). The verdict is
-> pure + unit-tested; only the thresholds need rig confirmation. Sessions are
-> judged by overruns, the OS's xruns and the frame-count cross-check (the ffmpeg
-> stderr-phrase matching left with the ffmpeg capture in C3b).
-
----
-
-## 6. The library row → reveal in folder [HW]
-
-⚠️ **Notes can no longer be EDITED** — an owner decision in P3. A note that is
-already in the database is still shown on its row; there is no modal to write a
-new one, and nothing calls `recording_update_note`. See «Flater som ikke finnes
-lenger».
-
-1. Open **Redigering** (the list is what it shows with no file open). The new
-   recording is the top row.
-   - **Expected:** the row is titled by WHEN, not by filename — «Søndag 16.
-     august 2026 · 11:00» — with the filename underneath. A camera session
-     writes two files (`{stem}.mp4` and the `{stem}.wav` sidecar) and must show
-     as **ONE** row with a «Video» chip, not two.
-   - **Expected:** a recording under half a minute reads «Under 1 min», never
-     «0 min». A recording whose duration the database does not know reads «—»
-     and claims nothing. Those are two different facts and the row must not
-     spell them the same way.
-   - **Expected:** an existing note (written by an older build) still shows on
-     its row.
-2. Use **«Vis i Finder»** on the row.
-   - **Expected:** the OS file manager opens with the recording selected. This
-     goes through the Rust command `recordings_reveal` — the webview holds no
-     `opener:` permission — which takes the history ROW's id and shows the file
-     the database holds for it (never a path from the page). The same goes for
-     «Siste opptak» and the receipt after a recording; the export receipt uses
-     `recordings_reveal_export` and the token the export's result carried.
-   - VERIFIED-BY: e2e/library.spec.ts::«Vis i Finder» på en rad sender radens id til Rust, aldri stien
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_recording_is_revealed_by_its_row_id_wherever_it_lies
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::an_id_with_no_row_is_refused_and_a_path_is_no_id
-   - Change the save folder (Opptak → «Hvor skal opptakene?») to another folder
-     and press **«Vis i Finder»** on a row recorded BEFORE the change.
-     **Expected:** it is still shown (the history knows it).
-   - In «Hvor skal opptakene?», choose your HOME folder itself (the one named
-     after you). **Expected:** the folder shown does not change, and the toast
-     says to choose a folder inside it, such as «SundayRec» in Dokumenter — not
-     just «Kunne ikke lagre innstillingen». (An app or a Keynote/Logic project
-     is refused the same way, but the native picker rarely lets you pick one;
-     the check is there for a folder the picker does let through.) A folder
-     chosen BEFORE this version is never questioned: on an upgraded machine
-     whose folder would now be refused, recording goes on exactly as before.
-   - The folder window is the app's own (the A2 family): **«Velg mappe …»** in
-     «Hvor skal opptakene?» opens the OS folder window from Rust, which can
-     create a folder, and what it answers is vetted and stored by Rust — the
-     page shows the folder Rust stored. Cancelling the window changes nothing.
-     Saving any other setting afterwards (change the language, say) leaves the
-     folder as it was.
-   - The folder must not be the app's own data folder either (`<app-data>/recovery`
-     and the like): that one is refused with a sentence of its own. (The old
-     localStorage hand-over from the Electron app is gone — F2.)
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_save_folder_in_the_apps_own_data_folder_is_refused
-   - VERIFIED-BY: app/pages/settings/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_renderer_cannot_set_a_folder_the_vet_would_have_accepted
-   - VERIFIED-BY: e2e/settings-plan.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
-   - VERIFIED-BY: e2e/settings-plan.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
-   - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
-     Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
-     Finder»** on the receipt. **Expected:** the exported file is shown.
-     Restart the app: the receipt is gone, and nothing else can reveal that
-     export any more — that is the policy, not a bug (the button's token is
-     only good for this session).
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_forged_foreign_or_misplaced_export_token_is_refused
-   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_symlink_swapped_in_at_a_delivered_name_is_refused
-   - On a missing file (delete one by hand in Finder, then press its row's
-     button) **Expected:** the toast «Fant ikke fila på disken.», not silence.
-3. Press **«Slett»** on a row.
-   - **Expected:** no question — the row moves to the trash and a toast offers
-     **«Angre»**. Delete is undoable, so asking first would be a question with
-     no stakes. The **Papirkurv** entry is always visible (it says «Papirkurven
-     er tom» when it is), because a link that hides itself when empty is a link
-     nobody learns exists. Inside it, «Legg tilbake» restores and «Slett nå» is
-     the one genuinely dangerous button — and there **CANCEL is the Enter
-     choice** and the confirm is a red SECONDARY.
-   - «Slett» sends the history rows' ids (`trash_move` takes `recording_ids`,
-     never paths); Rust finds the files and moves them with their sidecars.
-     Retention does not come through this command.
-   - VERIFIED-BY: src-tauri/src/commands/trash.rs::a_recording_is_trashed_by_its_row_id_with_its_sidecar_and_nothing_else
-   - VERIFIED-BY: src-tauri/src/commands/trash.rs::an_id_the_history_does_not_know_refuses_the_whole_call
-4. **Retention** (owner decision 2026-08-31): turn on «Slett gamle opptak» on
-   Avansert with a window older than an existing recording, restart the app.
-   - **Expected:** the old recording MOVES to the Papirkurv — never a hard
-     delete; the trash's own 30-day purge is the delete, so the full window is
-     n + 30 days. A pass that moved something says so in a toast («N gamle
-     opptak ble flyttet til papirkurven») whose action opens the Papirkurv; a
-     pass with nothing to move is silent. The pass repeats every 12 h for a
-     machine left running.
-   - VERIFIED-BY: e2e/retention.spec.ts::en flytting sier fra — toasten teller opptakene og «Vis papirkurven» går dit
-   - VERIFIED-BY: e2e/retention.spec.ts::en oppstart uten noe å flytte er stille
-   - VERIFIED-BY: src-tauri/src/commands/db.rs::prune_moves_into_the_trash_and_never_hard_deletes
-
----
-
-## 6b. History search [HW]
-
-The filter/grouping/stats math and the substring search are pure and
-gate-tested (`history-core`); what a rig confirms is that the search box
-wiring behaves on real data. (The transcript half of this section — hits
-inside sermon text — left with whisper in R2 «Frivilligen først».)
-
-1. Record two or three sessions (repeat §5) so **Redigering** has several rows.
-2. Type into the search box («Søk etter dato eller navn»).
-   - **Expected:** the list filters live by filename, date, or note text
-     (case-insensitive); the count line above it describes the **filtered
-     view** — the same rows as the list, so the two can never disagree. A query
-     that matches nothing says «Ingen treff for «…»» with the explanation of
-     where it looked, which is a different sentence from the
-     never-recorded-anything empty state.
-   - VERIFIED-BY: e2e/history.spec.ts::the search box filters live, and a miss says so in its own words
-
-⚠️ **The Lyd / Video filter chips are gone.** «Video» survives as a FACT on the
-row (it says a session has a camera file), never as a filter. Sortable columns
-went with them. See «Flater som ikke finnes lenger».
-
----
-
-## 7. ~~Cloud connect + upload~~ — REMOVED (R1 «Frivilligen først»)
-
-Cloud backup (Drive/Dropbox/OneDrive) left the app 2026-08-23. The file on
-disk is the hand-off; the section number stays so cross-references still
-resolve.
-
----
-
-## 8. ~~Email alerts~~ — REMOVED
-
-E-mail alerts left the app: both the SMTP alerter (the `email` cargo feature,
-`lettre`, the password in the OS keychain) and the SundaySuite e-mail relay
-(`notify.sundaysuite.app`, the outbox in `notify_outbox`, the «kvittering» when
-a scheduled recording finished). The setup was too heavy for a volunteer, and
-SundayRec no longer sends anything off the machine to report a failure.
-
-What tells the operator now is the **native OS notification** on the recording
-machine: a recording that dies, a scheduled start that fails, and a scheduled
-recording that never happened always raise one, and no setting silences them
-(§11). The «Hvem får beskjed hvis noe går galt?» card on Opptak answers «På
-maskinen».
-
-The section number stays so cross-references still resolve.
-
-**Upgrading an install that had e-mail set up** needs no step any more: the
-one-time «E-postvarsler er fjernet» banner and the clean-up of the old e-mail
-settings keys were removed in the rent-bord pruning (F2). The typed settings
-simply ignore the old keys, and the keychain is never touched (since v0.25.0;
-the old `no.sundayrec.app` / `email.smtp_password` entry, if an install ever
-had one, can be removed by hand in Keychain Access / Credential Manager).
-
----
-
-## 8b. Notifications on the machine [HW] (no feature)
-
-Every failure SundayRec reports is a native OS notification (§8), so these
-steps prove the operator actually sees them. Run on a signed Mac build AND on
-Windows.
-
-1. **Is the OS showing them?** Opptak → «Hvem får beskjed hvis noe går galt?» →
-   the «Varsler i systemet» row.
-   - **Windows, notifications on:** «Slått på — SundayRec kan si fra her.», the
-     card is not yellow. Turn notifications off for SundayRec (Settings →
-     System → Notifications), click back into the app.
-   - **Expected:** the card turns yellow («Varsler er slått av», «Sett opp»),
-     the row says «Slått av for SundayRec.», and «Åpne innstillinger» opens the
-     Windows notification settings.
-   - **macOS:** the row says it cannot be read on this computer — the
-     permission is not queried on macOS yet (`docs/VARSLING.md`). «Åpne
-     innstillinger» opens System Settings → Notifications.
-   - VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
-   - VERIFIED-BY: e2e/settings-plan.spec.ts::varsler slått av i OS-et sier det, og peker på bryteren
-2. **«Send testvarsel»** shows a notification titled SundayRec.
-3. **During a take, with the window hidden or behind another app:** unplug
-   the USB mixer. **Expected:** ONE notification «Lydkilden forsvant …». Plug
-   it in, unplug again — no second one this take. With the window in focus,
-   only the banner shows. Same once-per-take rule for silence, missing sound
-   and low disk.
-   - VERIFIED-BY: crates/sundayrec-core/src/notify.rs::a_take_alert_reaches_the_os_only_when_nobody_is_looking
-   - VERIFIED-BY: src-tauri/src/notify/take.rs::a_new_take_lets_every_kind_be_said_again
-4. **Silent start failures are no longer silent:**
-   - a scheduled stop with nothing recording says nothing;
-   - a wake that cannot be armed (e.g. a Mac where `pmset` needs admin) raises
-     «SundayRec får ikke satt opp vekking …» once per launch;
-   - a service missed while the machine was off for up to a week is reported
-     once when it is next opened;
-   - a late start whose options cannot be built (e.g. a missing save folder)
-     raises the late-start failure notification.
-   - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_stop_with_nothing_recording_is_not_announced
-   - VERIFIED-BY: crates/sundayrec-core/src/wake.rs::a_wake_that_cannot_be_armed_is_told_to_the_operator
-   - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::missed_check_looks_back_a_week_and_no_further
-
----
-
-## 9. Menubar tray [GUI] — `tray` (IN DEFAULT)
-
-The tray menu-model (localized items, actions, tooltip, icon precedence) is
-unit-tested in `sundayrec-core::tray`; the native menubar item is
-**GUI-UNVERIFIED**. (The `sundayrec://` deep-link scheme left with the
-Sunday-suite integrations in R1 «Frivilligen først».) `tray` is in the **`default` feature set**, so it is
-present in every release build and in a plain `npm run tauri dev`.
-
-As of **R7** the tray is actually **installed** in `setup()` whenever the
-feature is on (`tray::install` builds the `TrayIcon` from the core menu
-model and wires `on_menu_event` → `handle_menu_event`). The menu
-**start/stop/show** actions are wired to the backend: **Stop** calls
-`RecorderEngine::stop()` directly; **start** emits
-`tray://action` for the renderer to turn into the matching `invoke(...)`;
-**show**/**quit** are handled in-process.
-
-```bash
-npm run tauri dev   # tray is on by default — nothing to add
-```
-
-In the new shell a tray action is a **signal**, not a synthesised click: the
-router sets `pendingAction`, navigates to where the action belongs, and the
-screen picks it up when it is ready. The old hooks clicked a button that had to
-exist, on a page that had to be showing, in a DOM that had to be finished —
-three assumptions that have each failed separately.
-
-1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
-   - **Expected:** the menu shows status → [next recording] → open → start/stop
-     → folder → quit, in the UI language.
-   - ⚠️ **There is NO «Sjekk systemet» and NO «Diagnostikk» row.** The tray
-     carries no system action on purpose: the status row already answers «is
-     the system OK?» at a glance (the diagnose page itself was removed in F2).
-     Report a missing check item as expected, not as a bug.
-   - VERIFIED-BY: crates/sundayrec-core/src/tray.rs::the_tray_carries_no_system_check_item
-2. Click **Stopp opptak** while recording.
-   - **Expected:** the recording stops (the `RecorderEngine::stop()` path), the
-     overlay comes down and a new row appears in **Redigering**, even with the
-     window unfocused.
-3. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
-4. Click **Start opptak** from the tray with no source chosen.
-   - **Expected:** it navigates to **Opptak** and does NOTHING else — the card
-     above the button says why. Starting from the menubar on a source nobody
-     chose would be the same lie, just in a different place.
-5. Click **Åpne opptaksmappen**.
-   - **Expected:** the folder opens AND the app lands on **Redigering**, so you
-     also see the recordings you just asked to see. The folder is resolved by
-     the Rust command `recordings_open_folder` (no argument from the webview):
-     the chosen save folder, or `Documents/SundayRec` when none is chosen —
-     which is the default, and was the case the old renderer-side call skipped.
-   - With NO save folder chosen and no `Documents/SundayRec` yet (a fresh
-     install that has never recorded) **Expected:** nothing opens, nothing is
-     created, and the toast says the recordings folder does not exist yet, that
-     the first recording creates it, and to check the disk if it is an external
-     one. (v0.25.0-beta.1 said only that something did not answer; before that
-     the click did nothing at all.)
-   - VERIFIED-BY: app/lib/api-shim-files.test.ts::en mappe som ikke finnes ennå, sies med vanlige ord — og huskes
-6. There is no preflight row to click (step 1). If you want the answers a
-   preflight would give you, open the **«Hvilken lyd?»** card on Opptak — that
-   is where they live now.
-   - ⚠️ The renderer still ARMS `run-preflight`: the router routes it to Opptak
-     and `RecordPage` folds the sound card open in place, without a screen
-     change. Nothing emits it, so the handler has no caller today. It is written
-     down here rather than deleted because a handler nobody calls is exactly the
-     kind of thing that gets re-wired by accident — see `docs/APP-SHELL.md`
-     §D2 «Rutekontrakten».
-
-> [GUI] The `tauri::tray` item install and the menu paint need a real desktop
-> session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
-> (the app's default window icon is reused) — see docs/NEEDS-RICHARD.md PU-2.
-
----
-
-## 10. ~~Podcast RSS publish~~ — REMOVED (R1 «Frivilligen først»)
-
-The RSS feed, the `publish` feature and the Podcast card left the app
-2026-08-23.
-
----
-
-## 10b. ~~Whisper transcription~~ — REMOVED (R2 «Frivilligen først»)
-
-Transcription (the `whisper` feature, whisper-rs/libwhisper — the build's only
-C/C++ dependency — the model download, the Transkribering panel, SRT/VTT/TXT
-export and the transcript search) left the app 2026-08-23. Transcripts are
-better served by tools built for them; the section number stays so
-cross-references still resolve.
-
----
-
-## 10c. ~~Live cue bridge~~ — REMOVED (v0.14 feature, core consumer gone in R1)
-
-`core/integrations/live_bridge.rs` left with the Sunday-suite integrations
-2026-08-23.
-
----
-
-## 11. OS wake-timers + scheduled launch [HW] (already wired, no feature)
-
-The scheduler→recorder launch and the OS wake plumbing are wired in
-`src-tauri/src/{scheduler,wake}` (no feature flag — they were part of Fase 5).
-The next-fire / catch-up / skip _decisions_ are unit-tested in
-`sundayrec-core::{schedule, wake}`.
-
-**The two mechanisms, so you know what you are testing:**
-
-- **macOS** — scheduling is `pmset schedule wake`, run unelevated first and
-  escalated to ONE `osascript … with administrator privileges` prompt when that
-  fails (writing a power event needs root; there is no unprivileged path).
-  _Reading_ what is scheduled goes through IOKit
-  (`IOPMCopyScheduledPowerEvents`, unprivileged), with `pmset -g sched` kept as a
-  fallback because Apple Silicon is known to hold schedules `-g sched` does not
-  list.
-- **Windows** — scheduling is an in-process `SetWaitableTimer(fResume = TRUE)`.
-  No UAC prompt, no scheduled task left on the machine — **and no wake at all if
-  SundayRec is not running.** That is the model: the app autostarts and lives in
-  the tray. Neither platform can start a machine from S5 (full shutdown).
-
-The command shaping, the AppleScript/shell quoting, the escalation ladders, the
-`wmic`→CIM fallback and the dedup invariants now have unit tests over a fake
-shell and fake timers:
-
+- VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying counters shows them, not «ingenting å sende»
+- VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
+
+## 3. Ta opp — record 30 s
+
+- [ ] Source and meter on the left, the big **Start** on a real sound card; the camera picture on the right when camera is on.
+- [ ] Start → overlay → Stop (confirm) → a history row and a receipt with «Vis i Finder» / «Rediger».
+- [ ] Long recording with «Del opp»: no audio lost at the file change (audio-only); a video recording has a short pause at the file change.
+- [ ] Unplug the interface mid-recording: the dead-channel and device warnings say so in plain words.
+
+- VERIFIED-BY: e2e/record.spec.ts::kamera på og valgt: bakenden bes om kameraet ved NAVN, og bildet fra økta står i rammen
+- VERIFIED-BY: e2e/record.spec.ts::speilvendt opptak ⇒ speilvendt bilde: det som vises er det som tas opp
+- VERIFIED-BY: e2e/record.spec.ts::nektet tilgang og «svarte ikke» er TO svar, ikke ett
+- VERIFIED-BY: e2e/record.spec.ts::⚠️ bildet blinker IKKE ved Start og Stopp: én økt, aldri lukket, aldri «Starter kamera…»
+- VERIFIED-BY: e2e/record.spec.ts::viser økta sitt bilde og måler seg på headeren
+- VERIFIED-BY: e2e/recorder.spec.ts::manual start flips the app into the recording overlay
+- VERIFIED-BY: e2e/recorder.spec.ts::a start the engine refuses keeps the modal open and says why
+- VERIFIED-BY: e2e/record.spec.ts::kilden er valgt og til stede: Start kaller start_recording én gang — uten sti
+- VERIFIED-BY: app/lib/api-shim-record.test.ts::sender aldri en sti — heller ikke når noen gir shimmen en
+- VERIFIED-BY: src-tauri/src/commands/recorder.rs::a_renderer_supplied_path_never_reaches_the_engine
+- VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_matches_what_main_planned
+- VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_equals_the_old_plan_then_start_round_trip
+- VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
+- VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
+- VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
+- VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_scheduled_start_with_video_on_hands_the_engine_the_camera_and_an_mp4
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_missing_device_finding_is_generic_with_no_params
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_card_and_the_notification_say_the_same_words
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::enheten som mangler beholder akkurat den teksten den alltid har hatt
+
+## 4. Opptak — list, editor and export
+
+- [ ] The list shows the recording; a click opens the editor on the same page, the back arrow returns to the list. «Åpne fil…» and a dropped file open too.
+- [ ] Waveform with two handles; cut, undo, play before/after. «Podkastklar lyd» on by default (−16 LUFS), off = as recorded.
+- [ ] «Eksporter» opens the sheet **as a sheet** (focus lands in it and returns on close — check in WKWebView and WebView2). Intro/outro via the native file dialog.
+- [ ] Trash tab: moved recordings arrive with their sidecar; «Tøm papirkurven» confirms with the count.
+
+- VERIFIED-BY: e2e/library.spec.ts::«Vis i Finder» på en rad sender radens id til Rust, aldri stien
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_recording_is_revealed_by_its_row_id_wherever_it_lies
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::an_id_with_no_row_is_refused_and_a_path_is_no_id
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_save_folder_in_the_apps_own_data_folder_is_refused
+- VERIFIED-BY: app/pages/settings/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::the_renderer_cannot_set_a_folder_the_vet_would_have_accepted
+- VERIFIED-BY: e2e/settings-plan.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
+- VERIFIED-BY: e2e/settings-plan.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
+- VERIFIED-BY: e2e/export-sheet.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_forged_foreign_or_misplaced_export_token_is_refused
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_symlink_swapped_in_at_a_delivered_name_is_refused
+- VERIFIED-BY: src-tauri/src/commands/trash.rs::a_recording_is_trashed_by_its_row_id_with_its_sidecar_and_nothing_else
+- VERIFIED-BY: src-tauri/src/commands/trash.rs::an_id_the_history_does_not_know_refuses_the_whole_call
+- VERIFIED-BY: e2e/retention.spec.ts::en flytting sier fra — toasten teller opptakene og «Vis papirkurven» går dit
+- VERIFIED-BY: e2e/retention.spec.ts::en oppstart uten noe å flytte er stille
+- VERIFIED-BY: src-tauri/src/commands/db.rs::prune_moves_into_the_trash_and_never_hard_deletes
+- VERIFIED-BY: e2e/history.spec.ts::the search box filters live, and a miss says so in its own words
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::opening_a_recording_reads_it_once_for_every_consumer_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::consumers_asking_at_once_share_one_read_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_ffmpeg_itself_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_ninety_minute_recording_is_decoded_once_or_skips
+- VERIFIED-BY: e2e/editor.spec.ts::a cut row shows its range and the ✕ really removes it
+- VERIFIED-BY: e2e/editor.spec.ts::lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting
+- VERIFIED-BY: e2e/editor.spec.ts::eksportsteget er ærlig om hvor filen havner
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_only_video_export_copies_the_picture_and_keeps_every_cut_in_sync_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_source_that_starts_late_is_copied_in_sync_too_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_recording_with_far_apart_keyframes_is_re_encoded_exactly_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_shorter_than_the_keyframe_gap_is_not_swallowed_or_skips
+- VERIFIED-BY: crates/sundayrec-core/src/video_copy.rs::a_start_snaps_back_to_the_keyframe_and_the_end_to_a_clean_split
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_power_cut_mid_export_is_reaped_from_a_picked_folder_on_the_next_launch_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_never_deletes_a_journalled_path_that_is_not_a_render_temp
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_does_not_follow_a_journalled_symlink_or_touch_a_directory
+- VERIFIED-BY: src-tauri/src/editor/export_journal.rs::a_temp_whose_folder_is_not_there_keeps_its_row_until_it_is_old
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_names_its_folder_only_by_token
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_folder_round_trips_as_a_token_and_shows_only_its_name
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_token_is_refused_with_its_own_code
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_folder_deleted_since_the_pick_is_refused
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_cancelled_pick_mints_nothing
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_folder_field_goes_nowhere
+- VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::resolving_refuses_a_folder_swapped_for_a_symlink_elsewhere
+- VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_store_is_bounded_and_evicts_the_oldest_first
+- VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::a_minted_token_resolves_to_its_place_and_only_as_its_kind
+- VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_same_place_again_reuses_its_token
+- VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_vet_refuses_a_protected_folder_and_a_file_in_one
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_places_and_nothing_the_webview_sent
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
+- VERIFIED-BY: e2e/export-sheet.spec.ts::en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes
+- VERIFIED-BY: e2e/export-sheet.spec.ts::et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes
+- VERIFIED-BY: e2e/export-sheet.spec.ts::en mappe som er borte når eksporten starter, sier det med egne ord
+- VERIFIED-BY: app/editor/export.test.ts::en mappe Rust avviser blir en setning, og målet bytter ikke i det stille
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_clip_pick_changes_nothing
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
+- VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
+- VERIFIED-BY: src-tauri/src/commands/media_filters.rs::the_jingle_picker_accepts_the_common_audio_formats
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips
+- VERIFIED-BY: src-tauri/src/editor/mod.rs::a_mastered_export_levels_the_sermon_not_the_jingles_or_skips
+- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti
+- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro huskes til neste gang: etter en omlasting står de der
+- VERIFIED-BY: e2e/export-sheet.spec.ts::en fil Rust avviser blir en setning, og forrige valg står
+- VERIFIED-BY: e2e/export-sheet.spec.ts::en jingle som er borte når eksporten starter, sier det med egne ord
+- VERIFIED-BY: e2e/export-sheet.spec.ts::med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes
+- VERIFIED-BY: app/editor/jingles-core.test.ts::video får aldri jingler, selv med begge valgt
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_recording_round_trips_as_a_token_and_shows_its_name
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_source_token_is_refused_with_its_own_code
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_recording_gone_since_the_open_is_refused
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_place_that_does_not_vet_grants_and_mints_nothing
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::the_webview_is_granted_exactly_the_canonical_file_it_opened
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_opens_by_its_id_and_the_webview_is_granted_its_file
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::an_id_with_no_row_is_unknown_and_a_path_is_no_id
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_whose_file_has_gone_says_so
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_file_opens_like_a_picked_one_and_carries_where_it_landed
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_folder_says_why_it_did_not_open
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::an_export_of_a_recording_that_is_not_open_is_refused_before_anything_else
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::an_old_shape_payload_names_no_source
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::every_source_refusal_has_a_sentence_in_the_renderer
+- VERIFIED-BY: src-tauri/src/commands/media_filters.rs::every_language_names_the_media_filters
+- VERIFIED-BY: src-tauri/src/db/store.rs::a_row_gives_its_file_by_id_and_a_made_up_id_gives_nothing
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::the_same_file_exports_to_the_same_place_through_a_token_as_by_its_path
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_with_no_saved_clip_is_no_intro
+- VERIFIED-BY: src-tauri/src/commands/settings.rs::a_pick_that_is_not_a_file_stores_nothing
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::the_requests_name_the_recording_only_by_token
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_open_known_takes_only_a_history_row_id
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_token_is_minted_by_a_listed_function_behind_a_listed_door
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_row_lookup_whose_answer_is_ignored_does_not_anchor_a_mint
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::the_asset_grant_opens_the_one_file_and_nothing_beside_it
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list
+- VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_under_a_name_the_recorder_does_not_write_gives_no_row
+- VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_that_names_a_protected_file_gives_no_row_and_deletes_nothing
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_command_that_mints_a_path_from_the_webview_is_found
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_hands_the_seam_the_resolved_places
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::an_export_that_ignores_the_resolved_places_is_found
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_guard_named_only_in_a_string_literal_does_not_count
+- VERIFIED-BY: e2e/editor.spec.ts::«Rediger» på en biblioteksrad åpner opptaket
+- VERIFIED-BY: e2e/editor.spec.ts::kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp
+- VERIFIED-BY: e2e/editor.spec.ts::«Etter» spilles av motoren, og Før/Etter er et bytte — ingenting gjengis
+- VERIFIED-BY: e2e/library.spec.ts::«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten
+- VERIFIED-BY: app/editor/export-core.test.ts::opptakslappen har setninger: åpne på nytt, borte, avvist — og jingelen
+- VERIFIED-BY: app/editor/loader-core.test.ts::kjenner source_missing: lappen peker på en fil som er borte (A2)
+- VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
+- VERIFIED-BY: app/editor/cuts.test.ts::skrives med opptakets lapp, aldri stien
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for
+- VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_command_with_a_forged_token_never_touches_the_disk
+
+## 5. Plan — week view and wake
+
+- [ ] Drag in an empty cell to add a slot (quarter-hour snapping), drag a block to move it, drag an edge to stretch; click opens the small editor. Keyboard: arrows, Shift + arrows, Enter, Delete.
+- [ ] Touch: drag works on a touch screen / pen in the real Tauri window (not just a mouse).
+- [ ] Scheduled start/stop on a real machine: a slot a few minutes ahead starts and stops by itself; the machine wakes from sleep for it (macOS admin prompt once; Windows wake timers).
+- [ ] «Test vekking» is blocked during a recording, with a reason.
+
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_stop_with_nothing_recording_is_not_announced
+- VERIFIED-BY: crates/sundayrec-core/src/wake.rs::a_wake_that_cannot_be_armed_is_told_to_the_operator
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::missed_check_looks_back_a_week_and_no_further
 - VERIFIED-BY: src-tauri/src/wake/plan.rs::mac_elevated_plan_is_byte_exact_for_a_normal_schedule
 - VERIFIED-BY: src-tauri/src/wake/plan.rs::mac_elevated_plan_keeps_a_hostile_owner_label_inside_the_literal
 - VERIFIED-BY: src-tauri/src/wake/mod.rs::mac_partial_failure_escalates_to_one_admin_prompt_for_the_whole_set
@@ -851,24 +207,6 @@ shell and fake timers:
 - VERIFIED-BY: src-tauri/src/wake/mod.rs::windows_clears_then_arms_one_waitable_timer_per_point
 - VERIFIED-BY: src-tauri/src/wake/mod.rs::engine_records_the_empty_key_so_a_re_add_re_registers
 - VERIFIED-BY: src-tauri/src/wake/mac_read.rs::live_iokit_read_is_callable_unprivileged
-
-What is left for the rig:
-
-The weekly times live on **Plan** (F6) as a **week view**: Monday–Sunday as
-columns, time running down (06:00 on top, scroll for the night), every fixed time a
-coloured block. Drag an empty area to add one (a plain click adds 90 min), drag a
-block to move it (also to another day), drag its top/bottom edge to change start/stop —
-all in 15-minute steps, never shorter than 15 minutes. A click on a block opens a small
-editor (day, exact start/stop, Delete). Keyboard: Tab to a block, arrows move
-(up/down 15 min, left/right a day), Shift + up/down resize, Enter edits, Delete removes.
-Today's column is tinted and a red line marks «now»; the scheduler's **next** recording is
-filled gold («Neste») and a recording that was missed this week carries «Ikke tatt opp».
-A time crossing midnight is drawn in two columns (Sunday night continues on Monday).
-Two times may not overlap — the scheduler records one thing at a time — and the sentence
-under the grid says which time is in the way. The master toggle «Ta opp automatisk» and
-«Start automatisk med maskinen» sit above the grid; the wake toggle, its sentence and
-«Test vekking» sit in the **«Vekking»** card under it. `?goto=plan:auto` lands on the toggle card.
-
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra i en tom flate lager en tid, rundet til kvarter
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra en blokk til en annen dag og et annet klokkeslett flytter den
 - VERIFIED-BY: e2e/plan-week.spec.ts::bunnkanten endrer slutten, toppkanten starten
@@ -878,1001 +216,72 @@ under the grid says which time is in the way. The master toggle «Ta opp automat
 - VERIFIED-BY: e2e/plan-week.spec.ts::overlapp avvises med en setning, og tiden står der den var
 - VERIFIED-BY: e2e/plan-week.spec.ts::en tid over midnatt tegnes i to kolonner og kan redigeres
 - VERIFIED-BY: e2e/plan-week.spec.ts::«Neste opptak» er fremhevet, og savnede opptak denne uka er merket
-
-⚠️ **The month calendar, the day detail and the wake-diagnostics card are gone**
-— the same information is the week view and one sentence now. The wake sentence is
-in the «Vekking» card on Plan next to the toggle: «Denne maskinen kan vekkes fra dvale.» /
-«… kan ikke vekkes — la den stå på.» / «… spør om administratorpassord første
-gang.» / «Vi vet ikke ennå …».
-
-**«Test vekking» (F1-R3/W6)** — a row under the toggle schedules a REAL OS
-wake two minutes out, without waiting for Sunday: `wake_test` +
-`wake_cancel_test` (the button becomes «Avbryt» while armed) + a failure/test
-log with `wake_failure_history` and «Tøm» (`wake_clear_failure_history`). Four
-commands out of the `unreachable` baseline, for exactly the reason the
-reachability audit itself gave for leaving them dark
-(`docs/APP-SHELL.md`: "rig tools waiting for a Mac where the wake actually
-fails"). Same F1-R3 pass also took `refreshWakeArmed()` OUT of the 60 s
-reserve poll — it used to ride along unconditionally, ~120 `pmset` spawns over
-a two-hour service — down to four named triggers
-(`app/lib/status/next-recording-core.ts::shouldRefreshWake`), never while a
-recording is running. The UI-visible half of both is now covered without
-hardware:
-
 - VERIFIED-BY: e2e/status-honesty.spec.ts::under et opptak rører ikke minuttpollen wake_verify i det hele tatt
 - VERIFIED-BY: e2e/status-honesty.spec.ts::et scheduler-neste-event UTENFOR opptak henter en fersk wake_verify
 - VERIFIED-BY: e2e/advanced.spec.ts::planlegger en ekte vekking, og «Avbryt» tar raden tilbake
 - VERIFIED-BY: e2e/advanced.spec.ts::en feilet test siterer DEN SAMME setningen som «Aktiver vekking»
 - VERIFIED-BY: e2e/advanced.spec.ts::«Test vekking» er sperret mens et opptak går, med en grunn
 - VERIFIED-BY: e2e/advanced.spec.ts::feilhistorikken viser hendelsene, og «Tøm» kaller SLETTEKOMMANDOEN
-
-What is NOT covered here, and stays [HW] in item 3–5 below: the machine
-ACTUALLY resuming from sleep. Scheduling the OS timer is proven (this list,
-plus the backend's own `wake/mod.rs` unit tests above); nothing short of a
-real Mac can prove the resume.
-
-⚠️ Turning **«Ta opp automatisk»** off no longer deletes the time. `Settings`
-grew a real `auto_record_enabled` flag in P1b (read in ONE place,
-`active_slots()`, so a flag honoured in five of six readers cannot wake the
-machine at 10:50 for a recording it then refuses to make). Specials are NOT
-gated by it — they are dates somebody entered for one concert.
-
-1. Add a slot a couple of minutes ahead; leave the app running.
-   - **Expected:** at the slot time the recorder starts unattended; the tray and
-     the status line's «Neste opptak …» update; a reminder notification fires
-     `reminder_minutes` before (that reminder is configured in the **«Hvem får
-     beskjed…»** card on Opptak, under «Påminnelse før automatisk opptak», and
-     it is gated off with a stated reason until «Ta opp automatisk» is on).
-2. **Also verify the flag round-trips:** turn «Ta opp automatisk» off, relaunch,
-   turn it back on.
-   - **Expected:** the time is still there. A profile written before the flag
-     existed defaults to ON (`serde(default = "default_true")`) — `false` would
-     have silently disarmed every congregation that already had a Sunday time.
-3. **macOS:** enable wake-from-sleep under Avansert, then sleep the Mac just
-   before a slot.
-   - ⚠️ **There is no «Planlegg» button and no admin prompt.** The scheduler
-     arms the OS wake ITSELF whenever `wakeFromSleep` is on, unelevated and
-     non-interactive (`scheduler/mod.rs`). The INTERACTIVE path — the one
-     `wake_reschedule` triggers, which escalates a failed unelevated
-     `pmset schedule wake` to a single `osascript … with administrator
-privileges` prompt — has no caller in the new shell, so a Mac that needs
-     root to write a power event will not be asked for it.
-     That is the most consequential gap this switch leaves open: on such a Mac
-     the app records fine while AWAKE and does not wake from sleep. It is
-     written up as the first item under «Etter byttet» in `docs/APP-SHELL.md`.
-   - **Expected on a Mac that does not need the prompt:** the machine wakes and
-     records. Cross-check with `pmset -g sched` — and note that on Apple Silicon
-     the IOKit read and `pmset` can legitimately disagree.
-4. **Windows:** enable wake-from-sleep, reschedule (no prompt should appear),
-   confirm `powercfg -waketimers` lists a timer set by `[PROCESS] …SundayRec.exe`,
-   then sleep the machine just before a slot.
-   - **Expected:** the machine resumes and records. If it does not, check
-     "Tillat vekketimere" in the power options first — an armed timer with that
-     setting off fires without waking anything, and nothing in the arming call
-     reports it.
-5. **Windows, the honest limit:** quit SundayRec entirely, then sleep the machine.
-   - **Expected:** it does **not** wake. This is by design, not a bug — verify it
-     so nobody later "fixes" it back into a scheduled task.
-
-> [HW] Wall-clock timing, the admin prompt, and the real OS resume can only be
-> confirmed on a Mac/Windows box. The `SetWaitableTimer` call itself does not even
-> compile on macOS — CI's `windows-check` lane is what proves it builds.
-
-## 11b. ~~Special recording with its own audio device~~ — REMOVED (F2)
-
-Special (one-off, dated) recordings left the app in the rent-bord pruning (F2),
-and the per-special device override with them: the schedule is the weekly
-slots only. The section number stays so cross-references still resolve. What is
-left to check here is the invariant the removal must not break — a weekly slot
-composes the same `RecordingOpts` as always, and a missing device is the
-generic preflight finding:
-
-- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_scheduled_start_with_video_on_hands_the_engine_the_camera_and_an_mp4
-- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_missing_device_finding_is_generic_with_no_params
-- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_card_and_the_notification_say_the_same_words
-- VERIFIED-BY: app/pages/record/preflight-text.test.ts::enheten som mangler beholder akkurat den teksten den alltid har hatt
-
-An old profile that still has `specialRecordings` in its stored settings loads
-fine: the key is ignored and dropped at the next save.
-
 - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::slots_round_trip_through_json
 
----
+## 6. Innstillinger
 
-## 12. Non-destructive editor [HW] — `editor` (IN DEFAULT)
+- [ ] Lyd og kanaler: device, channel pairs, the meter. A silent channel in the editor shows the dead-channel warning (check with a real mixer).
+- [ ] Camera, storage folder and format, notifications (OS permission off says so), language (no/en), recording options, updates (channel stable/beta), privacy (telemetry preview), log («Kopier siste logg») and licenses.
+- [ ] Windows only: the database moves from Roaming to Local AppData on first launch after the update; a crash manifest from before the move is recovered.
 
-The editor I/O seam (`src-tauri/src/editor`) drives the bundled ffmpeg/ffprobe
-sidecar over the unit-tested `sundayrec-core::{editor, mastering}` decisions:
-load (ffprobe duration/channels/format/rate/streams),
-peaks (8 kHz mono decode **streamed on a pipe** → core down-sample, cached in a
-`<stem>.peaks.json` sidecar), mastering analyze (pass-1 loudnorm measure),
-and export (core cut-plan + processing + mastering → mp3/aac/wav/flac/mp4/mov).
-NO new native dep — ffmpeg is a sidecar and the PCM is folded into peaks by hand.
-
-**The shape of the screen changed in P4, and again in D3.** 47 controls in
-three tabs plus 25 in an export modal became three steps with one question
-each — and D3 turned the third into its own destination, so the strip is
-**Klipp → Lyd** and **Eksportering** is where the file is written. There is no
-export modal, no «Normaliser» toggle, no mastering apply panel and no
-intro/outro jingle rows; each of those is listed under «Flater som ikke finnes
-lenger» with what replaced it. The BACKEND is unchanged: the same `editor_*`
-commands over the same ffmpeg sidecar.
-
-Three things the editor overhaul settled, and what you are checking here:
-
-- **Playback is the ORIGINAL**, streamed by a media element over `asset://`.
-  The open round (B4a: ONE ffmpeg read in the recording's own rate, resampled to
-  16 kHz and 8 kHz in Rust) feeds the waveform, the channel
-  diagnosis and «Tale»; nothing decodes the recording into renderer memory. A transcoded AAC proxy is the fallback, taken only when the
-  webview has no decoder for the container or the original won't open — and it
-  announces itself with a notice.
-- **Caches**: the peaks land in a sidecar beside the recording, keyed on
-  size+mtime. A second open of the same file must not re-decode it. A FIRST open
-  reads the file once for everything (one `ffmpeg` in Activity Monitor / Task
-  Manager while «Analyserer bølgeform…» runs, not several after one another),
-  and the log says what the round cost: `open round: time
-spent per half`.
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::opening_a_recording_reads_it_once_for_every_consumer_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::consumers_asking_at_once_share_one_read_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::sidecars_answer_themselves_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::the_round_agrees_with_ffmpeg_itself_or_skips
-  - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_ninety_minute_recording_is_decoded_once_or_skips
-- **Export is honest**: it always runs on the untouched original; a mastering
-  target measures the CUT signal (not the raw file) before it normalises;
-  "Normaliser" is skipped under a mastering preset and the modal says so; the
-  destination defaults to "Samme mappe"; progress is real and the render is
-  cancellable and kill-timed.
-
-The ffmpeg runs are **HARDWARE-UNVERIFIED** (they need real media). `editor` is
-in the **`default` feature set**, so the Redigering workspace is live in every
-release
-and in a plain `npm run tauri dev`; the `feature_disabled` response and the calm
-"not built into this build" hint only exist under `--no-default-features`.
-
-```bash
-npm run tauri dev   # drive the Redigering disclosure — editor is on by default
-```
-
-1. Record (or import) a short service so it shows in **Redigering**, then open
-   it — from the row, from the «Opptaket er lagret» receipt's «Åpne i Rediger»,
-   from **«Åpne fil…»** in the list's head, or by dragging a file onto the page.
-   The drop zone is ONE element that is ALWAYS there and wraps the WHOLE
-   destination (the trash excepted): Tauri catches OS drags itself, so an
-   overlay that only appears on `dragenter` is not there to be hit when the
-   event arrives.
-   - **Expected:** step 1 is **«Klipp»**: the waveform, a gold window with a
-     handle at each end (the whole recording until something is cut), the
-     transport and the cut tools. There is no analysis and no suggestion — the
-     volunteer decides where the kept part begins and ends.
-   - **Expected:** the duration paints almost immediately (ffprobe reads
-     container headers only), then the waveform. The loading line says which
-     phase it is in («Analyserer bølgeform…»). Press play: it must sound like
-     the file, not like a telephone — that is the `asset://` transport on the
-     original. No quality notice for a normal wav/flac/mp3/m4a.
-   - **Expected:** the clock reads `h:mm:ss` the whole way. A service of 1 h
-     2 min must not jump from «59:59» to «1:00:00» — the digits are
-     tabular and the format does not change width mid-playback.
-     1b. **Reopen the same file.** — **Expected:** the waveform is back in a blink
-     and no "Analyserer bølgeform…" line appears (the peaks sidecar answered).
-     `ls` next to the recording shows `<stem>.peaks.json`. Delete it and reopen to
-     watch the first-open path again.
-     1c. **Open an `.ogg`/`.opus`/`.webm`** (a container WKWebView can't decode).
-   - **Expected:** a "Klargjør avspilling…" line, then playback works and a
-     notice says it is going through a temporary file at full quality, and that
-     export still uses the original.
-2. Adjust the gold window by **dragging its handles**.
-   - **Expected:** the handles are real focusable controls
-     (`role="slider"`, «Der det som beholdes begynner» / «Der det som beholdes
-     slutter»), so arrow keys move them. A volunteer who does not use a mouse
-     must still be able to say where the kept part starts; a drawn rectangle
-     cannot be focused, read aloud or nudged. Moving a handle cuts the head or
-     the tail, and a held arrow key is ONE undo step.
-3. Mark cuts by dragging on the waveform (the cut tools are always there).
-   Remove one with **✕**.
-   - **Expected:** the cut list shows each kept region as `{name} · {span}`, and
-     the result line reads «Resultat: … (av …)». Red cut bands overlay the
-     waveform (the canvas paint itself is still // GUI-UNVERIFIED); removed rows
-     disappear. Undo/redo say so honestly when there is nothing to undo.
-   - VERIFIED-BY: e2e/editor.spec.ts::a cut row shows its range and the ✕ really removes it
-4. Press **«Neste: Lyd»** — step 2. There is ONE switch, **«Podkastklar lyd»**
-   (on by default): the fixed podcast recipe (clearer voice, even levels, −16 LUFS
-   with the true peak held under −1 dBTP). Off = the sound as it was recorded.
-   - **Expected:** one switch and one sentence, no profile cards and no mixer
-     («Tale og musikk», «Ingen» and «Avansert: åpne mikseren» are gone since F3).
-     The recipe is `speech-clear` in `sundayrec_core::mastering::podcast_preset()`.
-   - Press **«Lytt»** and A/B **Før** / **Etter**.
-   - **Expected:** a 20-second sample taken **from the middle of what is kept** (not from the
-     first 20 seconds of the file, which is often an empty room) renders and
-     plays. It is a real render through the real chain — and it writes to a
-     temp file, never next to the original.
-   - **Expected (B3b):** with the switch on, a calm list under it says
-     in plain words what was done to THIS recording («Vi fjernet brum fra
-     strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet ekkoet i rommet»,
-     «Vi fjernet klikk og knitring»), or «Opptaket var rent.» when nothing was.
-     Nothing shows with the switch off, or when the file could not be read.
-   - VERIFIED-BY: e2e/editor.spec.ts::lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting
-5. Press **«Neste: Eksporter»**. There is no step 3 — the button NAVIGATES to
-   the **Eksportering** destination, and the file stays open. Pick a **format**
-   and leave the destination alone, then export.
-   - **Expected:** leaving the page mid-export and coming back shows the run (or
-     its receipt) still there, not the form again.
-   - **Expected:** the destination reads **«Samme mappe som opptaket»** and a
-     `*_redigert.<fmt>` file lands next to the source (no "path must be
-     absolute") — or `<YYYY-MM-DD> <tittel>.<fmt>` when «Innhold» has a title
-     (see the next bullet). Each format states its trade-off («Liten fil. Passer for nett
-     og deling.» / «Samme kvalitet som opptaket, mindre fil.» / «Ukomprimert.
-     Størst fil.») and the size estimate «ca. N MB» is computed **from the
-     file**, not from the settings. The progress bar moves for real. On playback
-     the marked regions are gone and the level is on target.
-   - **Expected («Innhold»):** fill in a title, a speaker and a description
-     before exporting. The line over the button predicts
-     `<YYYY-MM-DD> <tittel>.<fmt>` for a recording opened from the library, the
-     delivered file has that name, and `ffprobe -show_format <file>` lists
-     `title`, `artist` (the speaker), `comment` (the description) and `date`. Close the file and open the same
-     recording again: the three fields are filled in from its `.meta.json`.
-     VERIFIED-BY: e2e/export-sheet.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
-     VERIFIED-BY: e2e/export-sheet.spec.ts::det som ble lagret sist, står i feltene neste gang
-     VERIFIED-BY: crates/sundayrec-core/src/editor.rs::export_stem_matches_the_shared_vectors
-   - **«Legg ut» is gone** (F2): the receipt has no upload panel, no channel
-     setting and no description template — the file and the «Innhold» tags are
-     the hand-off; SundayRec does not upload anything.
-   - **Expected:** when it is done, the receipt offers three ways on — «Vis i
-     Finder», «Eksporter i annet format», «Til biblioteket».
-   - The destination half of the old modal's honesty claim:
-   - VERIFIED-BY: e2e/editor.spec.ts::eksportsteget er ærlig om hvor filen havner
-     5b. **Cancel a long export** mid-render. — **Expected:** it stops within a
-     second or two and says «Eksporten stoppet. Prøv igjen.» — not a frozen bar.
-     5c. **Video file:** open an mp4 and leave **«Ta med video (MP4)»** on.
-   - **Expected:** the mp4 out has both streams and honours the cuts, and the
-     format row states the consequence rather than letting you pick an
-     impossible one: «Formatet er MP4 så lenge videoen er med.»
-   - On macOS the export tries VideoToolbox first, automatically (R2 removed
-     the «Maskinvare-koding» toggle — it guarded nothing). If VideoToolbox
-     refuses, the log shows a warning and the export completes in software
-     anyway — a failed hardware render must never cost the user the export.
-     5c2. **Video that is only cut is copied (B6).** Open a video recording from
-     v0.26 or later (a keyframe every 2 s), keep the sermon with **Klipp** and
-     leave **Lyd** on no profile, then export with video.
-   - **Expected:** it finishes in seconds, not minutes (the picture is not
-     re-encoded); the log says «cut-only video export: the picture is copied»;
-     the start of each kept part may sit up to 2 s earlier than you set it
-     (the picture can only begin on a keyframe; the sound begins at the same
-     place), and sound and picture stay together at every cut. An old
-     recording (keyframes far apart) or a cut shorter than 2 s is exported the
-     slow, exact way, and the log says why.
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_only_video_export_copies_the_picture_and_keeps_every_cut_in_sync_or_skips
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_source_that_starts_late_is_copied_in_sync_too_or_skips
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_recording_with_far_apart_keyframes_is_re_encoded_exactly_or_skips
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_cut_shorter_than_the_keyframe_gap_is_not_swallowed_or_skips
-   - VERIFIED-BY: crates/sundayrec-core/src/video_copy.rs::a_start_snaps_back_to_the_keyframe_and_the_end_to_a_clean_split
-     5d. **A power cut mid-export, to a folder you picked.** Pick a destination
-     that is neither the save folder nor a recording's folder (a USB stick is
-     the real case), start a long export, and pull the power — or force-quit —
-     mid-render.
-   - **Expected:** a few seconds after the next launch, the half-written
-     `<navn>.__editor_tmp.<fmt>` in that folder is gone, and nothing else in
-     the folder is touched. Launch once WITHOUT the stick first: the file is
-     then removed on the first later launch that can see it. The file system
-     half is automated; the real power cut is not:
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_power_cut_mid_export_is_reaped_from_a_picked_folder_on_the_next_launch_or_skips
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_never_deletes_a_journalled_path_that_is_not_a_render_temp
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_does_not_follow_a_journalled_symlink_or_touch_a_directory
-   - VERIFIED-BY: src-tauri/src/editor/export_journal.rs::a_temp_whose_folder_is_not_there_keeps_its_row_until_it_is_old
-     5e. **«Velg mappe …» is the app's own window (A2).** On Eksportering, choose
-     **«Velg mappe …»**, pick a folder (make a new one in the window too), and
-     export; then pick a USB stick, pull it out, and press **Eksporter**.
-   - **Expected:** the OS folder window opens over the app, as before, and can
-     create a folder. The card and the line over the button show the picked
-     folder's NAME («Skrivebord»), the file lands in that folder, and «Vis i
-     Finder» shows it. Cancelling the window leaves the choice as it was.
-   - **Expected:** with the stick pulled out, the export does not start and the
-     page says «Mappen du valgte, finnes ikke lenger — er disken frakoblet? …»;
-     the choice stays on the stick (nothing silently switches to «Samme
-     mappe»). Picking another folder takes the sentence away.
-   - **Expected:** «Samme mappe som opptaket» still writes next to the source,
-     with the same name as before.
-   - The webview never names the folder — Rust opens the window, the page holds
-     a token, and the token is checked again when the export uses it:
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_names_its_folder_only_by_token
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_folder_round_trips_as_a_token_and_shows_only_its_name
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_token_is_refused_with_its_own_code
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_folder_deleted_since_the_pick_is_refused
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_cancelled_pick_mints_nothing
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_folder_field_goes_nowhere
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::resolving_refuses_a_folder_swapped_for_a_symlink_elsewhere
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_store_is_bounded_and_evicts_the_oldest_first
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::a_minted_token_resolves_to_its_place_and_only_as_its_kind
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_same_place_again_reuses_its_token
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_vet_refuses_a_protected_folder_and_a_file_in_one
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_places_and_nothing_the_webview_sent
-   - «Samme mappe» lands exactly where it did before:
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
-   - The page: the name shown, the token sent, a cancel, a refusal with its own sentence:
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::en mappe som er borte når eksporten starter, sier det med egne ord
-   - VERIFIED-BY: app/editor/export.test.ts::en mappe Rust avviser blir en setning, og målet bytter ikke i det stille
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
-   - The OS folder window itself (parented over the app, «Ny mappe», the
-     folder it answers) needs the real app. // GUI-UNVERIFIED
-     5f. **Intro and outro jingles.** In the export sheet, under «Podkastklar
-     lyd», press **«Velg lydfil …»** on **Intro** and choose a short audio file
-     (wav, flac, mp3, m4a, ogg or aiff); do the same on **Outro**. Export the
-     recording as MP3 with **«Podkastklar lyd» on**, then open the file in a
-     player. Quit and reopen the app, open a recording and the export sheet.
-   - **Expected:** each row shows the file NAME (never a path) and a **«Fjern»**;
-     the file starts with the intro, ends with the outro, and the total is the
-     sum of the three. Intro, speech and outro sound equally loud (the whole
-     file measures about −16 LUFS, no clipping). The two rows are still filled
-     after the restart; **«Fjern»** puts the row back on «Ingen» and the next
-     export has no jingle there.
-   - **Expected:** with **«Ta med video (MP4)»** on, both «Velg lydfil …» buttons
-     are dimmed with the reason (jingles are not added to a video export) and
-     the export carries none. Turn the toggle off and they work again.
-   - **Expected:** delete or move a chosen jingle file, then press **Eksporter**:
-     the export does not start; the page says «Intro- eller outro-lyden finnes
-     ikke lenger …». Press **«Fjern»** (or choose the file again) and export
-     works. (We refuse rather than silently export without it.)
-   - The page holds a name and a switch, never a path; Rust opens the window and
-     reads the saved clip again when the export starts:
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_clip_pick_changes_nothing
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
-   - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::the_jingle_picker_accepts_the_common_audio_formats
-   - Jingles get the podcast level too (measured: whole file −16.00 LUFS, intro, speech and outro each −16.0):
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips
-   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_mastered_export_levels_the_sermon_not_the_jingles_or_skips
-   - The sheet: choose, remove, remembered, refused, missing, video:
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro huskes til neste gang: etter en omlasting står de der
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::en fil Rust avviser blir en setning, og forrige valg står
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::en jingle som er borte når eksporten starter, sier det med egne ord
-   - VERIFIED-BY: e2e/export-sheet.spec.ts::med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes
-   - VERIFIED-BY: app/editor/jingles-core.test.ts::video får aldri jingler, selv med begge valgt
-   - The OS file window itself needs the real app. // GUI-UNVERIFIED
-     5f. **The recording is the app's own door (A2, second half).** Open a
-     recording four ways: **«Åpne fil …»** (library and the error screen),
-     **«Rediger»** on a library row, **«Rediger»** on the finished-recording card,
-     and **drop a file on the window** (also one that lives on a USB stick), then
-     export each.
-   - **Expected:** the OS file window opens over the app with «Alle støttede
-     medier» first, then «Lyd», «Video» and «Alle filer», named in the app's
-     language. The recording opens, plays (also from the USB stick, which is
-     outside the standard folders) and exports as before; «Samme mappe som
-     opptaket» lands next to the opened file with the same name as before.
-   - **Expected:** a library row whose file has gone to the papirkurv opens
-     «Fant ikke fila» with the way to the papirkurv; the same after pulling the
-     stick out between opening and exporting («Originalfilen er ikke
-     tilgjengelig …»). Dropping a folder, or a file in a protected folder, opens
-     the failure screen and nothing else.
-   - The webview never names the recording — Rust opens the window (or catches
-     the drop, or reads the row), the page holds a token, and every command
-     checks it again when it uses it:
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_recording_round_trips_as_a_token_and_shows_its_name
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_source_token_is_refused_with_its_own_code
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_recording_gone_since_the_open_is_refused
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_place_that_does_not_vet_grants_and_mints_nothing
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_webview_is_granted_exactly_the_canonical_file_it_opened
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_opens_by_its_id_and_the_webview_is_granted_its_file
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_id_with_no_row_is_unknown_and_a_path_is_no_id
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_whose_file_has_gone_says_so
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_file_opens_like_a_picked_one_and_carries_where_it_landed
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_folder_says_why_it_did_not_open
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_export_of_a_recording_that_is_not_open_is_refused_before_anything_else
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_old_shape_payload_names_no_source
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_source_refusal_has_a_sentence_in_the_renderer
-   - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::every_language_names_the_media_filters
-   - VERIFIED-BY: src-tauri/src/db/store.rs::a_row_gives_its_file_by_id_and_a_made_up_id_gives_nothing
-   - The same file exports to the same place as before, by token as by path:
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_same_file_exports_to_the_same_place_through_a_token_as_by_its_path
-   - The jingles are two switches, and the clips come from the saved settings:
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_with_no_saved_clip_is_no_intro
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_pick_that_is_not_a_file_stores_nothing
-   - The ratchet holds the shape from the outside:
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::the_requests_name_the_recording_only_by_token
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_open_known_takes_only_a_history_row_id
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_token_is_minted_by_a_listed_function_behind_a_listed_door
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_row_lookup_whose_answer_is_ignored_does_not_anchor_a_mint
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_asset_grant_opens_the_one_file_and_nothing_beside_it
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list
-   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_under_a_name_the_recorder_does_not_write_gives_no_row
-   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_that_names_a_protected_file_gives_no_row_and_deletes_nothing
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_command_that_mints_a_path_from_the_webview_is_found
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_hands_the_seam_the_resolved_places
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::an_export_that_ignores_the_resolved_places_is_found
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_guard_named_only_in_a_string_literal_does_not_count
-   - The page: the token is sent, a gone file has its own sentence, the export refusal has its own:
-   - VERIFIED-BY: e2e/editor.spec.ts::«Rediger» på en biblioteksrad åpner opptaket
-   - VERIFIED-BY: e2e/editor.spec.ts::kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp
-   - VERIFIED-BY: e2e/editor.spec.ts::«Etter» spilles av motoren, og Før/Etter er et bytte — ingenting gjengis
-   - VERIFIED-BY: e2e/library.spec.ts::«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten
-   - VERIFIED-BY: app/editor/export-core.test.ts::opptakslappen har setninger: åpne på nytt, borte, avvist — og jingelen
-   - VERIFIED-BY: app/editor/loader-core.test.ts::kjenner source_missing: lappen peker på en fil som er borte (A2)
-   - The OS file window and a real drop onto the window need the real app.
-     // GUI-UNVERIFIED
-6. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
-   editor (or reselect another recording) then reselect the same recording.
-   - **Expected:** the cut rows are back — restored **silently** from the
-     cuts-draft sidecar the autosave writes every 2 s (with a 7-day freshness
-     guard; the old «Fant lagrede kutt fra forrige økt»-banner + Gjenopprett
-     button were dropped — the restore is automatic now, see
-     editor/loader.ts). After a successful **Eksporter** the draft is deleted,
-     so a later reopen restores nothing.
-   - The draft and «Innhold» are both named by the recording's
-     File token (A3/A4): the page never sends the path, and Rust derives
-     `<stem>.cuts-draft.json` and `.meta.json` beside the
-     file the token stands for. Nothing about where they land has changed.
-   - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
-   - VERIFIED-BY: app/editor/cuts.test.ts::skrives med opptakets lapp, aldri stien
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_command_with_a_forged_token_never_touches_the_disk
-     ⚠️ **The standalone mastering panel is gone** (the old steps 6 and 7 — the
-     `_mastert` file, «Forhåndsvis mastering (15 s)», the apply-with-progress and its
-     Avbryt). `editor_master_apply` is no longer reached from anywhere; the preview
-     mechanism survives as step 2's **«Lytt»**, which renders a 20-second sample
-     through the same chain. See «Flater som ikke finnes lenger».
-
-7. ~~**E8 sermon-pick correction survives a reopen**~~ — REMOVED (F1 «rent
-   bord»): the sermon search, the block dropdown and the correction capture
-   left the app. A `<stem>.feedback.json` or `<stem>.segments.json` an older
-   build wrote is no longer read; it still travels with its recording through
-   the trash.
-8. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
-   «Frivilligen først», and the banded `corrections` collection with F1 — the
-   consent text and `PRIVACY.md` no longer mention it): what
-   remains of this step is the telemetry preview and consent:
-   - With diagnostics ON, **the gear → Avansert → «Del anonym diagnostikk» →
-     «Hva sendes»** lists what the next payload carries — and the caption must
-     NOT say «Ingenting å sende akkurat nå.» while it is on screen. With
-     diagnostics OFF nothing is accumulated for someone who has not opted in,
-     not even in memory.
-   - The preview surface's half of this (the payload rendered, the caption
-     honest while it is on screen) — the accumulation gating stays
-     backend-verified:
-   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying counters shows them, not «ingenting å sende»
-   - The consent question itself (the one-time card, and a decline recorded as
-     a real answer so nothing is ever collected without an explicit yes):
-   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
-
-> The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
-> `__editor_tmp`/`__editor_bak` startup sweep (export journal included) are
-> **fs, not ffmpeg** — they compile and run in the default build and ARE
-> exercised in the gate (real tempdir round-trips). Only the ffmpeg-driven
-> probe/preview/apply need real media — se [HW]-markøren i §12-innledningen.
-
-> [HW] The ffprobe/decode/measure/render runs only execute against real media —
-> never in the gate (samme markør). The core argv-building, filter-graph,
-> and loudnorm parse decisions are unit-tested in Rust core, and
-> the renderer's load→peaks→regions→export data flow is covered by the browser
-> tier (e2e/editor.spec.ts — the "no JS unit-test harness on this branch" note
-> that used to sit here predates E5.2). The waveform/cut-band canvas paint
-> itself is still unproven — se markøren i steg 3 over.
-> A `--no-default-features` build returns `feature_disabled` for every editor
-> command and the panel shows a calm hint; the default build does not.
-
-### 12b. Editor STABILITY loop [HW] — prove the 2026-06 hardening
-
-Targets the "editor is unstable" reports. Run this stress loop after the fixes:
-
-1. **Large file:** open a 100 MB–4 h recording.
-   - **Expected:** the timeline appears in well under a second (ffprobe headers)
-     and the waveform follows; no multi-second freeze, no OOM/renderer crash.
-     Renderer memory must stay flat — a 4 h FLAC costs the same as a 4 min one,
-     because neither the recording nor an extract of it is held in memory.
-2. **Rapid play/stop/seek:** play, stop, seek, undo, redo ~20× quickly.
-   - **Expected:** no stuck play-icon, no doubled/looping audio, no hang.
-3. **Switch files mid-play:** start playback, then open a different recording
-   before it finishes; repeat fast a few times.
-   - **Expected:** the new file loads cleanly — no wrong audio/video-layout from
-     the previous file, no extra AudioContext piling up (the loader seq-guards),
-     no stale clip-warning badge.
-     3b. **Leave step 1 while playing** (press «Neste: Lyd»), then come back.
-   - **Expected:** playback STOPS on leaving — the same rule as leaving the
-     page — the canvas is torn down and rebuilt, and the peaks are still in
-     memory so the return draws without decoding anything again. A waveform that
-     "freezes" after a step change is a canvas that remounted and left a draw
-     loop painting into an element nobody sees.
-4. **Undo mid-drag:** drag a cut handle and press Cmd/Ctrl+Z mid-drag.
-   - **Expected:** the undo is ignored until the drag ends (no cut-history
-     corruption); cuts stay consistent.
-5. **Full-fidelity playback, no flag.** Every file plays at full quality: the
-   original over `asset://`, or an AAC proxy for containers the webview can't
-   decode. There is no `sundayrec.editor.playbackProxy` opt-in any more — the
-   8 kHz preview transport (and the flag that gated its replacement) is gone.
-   - **Expected:** no file sounds low-fi. If one does, it is a bug, not a
-     setting.
-6. **Tastaturet som i et redigeringsprogram (2026-11).** Åpne et ekte opptak
-   på Mac OG Windows. Trykk mellomrom uten å ha klikket noe, så etter et klikk
-   på «Klipp manuelt» og etter et klikk på «Angre». Prøv ←/→ (Shift = 5 s),
-   Home/End, ⌘Z/Ctrl+Z og ⇧⌘Z/Ctrl+Y. Trykk mellomrom i Lyd-steget også.
-   - **Expected:** mellomrom spiller/pauser hver gang og trykker ALDRI knappen
-     fokus står på. Lyden starter innen et halvt sekund. I et tekstfelt
-     (eksportnavnet) skriver mellomrom et mellomrom. Piltastene på et
-     preken-håndtak flytter håndtaket, ikke spillehodet.
-
-> [HW] These are interactive webview behaviours (AudioContext lifecycle, the
-> `<audio>` proxy transport, canvas redraw) that the headless gate can't see.
-
----
-
-## 13. Observability: crash ring, log file, capture/video probes (no feature) [HW]
-
-Etappe 2 gave the app a memory of its own failures — a panic hook + bounded
-crash ring (E2.1), a supervisor that restarts long-lived tasks and records
-when it had to (E2.2), a rotating file log (E2.3), a renderer-side ring of
-failed IPC calls (E2.4), and a real capture/video probe (E2.5). None of it needs a feature flag; all of it is exercised here.
-
-The IPC ring and the capture probe have no screen any more (the Diagnose page
-was removed in F2); they stay as backend-only facts.
-
-### Trigger a deliberate crash
-
-```bash
-export SUNDAYREC_TEST_PANIC=1
-npm run tauri dev
-```
-
-- **Debug build only** (`#[cfg(debug_assertions)]`) — inert in a release build
-  no matter what the env var says.
-- **Quit any installed SundayRec first.** The single-instance plugin (all
-  builds share the identifier `no.sundayrec.app`) means a second launch just
-  focuses the existing window instead of starting a new process — with the
-  installed app already running, the `tauri dev` process you just started
-  never gets far enough to panic.
-- Two seconds after startup a watched task panics on purpose
-  ("SUNDAYREC_TEST_PANIC=1: deliberate panic to prove the crash ring"). The
-  process itself does **not** crash — `crash::watch_handle` catches the panic
-  at the `JoinHandle` boundary — but it is persisted exactly as a real one
-  would be.
-  - **Expected:** the terminal logs a `PANIC: …` line and a new
-    `crash-<millis>-<seq>.json` appears in `<app-data>/crashes/`.
-  - There is no screen that shows crashes (the Diagnose page, and its
-    **SR-CRASH-01** finding, were removed in F2) — read the crash file instead.
-    See «Flater som ikke finnes lenger».
-
-### Where the files land
-
-| What                                 | Path                                                  | Kept                                                                          |
-| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Live log                             | `<app-data>/logs/sundayrec.log`                       | rotates at 2 MB                                                               |
-| Rotated logs                         | `<app-data>/logs/sundayrec.1.log` … `sundayrec.4.log` | 5 files total, ~10 MB ceiling                                                 |
-| Panics (process hook + watched-task) | `<app-data>/crashes/crash-<millis>-<seq>.json`        | newest 20                                                                     |
-| Supervised-task restarts             | `<app-data>/crashes/restart-<millis>-<seq>.json`      | newest 20, own ring — a flapping task cannot evict the panic that explains it |
-
-`<app-data>` er plattformens appdata-mappe (macOS:
-`~/Library/Application Support/…`; Windows: `%LOCALAPPDATA%\…` fra F-W10, før
-det `%APPDATA%\…`, altså Roaming-profilen, som første start etter
-oppdateringen flytter databasen ut av; se neste avsnitt).
-
-### Windows: databasen flytter fra Roaming til Local AppData (F-W10) [HW]
-
-- [ ] **Oppgrader en installasjon med historikk.** Fra v0.25.0 eller eldre
-      (noen opptak, endrede innstillinger, et ikke-tomt `sundayrec.sqlite-wal`)
-      til denne versjonen.
-      **Forventet:** første start viser all historikk og alle innstillinger;
-      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes uten
-      `sundayrec.sqlite.flytter` ved siden av; den gamle
-      `%APPDATA%\no.sundayrec.app\sundayrec.sqlite` står FORTSATT der, urørt
-      (en nedgradering finner historikk, ikke en tom database); loggen sier
-      «the database was moved from Roaming to Local AppData»; andre start
-      flytter ingenting.
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_flytting_tar_med_skrivinger_som_bare_la_i_wal
-  - VERIFIED-BY: src-tauri/src/appdata.rs::flyttingen_sletter_ikke_roaming_og_den_gamle_fila_har_alt
-  - VERIFIED-BY: src-tauri/src/appdata.rs::andre_oppstart_flytter_ikke_igjen
-  - UNVERIFIED: ekte Windows-fillåsing, oppløsning av `%LOCALAPPDATA%` og en
-    domene-Roaming-profil. Bare en Windows-boks beviser dem.
-- [ ] **En flytting som feiler mister ingenting.** Lag
-      `sundayrec.sqlite.flytter` som en MAPPE i Local-mappa og start.
-      **Forventet:** appen starter på Roaming-databasen (historikken er der),
-      loggen sier at flyttingen feilet, ett banner kommer etter ca. 20 s.
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_feil_i_flyttingen_gir_fallback_til_roaming_uten_tap
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_local_mappe_som_ikke_kan_lages_gir_fallback_uten_tap
-- [ ] **Krasj → oppdatering → gjenoppretting.** Drep et opptak på den gamle
-      versjonen (manifestet ligger i `Roaming\…\recovery`), oppgrader, start.
-      **Forventet:** det avbrutte opptaket gjenopprettes i Historikk, og
-      manifestet er slettet fra Roaming-mappa.
-  - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::et_manifest_fra_et_krasj_for_oppdateringen_gjenopprettes_etter_flyttingen
-  - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::manifester_i_begge_mappene_gjenopprettes_hver_for_seg
-- [ ] **Roaming som ikke kan nås er ikke en ny installasjon.** NotFound uten
-      lesbar `%APPDATA%`, eller en annen metadata-feil, gir fallback og
-      ingenting i Local; `rename` prøves på nytt.
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_mappe_hvis_forelder_mangler_gir_fallback_og_ingenting_i_local
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_metadata_feil_som_ikke_er_notfound_gir_fallback_og_ingenting_i_local
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_rename_som_feiler_et_par_ganger_prøves_på_nytt_og_flyttingen_lykkes
-- [ ] **Nedgradering: data igjen i den gamle mappa sies fra om én gang.**
-  - VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_database_nyere_enn_local_gir_varsel_om_data_igjen_i_den_gamle_mappa
-- [ ] **Mac og Linux: ingenting endres.** Appdata-stien er den samme som før.
-  - VERIFIED-BY: src-tauri/src/appdata.rs::utenfor_windows_er_stien_uendret_og_ingenting_leses_eller_lages
-  - VERIFIED-BY: src-tauri/src/appdata.rs::mac_og_linux_har_samme_appdata_sti_som_for
-
-### «Vis» / «Kopier» (the gear → Avansert → «Logg»)
-
-### Steinberg ASIO attribution [Windows only]
-
-- [ ] In a **Windows** build, **the gear → Avansert**, at the bottom: a
-      «Lyd-teknologi» card carrying the ASIO trademark notice verbatim.
-- **Why it is a checklist item and not a detail:** the ASIO SDK is free to use
-  and licensed against attribution, and `release.yml` builds Windows with
-  `--features …,asio,…` — so that build owes the notice. The card lived in the
-  old shell's `index.html` and vanished with it in fase B; nothing failed,
-  because a missing trademark notice looks exactly like nothing. It is rebuilt,
-  and `app/pages/settings/advanced/AsioAttribution.test.tsx` pins the wording — but
-  that a real Windows build actually SHOWS it is a rig observation.
-
-- **Vis** reveals the live log file in Finder/Explorer (`logs_reveal` →
-  `tauri_plugin_opener::reveal_item_in_dir`), falling back to opening the
-  folder itself before the first line has been written.
-- **Kopier** pulls the tail of the live file (`logs_tail`, capped
-  server-side at 512 KB regardless of what the UI asks for) and copies it to
-  the clipboard, with a toast confirming the copy (or that the log is still
-  empty).
-  - VERIFIED-BY: e2e/system-support.spec.ts::«Kopier siste logg» puts the tail on the clipboard and confirms
-  - VERIFIED-BY: e2e/system-support.spec.ts::an empty log is called out instead of copying nothing
-- **Expected:** the file is plain text, newest lines at the bottom; secrets
-  (SMTP passwords, OAuth tokens — and defensively RTMP keys) are redacted on the writer
-  thread before a line ever reaches disk — confirm none show up if you have
-  any of those configured.
-
-### Lisenser (Avansert, bottom card)
-
-**Avansert -> Lisenser -> «Vis lisenser»** opens `THIRD-PARTY-NOTICES.html`
-in a sandboxed frame inside the app (`licenses_notices` reads it from the
-bundle's resource directory). It must name ffmpeg as GPL with where the source
-is, then list the npm and Rust libraries with their licence texts. A missing
-file shows an error toast, never an empty page.
-
+- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksformatet lagrer BÅDE format og bitrate, og seksjonen står der
+- VERIFIED-BY: e2e/settings-plan.spec.ts::?goto=settings:sound lander på Lyd og kanaler
+- VERIFIED-BY: e2e/settings-plan.spec.ts::«Endre» på kilden fører til Lyd og kanaler i Innstillinger
+- VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksstart river måleren ut av TA OPP
+- VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
+- VERIFIED-BY: e2e/settings-plan.spec.ts::varsler slått av i OS-et sier det, og peker på bryteren
+- VERIFIED-BY: crates/sundayrec-core/src/notify.rs::a_take_alert_reaches_the_os_only_when_nobody_is_looking
+- VERIFIED-BY: src-tauri/src/notify/take.rs::a_new_take_lets_every_kind_be_said_again
+- VERIFIED-BY: app/lib/api-shim-files.test.ts::en mappe som ikke finnes ennå, sies med vanlige ord — og huskes
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_flytting_tar_med_skrivinger_som_bare_la_i_wal
+- VERIFIED-BY: src-tauri/src/appdata.rs::flyttingen_sletter_ikke_roaming_og_den_gamle_fila_har_alt
+- VERIFIED-BY: src-tauri/src/appdata.rs::andre_oppstart_flytter_ikke_igjen
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_feil_i_flyttingen_gir_fallback_til_roaming_uten_tap
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_local_mappe_som_ikke_kan_lages_gir_fallback_uten_tap
+- VERIFIED-BY: src-tauri/src/recorder/recovery.rs::et_manifest_fra_et_krasj_for_oppdateringen_gjenopprettes_etter_flyttingen
+- VERIFIED-BY: src-tauri/src/recorder/recovery.rs::manifester_i_begge_mappene_gjenopprettes_hver_for_seg
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_mappe_hvis_forelder_mangler_gir_fallback_og_ingenting_i_local
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_metadata_feil_som_ikke_er_notfound_gir_fallback_og_ingenting_i_local
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_rename_som_feiler_et_par_ganger_prøves_på_nytt_og_flyttingen_lykkes
+- VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_database_nyere_enn_local_gir_varsel_om_data_igjen_i_den_gamle_mappa
+- VERIFIED-BY: src-tauri/src/appdata.rs::utenfor_windows_er_stien_uendret_og_ingenting_leses_eller_lages
+- VERIFIED-BY: src-tauri/src/appdata.rs::mac_og_linux_har_samme_appdata_sti_som_for
+- VERIFIED-BY: e2e/system-support.spec.ts::«Kopier siste logg» puts the tail on the clipboard and confirms
+- VERIFIED-BY: e2e/system-support.spec.ts::an empty log is called out instead of copying nothing
 - VERIFIED-BY: e2e/system-support.spec.ts::«Vis lisenser» opens the bundled notices in a frame and closes again
-- VERIFIED-BY: e2e/system-support.spec.ts::a missing notices file says so instead of showing an empty page
-- **On a real installer** (rig): install, open Avansert -> Vis lisenser, scroll to
-  the end; `Contents/Resources/resources/THIRD-PARTY-NOTICES.html` (macOS) /
-  `resources\THIRD-PARTY-NOTICES.html` next to the exe (Windows) must exist.
-
-### ⚠️ Capture probe — removed (F2)
-
-The capture/video probe lived in `run_diagnostics`; the Diagnose page, the
-test recording and the capture bench were removed in F2, and so was the probe.
-Nothing in the app opens a device to «test» it any more.
-
-> [HW] The panic/crash-ring plumbing is unit-tested in `src-tauri/src/crash.rs`;
-> only the end-to-end wiring — does a REAL panic reach a REAL file, does the
-> REAL log rotate on a REAL disk — needs a rig. See `docs/NEEDS-RICHARD.md` for what is still
-> owner-verified only.
-
----
-
-## §PU-6 — ~~Episode prep + human-review queue~~ — REMOVED (R1 «Frivilligen først»)
-
-The review queue, the reminder ladder, the tray callout and the editor's
-review mode left the app 2026-08-23. The editor no longer detects the sermon
-(F1 «rent bord»).
-
----
-
-## §R7 — Auto-update (`updater`, IN DEFAULT) + settings completeness
-
-### Auto-update
-
-The status model (the localized `idle`/`checking`/`upToDate`/`available`/
-`downloading`/`readyToInstall`/`error` phases), the dev-check guard, the
-download-percent math, and the semver "is newer" decision are unit-tested in
-`sundayrec-core::update`. The feed fetch + signature verify + install + relaunch
-are **NETWORK/GUI-UNVERIFIED**, and a **real** update additionally needs a
-SIGNED release + the updater public key in `tauri.conf.json` — see
-docs/NEEDS-RICHARD.md. `updater` is in the **`default` feature set**, so it is
-present in every release build and in a plain `npm run tauri dev`.
-
-```bash
-npm run tauri dev   # drive the Oppdateringer disclosure — updater is on by default
-```
-
-**«Oppdater automatisk»** (the gear → Avansert → «Oppdateringer») is the privacy
-gate PRIVACY.md promises:
-off = the app never contacts the update server on its own (no startup check,
-no hourly repeat — not even in the window where the settings blob is still
-loading, the #11 race fixed in PR #101); on = one immediate check plus exactly
-one hourly schedule; flipping it mid-session arms/cancels the schedule without
-firing extra checks. The toggle and the timer live together on purpose — P1b
-shipped without the timer, which meant **the shell did not check for updates by
-itself at all**, and that is the same road the beta ring's kill-switch travels.
-All four renderer paths are pinned in the browser tier:
-
 - VERIFIED-BY: e2e/auto-update.spec.ts::off at startup: zero update_check even while settings load slowly (the #11 race)
 - VERIFIED-BY: e2e/auto-update.spec.ts::on at startup: one immediate check, and the hourly repeat is scheduled
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling off while running stops the schedule and further checks
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling back on re-arms: an immediate check and a fresh schedule
-
-**«Oppdateringer: Stabil / Beta»** (same card) must reach the STORE with its
-value — the backend
-(`update/mod.rs::current_channel`) reads sqlite, and the v0.11.1-beta.2 rig bug
-#113 was precisely this select saying «Lagret ✓» while the machine silently
-stayed on the stable feed. R4 removed the curated bridge that dropped it: the
-renderer saves the full object through `settings_save`, sqlite is the one
-store:
-
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
-
-**The webview holds no updater permission (#314 S2).** `capabilities/` has no
-`updater:` grant and `build.rs` no longer generates one; the page cannot call
-`plugin:updater|check` (with `allowDowngrades`, `proxy`, `headers`), so it
-cannot be offered an older signed release. Updating is Rust's own
-`update_check`/`update_install`, below — if «Se etter oppdateringer nå» works
-in a release build, the lock cost nothing.
-
 - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_webview_holds_no_updater_permission
 - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::nothing_the_webview_is_built_from_names_the_updater_plugin
 - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_build_script_no_longer_writes_an_updater_capability
+- VERIFIED-BY: e2e/auto-update.spec.ts::a feature_disabled check surfaces as the ordinary error text
+- VERIFIED-BY: e2e/auto-update.spec.ts::an upToDate answer paints «Du er oppdatert» and retires stale buttons
+- VERIFIED-BY: e2e/settings.spec.ts::the language setting round-trips into storage and survives a reload
+- VERIFIED-BY: e2e/settings-seam.spec.ts::boot performs no settings_save at all
+- VERIFIED-BY: e2e/settings-seam.spec.ts::one change sends only that field — untouched fields keep their stored values
+- VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
+- VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_command_that_parses_a_string_into_settings_is_on_the_closed_list
+- VERIFIED-BY: crates/sundayrec-core/src/settings.rs::removed_church_publish_and_special_fields_are_ignored_and_not_rewritten
+- VERIFIED-BY: crates/sundayrec-core/src/tray.rs::the_tray_carries_no_system_check_item
 
-1. Open **the gear → Avansert → «Oppdateringer»** and click **«Se etter
-   oppdateringer nå»**.
-   - **Expected in a default build:** a real check, not an error. Under
-     `--no-default-features` the `update_check` command rejects with
-     `feature_disabled`, and the panel has **no dedicated gate hint** for it —
-     the rejection surfaces through the ordinary error path as «Kunne ikke
-     sjekke for oppdateringer» (this runbook used to promise a calm «ikke
-     bygget inn»-message that has never existed in this renderer). Seeing
-     that error text in a default build with network is a BUG.
-   - VERIFIED-BY: e2e/auto-update.spec.ts::a feature_disabled check surfaces as the ordinary error text
-2. (dev build) **«Se etter oppdateringer nå»**.
-   - **Expected:** the status reports **Du er oppdatert** — a dev build
-     short-circuits the check (the `should_check` guard, unit-tested in
-     `sundayrec-core::update`), so no error from a missing feed. The renderer
-     half — an `upToDate` answer paints «Du er oppdatert» and retires any
-     stale install button — is browser-tier pinned:
-   - VERIFIED-BY: e2e/auto-update.spec.ts::an upToDate answer paints «Du er oppdatert» and retires stale buttons
-3. (**release** build pointed at a real signed feed) check
-   → **«Last ned og installer»** → **«Start på nytt og installer»**.
-   - **Expected:** it walks `available` → `downloading {pct}` →
-     `readyToInstall`; the relaunch applies the staged update. Needs the signed
-     release + pubkey (NEEDS-RICHARD). // NETWORK/GUI-UNVERIFIED.
-   - **Expected:** the announcement is ONE banner over whatever page you are on,
-     keyed `update`, so «tilgjengelig» → «laster ned 40 %» → «klar» rewrites the
-     same strip instead of stacking three. It is `warn`, not `bad`: an update
-     waiting is not something that is wrong, and `bad` is `role="alert"`, which
-     interrupts a screen reader mid-sentence.
-   - **Expected:** if the relaunch does not happen, it says so («Omstarten
-     skjedde ikke. Avslutt appen og åpne den på nytt …») rather than sitting on
-     «Starter på nytt …» forever.
+## 7. Safety rails (path and token ratchets, startup sweeps)
 
-### Settings completeness (no feature)
+Nothing to do by hand: these claims are proved by the suite and listed so a rename cannot silently drop them.
 
-R7 closed the gap between the Electron `store.ts` `Settings` and the Tauri model:
-notification toggles (`notifyStart`/`notifyStop`) plus the editor intro/outro
-paths. (The e-mail config R7 also added is gone with e-mail alerts, §8; the
-church profile `churchName`/`responsiblePerson` and the publish settings are gone
-too, F2.) All carry defaults + validation in `sundayrec-core::settings`.
+- VERIFIED-BY: e2e/system-support.spec.ts::a missing notices file says so instead of showing an empty page
 
-1. Walk **the gear → «Hvilket språk?»** (the language) and the **«Hvem får
-   beskjed hvis noe går galt?»** card on Opptak (the OS toggle, the reminder).
-   The language is deliberately the ONE question that did not move into the
-   control room: it is set once, not five minutes before a service.
-   - **Expected:** every field round-trips through `settings_save` (debounced)
-     into SQLite and survives a relaunch.
-   - **Expected:** a save that FAILS rolls the control back to what is actually
-     stored and toasts about it. The old shell left the new value standing, so
-     the screen claimed one thing while sqlite held another and the change
-     "disappeared" at the next launch. The one exception is deliberate: the
-     weekly time is an explicit-save field, and there a failed write does NOT
-     throw away what you typed.
-   - The language round-trip (debounced save → storage → reload):
-   - VERIFIED-BY: e2e/settings.spec.ts::the language setting round-trips into storage and survives a reload
-   - Since R4 there is no curated subset to drop a key from: `settings_save`
-     carries a PATCH of the changed fields that Rust merges over the stored
-     row, boot only reads, and a field written is a field read back (the
-     #113/#115 class ends structurally):
-   - VERIFIED-BY: e2e/settings-seam.spec.ts::boot performs no settings_save at all
-   - VERIFIED-BY: e2e/settings-seam.spec.ts::one change sends only that field — untouched fields keep their stored values
-2. **R2 «Frivilligen først» — the dead fields are really gone, tolerantly.**
-   A stored settings blob from before v0.15 (one that carries `hasLaunched`,
-   `sampleRate`, `inputVolume`, the EQ/compressor/limiter fields, `avSync`,
-   `minimizeToTray`, `videoBitrate`, `outputMode`, `trimSilence`,
-   `showLiveLevels`, `separateAudioFormat`, `localAdaptivity`,
-   `videoResolution`/`videoFramerate`/`videoContainer`/`videoCodec`/
-   `videoEncoder`, `editorHwEncode`) loads without error.
-   - **Expected:** every neighbour keeps its value, and the next save no longer
-     carries any of them. The **«Ta med kamera»** card on Opptak shows the
-     on/off, the camera pick and «Behold separat lydfil» — nothing else — and
-     Avansert has no «Hva appen har lagt merke til» / «Hva appen har justert»
-     cards. (There is no settings import or export any more — the
-     «Innstillingsprofil» row left in F2.)
-   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
-3. **No command takes settings as text, and none takes a settings file path.**
-   The profile export/import and the localStorage hand-over were removed in F2,
-   so the path ratchet's closed list of string-to-`Settings` parsers is empty:
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_command_that_parses_a_string_into_settings_is_on_the_closed_list
-   - A stored `churchName`, `publishTarget` or `specialRecordings` (from an older
-     build) is ignored on load and absent from the next save:
-   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::removed_church_publish_and_special_fields_are_ignored_and_not_rewritten
+## What «passed» means
 
----
-
-## §R7b — Beta-søndag: the channel-promotion gate
-
-Etappe 7's release flow is two rings (`RELEASE-CHECKLIST.md` §5): a tag first
-goes to the `beta` channel, and nothing moves to `stable` — no matter how
-green the headless gate is — until a beta tester has run a **real Sunday** on
-the exact tag that was promoted, and it came back clean. This section is what
-"clean" means: the checklist a beta tester (or whoever reads their report)
-runs through before §5g (promote to `stable`) is authorized. It is a human
-decision gate, not a code test.
-
-**Before the service**
-
-1. Confirm the machine is actually running the **promoted** tag, not whatever
-   it happened to have installed. The **version line in the bottom bar**
-   must read exactly the tag `node scripts/promote-release.mjs beta
-vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
-   - **Expected:** version matches. If it's a build behind, either the update
-     hasn't reached this machine yet (propagation — up to an hour for an
-     already-running app, immediate on relaunch or a manual **«Se etter
-     oppdateringer nå»** under Avansert; see `ROLLBACK.md`) or **«Oppdater
-     automatisk»** is off (§R7 above) — resolve which before treating today as
-     a beta-ring result.
-2. If the release touched `recorder/`, `capture.rs`, the editor, the meter
-   loop, or boot ordering, this Sunday IS the §6a health gate
-   (`RELEASE-CHECKLIST.md`) — a beta-ring release is not exempt from it.
-   Catching a bad audio change here, before `stable`, is the entire reason
-   the beta ring exists.
-
-**During the service — a normal Sunday, not a synthetic test**
-
-3. Record the actual service end-to-end — preroll (if enabled) through the
-   real stop, at the length a real service runs, on the hardware this church
-   actually uses (not a laptop mic standing in for the mixer).
-4. Exercise whatever else this release changed for real, not just launch it —
-   an editor change gets an edit, a
-   notification change gets left running long enough to prove it fires (or
-   correctly doesn't).
-
-**After the service**
-
-5. Run the Diagnose row (gear → Avansert → «Kjør») and read the «Siste opptak
-   (teknisk)» section, or `<app-data>/last-recording.json` directly (§5b).
-   - **Expected:** `Dropp` / `xruns` / `IPC-overbelastning` at their healthy
-     targets (≈0), clean exit, no `SR-CAPTURE-01`. Paste these numbers into
-     the beta-ring report — the same numbers §6a asks for in the release
-     notes, gathered a ring earlier.
-6. Check the crash ring (§13, `<app-data>/crashes/`) for anything new since
-   the beta build was installed.
-   - **Expected:** nothing new. A crash the operator didn't notice at the
-     time is exactly what the crash ring exists to surface after the fact.
-7. Listen back to a few minutes of the actual recording.
-   - **Expected:** it is complete, the right length, and sounds like the
-     service. No telemetry number substitutes for someone actually checking
-     the file that was the entire point of running SundayRec that morning.
-
-**Go / no-go**
-
-- [ ] Everything above came back clean → `RELEASE-CHECKLIST.md` §5g (promote
-      to `stable`) is authorized.
-- [ ] Anything did not come back clean → do **not** promote to `stable`. Fix
-      it, cut a new `-beta.N`, promote that, and repeat this section on the
-      new build. If a bad beta is already promoted and reaching testers, pause
-      it first — see `ROLLBACK.md`.
-
----
-
-## §P2b — Remaining Electron→Tauri IPC parity
-
-These close the last handlers the Electron `src/main/ipc/*` exposed that the
-earlier phases hadn't reached. Pure decisions live in `sundayrec-core` (unit-
-tested); the I/O seams are annotated and, where they touch new hardware/network,
-gated behind a default-off feature.
-
-### ~~Sunday-suite integrations~~ — REMOVED (R1 «Frivilligen først»)
-
-The Song/Plan/SundayEdit/Stage hand-offs, the integrations panel and the
-`sundayrec://` scheme left the app 2026-08-23.
-
-### Device inventory (no feature) — `list_devices`
-
-Mirrors `src/main/ipc/audio-devices.ts`. (`diagnose_audio`, the second command
-of this section, left with the Diagnose page in F2.)
-
-⚠️ The camera list comes from **`list_devices`** (the shim's `listVideoDevices`
-picks `video_inputs` out of the inventory), NOT from a `list_video_devices`
-command — this heading said the latter until V1/PR3 checked it. The Rust
-`list_video_devices` was a pure subset of `list_devices` that nothing in the
-shell called, and it was deleted in the V1-tail round; `list_devices` is now
-the only camera enumeration there is.
-
-1. On **Opptak**, turn on the **«Ta med kamera»** card → the camera picker in
-   its body.
-   - **Expected:** the inventory returns the connected cameras, and the
-     card states what the chosen one can actually deliver («Kameraet leverer
-     maks 1080p · 30 bilder i sekundet»), or says plainly that it could not read
-     that. No camera at all reads «Finner ikke noe kamera», with the advice to
-     connect one or turn the option off. A missing ffmpeg / no devices yields
-     empty lists, not an error. // HARDWARE-UNVERIFIED.
-
-## What "passed" means
-
-A green smoke test = §2–§6 all behave as the **Expected** lines say on a real
-Mac with a real mic/camera, with no panic in the `tauri dev` stderr. Record any
-deviation (which step, the stderr log, the OS permission state) when reporting
-back.
-
-**One thing to watch for that is specific to the new shell.** WKWebView's UA
-string here carries **no `Safari` token**. Any library that branches on the UA
-sees "unknown engine" and takes its slowest path — that is the exact fact behind
-SundayEdit's 42× regression, invisible in Chromium. Nothing ships that branches
-on it today, but if a screen feels slow in the real window and fast in the
-browser tier, that is the first thing to suspect.
-
-For any build that touches **recording, capture, the editor, the meter loop, or
-boot ordering**, also run **§5b** (recording-health telemetry) and **§12b**
-(editor stability loop) and paste the `last-recording.json` numbers (§5b) into the
-release notes — that is the standing gate that stops unverified audio/editor
-fixes from shipping (see `RELEASE-CHECKLIST.md`).
-
----
-
-## Flater som ikke finnes lenger
-
-Fase B deleted the shipped shell and replaced it with «Frivilligen først»'s. Not
-everything the old one had was rebuilt. This list is what a tester will look for
-and not find, so that «I could not find the Diagnose screen» is answered here
-instead of filed as a bug — and so that nothing on it can quietly be forgotten.
-Every entry names what still works underneath, because in most cases the
-BACKEND is untouched and only the surface is gone.
-
-The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet».
-
-| gone                                                                                   | what is left, and where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The Diagnose page, the test recording and the capture bench** (F2)                   | removed. What is left: the numbers a recording writes to `<app-data>/last-recording.json` and the history ring (§5b), and the recorder's own post-recording truth check that raises the `recording://quality` alarm (`selftest_verdict`).                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **«Legg ut» / publish help, church profile and church calendar** (F2)                  | removed. The file and the «Innhold» tags are the hand-off; the filename default is the date (a stored `church` pattern reads as `date`). Language is the one thing left of the old church page (§R7).                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Special recordings, profile export/import, legacy settings migration, haptics** (F2) | removed. The schedule is the weekly slots only; there is no settings file to move between machines.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Editing a recording's note**                                                         | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **The Lyd / Video filter chips, sortable columns**                                     | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **The month calendar + day detail + wake-diagnostics card**                            | one list and one sentence on Avansert — «Flere tider» and the wake line (§11).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **The export MODAL**                                                                   | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **The «Normaliser» toggle**                                                            | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **The mastering apply panel** (`_mastert`)                                             | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **Intro/outro jingle rows**                                                            | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **The editor's three TABS**                                                            | **two** STEPS — Klipp → Lyd — since D3 turned the third into a destination. The chosen step is NOT remembered across a reopen, deliberately: every open starts at «is this the sermon?».                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **The left RAIL** (D3)                                                                 | a 44 px top bar (mark, product name — and the window's drag region) and a 56 px bottom bar (status left, the three destinations centred, version + gear right). `--rail-w` is deleted; nothing in the app is 208 px wide any more.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **The editor's EMPTY STATE** (D3)                                                      | the recordings list. REDIGERING with no file open IS the empty state, so «Åpne fil…» moved to the list's head and the drop zone wraps the whole page (never the trash). `app.editor.emptyTitle` / `emptyDesc` are deleted from all catalogues.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Step 3 «Eksporter» in the step strip** (D3)                                          | the **Eksportering** destination. «Neste: Eksporter» navigates there and the file stays open — the export's signals live at module scope, so a run and its receipt survive going away and coming back. `app.editor.stepExport` is deleted.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **`#modal-manual`** (source/camera/filename)                                           | those are the control-room cards' answers now, on the same screen as Start; start is one button (§5).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **The «backend OK» header**                                                            | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **The wake ADMIN prompt** (`wake_reschedule`)                                          | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`healStoredDeviceId`**                                                               | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ~~**The live camera picture** (`recording_preview_frame`)~~                            | **BACK** in D2/PR2, **replaced by one camera session in C4b** — `camera_preview_start` feeds Opptak and the overlay alike (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **«+30 min» / «Avbryt auto-stopp»** on the overlay                                     | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **The stereo / mono / «Miks L+R» channel-mode picker**                                 | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
-| ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~               | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
-| **E-mail alerts** (SMTP card, address + test, relay, receipt)                          | the native OS notification on the recording machine — always on for failures, the answer on «Hvem får beskjed hvis noe går galt?» (§8, §11).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **The editor's keyboard-shortcut legend**                                              | the shortcuts the legend described are not all rebuilt; the window handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-
-### Claims this runbook used to point at a test for, and no longer can
-
-These four VERIFIED-BY pointers were removed rather than moved. Each described a
-screen that is gone, so a pointer at the replacement would have claimed coverage
-of something nobody built.
-
-- ~~`e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report`~~
-  — **gone with the Diagnose page** (F2). It was replaced by `e2e/diagnose.spec.ts`
-  in V1/PR2; that spec and the screen were then removed together, so there is
-  nothing to point at.
-- `e2e/history.spec.ts::a note reaches the backend and shows on the row`
-- `e2e/history.spec.ts::a filter that matches nothing says so in its own words`
-- `e2e/editor.spec.ts::the export modal is honest about destination and level`
-
-⚠️ Three of those four would have kept passing the `smoke-verified` gate, because
-the new specs quote the old titles VERBATIM in comments explaining why they were
-not carried over — and the gate matched anywhere in the file. It matches inside a
-`test(…)` / `it(…)` / `describe(…)` title now, which is what a VERIFIED-BY
-pointer always meant.
-
-E-mail alerts (§8) took four more with them. They pinned a surface that no
-longer exists, and there is nothing to re-point them at:
-
-- `e2e/system-support.spec.ts::a build without the email feature gates the card and says so`
-- `e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated`
-- `e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport`
-- `crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port`
+Every box above ticked on one Mac and one Windows PC, `npm run check` green on
+the commit under test, and the result written into [PLAN.md](PLAN.md) (what was
+proved, on which machine, which version).

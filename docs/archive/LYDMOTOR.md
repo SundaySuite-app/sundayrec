@@ -1,3 +1,5 @@
+> **Arkivert i F7 («rent bord», v0.31.0).** Planen for redigeringens lydmotor er gjennomført; kanalreparasjon, mikser og lydprofiler er fjernet i «rent bord». Nåværende status: [PLAN.md](../PLAN.md).
+
 # Lydmotoren — redigeringens lyd i Rust, ffmpeg bare til filer
 
 _Skrevet 2026-10-11, lest mot koden på nytt 2026-10-12 ved v0.25.3. Status:
@@ -12,7 +14,7 @@ alt mellom dekoding og koding skjer i Rust: analyse, lydkjede, lydstyrke og
 forhåndslytting. Kilden til DSP-en er `audio-dsp`-craten fra
 [filmcraft](https://github.com/storytold/filmcraft) (MIT OR Apache-2.0).
 
-Det åpne står med én linje i [`PLAN.md`](PLAN.md); detaljene står her.
+Det åpne står med én linje i [`PLAN.md`](../PLAN.md); detaljene står her.
 
 ## Hvorfor
 
@@ -98,7 +100,7 @@ standarden. Det svake er **filtrene**. Derfor:
 endring. Testene deres kjøres i vår CI. Vi følger **ikke** oppstrøms
 fortløpende: en oppdatering er en egen PR med diff mot forrige commit. Dette
 er et bevisst unntak fra «avhengighet før kopi» i
-[AVHENGIGHETER.md](AVHENGIGHETER.md).
+[AVHENGIGHETER.md](../AVHENGIGHETER.md).
 
 ## Målbildet
 
@@ -194,7 +196,7 @@ mot mål −16 / tak −1,0. Målet nås med én dry-run (limiteren tok 5,6 dB a
   det er hans beslutning, og det finnes ingen reserve eller sammenligning etterpå.
   Presettabellens tekst (`MasterPreset.filters`) står igjen fordi `chain.rs` leser den.
 - **Ferdig når:** ~~«Ørene» har lyttet gammel mot ny~~ — utgått. «Ørene» i
-  [RIG-DAY.md](RIG-DAY.md) lytter nå til den nye kjeden alene; feil rettes framover.
+  [RIG-DAY.md](../RIG-DAY.md) lytter nå til den nye kjeden alene; feil rettes framover.
 
 **Gjort (B2b).** Eksport, nivåanalyse og forhåndslytting tar lyden fra ffmpeg som rå f32
 uten noe `-af` (bare klipp, skjøtefades og konkatenering gjenstår i grafen) og kjører kjeden i
