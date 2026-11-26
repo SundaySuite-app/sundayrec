@@ -84,6 +84,7 @@
    */
   --on-gold: #1b1f2a;
   --on-rec: #ffffff;
+  --ring-track: rgba(255, 255, 255, 0.25);
   /* Bryterens knott og VU-spissmarkøren: ren hvit på alle underlag. */
   --knob: #ffffff;
 

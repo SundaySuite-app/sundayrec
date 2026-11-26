@@ -1,44 +1,130 @@
 /*
- * Opptaksoverlegget — hele vinduet, mens gudstjenesten går.
+ * Opptaksoverlegget — hele vinduet, mens gudstjenesten går («Én flate», E6).
  *
- * Ikke et kort på en side: mens det tas opp er DET appen. Skinnen, kortene og
- * navigasjonen er ting man gjør før og etter, og et overlegg som lot dem stå
- * ville invitert til å klikke seg videre midt i en take.
+ * Ikke et kort på en side: mens det tas opp er DET appen. Tre rader — en
+ * topplinje på 64 px (som toppfeltet den dekker), scenen, og bunnen med «Hold»
+ * og stopplinja. Advarslene er små brikker som flyter under topplinja og ikke
+ * flytter noe når de kommer.
  */
 
 .overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-recording);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-5);
-  padding: var(--sp-7);
-  text-align: center;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr) auto;
   background:
     radial-gradient(ellipse at 50% 30%, var(--rec-soft), transparent 60%),
     var(--bg);
 }
 
-/* Bannere øverst, ikke midt i: de skal ikke flytte klokken når de kommer. */
-.banners {
-  position: absolute;
-  top: var(--sp-5);
-  left: var(--sp-5);
-  right: var(--sp-5);
-  display: grid;
-  gap: var(--sp-2);
-  text-align: start;
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.timer {
-  font-size: 72px;
+.rec {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.recDot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--rec);
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+/* Advarsler: flyter midt under topplinja. */
+.chips {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-6);
+  pointer-events: none;
+}
+
+.chip {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+
+.chip svg {
+  color: var(--warn);
+}
+
+.chipClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: calc(-1 * var(--sp-1));
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.chipClose:hover {
+  background: var(--ink-soft);
+  color: var(--ink);
+}
+
+/* Hele setningen, for skjermleser — ordet over er det øyet ser. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.stage {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-6);
+  padding: 0 var(--sp-6);
+}
+
+.clock {
+  font-size: 96px;
   font-weight: 300;
   letter-spacing: 0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* Klokken stopper når motoren skriver ferdig — den dempes så det synes. */
@@ -47,16 +133,11 @@
 }
 
 .meter {
-  width: min(720px, 100%);
-}
-
-/*
- * Kamerabildet. Smalere enn måleren med vilje: lyden er det som ryker, og et
- * bilde som var det største på skjermen ville flyttet blikket bort fra
- * stolpene. Se CameraPreview.tsx.
- */
-.camera {
-  width: min(420px, 100%);
+  --meter-w: 520px;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 40px;
 }
 
 .facts {
@@ -64,24 +145,128 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--sp-2) var(--sp-4);
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+}
+
+/* Med kamera: bildet i en ramme med rød kant. Fakta-linja går ut — rammen
+   har plassen. */
+.panel {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  top: var(--sp-5);
+  bottom: var(--sp-2);
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--surface);
+  border: 2px solid var(--rec-line);
+}
+
+.stage:has(.panel) .facts {
+  display: none;
+}
+
+.picture {
+  position: absolute;
+  inset: 0;
+}
+
+.clockChip {
+  position: absolute;
+  left: 18px;
+  top: var(--sp-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--scrim-chip-strong);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.panelMeter {
+  position: absolute;
+  right: 22px;
+  top: 70px;
+  bottom: 40px;
+  display: flex;
+}
+
+.bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-6) var(--sp-5);
+}
+
+.holdLabel {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+}
+
+.stopLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 48px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
   color: var(--ink-2);
+}
+
+.stopText {
+  padding: 0 var(--sp-2) 0 var(--sp-1);
   font-size: var(--fs-md);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+
+.extend,
+.noStop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  color: var(--gold);
+  font: inherit;
+  cursor: pointer;
+}
+
+.extend {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.noStop {
+  width: 44px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.extend:hover,
+.noStop:hover {
+  border-color: var(--gold-line);
 }
 
 .hint {
   margin: 0;
   max-width: 46ch;
+  text-align: center;
   color: var(--ink-3);
   font-size: var(--fs-sm);
-}
-
-.autostop {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-3);
-}
-
-.stop {
-  min-width: 280px;
 }

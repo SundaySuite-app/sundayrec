@@ -107,6 +107,14 @@ async function calls(page: Page): Promise<Record<string, number>> {
   );
 }
 
+/** Fristen stopplinja viser, som epoch-ms (`data-stop-ms`). */
+async function stopMs(page: Page): Promise<number> {
+  const raw = await page
+    .getByTestId("overlay-autostop")
+    .getAttribute("data-stop-ms");
+  return Number(raw);
+}
+
 /** What each `start_recording` call was sent, in order. */
 async function startArgs(page: Page): Promise<unknown[]> {
   return page.evaluate(
@@ -327,87 +335,116 @@ test.describe("opptaksoverlegget", () => {
     );
   });
 
-  test("bekreftelsen har «Fortsett å ta opp» som primærvalg", async ({
+  // «Hold» (E6) erstatter bekreftelsesdialogen: den røde knappen må holdes inne
+  // i ett sekund. Vaktene (dobbelttrykk, øktas identitet) er node-testet i
+  // `stop.test.ts`; det bare denne kan bevise er at ET EKTE trykk og en ekte
+  // tast faktisk når `stop_recording` — og at et kort trykk ikke gjør det.
+
+  /** Hold musa nede på «Hold»-knappen i `ms`, og slipp. */
+  async function holdMouse(page: Page, ms: number): Promise<void> {
+    const box = (await page.getByTestId("overlay-stop").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(ms);
+    await page.mouse.up();
+  }
+
+  test("et kort trykk på «Hold» stopper ikke — ringen går tilbake", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    // Ingen dialog finnes lenger: knappen er stoppen.
+    await expect(page.getByTestId("overlay-stop")).toHaveAttribute(
+      "aria-label",
+      "Hold inne for å stoppe",
+    );
+
+    await holdMouse(page, 300);
+    // Vent ut resten av sekundet: et kort trykk skal ikke bli til et stopp
+    // etter at fingeren er løftet.
+    await page.waitForTimeout(1200);
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+    await expect(page.getByTestId("recording-overlay")).not.toHaveAttribute(
+      "data-finalizing",
+      "true",
+    );
+    await expect(page.getByTestId("overlay-stop")).not.toHaveAttribute(
+      "data-holding",
+      "true",
+    );
+  });
+
+  test("å holde «Hold» i ett sekund stopper — én gang", async ({ page }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    const box = (await page.getByTestId("overlay-stop").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(page.getByTestId("overlay-stop")).toHaveAttribute(
+      "data-holding",
+      "true",
+    );
+    // Midt i holdet er ingenting stoppet ennå.
+    await page.waitForTimeout(400);
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+    await expect.poll(async () => (await calls(page)).stop_recording).toBe(1);
+    await page.mouse.up();
+
+    await expect(page.getByTestId("recording-overlay")).toHaveAttribute(
+      "data-finalizing",
+      "true",
+    );
+    await page.waitForTimeout(300);
+    expect((await calls(page)).stop_recording).toBe(1);
+  });
+
+  test("å føre musa av knappen før sekundet er omme avbryter holdet", async ({
     page,
   }) => {
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
-    await page.getByTestId("overlay-stop").click();
-    const dialog = page.getByTestId("dialog");
-    await expect(dialog).toBeVisible();
-    // Rødt betyr «tar opp» og ingenting annet — bekreftelsen er ikke farlig-rød.
-    await expect(dialog).not.toHaveAttribute("data-danger", "true");
-    // Primærknappen er den som HOLDER opptaket i gang, og den har fokus.
-    const keep = page.getByTestId("dialog-ok");
-    await expect(keep).toHaveText("Fortsett å ta opp");
-    await expect(keep).toHaveAttribute("data-variant", "primary");
-    await expect(keep).toBeFocused();
-    await expect(page.getByTestId("dialog-cancel")).toHaveText("Stopp");
-
-    // Og «Fortsett» stopper ingenting.
-    await keep.click();
-    await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    const box = (await page.getByTestId("overlay-stop").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(300);
+    await page.mouse.move(box.x - 200, box.y - 100);
+    await page.waitForTimeout(1200);
+    await page.mouse.up();
     expect((await calls(page)).stop_recording ?? 0).toBe(0);
   });
 
-  test("F2-T3: Escape på stopp-bekreftelsen lukker den UTEN å stoppe", async ({
+  test("tastatur: Mellomrom holdt i ett sekund stopper; sluppet tidlig avbryter", async ({
     page,
   }) => {
-    // «Stopp» bor bak `cancelLabel` — ghost-knappen, ikke Enter-standarden —
-    // og DialogHost lukker ELLERS enhver dialog med Escape via nøyaktig den
-    // knappen. Uten `escapeConfirms: true` i `stop.ts` er Escape derfor et
-    // stille stopp-klikk: bevist en gang (før denne fiksen) ved at denne
-    // testen kalte `stop_recording` og satte overlegget i «Fullfører opptak».
-    // Bekreftelsens hele poeng — at et uhell skal koste ett klikk til, ikke
-    // opptaket — holder ikke hvis tastaturets egen «lukk dette»-tast er det
-    // ene uhellet den ikke tåler.
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    // Knappen tar imot fokus: et opptak startet fra tastaturet stoppes derfra.
+    await expect(page.getByTestId("overlay-stop")).toBeFocused();
 
-    await page.getByTestId("overlay-stop").click();
-    const dialog = page.getByTestId("dialog");
-    await expect(dialog).toBeVisible();
-    // Vent til fokuset FAKTISK har flyttet inn i dialogen (samme mønster som
-    // `dialog.spec.ts`) — ellers kappløper Escape mot DialogHosts egen
-    // `requestAnimationFrame`, og treffer et element utenfor dialogen som
-    // ikke har noen Escape-håndterer i det hele tatt.
-    await expect(page.getByTestId("dialog-ok")).toBeFocused();
-
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-
-    // Opptaket går fortsatt — ingen finalisering, ingen kall til motoren.
-    await expect(page.getByTestId("recording-overlay")).toBeVisible();
-    await expect(page.getByTestId("overlay-stop")).toHaveText("Stopp opptaket");
+    await page.keyboard.down("Enter");
+    await page.waitForTimeout(300);
+    await page.keyboard.up("Enter");
+    await page.waitForTimeout(1200);
     expect((await calls(page)).stop_recording ?? 0).toBe(0);
-  });
 
-  test("F2-T3: et klikk på sløret bak stopp-bekreftelsen stopper heller ikke", async ({
-    page,
-  }) => {
-    // Samme knapp, samme feilmodus, ulik trigger: DialogHost lukker via
-    // `cancelId` også når sløret klikkes (`onMouseDown` på `event.currentTarget`
-    // alene — se DialogHost.tsx). Ett klikk like utenfor en liten dialogboks
-    // midt i et fullskjerms overlegg er lett å gjøre ved et uhell.
-    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
-    await page.getByTestId("record-start").click();
-    await expect(page.getByTestId("recording-overlay")).toBeVisible();
-
-    await page.getByTestId("overlay-stop").click();
-    const dialog = page.getByTestId("dialog");
-    await expect(dialog).toBeVisible();
-
-    // Et klikk i selve sløret, ikke i dialogboksen — øverste venstre hjørne av
-    // viewporten er alltid slør så lenge dialogen ikke fyller hele skjermen.
-    await page.getByTestId("dialog-scrim").click({ position: { x: 2, y: 2 } });
-    await expect(dialog).toHaveCount(0);
-
-    await expect(page.getByTestId("recording-overlay")).toBeVisible();
-    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+    await page.keyboard.down("Space");
+    await expect(page.getByTestId("overlay-stop")).toHaveAttribute(
+      "data-holding",
+      "true",
+    );
+    await expect.poll(async () => (await calls(page)).stop_recording).toBe(1);
+    await page.keyboard.up("Space");
+    await expect(page.getByTestId("recording-overlay")).toHaveAttribute(
+      "data-finalizing",
+      "true",
+    );
   });
 
   test("kvitteringen står som et kort når motoren melder at fila er ferdig", async ({
@@ -907,24 +944,28 @@ test.describe("auto-stoppen kan skyves", () => {
       settings: CHOSEN,
       goto: "record",
     });
-    // Et opptak uten auto-stopp: ingen nedtelling, og derfor heller ingen
+    // Et opptak uten auto-stopp: «Til du stopper», og derfor heller ingen
     // knapper å lure på midt i en gudstjeneste.
     await emit(page, "recording-overlay-stop", {
       state: "recording",
       scheduled_stop_ms: null,
     });
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-until-stop")).toHaveText(
+      "Til du stopper",
+    );
     await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
     await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
   });
 
-  test("«+ 15 min» når motoren, med minuttene som argument", async ({
+  test("«+30» når motoren, med minuttene som argument — og tiden flytter seg først når motoren sier det", async ({
     page,
   }) => {
     await liveWithDeadline(page);
     await expect(page.getByTestId("overlay-autostop")).toContainText(
-      "Stopper av seg selv",
+      "Stopper ",
     );
+    const before = await stopMs(page);
 
     await page.getByTestId("overlay-autostop-extend").click();
 
@@ -935,18 +976,23 @@ test.describe("auto-stoppen kan skyves", () => {
       .toBe(1);
     expect(
       await page.evaluate(() => (window as any).__E2E_EXTEND_MINUTES__),
-    ).toBe(15);
+    ).toBe(30);
 
-    // …og nedtellingen kommer fra MOTOREN, ikke fra en lokal gjetning: den nye
-    // fristen rir på neste tilstandsemit.
+    // Tiden er MOTORENS, ikke en lokal gjetning: den står der den sto til
+    // motoren har sagt noe annet …
+    expect(await stopMs(page)).toBe(before);
+    // … og den nye fristen rir på neste tilstandsemit.
+    const moved = before + 30 * 60_000;
     await emit(page, "recording-overlay-stop", {
       state: "recording",
-      scheduled_stop_ms: Date.now() + 35 * 60_000,
+      scheduled_stop_ms: moved,
     });
-    await expect(page.getByTestId("overlay-autostop")).toContainText("34:5");
+    await expect.poll(() => stopMs(page)).toBe(moved);
   });
 
-  test("«Avbryt auto-stopp» tar nedtellingen bort helt", async ({ page }) => {
+  test("«∞» tar fristen bort, og linja sier «Til du stopper»", async ({
+    page,
+  }) => {
     await liveWithDeadline(page);
     await page.getByTestId("overlay-autostop-cancel").click();
     await expect
@@ -959,6 +1005,9 @@ test.describe("auto-stoppen kan skyves", () => {
     });
     await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
     await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-until-stop")).toHaveText(
+      "Til du stopper",
+    );
     // Opptaket går fortsatt — det var fristen som ble avlyst, ikke økta.
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
   });
@@ -1026,7 +1075,12 @@ test.describe("nedtellingen rehydreres når overlegget monteres uten den", () =>
     await expect
       .poll(async () => (await calls(page)).recording_scheduled_stop_ms)
       .toBe(1);
-    await expect(page.getByTestId("overlay-autostop")).toContainText("32:5");
+    // Fristen motoren svarte med (om ~33 minutter) står i stopplinja.
+    await expect
+      .poll(async () =>
+        Math.round(((await stopMs(page)) - Date.now()) / 60_000),
+      )
+      .toBe(33);
   });
 
   test("en tilstandsovergang som ALLEREDE bærer fristen ber ikke motoren om den på nytt", async ({
@@ -1045,7 +1099,11 @@ test.describe("nedtellingen rehydreres når overlegget monteres uten den", () =>
       scheduled_stop_ms: Date.now() + 20 * 60_000,
     });
 
-    await expect(page.getByTestId("overlay-autostop")).toContainText("19:5");
+    await expect
+      .poll(async () =>
+        Math.round(((await stopMs(page)) - Date.now()) / 60_000),
+      )
+      .toBe(20);
     // Vent til lenger enn en useEffect-runde kan ta, og bekreft at kallet
     // ALDRI kom — en overflødig IPC-tur på den vanlige veien ville vært
     // nøyaktig den slags stille regresjon denne testen skal fange.
@@ -1539,7 +1597,9 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
       video_frames_dropped: 0,
       video_lost_ms: 1_000,
     });
-    await expect(note).toHaveText("Kameraet falt ut — lyden tas fortsatt opp");
+    await expect(note).toContainText(
+      "Kameraet falt ut — lyden tas fortsatt opp",
+    );
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
 
     // Mange sekunder senere: fortsatt samme melding, ikke flere.
@@ -1590,7 +1650,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
       video_lost_ms: null,
       video_problem: "encoder_stopped",
     });
-    await expect(note).toHaveText("Bildet stoppet — lyden tas fortsatt opp");
+    await expect(note).toContainText("Bildet stoppet — lyden tas fortsatt opp");
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
 
     await emit(page, "recording-progress", {
@@ -1599,7 +1659,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
       video_lost_ms: null,
       video_problem: "camera_not_opened",
     });
-    await expect(note).toHaveText(
+    await expect(note).toContainText(
       "Kameraet åpnet ikke — lyden tas opp, men uten bilde",
     );
 

@@ -66,7 +66,7 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::a_renderer_supplied_path_never_reaches_the_engine
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_matches_what_main_planned
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_equals_the_old_plan_then_start_round_trip
-- VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
+- VERIFIED-BY: e2e/recorder.spec.ts::stop needs a one-second hold and then holds a finalizing overlay
 - VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
 - VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
 - VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id

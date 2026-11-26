@@ -75,7 +75,7 @@ import { SourceControl } from "./SourceChip";
 import { SheetMore } from "./SheetMore";
 import { SheetSound } from "./SheetSound";
 import { SourceSheet } from "./SourceSheet";
-import { confirmAndStop } from "./stop";
+import { stopNow } from "./stop";
 import { StereoMeter } from "./StereoMeter";
 import { WeekStrip } from "./WeekStrip";
 
@@ -183,7 +183,7 @@ export function RecordPage() {
     }
     if (armed === "stop-recording") {
       consumePendingAction();
-      if (live) void confirmAndStop();
+      if (live) void stopNow();
     }
   }, [armed, source.canStart, live]);
 

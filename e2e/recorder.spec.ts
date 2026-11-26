@@ -140,15 +140,16 @@ test.describe("recorder", () => {
     expect(overlaps).toBe(false);
   });
 
-  test("stop is guarded by a confirm and then holds a finalizing overlay", async ({
+  test("stop needs a one-second hold and then holds a finalizing overlay", async ({
     page,
   }) => {
-    // Two claims in one journey. First: a stop press must NOT stop — a confirm
-    // is interposed, because the one unrecoverable mistake on a Sunday is
-    // ending the take at minute 12. Second: a confirmed stop ASKS the engine to
-    // finalize and keeps the overlay up in an explicit finalizing state until a
-    // terminal engine event arrives — it never tears down in the same tick as
-    // the click.
+    // Two claims in one journey. First: a short press must NOT stop — the one
+    // unrecoverable mistake on a Sunday is ending the take at minute 12, so
+    // the red button has to be HELD for a second (it replaced the confirm
+    // dialog in E6). Second: a completed hold ASKS the engine to finalize and
+    // keeps the overlay up in an explicit finalizing state until a terminal
+    // engine event arrives — it never tears down in the same tick as the
+    // press.
     await boot(page, {
       fixtures: RECORDER_FIXTURES,
       settings: CHOSEN,
@@ -157,21 +158,23 @@ test.describe("recorder", () => {
     await startFromHome(page);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
-    await page.getByTestId("overlay-stop").click();
-    await expect(page.getByTestId("dialog")).toBeVisible();
-    // Nothing was stopped by the question itself.
+    const box = (await page.getByTestId("overlay-stop").boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    await page.mouse.up();
+    await page.waitForTimeout(1200);
+    // Nothing was stopped by the short press, and no dialog was asked.
+    await expect(page.getByTestId("dialog")).toHaveCount(0);
     expect(
       await page.evaluate(
         () => (window as any).__E2E_CALLS__.stop_recording ?? 0,
       ),
     ).toBe(0);
 
-    // ⚠️ The confirm is INVERTED on purpose: «Fortsett å ta opp» is the
-    // primary/Enter choice, so stopping is the cancel path. See the head of
-    // `app/pages/record/RecordingOverlay.tsx`.
-    await expect(page.getByTestId("dialog-ok")).toHaveText("Fortsett å ta opp");
-    await page.getByTestId("dialog-cancel").click();
-
+    await page.mouse.down();
     // The graceful-stop request went out exactly once…
     await expect
       .poll(() =>
@@ -186,9 +189,12 @@ test.describe("recorder", () => {
       "data-finalizing",
       "true",
     );
+    await page.mouse.up();
     const stopBtn = page.getByTestId("overlay-stop");
     await expect(stopBtn).toHaveAttribute("aria-disabled", "true");
-    await expect(stopBtn).toContainText("Fullfører opptak …");
+    await expect(page.getByTestId("overlay-hold-label")).toHaveText(
+      "Fullfører opptak …",
+    );
     await expect(page.getByTestId("overlay-finalizing-hint")).toBeVisible();
   });
 });

@@ -384,20 +384,13 @@
       "what": "Hva sendes?"
     },
     "overlay": {
-      "stop": "Stopp opptaket",
       "closeHint": "Du kan lukke vinduet — opptaket fortsetter i bakgrunnen.",
-      "stopQuestion": "Stoppe opptaket?",
-      "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
-      "keep": "Fortsett å ta opp",
-      "stopYes": "Stopp",
       "room": "Plass til {span}",
       "camera": "Kamera {name}",
       "reconnect": "Lyden fra {name} forsvant — prøver å koble til igjen",
       "reconnectAnon": "Lyden forsvant — prøver å koble til igjen",
-      "autoStop": "Stopper av seg selv om {left}",
       "videoSkipped": "Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er ikke berørt.",
       "cameraLost": "Kameraet falt ut — lyden tas fortsatt opp",
-      "loudness": "Lydstyrke {lufs} LUFS",
       "videoStopped": "Bildet stoppet — lyden tas fortsatt opp",
       "cameraNotOpened": "Kameraet åpnet ikke — lyden tas opp, men uten bilde",
       "finalizingHint": "Opptaket skrives til disk. Det tar noen sekunder, og fila er trygg imens."
@@ -590,6 +583,24 @@
         "wakeTitle": "Vekk maskinen fra dvale før opptak",
         "notify": "Varsel",
         "notifyTitle": "Varsel når opptak starter og stopper"
+      }
+    },
+    "rec": {
+      "hold": "Hold",
+      "holdAria": "Hold inne for å stoppe",
+      "holdTitle": "Hold inne i ett sekund for å stoppe opptaket",
+      "stopsAt": "Stopper {time}",
+      "untilStop": "Til du stopper",
+      "stoppingNow": "Stopper nå",
+      "extendAria": "30 minutter lengre",
+      "extendTitle": "30 min lengre",
+      "noStopTitle": "Ikke stopp av seg selv – ta opp til du stopper",
+      "chip": {
+        "reconnect": "Kobler til igjen",
+        "silence": "Stille",
+        "videoSkipped": "Bilder hoppet over",
+        "cameraLost": "Kamera borte",
+        "noVideo": "Uten bilde"
       }
     }
   },
@@ -853,7 +864,6 @@
     "videoListError": "Feil ved lasting av kameraer",
     "autostopFailed": "Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.",
     "autostopIn": "Auto-stopp om",
-    "extend15": "+ 15 min",
     "cancelAutostop": "Avbryt auto-stopp",
     "qrNoAudio": "Ingen lyd ble fanget — fila er for liten til å inneholde noe.",
     "qrSilent": "Opptaket er stille — ingen signal. Sjekk lydkilden og volumet.",
