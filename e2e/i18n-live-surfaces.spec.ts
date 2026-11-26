@@ -54,7 +54,10 @@ test.describe("language switch keeps live-painted state", () => {
     await expect(page.getByTestId("status-text")).toHaveText(
       "Lyden er ikke koblet til",
     );
-    await expect(page.getByTestId("nav-recordings")).toContainText("Opptak");
+    await expect(page.getByTestId("nav-recordings")).toHaveAttribute(
+      "aria-label",
+      "Opptak",
+    );
 
     // Bytt språk under Innstillinger — den ene flaten som eier språkvalget.
     await page.getByTestId("nav-settings").click();
@@ -63,7 +66,8 @@ test.describe("language switch keeps live-painted state", () => {
     // 1. En innstillings-malt flate er malt om PÅ ENGELSK — ikke stående på
     //    norsk, og ikke nullstilt til noe generisk.
     await page.getByTestId("nav-record").click();
-    await expect(page.getByTestId("nav-recordings")).toContainText(
+    await expect(page.getByTestId("nav-recordings")).toHaveAttribute(
+      "aria-label",
       "Recordings",
     );
 
@@ -193,7 +197,8 @@ test.describe("engine codes render as catalogue sentences", () => {
     // Språket byttes der det bor: Innstillinger.
     await page.getByTestId("nav-settings").click();
     await page.getByTestId("language-control-input").selectOption("en");
-    await page.getByTestId("nav-plan").click();
+    // Plan er ikke lenger en fane: gå via dyplenken (E2: record + stripe).
+    await page.evaluate(() => window.showPage("plan"));
 
     await expect(notes).toContainText("it disappears");
     await expect(notes).toContainText("startup settings (BIOS)");

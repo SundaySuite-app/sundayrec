@@ -57,6 +57,7 @@ import { spanText } from "../pages/record/span-text";
 import { Banner } from "../ui/Banner/Banner";
 import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
+import { Icon } from "../ui/Icon/Icon";
 import { Tabs } from "../ui/Tabs/Tabs";
 import {
   canRedo,
@@ -380,16 +381,7 @@ function Transport() {
         aria-keyshortcuts={PLAY_KEYS_ARIA}
         onClick={togglePlay}
       >
-        {playing.value ? (
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <rect x="6" y="5" width="4" height="14" rx="1" />
-            <rect x="14" y="5" width="4" height="14" rx="1" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        )}
+        {playing.value ? <Icon name="pause" /> : <Icon name="play" />}
       </button>
       <b data-testid="editor-time" class={styles.time}>
         {timecode(playheadSec.value)}

@@ -54,7 +54,7 @@ const CHOSEN_FIXTURES = {
 };
 
 test.describe("skallet", () => {
-  test("de fire sidene bytter rute, og fokus følger med", async ({ page }) => {
+  test("de tre sidene bytter rute, og fokus følger med", async ({ page }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
     await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
 
@@ -68,11 +68,6 @@ test.describe("skallet", () => {
     );
     // Fokus på overskriften. Uten det blir en tastaturbruker stående i
     // bunnlinja og må tabbe gjennom hele navigasjonen på nytt for hver side.
-    await expect(page.getByTestId("app-heading")).toBeFocused();
-
-    await page.getByTestId("nav-plan").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Plan");
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
     await page.getByTestId("nav-settings").click();
@@ -129,7 +124,8 @@ test.describe("skallet", () => {
     // prefiksede `<defs>`-id-ene, som er kollisjonsvakten mot
     // `src-tauri/app-icon.svg`s generiske navn.
     await expect(page.getByTestId("app-logo")).toBeVisible();
-    await expect(page.locator("#srlogo-clip")).toHaveCount(1);
+    // E1: toppfeltet bruker `bare`-varianten — ingen flis, altså ingen clip.
+    await expect(page.locator("#srlogo-clip")).toHaveCount(0);
     await expect(page.locator("#srlogo-gold")).toHaveCount(1);
 
     const bar = (await page.getByTestId("topbar").boundingBox())!;
@@ -156,52 +152,52 @@ test.describe("skallet", () => {
     );
   });
 
-  test("bunnlinja: status til venstre, de fire sentrert, versjonen til høyre", async ({
+  test("toppfeltet: logo, to ikonfaner og tannhjul; bunnlinja: status og versjon", async ({
     page,
   }) => {
     await boot(page, { fixtures: CHOSEN_FIXTURES, settings: SOUND_CHOSEN });
 
-    // Fire sider, alle i samme gruppe.
-    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
+    // To faner og tannhjulet — Plan er ikke en fane lenger.
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
+    await expect(page.getByTestId("nav-plan")).toHaveCount(0);
 
-    const bar = (await page.getByTestId("bottombar").boundingBox())!;
-    const status = (await page.getByTestId("status-line").boundingBox())!;
-    const dot = (await page.getByTestId("status-dot").boundingBox())!;
+    const top = (await page.getByTestId("topbar").boundingBox())!;
+    const logo = (await page.getByTestId("app-logo").boundingBox())!;
     const rec = (await page.getByTestId("nav-record").boundingBox())!;
     const recs = (await page.getByTestId("nav-recordings").boundingBox())!;
-    const plan = (await page.getByTestId("nav-plan").boundingBox())!;
     const set = (await page.getByTestId("nav-settings").boundingBox())!;
+    const bar = (await page.getByTestId("bottombar").boundingBox())!;
+    const status = (await page.getByTestId("status-line").boundingBox())!;
     const version = (await page.getByTestId("app-version").boundingBox())!;
-
-    // 1. Båndet står NEDERST — under `<main>`, ikke over den.
     const main = (await page.getByTestId("main").boundingBox())!;
-    expect(bar.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
 
-    // 2. Venstre → høyre: status · de fire · versjon.
-    expect(dot.x).toBeLessThan(rec.x);
-    expect(status.x + status.width).toBeLessThan(rec.x);
+    // 1. Venstre → høyre i toppfeltet: logo · Ta opp · Opptak · tannhjul.
+    expect(logo.x + logo.width).toBeLessThan(rec.x);
     expect(rec.x).toBeLessThan(recs.x);
-    expect(recs.x).toBeLessThan(plan.x);
-    expect(plan.x).toBeLessThan(set.x);
-    expect(set.x + set.width).toBeLessThan(version.x);
+    expect(recs.x + recs.width).toBeLessThan(set.x);
 
-    // 3. ALT inni det samme båndet. Dette er påstanden som faller hvis et felt
-    //    forlater rutenettet — den formen for feil ser riktig ut i DOM-en.
-    for (const box of [status, rec, recs, plan, set, version]) {
-      expect(box.y).toBeGreaterThanOrEqual(bar.y);
-      expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 0.5);
+    // 2. Fanene er ikonpiller på 52 px, og står SENTRERT i vinduet.
+    expect(Math.round(rec.width)).toBe(52);
+    expect(Math.round(recs.width)).toBe(52);
+    const viewport = page.viewportSize()!;
+    const tabsMid = (rec.x + recs.x + recs.width) / 2;
+    expect(Math.abs(tabsMid - viewport.width / 2)).toBeLessThan(4);
+
+    // 3. Alt ligger innenfor toppfeltet; treffmålene er minst 40 px.
+    for (const box of [logo, rec, recs, set]) {
+      expect(box.y).toBeGreaterThanOrEqual(top.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(top.y + top.height + 0.5);
+    }
+    for (const box of [rec, recs, set]) {
+      expect(box.height).toBeGreaterThanOrEqual(40);
     }
 
-    // 4. …og de fire står SENTRERT i vinduet, ikke sentrert i det som blir
-    //    igjen etter statuslinjen. `1fr auto 1fr` er hele mekanismen.
-    const viewport = page.viewportSize()!;
-    const navMid = (rec.x + set.x + set.width) / 2;
-    expect(Math.abs(navMid - viewport.width / 2)).toBeLessThan(4);
-
-    // 5. Treffmålet. Et ikon over en 11 px etikett er ~35 px innhold; knappen
-    //    skal være større enn innholdet sitt.
-    for (const box of [rec, recs, plan, set]) {
-      expect(box.height).toBeGreaterThanOrEqual(40);
+    // 4. Bunnlinja står NEDERST, med status til venstre og versjon til høyre.
+    expect(bar.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
+    expect(status.x + status.width).toBeLessThan(version.x);
+    for (const box of [status, version]) {
+      expect(box.y).toBeGreaterThanOrEqual(bar.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 0.5);
     }
   });
 
@@ -253,7 +249,7 @@ test.describe("skallet", () => {
     await expect(page.getByTestId("app-logo")).toBeVisible();
     await expect(page.getByTestId("bottombar")).toBeVisible();
     await expect(page.getByTestId("status-line")).toBeVisible();
-    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
     // Og ingen skinne noe sted — heller ikke her.
     await expect(page.getByTestId("rail")).toHaveCount(0);
   });
@@ -322,11 +318,15 @@ test.describe("skallet", () => {
       settings: { ...SOUND_CHOSEN, language: "en" },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
-    await expect(page.getByTestId("nav-recordings")).toContainText(
+    // Ikonfanene har navnet som aria-label (og title), ikke som synlig tekst.
+    await expect(page.getByTestId("nav-recordings")).toHaveAttribute(
+      "aria-label",
       "Recordings",
     );
-    await expect(page.getByTestId("nav-plan")).toContainText("Plan");
-    await expect(page.getByTestId("nav-settings")).toContainText("Settings");
+    await expect(page.getByTestId("nav-settings")).toHaveAttribute(
+      "aria-label",
+      "Settings",
+    );
     await expect(page.getByTestId("status-text")).toHaveText("All set");
   });
 });

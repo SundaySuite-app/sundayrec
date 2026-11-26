@@ -8,6 +8,7 @@ import { loadState } from "./editor/model";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
 import { globalError } from "./state/global-error";
+import { isRecording } from "./state/recording";
 import { recordings } from "./state/recordings";
 import { trashEntries } from "./state/trash";
 import { hydrateError, patchSettings } from "./state/settings";
@@ -45,6 +46,20 @@ describe("Shell", () => {
     expect(html).toContain("data-tauri-drag-region");
   });
 
+  it("skjuler fanene og tannhjulet under opptak og viser «Tar opp»", () => {
+    navigate("record");
+    isRecording.value = true;
+    try {
+      const html = render(<Shell />);
+      expect(html).toContain('data-testid="topbar-recording"');
+      expect(html).not.toContain('data-testid="nav-record"');
+      expect(html).not.toContain('data-testid="nav-recordings"');
+      expect(html).not.toContain('data-testid="nav-settings"');
+    } finally {
+      isRecording.value = false;
+    }
+  });
+
   it("er tre bånd i rekkefølge: topplinje, side, bunnlinje — og skinnen er borte", () => {
     // D3: venstreskinnen er revet. Det som var i den bor nå i to linjer, og
     // REKKEFØLGEN i treet er den samme som rekkefølgen på skjermen — det er den
@@ -76,21 +91,18 @@ describe("Shell", () => {
       /data-testid="bottombar"[^>]*data-tauri-drag-region/,
     );
 
-    // Topplinja: merket og produktnavnet. Ingen knapper, ingen kirke.
-    expect(html).toContain('data-testid="app-logo"');
+    // Topplinja (E1): merket, to ikonfaner og tannhjulet. Ingen Plan-fane.
+    const topbar = html.slice(top, main);
+    expect(topbar).toContain('data-testid="app-logo"');
     expect(html).not.toContain('data-testid="shell-church"');
+    for (const id of ["nav-record", "nav-recordings", "nav-settings"]) {
+      expect(topbar).toContain(`data-testid="${id}"`);
+    }
+    expect(html).not.toContain('data-testid="nav-plan"');
 
-    // Bunnlinja: statuslinjen og de fire sidene.
+    // Bunnlinja: statuslinjen.
     const bar = html.slice(bottom);
-    for (const id of [
-      "status-line",
-      "status-dot",
-      "status-text",
-      "nav-record",
-      "nav-recordings",
-      "nav-plan",
-      "nav-settings",
-    ]) {
+    for (const id of ["status-line", "status-dot", "status-text"]) {
       expect(bar).toContain(`data-testid="${id}"`);
     }
   });
@@ -117,8 +129,10 @@ describe("Shell", () => {
     // ⚠️ `<defs>`-id-er er GLOBALE i dokumentet. Prefikset er kollisjonsvakten
     // mot `src-tauri/app-icon.svg`s generiske `bg`/`glow`/`gold`/`clip` — se
     // filhodet i `ui/AppLogo/AppLogo.tsx`.
-    expect(html).toContain('id="srlogo-clip"');
+    // E1: toppfeltet bruker `bare`-varianten (kors + buer, ingen flis/klipp).
+    expect(html).not.toContain('id="srlogo-clip"');
     expect(html).toContain('id="srlogo-gold"');
+    expect(html).toContain('viewBox="152 163 720 720"');
     expect(html).not.toContain('id="clip"');
     expect(html).not.toContain('id="gold"');
 

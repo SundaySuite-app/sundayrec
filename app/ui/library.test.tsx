@@ -470,7 +470,7 @@ describe("ToastHost", () => {
 });
 
 describe("PageShell", () => {
-  it("har topplinjas dra-attributt, de fire knappene og statuslinjen", () => {
+  it("har topplinjas dra-attributt, de tre knappene og statuslinjen", () => {
     const html = render(
       <PageShell>
         <span />
@@ -479,10 +479,11 @@ describe("PageShell", () => {
     // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes. D3 flyttet
     // det fra skinnens rot til topplinjas; formen er den samme.
     expect(html).toContain("data-tauri-drag-region");
-    // F5: fire sider i bunnlinja.
-    for (const page of ["record", "recordings", "plan", "settings"]) {
+    // E1: to ikonfaner i midten og tannhjulet til høyre; Plan er ikke en fane.
+    for (const page of ["record", "recordings", "settings"]) {
       expect(html).toContain(`data-testid="nav-${page}"`);
     }
+    expect(html).not.toContain('data-testid="nav-plan"');
     expect(html).toContain('data-testid="status-line"');
     expect(html).toContain('data-testid="app-heading"');
   });
