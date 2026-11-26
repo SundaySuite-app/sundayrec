@@ -133,6 +133,12 @@
   --sp-6: 24px;
   --sp-7: 32px;
   --sp-8: 48px;
+  /* Mellomstegene skissen bruker (ukestripa): 6/10 px mellom 4/8/12-rutenettet,
+     og stripas egen luft (28 mellom delene, 32 til kanten). */
+  --gap-tight: 6px;
+  --gap-snug: 10px;
+  --strip-gap: 28px;
+  --strip-pad: 32px;
 
   /*
    * ── Typografi ─────────────────────────────────────────────────────────

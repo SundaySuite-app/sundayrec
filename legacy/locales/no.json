@@ -276,10 +276,7 @@
         "licensesClose": "Lukk",
         "licensesFailed": "Fant ikke lisensteksten. Prøv å installere appen på nytt.",
         "licensesFrameTitle": "Lisenser og tredjepartsmerknader",
-        "schedDesc": "Her styrer du om maskinen vekkes fra dvale før opptaket.",
         "wakeTestBlocked": "Går ikke mens et opptak pågår.",
-        "wake": "Vekk maskinen fra dvale",
-        "wakeDesc": "Uten dette må maskinen stå på når opptaket skal starte.",
         "autoDeleteConfirmBody": "Opptak eldre enn dette flyttes til papirkurven. Under 30 dager kan bety at en gudstjeneste er borte før noen har rukket å laste den ned.",
         "autoDeleteConfirmYes": "Ja, slett så raskt",
         "wakeWord": {
@@ -322,7 +319,6 @@
         "wakeTestIdle": "Planlegg en ekte vekking to minutter fram i tid, og se om maskinen faktisk våkner.",
         "wakeTestScheduled": "Planlagt til kl. {time} — la maskinen sove for å se om den våkner.",
         "wakeHistoryTitle": "Vekkehistorikk",
-        "wakeHistoryDesc": "De siste testene, og eventuelle planlagte vekkinger som ikke fungerte.",
         "wakeHistoryEmpty": "Ingen hendelser ennå.",
         "wakeHistoryClear": "Tøm",
         "wakeHistoryKind": {
@@ -520,7 +516,6 @@
       "globalErrorTitle": "Noe gikk galt"
     },
     "plan": {
-      "lede": "Sett opp når SundayRec skal starte opptak av seg selv. Maskinen vekkes og tar opp uten at noen trykker.",
       "gridLabel": "Ukeplan med faste opptak, mandag til søndag",
       "add": "Legg til tid",
       "next": "Neste",
@@ -571,6 +566,31 @@
         "d": "{n} d"
       },
       "change": "Bytt verdi"
+    },
+    "strip": {
+      "title": "Ukeplan",
+      "next": "Neste: {day} {time}",
+      "none": "Ingen faste opptak",
+      "noneSub": "Åpne og dra i uka for å legge inn et opptak",
+      "autoOff": "Automatisk opptak er av",
+      "autoOffSub": "Tidene står i uka — ingenting starter av seg selv",
+      "subAuto": "Starter av seg selv · {when}",
+      "subAutoNow": "Starter av seg selv",
+      "statusOn": "{what} er på",
+      "statusOff": "{what} er av",
+      "holdDrag": "Hold og dra",
+      "wakeMore": "Vekking: prøv og historikk",
+      "noReminder": "Ved start",
+      "tile": {
+        "auto": "Auto",
+        "autoTitle": "Ta opp automatisk etter planen",
+        "launch": "Oppstart",
+        "launchTitle": "Start SundayRec når maskinen starter",
+        "wake": "Vekk",
+        "wakeTitle": "Vekk maskinen fra dvale før opptak",
+        "notify": "Varsel",
+        "notifyTitle": "Varsel når opptak starter og stopper"
+      }
     }
   },
   "nav": {

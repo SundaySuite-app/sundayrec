@@ -23,6 +23,11 @@ const WAKE_ARMED = {
   onBattery: null,
   standbyEnabled: null,
 };
+/** En plan: stripa (og «Neste»-linja med vekkehintet) finnes bare med en tid. */
+const PLAN = {
+  autoRecordEnabled: true,
+  slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
+};
 const WAKE_NOT_ARMED = { ...WAKE_ARMED, expectedWakes: [] };
 
 test.describe("statuslinjen sier ikke «Alt er klart» over en sperret Start", () => {
@@ -113,7 +118,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         scheduler_status: { next: nextSunday() },
         wake_verify: WAKE_NOT_ARMED,
       },
-      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      settings: { ...SETTLED_SETTINGS, ...PLAN, wakeFromSleep: true },
       goto: "record",
     });
 
@@ -131,7 +136,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
         scheduler_status: { next: nextSunday() },
         wake_verify: WAKE_ARMED,
       },
-      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      settings: { ...SETTLED_SETTINGS, ...PLAN, wakeFromSleep: true },
       goto: "record",
     });
 
@@ -163,11 +168,9 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("adv-wake-arm-control-input").click();
-    await expect(page.getByTestId("adv-wake-arm-receipt")).toHaveText(
-      "Ikke lagret",
-    );
-    await expect(page.getByTestId("adv-wake-arm")).toContainText(
+    await page.getByTestId("strip-wake-more").click();
+    await page.getByTestId("strip-wake-arm").click();
+    await expect(page.getByTestId("strip-wake-arm-word")).toContainText(
       /administratorpassord/,
     );
   });
@@ -190,11 +193,9 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("adv-wake-arm-control-input").click();
-    await expect(page.getByTestId("adv-wake-arm-receipt")).toHaveText(
-      "Lagret ✓",
-    );
-    await expect(page.getByTestId("adv-wake-arm")).toContainText(
+    await page.getByTestId("strip-wake-more").click();
+    await page.getByTestId("strip-wake-arm").click();
+    await expect(page.getByTestId("strip-wake-arm-word")).toContainText(
       /lagt inn i maskinen/,
     );
   });
@@ -222,11 +223,11 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("adv-wake-arm-control-input").click();
-    await expect(page.getByTestId("adv-wake-arm")).toContainText(
+    await page.getByTestId("strip-wake-more").click();
+    await page.getByTestId("strip-wake-arm").click();
+    await expect(page.getByTestId("strip-wake-arm-word")).toContainText(
       /«Ta opp automatisk» er av/,
     );
-    await expect(page.getByTestId("adv-wake-arm-receipt")).toHaveText("");
   });
 });
 
@@ -267,7 +268,7 @@ test.describe("wake_verify: poll-disiplin (F1-R3)", () => {
         scheduler_status: { next: nextSunday() },
         wake_verify: countingWakeVerify(WAKE_NOT_ARMED),
       },
-      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      settings: { ...SETTLED_SETTINGS, ...PLAN, wakeFromSleep: true },
       goto: "record",
     });
 
@@ -311,7 +312,7 @@ test.describe("wake_verify: poll-disiplin (F1-R3)", () => {
         scheduler_status: { next: null },
         wake_verify: countingWakeVerify(WAKE_ARMED),
       },
-      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      settings: { ...SETTLED_SETTINGS, ...PLAN, wakeFromSleep: true },
       goto: "record",
     });
 

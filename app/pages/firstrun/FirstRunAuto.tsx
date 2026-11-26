@@ -1,5 +1,9 @@
 /**
- * «Ta opp automatisk» — øverst på PLAN, over ukevisningen.
+ * «Ta opp automatisk» i førstegangssekvensen (steg 3), over ukevisningen.
+ *
+ * Flyttet hit fra PLAN-siden (E5): planen bor nå i ukestripa på TA OPP
+ * (`pages/record/StripTiles.tsx`), og dette kortet lever bare så lenge
+ * førstegangssekvensen gjør det — E9 river begge.
  *
  * Kortet har to ting: bryteren, og «Start automatisk med maskinen». Tidene
  * selv står i ukevisningen (`WeekView`) rett under; skrivingen går gjennom
@@ -56,14 +60,18 @@ import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { autoValue, type AutoValue } from "../settings/card-values-core";
-import { autoRecordOn, DEFAULT_PLAN, slotsFromPlan } from "./schedule-core";
+import {
+  autoRecordOn,
+  DEFAULT_PLAN,
+  slotsFromPlan,
+} from "../plan/schedule-core";
 
-export interface AutoRecordCardProps {
+export interface FirstRunAutoProps {
   highlight?: boolean;
 }
 
 /** Kortet står alltid åpent på PLAN: det er hele poenget med siden. */
-export function AutoRecordCard({ highlight }: AutoRecordCardProps) {
+export function FirstRunAuto({ highlight }: FirstRunAutoProps) {
   const s = settings.value;
   const slots = s.slots ?? [];
   const on = autoRecordOn(s);

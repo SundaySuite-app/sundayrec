@@ -276,10 +276,7 @@
         "licensesClose": "Close",
         "licensesFailed": "The license text could not be found. Try reinstalling the app.",
         "licensesFrameTitle": "Licenses and third-party notices",
-        "schedDesc": "Here you control whether the computer wakes from sleep before a recording.",
         "wakeTestBlocked": "Not while a recording is running.",
-        "wake": "Wake the machine from sleep",
-        "wakeDesc": "Without this the machine has to be awake when the recording starts.",
         "autoDeleteConfirmBody": "Recordings older than this are moved to the trash. Under 30 days can mean a service is gone before anyone has downloaded it.",
         "autoDeleteConfirmYes": "Yes, delete that soon",
         "wakeWord": {
@@ -322,7 +319,6 @@
         "wakeTestIdle": "Schedule a real wake-up two minutes from now, and see whether the machine actually wakes.",
         "wakeTestScheduled": "Scheduled for {time} — let the machine sleep to see whether it wakes.",
         "wakeHistoryTitle": "Wake history",
-        "wakeHistoryDesc": "The most recent tests, and any scheduled wake-ups that failed.",
         "wakeHistoryEmpty": "No events yet.",
         "wakeHistoryClear": "Clear",
         "wakeHistoryKind": {
@@ -520,7 +516,6 @@
       "globalErrorTitle": "Something went wrong"
     },
     "plan": {
-      "lede": "Set up when SundayRec starts recording on its own. The machine wakes up and records without anyone pressing anything.",
       "gridLabel": "Weekly plan of fixed recordings, Monday to Sunday",
       "add": "Add time",
       "next": "Next",
@@ -571,6 +566,31 @@
         "d": "{n} d"
       },
       "change": "Change value"
+    },
+    "strip": {
+      "title": "Weekly plan",
+      "next": "Next: {day} {time}",
+      "none": "No scheduled recordings",
+      "noneSub": "Open and drag in the week to add a recording",
+      "autoOff": "Automatic recording is off",
+      "autoOffSub": "The times are kept in the week — nothing starts by itself",
+      "subAuto": "Starts by itself · {when}",
+      "subAutoNow": "Starts by itself",
+      "statusOn": "{what} is on",
+      "statusOff": "{what} is off",
+      "holdDrag": "Hold and drag",
+      "wakeMore": "Wake: try it and history",
+      "noReminder": "At start",
+      "tile": {
+        "auto": "Auto",
+        "autoTitle": "Record automatically on schedule",
+        "launch": "Startup",
+        "launchTitle": "Start SundayRec when the computer starts",
+        "wake": "Wake",
+        "wakeTitle": "Wake the computer from sleep before a recording",
+        "notify": "Alert",
+        "notifyTitle": "Alert when a recording starts and stops"
+      }
     }
   },
   "nav": {

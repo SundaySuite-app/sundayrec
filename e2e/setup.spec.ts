@@ -288,30 +288,35 @@ test.describe("en innstilling som ikke kunne lagres", () => {
 });
 
 test.describe("«Ta opp automatisk»", () => {
-  test("av til på setter søndag 11:00 · 90 min, og skriver en ekte slot", async ({
+  test("Auto- og Oppstart-flisene skriver hver sin nøkkel, og ingen tid finnes på", async ({
     page,
   }) => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, slots: [] },
+      settings: {
+        ...SETTLED_SETTINGS,
+        autoRecordEnabled: false,
+        launchAtLogin: false,
+        slots: [],
+      },
       goto: "plan",
     });
 
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
-    );
-    await page.getByTestId("setup-auto-toggle").click();
-
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Søndag 11:00 · 90 min",
-    );
+    await page.getByTestId("strip-tile-auto").click();
     await expect
-      .poll(async () => (await storedSettings(page)).slots)
-      .toEqual([{ days: [6], start: "11:00", stop: "12:30", max: null }]);
-
+      .poll(async () => (await storedSettings(page)).autoRecordEnabled)
+      .toBe(true);
     // «Start automatisk med maskinen» hører til HER, ikke i en systemfane:
     // uten den skjer ikke det planlagte opptaket etter en omstart.
-    await expect(page.getByTestId("auto-launch")).toBeVisible();
+    await page.getByTestId("strip-tile-launch").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).launchAtLogin)
+      .toBe(true);
+    await expect(page.getByTestId("strip-tile-launch")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect((await storedSettings(page)).slots).toEqual([]);
   });
 
   test("å slå av beholder ALLE tidspunktene — det er et flagg, ikke en sletting", async ({
@@ -336,9 +341,9 @@ test.describe("«Ta opp automatisk»", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("setup-auto-toggle").click();
+    await page.getByTestId("strip-tile-auto").click();
     await expect(page.getByTestId("dialog")).toHaveCount(0);
-    await expect(page.getByTestId("setup-auto-toggle")).toHaveAttribute(
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
       "aria-checked",
       "false",
     );

@@ -257,8 +257,6 @@ const X32 = {
 /** Tallene målt på de to flatene — se `assertHitTargets`. */
 const SETTINGS_TOGGLES = 3;
 const SETTINGS_GHOSTS = 8;
-const PLAN_TOGGLES = 3;
-const PLAN_GHOSTS = 0;
 
 const FIXTURES: Fixtures = { ...BOOT_FIXTURES, list_audio_devices: [X32] };
 
@@ -309,7 +307,9 @@ test.describe("treffflater", () => {
     });
   });
 
-  test("PLAN: bryteren og radene", async ({ page }) => {
+  test("ukestripa: flisene har treffflater, og ingen stjeler naboene", async ({
+    page,
+  }) => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: {
@@ -319,12 +319,41 @@ test.describe("treffflater", () => {
       },
       goto: "plan",
     });
-    await expect(page.getByTestId("setup-auto-body")).toBeVisible();
-    await assertHitTargets(page, "plan", {
-      toggles: PLAN_TOGGLES,
-      expands: 0,
-      ghosts: PLAN_GHOSTS,
-    });
+    await expect(page.getByTestId("strip-tiles")).toBeVisible();
+    // Flisene er 92 px store brytere (ikke den lille `Toggle`en): hver er et
+    // ekte treffmål, og hjørneknappen og verdien ligger ved siden av, ikke oppå.
+    for (const id of [
+      "strip-tile-auto",
+      "strip-tile-launch",
+      "strip-tile-wake",
+      "strip-tile-notify",
+      "strip-notify-value",
+      "strip-wake-more",
+      "record-next-plan",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(22);
+    }
+    for (const id of [
+      "strip-tile-auto",
+      "strip-tile-launch",
+      "strip-tile-wake",
+      "strip-tile-notify",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+      // Midtpunktet er flisens eget: hjørneknappen og verdien stjeler det ikke.
+      const own = await page.getByTestId(id).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        return !!hit && (hit === el || el.contains(hit));
+      });
+      expect(own, `${id}: midtpunktet`).toBe(true);
+    }
   });
 
   // Første gang, steg 3: ukevisningen og bryterkortet må ha treffflater som

@@ -464,3 +464,311 @@
     padding: var(--sp-1);
   }
 }
+
+/* ── «Én flate»: uka inne i ukestripa (data-variant="strip") ─────────────────
+ *
+ * Samme rutenett og samme geometri (`--hour-px` fra plan-core); bare huden er
+ * skissens: ingen kortramme, sju frittstående kolonner med 6 px mellomrom,
+ * gullblokker, valgt blokk med grep og slett-boble nede til høyre.
+ */
+
+.wrap[data-variant="strip"] {
+  --gutter: 40px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  gap: var(--sp-1);
+}
+
+.wrap[data-variant="strip"] .scroll {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scrollbar-gutter: auto;
+}
+
+.wrap[data-variant="strip"] .head {
+  background: var(--surface);
+  border-bottom: 0;
+  grid-template-columns: var(--gutter) 1fr;
+}
+
+.wrap[data-variant="strip"] .days {
+  gap: var(--gap-tight);
+}
+
+.wrap[data-variant="strip"] .dayHead {
+  border-left: 0;
+  text-align: start;
+  padding: var(--sp-2) var(--sp-1);
+  font-size: var(--fs-md);
+  color: var(--ink-2);
+}
+
+.wrap[data-variant="strip"] .dayHead[aria-current="date"] {
+  color: var(--gold);
+}
+
+.wrap[data-variant="strip"] .cols {
+  gap: var(--gap-tight);
+  background-image: none;
+}
+
+.wrap[data-variant="strip"] .col {
+  border: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-radius: 12px;
+  background-color: var(--bg);
+  /* Timelinjene hører til kolonnen, ikke til rutenettet bak. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--hour-px) - 1px),
+    var(--raised) calc(var(--hour-px) - 1px),
+    var(--raised) var(--hour-px)
+  );
+  cursor: default;
+}
+
+.wrap[data-variant="strip"] .col[data-today="true"] {
+  background-color: var(--gold-faint);
+}
+
+.wrap[data-variant="strip"] .hour {
+  font-size: var(--fs-xs);
+}
+
+.wrap[data-variant="strip"] .block {
+  left: 4px;
+  right: 4px;
+  border-radius: 9px;
+  padding: var(--gap-tight) var(--sp-2);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold-line);
+  color: var(--gold);
+  box-shadow: none;
+  cursor: grab;
+  transition:
+    top var(--dur) var(--ease-out),
+    height var(--dur) var(--ease-out);
+}
+
+.wrap[data-variant="strip"] .block[data-dragging="true"] {
+  transition: none;
+}
+
+.wrap[data-variant="strip"] .block[data-next="true"] {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+  animation: glow 2.6s ease-in-out infinite;
+}
+
+.wrap[data-variant="strip"] .block[data-missed="true"] {
+  border-color: var(--warn-line);
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--raised);
+  color: var(--ink);
+}
+
+.wrap[data-variant="strip"] .block[data-off="true"] {
+  opacity: 0.55;
+}
+
+.wrap[data-variant="strip"] .block[data-selected="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  z-index: 4;
+}
+
+.wrap[data-variant="strip"] .block[data-bad="true"] {
+  border-color: var(--rec-line);
+  background:
+    linear-gradient(0deg, var(--rec-soft), var(--rec-soft)), var(--raised);
+  color: var(--ink);
+}
+
+.wrap[data-variant="strip"] .blockLabel {
+  font-size: var(--fs-sm);
+}
+
+/* Gripene: en gull pille midt på kanten, bare på den valgte blokken. */
+.wrap[data-variant="strip"] .handle {
+  height: 10px;
+}
+
+.wrap[data-variant="strip"] .handle[data-handle="start"] {
+  top: -3px;
+}
+
+.wrap[data-variant="strip"] .handle[data-handle="end"] {
+  bottom: -3px;
+}
+
+.wrap[data-variant="strip"] .handle::after {
+  width: 22px;
+  height: 6px;
+  margin: -3px 0 0 -11px;
+  background: var(--gold);
+  opacity: 0;
+}
+
+.wrap[data-variant="strip"] .block[data-selected="true"] .handle::after {
+  opacity: 1;
+}
+
+.wrap[data-variant="strip"]
+  .block[data-next="true"][data-selected="true"]
+  .handle::after {
+  background: var(--on-gold);
+}
+
+.wrap[data-variant="strip"] .ghost {
+  left: 4px;
+  right: 4px;
+  border-radius: 9px;
+  border: 1px solid var(--gold);
+  background: var(--gold-mid);
+  color: var(--gold);
+  box-shadow: var(--shadow-toast);
+}
+
+.wrap[data-variant="strip"] .status {
+  min-height: 0;
+  font-size: var(--fs-sm);
+}
+
+.wrap[data-variant="strip"] .status:empty {
+  display: none;
+}
+
+/* Tastaturhintet er for skjermleser (`aria-describedby`), ikke for øyet. */
+.wrap[data-variant="strip"] .hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* «Legg til tid» for tastatur: borte for øyet til den får fokus. */
+.addKeys {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.addKeys:focus-visible {
+  width: auto;
+  height: auto;
+  padding: var(--sp-2) var(--sp-4);
+  overflow: visible;
+  clip-path: none;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  border: 1px solid var(--gold-line);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Slett-boble: nede til høyre, over uka. */
+.bubble {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--gap-tight);
+  border-radius: 14px;
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-toast);
+  animation: rise var(--dur) var(--ease-out);
+}
+
+.bubbleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--rec);
+  cursor: pointer;
+}
+
+.bubbleBtn:hover {
+  background: var(--rec-soft);
+}
+
+/* «Hold og dra» — i søndagskolonnen i en tom uke. */
+.dragHint {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: calc(var(--hour-px) * 10);
+  height: 120px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dragBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: 9px;
+  background: var(--gold-mid);
+  border: 1px dashed var(--gold-line);
+  animation: dragbar 2.6s ease-in-out infinite;
+}
+
+.dragHand {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  box-shadow: 0 0 0 5px var(--gold-soft);
+  animation: draghand 2.6s ease-in-out infinite;
+}
+
+.dragText {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--gold);
+}

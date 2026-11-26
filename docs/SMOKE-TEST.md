@@ -210,7 +210,7 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra i en tom flate lager en tid, rundet til kvarter
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra en blokk til en annen dag og et annet klokkeslett flytter den
 - VERIFIED-BY: e2e/plan-week.spec.ts::bunnkanten endrer slutten, toppkanten starten
-- VERIFIED-BY: e2e/plan-week.spec.ts::et trykk på blokken åpner redigeringen; Lagre skriver eksakte tider og dag
+- VERIFIED-BY: e2e/plan-week.spec.ts::trykk på den valgte blokken åpner redigeringen; Lagre skriver eksakte tider og dag
 - VERIFIED-BY: e2e/plan-week.spec.ts::Slett fjerner tiden
 - VERIFIED-BY: e2e/plan-week.spec.ts::piler flytter, Skift + piler strekker, Enter åpner, Delete fjerner
 - VERIFIED-BY: e2e/plan-week.spec.ts::overlapp avvises med en setning, og tiden står der den var

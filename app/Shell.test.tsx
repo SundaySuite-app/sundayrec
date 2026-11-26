@@ -374,15 +374,16 @@ describe("Shell", () => {
     patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
   });
 
-  it("PLAN har «Ta opp automatisk», ukevisningen og vekkingen", () => {
+  it("`plan` er ikke en side: TA OPP med ukestripa åpen — fliser og ukevisning", () => {
     navigate("plan");
     const html = render(<Shell />);
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Plan</);
-    expect(html).toContain('data-testid="plan-page"');
-    expect(html).toContain('data-testid="setup-auto"');
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Ta opp</);
+    expect(html).toContain('data-testid="strip-tiles"');
+    expect(html).toContain('data-testid="strip-tile-auto"');
+    expect(html).toContain('data-testid="strip-wake-more"');
     expect(html).toContain('data-testid="plan-week"');
-    expect(html).toContain('data-testid="plan-wake"');
-    // Skjemaet og «Flere tider»-lista er borte (F6).
+    // Den gamle PLAN-siden og skjemaet fra før er borte.
+    expect(html).not.toContain('data-testid="plan-page"');
     expect(html).not.toContain('data-testid="adv-slot-add"');
     navigate("record");
   });

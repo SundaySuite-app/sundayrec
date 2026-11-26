@@ -60,6 +60,7 @@ import { prerollActive } from "../../state/preroll";
 import { runSilentPreflightOnce } from "../../state/preflight";
 import { isRecording, markSessionStarted } from "../../state/recording";
 import { settings } from "../../state/settings";
+import { autoRecordOn } from "../plan/schedule-core";
 import { Chip } from "../../ui/Chip/Chip";
 import { toast } from "../../ui/toast";
 import { BigButton } from "./BigButton";
@@ -201,7 +202,12 @@ export function RecordPage() {
         <Done />
       </div>
 
-      <div class={styles.stage}>
+      <div
+        class={styles.stage}
+        // Med plan står stripa (112 px) under kamerabildet; uten står bare
+        // kalenderknappen.
+        style={autoRecordOn(s) ? "--strip-clear:132px" : undefined}
+      >
         <div class={styles.listening}>
           <Listening />
         </div>

@@ -3,7 +3,7 @@
   left: var(--stage-gutter, 40px);
   right: var(--stage-gutter, 40px);
   top: 96px;
-  bottom: 100px;
+  bottom: var(--strip-clear, 100px);
   border-radius: 22px;
   background: var(--surface);
   border: 1px solid var(--line-2);

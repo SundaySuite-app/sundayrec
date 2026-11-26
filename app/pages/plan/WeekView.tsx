@@ -16,7 +16,8 @@
  * ## Tre veier til samme endring
  *
  *   • PEKER: dra i en tom flate (ny), i en blokk (flytt), i kantene (strekk).
- *     Et trykk uten dra åpner redigeringen.
+ *     Et trykk velger blokken (grep og slett-boble); trykk på den valgte, eller
+ *     dobbelttrykk, åpner redigeringen.
  *   • TASTATUR: blokkene er fokuserbare. Piler flytter (kvarter/dag),
  *     Skift + opp/ned endrer lengden, Enter åpner redigeringen, Delete fjerner.
  *   • SKJEMA: «Legg til tid» og redigeringen tar eksakte klokkeslett.
@@ -57,6 +58,7 @@ import {
   type Settings,
 } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
+import { Icon } from "../../ui/Icon/Icon";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { toast } from "../../ui/toast";
@@ -114,6 +116,10 @@ import {
 import styles from "./plan.module.css";
 
 const HINT_ID = "plan-keys-hint";
+
+/** Timehøyden i ukestripa (px). 32 gir drøyt ti timer i synsfeltet; et kvarter
+ *  er 8 px, som snappingen i `plan-core` tåler. */
+export const STRIP_HOUR_PX = 32;
 
 /** Hvor mange piksler rutenettet rulles tilbake så første timeetikett er synlig. */
 const HOUR_LABEL_CLEARANCE_PX = 12;
@@ -179,7 +185,21 @@ function blockLabel(occ: Occurrence): string {
   });
 }
 
-export function WeekView() {
+export interface WeekViewProps {
+  /**
+   * `strip` (standard): uka inne i ukestripa på TA OPP — ingen verktøylinje,
+   * tapp velger en blokk, slett-boble nede til høyre.
+   * `page`: den eldre flaten med verktøylinje («Legg til tid», kvittering);
+   * førstegangssekvensen bruker den til E9 river den.
+   */
+  variant?: "strip" | "page";
+}
+
+export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
+  const compact = variant === "strip";
+  // Timehøyden: stripa viser dagen tettere (flere timer i synsfeltet) enn den
+  // eldre flaten; geometrien i `plan-core` tar høyden som parameter.
+  const hp = compact ? STRIP_HOUR_PX : HOUR_PX;
   const s = settings.value;
   const slots = s.slots ?? [];
   const armed = s.autoRecordEnabled !== false;
@@ -189,6 +209,8 @@ export function WeekView() {
   const [now, setNow] = useState(() => new Date());
   const [preview, setPreview] = useState<Preview | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  // Valgt blokk (tapp eller fokus): får gripene og slett-boblen.
+  const [selected, setSelected] = useState<OccurrenceRef | null>(null);
   const [message, setMessage] = useState<{
     kind: MessageKind;
     text: string;
@@ -212,12 +234,13 @@ export function WeekView() {
   useLayoutEffect(() => {
     if (scrolled.current || !scrollRef.current) return;
     scrolled.current = true;
-    const visible = pxToMinutes(scrollRef.current.clientHeight);
+    const visible = pxToMinutes(scrollRef.current.clientHeight, hp);
     // Litt luft over første timelinje: etiketten står midt på linja og ville
     // ellers havnet halvt under den klebrige dagsraden.
     scrollRef.current.scrollTop = Math.max(
       0,
-      minutesToPx(initialTopMinutes(occs, visible)) - HOUR_LABEL_CLEARANCE_PX,
+      minutesToPx(initialTopMinutes(occs, visible), hp) -
+        HOUR_LABEL_CLEARANCE_PX,
     );
   }, [occs]);
 
@@ -279,6 +302,7 @@ export function WeekView() {
     }
     const out = replaceOccurrence(cur, ref, next);
     focusAfter.current = out.ref;
+    setSelected(out.ref);
     void write(
       { slots: out.slots },
       {
@@ -296,10 +320,17 @@ export function WeekView() {
     const cur = settings.peek().slots ?? [];
     const out = appendPlacement(cur, p);
     focusAfter.current = out.ref;
+    setSelected(out.ref);
     void write(
       // Å legge til en tid ARMERER — som «Legg til» alltid har gjort. En tid
-      // som ikke teller er en tid ingen ba om.
-      { slots: out.slots, autoRecordEnabled: true },
+      // som ikke teller er en tid ingen ba om. Den FØRSTE tiden slår dessuten
+      // på «Oppstart» (som førstegangssekvensen alltid har gjort): et
+      // planlagt opptak som ikke overlever en omstart er et løfte uten dekning.
+      {
+        slots: out.slots,
+        autoRecordEnabled: true,
+        ...(cur.length === 0 ? { launchAtLogin: true } : {}),
+      },
       {
         kind: "info",
         text: tf("app.plan.added", {
@@ -326,6 +357,7 @@ export function WeekView() {
       },
     );
     setEditing(null);
+    setSelected(null);
     // Blokken er borte: fokus til knappen som alltid finnes.
     queueMicrotask(() =>
       wrapRef.current
@@ -342,7 +374,7 @@ export function WeekView() {
 
   function minutesAt(clientY: number): number {
     const rect = colsRect();
-    return rect ? pxToMinutes(clientY - rect.top) : 0;
+    return rect ? pxToMinutes(clientY - rect.top, hp) : 0;
   }
 
   function dayAt(clientX: number): Weekday {
@@ -354,18 +386,21 @@ export function WeekView() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
-    window.addEventListener("keydown", onEscape);
+    document.addEventListener("keydown", onEscape, true);
   }
 
   function unlisten(): void {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onCancel);
-    window.removeEventListener("keydown", onEscape);
+    document.removeEventListener("keydown", onEscape, true);
   }
 
   function onEscape(event: KeyboardEvent): void {
-    if (event.key === "Escape") onCancel();
+    if (event.key !== "Escape") return;
+    // Esc avbryter DRAGET og ingenting annet: stripa rundt lukker seg ikke.
+    event.preventDefault();
+    onCancel();
   }
 
   function onCancel(): void {
@@ -384,7 +419,7 @@ export function WeekView() {
         bad: findConflict(all, placement) !== null,
       };
     }
-    const dMin = pxToMinutes(e.clientY - g.y0);
+    const dMin = pxToMinutes(e.clientY - g.y0, hp);
     let placement: Placement;
     if (g.kind === "move") {
       placement = movePlacement(g.origin, dayAt(e.clientX) - dayAt(g.x0), dMin);
@@ -453,7 +488,13 @@ export function WeekView() {
     }
 
     if (!g.moved) {
-      setEditing({ ref: g.ref, initial: g.origin, anchor: g.el });
+      // Første tapp velger blokken; tapp på den valgte (eller dobbelttrykk)
+      // åpner redigeringen med eksakte klokkeslett.
+      if (selected && sameRef(selected, g.ref)) {
+        setEditing({ ref: g.ref, initial: g.origin, anchor: g.el });
+      } else {
+        setSelected(g.ref);
+      }
       return;
     }
     const p = previewFor(g, e);
@@ -477,6 +518,7 @@ export function WeekView() {
     }
     e.preventDefault();
     setMessage(null);
+    setSelected(null);
     gesture.current = {
       kind: "create",
       day,
@@ -599,47 +641,66 @@ export function WeekView() {
     nowMs: now.getTime(),
   });
 
+  const selectedOcc = selected
+    ? (occs.find((o) => sameRef(o, selected)) ?? null)
+    : null;
+
   return (
     <section
       ref={wrapRef}
       class={styles.wrap}
+      data-variant={variant}
       data-testid="plan-week"
       data-armed={armed ? "true" : "false"}
       aria-label={t("app.plan.gridLabel")}
-      style={`--hour-px:${HOUR_PX}px`}
+      style={`--hour-px:${hp}px`}
     >
-      <div class={styles.toolbar}>
-        <div class={styles.nextWrap}>
-          <div class={styles.nextLabel}>{t("app.record.nextAuto")}</div>
-          {parts ? (
-            <div data-testid="plan-next" class={styles.nextValue}>
-              {tf("app.record.nextAutoWhen", {
-                day: capitalizeFirst(parts.weekdayLong, locale.value),
-                time: parts.time,
-              })}
-            </div>
-          ) : (
-            <div data-testid="plan-next-none" class={styles.nextValue}>
-              {t("app.record.nextNone")}
-            </div>
-          )}
-          {wake ? (
-            <div data-testid="plan-next-wake" class={styles.nextWake}>
-              {wake}
-            </div>
-          ) : null}
-        </div>
-        <Receipt state={receipt} testId="plan-receipt" />
-        <Button
-          variant="secondary"
-          testId="plan-add"
+      {compact ? (
+        /* Ingen verktøylinje i stripa: «neste» står i stripas topp. Knappen
+           under finnes for tastatur og skjermleser (synlig ved fokus), siden
+           skissen ikke har noen «+». */
+        <button
+          type="button"
+          data-testid="plan-add"
+          class={styles.addKeys}
           onClick={(e) => openAdd(e.currentTarget)}
         >
           {t("app.plan.add")}
-        </Button>
-      </div>
+        </button>
+      ) : (
+        <div class={styles.toolbar}>
+          <div class={styles.nextWrap}>
+            <div class={styles.nextLabel}>{t("app.record.nextAuto")}</div>
+            {parts ? (
+              <div data-testid="plan-next" class={styles.nextValue}>
+                {tf("app.record.nextAutoWhen", {
+                  day: capitalizeFirst(parts.weekdayLong, locale.value),
+                  time: parts.time,
+                })}
+              </div>
+            ) : (
+              <div data-testid="plan-next-none" class={styles.nextValue}>
+                {t("app.record.nextNone")}
+              </div>
+            )}
+            {wake ? (
+              <div data-testid="plan-next-wake" class={styles.nextWake}>
+                {wake}
+              </div>
+            ) : null}
+          </div>
+          <Receipt state={receipt} testId="plan-receipt" />
+          <Button
+            variant="secondary"
+            testId="plan-add"
+            onClick={(e) => openAdd(e.currentTarget)}
+          >
+            {t("app.plan.add")}
+          </Button>
+        </div>
+      )}
 
-      {!armed ? (
+      {!armed && !compact ? (
         <p class={styles.offNote} data-testid="plan-off">
           {t("app.plan.off")}
         </p>
@@ -662,13 +723,13 @@ export function WeekView() {
           </div>
         </div>
 
-        <div class={styles.body} style={{ height: `${dayHeightPx()}px` }}>
+        <div class={styles.body} style={{ height: `${dayHeightPx(hp)}px` }}>
           <div class={styles.hours} aria-hidden="true">
             {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
               <span
                 key={h}
                 class={styles.hour}
-                style={{ top: `${minutesToPx(h * 60)}px` }}
+                style={{ top: `${minutesToPx(h * 60, hp)}px` }}
               >
                 {timeOfDay(h * 60)}
               </span>
@@ -690,7 +751,7 @@ export function WeekView() {
                     class={styles.now}
                     data-testid="plan-now"
                     aria-hidden="true"
-                    style={{ top: `${minutesToPx(nowMinutes)}px` }}
+                    style={{ top: `${minutesToPx(nowMinutes, hp)}px` }}
                   />
                 ) : null}
 
@@ -701,6 +762,7 @@ export function WeekView() {
                       key={seg.key}
                       seg={seg}
                       armed={armed}
+                      hourPx={hp}
                       isNext={
                         seg.part !== "tail" &&
                         nextK === occurrenceKey(seg.occ.day, seg.occ.start)
@@ -710,6 +772,10 @@ export function WeekView() {
                         missedKeys.has(
                           occurrenceKey(seg.occ.day, seg.occ.start),
                         )
+                      }
+                      selected={selected !== null && sameRef(seg.occ, selected)}
+                      onSelect={() =>
+                        setSelected({ index: seg.occ.index, day: seg.occ.day })
                       }
                       dragging={
                         preview?.kind === "move" &&
@@ -729,17 +795,26 @@ export function WeekView() {
                   <GhostSegments
                     placement={preview.placement}
                     bad={preview.bad}
+                    hourPx={hp}
                   />
                 ) : null}
                 {preview?.kind === "create" &&
                 endOf(preview.placement) > DAY_MINUTES &&
                 (preview.placement.day + 1) % 7 === d ? (
-                  <GhostTail placement={preview.placement} bad={preview.bad} />
+                  <GhostTail
+                    placement={preview.placement}
+                    bad={preview.bad}
+                    hourPx={hp}
+                  />
+                ) : null}
+
+                {compact && d === 6 && occs.length === 0 && !preview ? (
+                  <DragHint />
                 ) : null}
               </div>
             ))}
 
-            {occs.length === 0 && !preview ? (
+            {occs.length === 0 && !preview && !compact ? (
               <div class={styles.empty} data-testid="plan-empty">
                 <span class={styles.emptyNote}>{t("app.plan.empty")}</span>
               </div>
@@ -760,6 +835,23 @@ export function WeekView() {
       <p class={styles.hint} id={HINT_ID} data-testid="plan-hint">
         {t("app.plan.keys")}
       </p>
+
+      {compact && selectedOcc && !editing ? (
+        <div class={styles.bubble} data-testid="plan-bubble">
+          <button
+            type="button"
+            class={styles.bubbleBtn}
+            data-testid="plan-delete"
+            aria-label={t("app.plan.delete")}
+            title={t("app.plan.delete")}
+            onClick={() =>
+              remove({ index: selectedOcc.index, day: selectedOcc.day })
+            }
+          >
+            <Icon name="trash" size={20} />
+          </button>
+        </div>
+      ) : null}
 
       {editing ? (
         <SlotEditor
@@ -803,8 +895,11 @@ export function WeekView() {
 interface BlockProps {
   seg: Segment;
   armed: boolean;
+  hourPx: number;
   isNext: boolean;
   isMissed: boolean;
+  selected: boolean;
+  onSelect: () => void;
   dragging: boolean;
   bad: boolean;
   onPointerDown: (
@@ -822,8 +917,11 @@ interface BlockProps {
 function Block({
   seg,
   armed,
+  hourPx,
   isNext,
   isMissed,
+  selected,
+  onSelect,
   dragging,
   bad,
   onPointerDown,
@@ -831,7 +929,7 @@ function Block({
 }: BlockProps) {
   const { occ } = seg;
   const times = slotTimes(occ);
-  const heightPx = Math.max(minutesToPx(seg.to - seg.from), 6);
+  const heightPx = Math.max(minutesToPx(seg.to - seg.from, hourPx), 6);
   const short = heightPx < 30;
   const status = isNext
     ? t("app.plan.next")
@@ -866,9 +964,11 @@ function Block({
       data-off={armed ? undefined : "true"}
       data-short={short ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
+      data-selected={selected ? "true" : undefined}
       data-bad={bad ? "true" : undefined}
+      onFocus={onSelect}
       style={{
-        top: `${minutesToPx(seg.from)}px`,
+        top: `${minutesToPx(seg.from, hourPx)}px`,
         height: `${heightPx}px`,
       }}
       onPointerDown={(e) => onPointerDown(e, seg, "move", e.currentTarget)}
@@ -904,12 +1004,29 @@ function Block({
   );
 }
 
+/**
+ * «Hold og dra» — hintet i en tom uke: en strek som vokser og en hånd som
+ * drar den, i søndagskolonnen. Ren pynt (`aria-hidden`); ordene står i
+ * teksten under og i tastaturhintet.
+ */
+function DragHint() {
+  return (
+    <span class={styles.dragHint} data-testid="plan-empty" aria-hidden="true">
+      <span class={styles.dragBar} />
+      <span class={styles.dragHand} />
+      <span class={styles.dragText}>{t("app.strip.holdDrag")}</span>
+    </span>
+  );
+}
+
 function GhostSegments({
   placement,
   bad,
+  hourPx,
 }: {
   placement: Placement;
   bad: boolean;
+  hourPx: number;
 }) {
   const to = Math.min(endOf(placement), DAY_MINUTES);
   return (
@@ -918,8 +1035,8 @@ function GhostSegments({
       data-testid="plan-ghost"
       data-bad={bad ? "true" : undefined}
       style={{
-        top: `${minutesToPx(placement.start)}px`,
-        height: `${minutesToPx(to - placement.start)}px`,
+        top: `${minutesToPx(placement.start, hourPx)}px`,
+        height: `${minutesToPx(to - placement.start, hourPx)}px`,
       }}
     >
       {rangeLabel(placement)}
@@ -927,14 +1044,22 @@ function GhostSegments({
   );
 }
 
-function GhostTail({ placement, bad }: { placement: Placement; bad: boolean }) {
+function GhostTail({
+  placement,
+  bad,
+  hourPx,
+}: {
+  placement: Placement;
+  bad: boolean;
+  hourPx: number;
+}) {
   return (
     <div
       class={styles.ghost}
       data-bad={bad ? "true" : undefined}
       style={{
         top: "0px",
-        height: `${minutesToPx(endOf(placement) - DAY_MINUTES)}px`,
+        height: `${minutesToPx(endOf(placement) - DAY_MINUTES, hourPx)}px`,
       }}
     />
   );

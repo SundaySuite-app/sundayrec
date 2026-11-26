@@ -10,7 +10,8 @@ import {
   storedSettings,
 } from "./harness";
 
-// Avansert — the rows P1b added, and the two seams they close.
+// Avansert — the rows P1b added, and the two seams they close. «Ta opp
+// automatisk» and the wake test now live in the week strip on TA OPP (E5).
 //
 // New in P1b (no legacy counterpart). What only this tier can see is the seam:
 // that «Ta opp automatisk» off keeps the TIME, and that the recording rows
@@ -31,11 +32,11 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
         autoRecordEnabled: true,
         slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
       },
-      // F5: tidsplanen er PLAN.
+      // E5: tidsplanen er ukestripa (`plan` åpner den).
       goto: "plan",
     });
 
-    const toggle = page.getByTestId("setup-auto-toggle");
+    const toggle = page.getByTestId("strip-tile-auto");
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -58,8 +59,9 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
     // Back on, and the time is the one that was there — not a fresh default.
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Søndag 11:00 · 90 min",
+    await expect(page.getByTestId("plan-block")).toHaveAttribute(
+      "data-start",
+      "11:00",
     );
     await expect
       .poll(async () => (await storedSettings(page)).autoRecordEnabled)
@@ -85,7 +87,7 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("setup-auto-toggle").click();
+    await page.getByTestId("strip-tile-auto").click();
     await expect(page.getByTestId("dialog")).toHaveCount(0);
     await expect
       .poll(async () => (await storedSettings(page)).slots)
@@ -190,26 +192,27 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
       settings: SETTLED_SETTINGS,
       goto: "plan",
     });
+    await page.getByTestId("strip-wake-more").click();
 
     // Ingen historikk ennå — den ærlige tomtilstanden, ikke en tom liste som
     // ser ut som en lastefeil.
-    await expect(page.getByTestId("adv-wake-history-empty")).toBeVisible();
-    await expect(page.getByTestId("adv-wake-history-list")).toHaveCount(0);
+    await expect(page.getByTestId("strip-wake-history-empty")).toBeVisible();
+    await expect(page.getByTestId("strip-wake-history-list")).toHaveCount(0);
 
-    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
-    await page.getByTestId("adv-wake-test").click();
+    await expect(page.getByTestId("strip-wake-test")).toBeVisible();
+    await page.getByTestId("strip-wake-test").click();
 
     // Knappen ER raden nå: «Avbryt» i stedet for «Test vekking om 2 min», og
     // setningen sier NÅR — samme «armert»-idé som `wakeArmWord`s «ok»-utfall.
-    await expect(page.getByTestId("adv-wake-cancel")).toBeVisible();
-    await expect(page.getByTestId("adv-wake-test")).toHaveCount(0);
-    await expect(page.getByTestId("adv-wake-test-row")).toContainText(
+    await expect(page.getByTestId("strip-wake-cancel")).toBeVisible();
+    await expect(page.getByTestId("strip-wake-test")).toHaveCount(0);
+    await expect(page.getByTestId("strip-wake-test-word")).toContainText(
       "Planlagt til kl.",
     );
 
-    await page.getByTestId("adv-wake-cancel").click();
-    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
-    await expect(page.getByTestId("adv-wake-cancel")).toHaveCount(0);
+    await page.getByTestId("strip-wake-cancel").click();
+    await expect(page.getByTestId("strip-wake-test")).toBeVisible();
+    await expect(page.getByTestId("strip-wake-cancel")).toHaveCount(0);
   });
 
   test("en feilet test siterer DEN SAMME setningen som «Aktiver vekking»", async ({
@@ -232,14 +235,15 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
       settings: SETTLED_SETTINGS,
       goto: "plan",
     });
+    await page.getByTestId("strip-wake-more").click();
 
-    await page.getByTestId("adv-wake-test").click();
-    await expect(page.getByTestId("adv-wake-test-row")).toContainText(
+    await page.getByTestId("strip-wake-test").click();
+    await expect(page.getByTestId("strip-wake-test-word")).toContainText(
       "administratorpassord",
     );
     // Ingenting ble armet — raden tilbyr fortsatt «Test vekking», ikke «Avbryt».
-    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
-    await expect(page.getByTestId("adv-wake-cancel")).toHaveCount(0);
+    await expect(page.getByTestId("strip-wake-test")).toBeVisible();
+    await expect(page.getByTestId("strip-wake-cancel")).toHaveCount(0);
   });
 
   test("«Test vekking» er sperret mens et opptak går, med en grunn", async ({
@@ -251,11 +255,12 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
       settings: SETTLED_SETTINGS,
       goto: "plan",
     });
+    await page.getByTestId("strip-wake-more").click();
 
-    await expect(page.getByTestId("adv-wake-test")).toBeEnabled();
+    await expect(page.getByTestId("strip-wake-test")).toBeEnabled();
     await emit(page, "recording-overlay-stop", { state: "recording" });
-    await expect(page.getByTestId("adv-wake-test")).toBeDisabled();
-    await expect(page.getByTestId("adv-wake-test")).toHaveAttribute(
+    await expect(page.getByTestId("strip-wake-test")).toBeDisabled();
+    await expect(page.getByTestId("strip-wake-test")).toHaveAttribute(
       "title",
       "Går ikke mens et opptak pågår.",
     );
@@ -292,21 +297,22 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
       settings: SETTLED_SETTINGS,
       goto: "plan",
     });
+    await page.getByTestId("strip-wake-more").click();
 
-    await expect(page.getByTestId("adv-wake-history-empty")).toHaveCount(0);
-    const list = page.getByTestId("adv-wake-history-list");
+    await expect(page.getByTestId("strip-wake-history-empty")).toHaveCount(0);
+    const list = page.getByTestId("strip-wake-history-list");
     await expect(list).toContainText("Gikk glipp av en planlagt vekking");
     await expect(list).toContainText("maskinen våknet ikke");
     await expect(list).toContainText("Testvekking lyktes");
 
-    await page.getByTestId("adv-wake-clear").click();
+    await page.getByTestId("strip-wake-clear").click();
 
     // Den DEDIKERTE kommandoen — ikke en optimistisk UI-tømming som aldri
     // nådde bakenden.
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_WAKE_CLEAR__))
       .toEqual(["CLEAR"]);
-    await expect(page.getByTestId("adv-wake-history-empty")).toBeVisible();
-    await expect(page.getByTestId("adv-wake-clear")).toHaveCount(0);
+    await expect(page.getByTestId("strip-wake-history-empty")).toBeVisible();
+    await expect(page.getByTestId("strip-wake-clear")).toHaveCount(0);
   });
 });

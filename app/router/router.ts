@@ -15,8 +15,7 @@
  * som flyttet til lydkilde-arket — `sound`, `engine`, `folder`, `autodelete` —
  * løses til `record` med `panel: "source"` (`"source-more"` for de tre siste,
  * som bor under «Mer»). Andre innstillingsankre blir på `settings`.
- * Ankeret følger med i ruten (SettingsPage/PlanPage ruller dit mens de
- * midlertidig står i panelets sted, se `Shell.tsx`); E4/E5 fjerner det.
+ * Ankeret følger med i ruten.
  *
  * Den frittstående eksportsiden og de eldste `?goto=`-aliasene er borte. Det
  * som er igjen er ÉN regel for ukjente sider: de lander på TA OPP, og sier fra

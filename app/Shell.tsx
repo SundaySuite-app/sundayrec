@@ -1,12 +1,11 @@
 /**
- * Skallets rot — de to linjene, og de fire sidene (F5).
+ * Skallets rot — toppfeltet, og de tre flatene («Én flate»).
  *
  *   TA OPP        `app/pages/record/`: den store knappen, kilden og nivået,
- *                 kameraet og linja om neste planlagte opptak.
+ *                 kameraet og ukestripa (planen) nederst.
  *   OPPTAK        `app/pages/library/` + `app/editor/`: lista er landingen, et
  *                 opptak åpner editoren på samme side, og eksporten er et ark
  *                 inne i editoren. Papirkurven er en fane.
- *   PLAN          `app/pages/plan/`: den ukentlige tidsplanen.
  *   INNSTILLINGER `app/pages/settings/`: lyd, kamera, mappe, varsler, språk,
  *                 oppdatering, personvern og om.
  *
@@ -86,14 +85,12 @@ import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/firstrun/FirstRun";
-import { PlanPage } from "./pages/plan/PlanPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 import {
   consumePendingAction,
   navigate,
   pendingAction,
   route,
-  type Panel,
 } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { audioDevices } from "./state/devices";
@@ -123,7 +120,7 @@ export function Shell({ probe }: ShellProps) {
 
   return (
     /*
-      TA OPP, PLAN og INNSTILLINGER heter det destinasjonen heter — alle er ÉN
+      TA OPP og INNSTILLINGER heter det destinasjonen heter — begge er ÉN
       skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
       underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
       opptaket som er åpent), og første gang er fem spørsmål med hvert sitt.
@@ -131,9 +128,7 @@ export function Shell({ probe }: ShellProps) {
     <PageShell
       heading={
         firstRunHeading(firstRun) ??
-        (current.page === "recordings"
-          ? editHeading(current.tab)
-          : temporaryHeading(current.panel))
+        (current.page === "recordings" ? editHeading(current.tab) : undefined)
       }
     >
       {/*
@@ -161,16 +156,8 @@ export function Shell({ probe }: ShellProps) {
       ) : firstRun ? (
         <FirstRun />
       ) : current.page === "record" ? (
-        /*
-          E5 sletter PlanPage-grenen: ukestripa finnes ikke ennå, så `strip`
-          står som den gamle PLAN-siden til da. Lydarket (`source`,
-          `source-more`) åpnes av `RecordPage` selv.
-        */
-        current.panel === "strip" ? (
-          <PlanPage />
-        ) : (
-          <RecordPage />
-        )
+        /* Panelene (lydarket, ukestripa) åpnes av `RecordPage` selv. */
+        <RecordPage />
       ) : current.page === "recordings" ? (
         <RecordingsSurface tab={current.tab} />
       ) : (
@@ -207,11 +194,6 @@ function RecordingsSurface({ tab }: { tab: string | undefined }) {
       {loadState.value === "idle" ? <LibraryPage /> : <EditorPage />}
     </DropZone>
   );
-}
-
-/** E2-OVERGANG: overskriften til den gamle siden som står i panelets sted. */
-function temporaryHeading(panel: Panel | undefined): string | undefined {
-  return panel === "strip" ? tDyn("app.page", "plan") : undefined;
 }
 
 /** Overskriften OPPTAK skal ha: opptakets dato når et er åpent, ellers

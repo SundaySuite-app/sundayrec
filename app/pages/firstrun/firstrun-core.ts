@@ -3,7 +3,7 @@
  *
  * Tre steg, og ingen egen veiviser-kode: stegene er skjermene som allerede
  * finnes i INNSTILLINGER (`SoundPage`, `FolderPage`) og ukevisningen fra PLAN
- * (`AutoRecordCard` + `WeekView`). Denne fila er bare rekkefølgen og porten.
+ * (`FirstRunAuto` + `WeekView`). Denne fila er bare rekkefølgen og porten.
  *
  * Språk følger systemet (`resolveStartupLocale`) og velges under Innstillinger;
  * kvalitet og varsler har gode standardverdier og ligger der også.

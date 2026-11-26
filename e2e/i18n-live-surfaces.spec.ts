@@ -182,7 +182,9 @@ test.describe("engine codes render as catalogue sentences", () => {
       goto: "plan",
     });
 
-    const notes = page.getByTestId("adv-wake-notes");
+    // E5: vekkenotatene bor i popoveren bak hjørneknappen på Vekk-flisen.
+    await page.getByTestId("strip-wake-more").click();
+    const notes = page.getByTestId("strip-wake-notes");
     await expect(notes).toBeVisible();
     await expect(notes.locator("li")).toHaveCount(6);
     // Katalogens norske setning — ikke motorens engelske reserve, som aldri
@@ -199,6 +201,7 @@ test.describe("engine codes render as catalogue sentences", () => {
     await page.getByTestId("language-control-input").selectOption("en");
     // Plan er ikke lenger en fane: gå via dyplenken (E2: record + stripe).
     await page.evaluate(() => window.showPage("plan"));
+    await page.getByTestId("strip-wake-more").click();
 
     await expect(notes).toContainText("it disappears");
     await expect(notes).toContainText("startup settings (BIOS)");

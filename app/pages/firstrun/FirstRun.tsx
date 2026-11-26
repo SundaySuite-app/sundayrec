@@ -3,7 +3,7 @@
  *
  *   1. Lydkort og kanaler — `SoundPage` (enhet, kanalpar, live måler)
  *   2. Lagringsmappe      — `FolderPage` (mappevelgeren i Rust)
- *   3. Første faste opptak — `AutoRecordCard` + `WeekView` fra PLAN
+ *   3. Første faste opptak — `FirstRunAuto` + `WeekView` (variant `page`)
  *
  * Ingen egen veiviser-kode: stegene er de samme komponentene som INNSTILLINGER
  * og PLAN bruker. Språk følger systemet og velges under Innstillinger; kvalitet
@@ -46,8 +46,8 @@ import {
 import { ActionBar } from "../../ui/ActionBar/ActionBar";
 import { Button } from "../../ui/Button/Button";
 import { toast } from "../../ui/toast";
-import { AutoRecordCard } from "../plan/AutoRecordCard";
 import { WeekView } from "../plan/WeekView";
+import { FirstRunAuto } from "./FirstRunAuto";
 import { FolderPage } from "../settings/FolderPage";
 import { SoundPage } from "../settings/SoundPage";
 import { useVuWord } from "../settings/use-vu-word";
@@ -170,8 +170,8 @@ export function FirstRun() {
       {id === "plan" ? (
         <div class={styles.plan} data-testid="first-run-plan">
           <p class={styles.lede}>{t("app.first.planLede")}</p>
-          <AutoRecordCard />
-          <WeekView />
+          <FirstRunAuto />
+          <WeekView variant="page" />
         </div>
       ) : null}
 
