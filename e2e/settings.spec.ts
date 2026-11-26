@@ -150,10 +150,11 @@ test.describe("settings", () => {
         settings: SETTLED_SETTINGS,
         goto: param,
       });
-      await expect(page.getByTestId("nav-settings")).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      // E2: sound/folder bor i lydkilde-arket på TA OPP, resten på Innstillinger.
+      const moved = anchor === "sound" || anchor === "folder";
+      await expect(
+        page.getByTestId(moved ? "nav-record" : "nav-settings"),
+      ).toHaveAttribute("aria-current", "page");
       await expect(page.getByTestId("main")).toHaveAttribute(
         "data-anchor",
         anchor,

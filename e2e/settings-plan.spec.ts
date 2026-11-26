@@ -250,8 +250,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
 
     await page.getByTestId("record-change-source").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -271,8 +271,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
     });
     await page.getByTestId("record-choose-sound").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("sound-devices")).toBeVisible();
   });
@@ -293,8 +293,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
 
     await page.getByTestId("banner-low-disk-free").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source-more",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -314,7 +314,10 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
     // Ingenting planlagt: linja sier det, og tilbyr planen.
     await expect(page.getByTestId("record-next-none")).toBeVisible();
     await page.getByTestId("record-next-plan").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-panel",
+      "strip",
+    );
     await expect(page.getByTestId("setup-auto")).toBeVisible();
   });
 });
@@ -362,8 +365,8 @@ test.describe("dyplenkene lander på siden de navngir", () => {
     });
 
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -383,7 +386,10 @@ test.describe("dyplenkene lander på siden de navngir", () => {
       goto: "plan:auto",
     });
 
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-panel",
+      "strip",
+    );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
       "auto",

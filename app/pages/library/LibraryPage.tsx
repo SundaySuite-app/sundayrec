@@ -566,7 +566,9 @@ function Foot() {
         <Button
           variant="ghost"
           testId="library-autodelete-change"
-          onClick={() => navigate("settings", { anchor: "autodelete" })}
+          onClick={() =>
+            navigate("record", { panel: "source-more", anchor: "autodelete" })
+          }
         >
           {t("app.setup.change")}
         </Button>

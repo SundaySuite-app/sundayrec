@@ -105,9 +105,15 @@ test.describe("app shell foundation", () => {
       goto: "settings:sound",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    await expect(page.getByTestId("nav-settings")).toHaveAttribute(
+    // E2: Lyd og kanaler bor i lydkilde-arket på TA OPP (midlertidig vist som
+    // innstillingssiden til arket finnes, E3/E4).
+    await expect(page.getByTestId("nav-record")).toHaveAttribute(
       "aria-current",
       "page",
+    );
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-panel",
+      "source",
     );
     // Ruten som ATTRIBUTT: den står der bare e2e ser den.
     await expect(page.getByTestId("main")).toHaveAttribute(

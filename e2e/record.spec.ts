@@ -663,8 +663,8 @@ test.describe("bannerne på opptakssiden", () => {
     // F5: «Frigjør plass» fører til Lagringsmappe i Innstillinger.
     await page.getByTestId("banner-low-disk-free").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source-more",
     );
     await expect(page.getByTestId("setup-folder")).toBeVisible();
   });

@@ -197,6 +197,7 @@ export function PageShell({ children, heading }: PageShellProps) {
         data-testid="main"
         data-page={current.page}
         data-tab={current.tab}
+        data-panel={current.panel}
         data-anchor={current.anchor}
         data-first-run={current.firstRun ? "true" : undefined}
         class={styles.main}

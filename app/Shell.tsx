@@ -93,6 +93,7 @@ import {
   navigate,
   pendingAction,
   route,
+  type Panel,
 } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { audioDevices } from "./state/devices";
@@ -130,7 +131,9 @@ export function Shell({ probe }: ShellProps) {
     <PageShell
       heading={
         firstRunHeading(firstRun) ??
-        (current.page === "recordings" ? editHeading(current.tab) : undefined)
+        (current.page === "recordings"
+          ? editHeading(current.tab)
+          : temporaryHeading(current.panel))
       }
     >
       {/*
@@ -158,11 +161,22 @@ export function Shell({ probe }: ShellProps) {
       ) : firstRun ? (
         <FirstRun />
       ) : current.page === "record" ? (
-        <RecordPage />
+        /*
+          E2-OVERGANG: panelene finnes ikke ennå (lydkilde-arket kommer i E3/E4,
+          ukestripa i E5). Til da står de gamle sidene i panelets sted, slik at
+          dyplenker og e2e fortsatt lander på noe ekte: `strip` → PlanPage,
+          `source`/`source-more` → SettingsPage (som ruller til `route.anchor`).
+          E5 sletter PlanPage-grenen, E4 SettingsPage-grenen.
+        */
+        current.panel === "strip" ? (
+          <PlanPage />
+        ) : current.panel ? (
+          <SettingsPage />
+        ) : (
+          <RecordPage />
+        )
       ) : current.page === "recordings" ? (
         <RecordingsSurface tab={current.tab} />
-      ) : current.page === "plan" ? (
-        <PlanPage />
       ) : (
         <SettingsPage />
       )}
@@ -197,6 +211,13 @@ function RecordingsSurface({ tab }: { tab: string | undefined }) {
       {loadState.value === "idle" ? <LibraryPage /> : <EditorPage />}
     </DropZone>
   );
+}
+
+/** E2-OVERGANG: overskriften til den gamle siden som står i panelets sted. */
+function temporaryHeading(panel: Panel | undefined): string | undefined {
+  if (panel === "strip") return tDyn("app.page", "plan");
+  if (panel) return tDyn("app.page", "settings");
+  return undefined;
 }
 
 /** Overskriften OPPTAK skal ha: opptakets dato når et er åpent, ellers

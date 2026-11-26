@@ -250,7 +250,9 @@ export function SoundPage() {
         <Button
           variant="ghost"
           testId="sound-advanced"
-          onClick={() => navigate("settings", { anchor: "engine" })}
+          onClick={() =>
+            navigate("record", { panel: "source-more", anchor: "engine" })
+          }
         >
           {t("app.setup.advanced.soundLink")}
         </Button>

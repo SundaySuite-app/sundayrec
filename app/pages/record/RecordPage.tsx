@@ -386,7 +386,8 @@ function SoundControl({ source }: { source: ReturnType<typeof sourceState> }) {
   const [searching, setSearching] = useState(false);
   const [switching, setSwitching] = useState(false);
   const fallback = defaultDeviceOf(audioDevices.value);
-  const goSound = () => navigate("settings", { anchor: "sound" });
+  const goSound = () =>
+    navigate("record", { panel: "source", anchor: "sound" });
 
   /**
    * Nødutgangen: ta valget på brukerens vegne, med en EKTE enhets-id.
@@ -555,7 +556,7 @@ function NextPlannedCard() {
     <Button
       variant="ghost"
       testId="record-next-plan"
-      onClick={() => navigate("plan")}
+      onClick={() => navigate("record", { panel: "strip" })}
     >
       {t("app.record.openPlan")}
     </Button>
@@ -851,7 +852,9 @@ function RecordBanners() {
             <Button
               variant="secondary"
               testId="banner-low-disk-free"
-              onClick={() => navigate("settings", { anchor: "folder" })}
+              onClick={() =>
+                navigate("record", { panel: "source-more", anchor: "folder" })
+              }
             >
               {t("app.banner.diskFree")}
             </Button>
