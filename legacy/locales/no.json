@@ -476,7 +476,19 @@
       "deadChannel": {
         "left": "Venstre side er stille — sjekk kabelen",
         "right": "Høyre side er stille — sjekk kabelen"
-      }
+      },
+      "cutSelection": "Klipp",
+      "cutSelectionTitle": "Klipp ut denne biten",
+      "cancelSelection": "Avbryt markering",
+      "selectionAria": "Markert del av opptaket",
+      "silence": "Stillhet",
+      "silenceAccept": "Klipp bort denne stillheten",
+      "silenceDismiss": "Behold denne stillheten",
+      "silenceAll": "Godta alle ({n})",
+      "silenceNone": "Fant ingen lange stillheter.",
+      "markIn": "Inn",
+      "markOut": "Ut",
+      "videoLabel": "Bildet fra opptaket"
     },
     "export": {
       "content": "Innhold",
@@ -699,7 +711,7 @@
     "emptyDesc": "Velg en lyd- eller videofil for å begynne å redigere. Du kan trimme starten og slutten, eller klippe ut deler fra midten.",
     "openFile": "Åpne fil…",
     "loading": "Laster inn lydfil…",
-    "dragHint": "Klikk og dra for å markere en del som skal klippes bort",
+    "dragHint": "Dra over bølgeformen for å markere en del, og trykk Klipp for å fjerne den",
     "cutsTitle": "Bortklipte deler",
     "cutsNone": "Angre alle klipp",
     "deleteCut": "Angre klipp",

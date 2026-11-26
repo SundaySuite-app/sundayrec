@@ -104,6 +104,16 @@
   --meter-cover: rgba(14, 19, 33, 0.92);
   --ink-soft: rgba(237, 240, 247, 0.12);
   --ink-soft-2: rgba(237, 240, 247, 0.14);
+  /* Video-stripa nederst i bildet (E7): mørk, så tid og knapper leses over alt. */
+  --video-bar: rgba(6, 9, 18, 0.62);
+  /* Skravuren på et utklippet område i bølgeformen (E7). */
+  --cut-hatch: repeating-linear-gradient(
+    135deg,
+    var(--line-2) 0,
+    var(--line-2) 2px,
+    transparent 2px,
+    transparent 9px
+  );
 
   /* ── Bevegelse ────────────────────────────────────────────────────────── */
   --dur-fast: 150ms;

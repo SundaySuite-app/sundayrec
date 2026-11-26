@@ -130,6 +130,20 @@ export function addCut(from: number, to: number): void {
 }
 
 /**
+ * Legg til flere kutt som ÉN handling — ett angre-steg, ett utkast (E7:
+ * «Godta alle» på stillhetsforslagene). Regioner som er for korte hoppes over;
+ * er alle det, skjer ingenting.
+ */
+export function addCuts(regions: readonly Cut[]): void {
+  let next: Cut[] | null = null;
+  for (const r of regions) {
+    const added = addCutToList(next ?? E.cuts, r.start, r.end, E.duration);
+    if (added) next = added;
+  }
+  if (next) commit(next);
+}
+
+/**
  * Registrer kuttlista etter at en GRENSE er dratt.
  *
  * Draget redigerer elementene in place (det er dét som gjør at bølgeformen

@@ -24,11 +24,12 @@
  * `ResizeObserver`-en `WaveformHost` uansett har, og av scroll/resize.
  */
 
-import { addCut, commitCutEdges, setKeepWindow } from "./cuts";
+import { commitCutEdges, setKeepWindow } from "./cuts";
 import { dragHandle, keepWindow } from "./editor-core";
 import { clampToFile, grabThreshold, secToX, xToSec } from "./geometry";
 import { dragWindow, E, syncCuts, type Range } from "./model";
 import { seekTo, stopPlay } from "./playback";
+import { clearSelection, setSelection } from "./selection";
 import { centerOn, panBy, zoomAt } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
@@ -84,7 +85,8 @@ export function onCanvasPointerDown(event: PointerEvent): void {
     return;
   }
 
-  // Ellers: marker en region som skal bort.
+  // Ellers: marker en region (E7: den klippes først når «Klipp» trykkes).
+  clearSelection();
   E.dragStartSec = clampToFile(sec);
   E.dragEndSec = E.dragStartSec;
   E.isDragging = true;
@@ -242,7 +244,9 @@ function onSelectUp(event: PointerEvent): void {
   E.dragEndSec = -1;
 
   if (Math.abs(at - from) > 0.1) {
-    addCut(from, at);
+    // Et drag klipper ikke av seg selv (E7): det lager en markering med en
+    // boble over seg, og kuttet går via «Klipp» → `addCut`.
+    setSelection(from, at);
     return;
   }
   // Et klikk, ikke et drag: flytt spillehodet dit.

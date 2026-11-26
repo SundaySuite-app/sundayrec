@@ -476,7 +476,19 @@
       "deadChannel": {
         "left": "The left side is silent — check the cable",
         "right": "The right side is silent — check the cable"
-      }
+      },
+      "cutSelection": "Cut",
+      "cutSelectionTitle": "Cut out this part",
+      "cancelSelection": "Cancel selection",
+      "selectionAria": "Selected part of the recording",
+      "silence": "Silence",
+      "silenceAccept": "Cut out this silence",
+      "silenceDismiss": "Keep this silence",
+      "silenceAll": "Accept all ({n})",
+      "silenceNone": "No long silences found.",
+      "markIn": "In",
+      "markOut": "Out",
+      "videoLabel": "Video from the recording"
     },
     "export": {
       "content": "Content",
@@ -699,7 +711,7 @@
     "emptyDesc": "Pick an audio or video file to start editing. You can trim the start and end, or cut sections out of the middle.",
     "openFile": "Open file…",
     "loading": "Loading audio file…",
-    "dragHint": "Click and drag to mark a part to cut out",
+    "dragHint": "Drag across the waveform to select a part, then press Cut to remove it",
     "cutsTitle": "Cut-out parts",
     "cutsNone": "Undo all cuts",
     "deleteCut": "Undo cut",

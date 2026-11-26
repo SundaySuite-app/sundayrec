@@ -47,7 +47,16 @@ import {
 } from "./canvas-input";
 import { setKeepWindow } from "./cuts";
 import { dragHandle, exactSpan, keepWindow, timecode } from "./editor-core";
-import { cuts, dragWindow, duration, E, playheadSec, viewport } from "./model";
+import { CutRegions, SelectionBubble, SilenceRegions } from "./CutOverlays";
+import {
+  cuts,
+  dragWindow,
+  duration,
+  E,
+  playheadSec,
+  selection,
+  viewport,
+} from "./model";
 import { spanLabel } from "./span";
 import { centerOn } from "./viewport";
 import styles from "./editor.module.css";
@@ -68,7 +77,7 @@ const HANDLE_KEYS = new Set([
   "End",
 ]);
 
-export function WaveformHost() {
+export function WaveformHost({ compact = false }: { compact?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -107,6 +116,7 @@ export function WaveformHost() {
       void playheadSec.value;
       void viewport.value;
       void duration.value;
+      void selection.value;
       scheduleDraw();
     });
 
@@ -125,27 +135,35 @@ export function WaveformHost() {
   }, []);
 
   return (
-    <div class={styles.wave} data-testid="editor-wave">
-      <canvas
-        ref={canvasRef}
-        // Bølgeformen er en tegning av lyd. Den tilgjengelige utgaven av det
-        // den sier står i resultatlinja under — to stemmer om
-        // det samme er verre enn én.
-        aria-hidden="true"
-        class={styles.canvas}
-        data-testid="editor-canvas"
-        onPointerDown={onCanvasPointerDown}
-        onPointerMove={onCanvasPointerMove}
-        onPointerLeave={onCanvasPointerLeave}
-      />
-      <KeepWindow />
-      <canvas
-        ref={minimapRef}
-        aria-hidden="true"
-        class={styles.minimap}
-        data-testid="editor-minimap"
-        onPointerDown={onMinimapPointerDown}
-      />
+    <div class={styles.waveWrap}>
+      <div
+        class={`${styles.wave} ${compact ? styles.waveCompact : styles.waveTall}`}
+        data-testid="editor-wave"
+      >
+        <canvas
+          ref={canvasRef}
+          // Bølgeformen er en tegning av lyd. Den tilgjengelige utgaven av det
+          // den sier står i resultatlinja under — to stemmer om
+          // det samme er verre enn én.
+          aria-hidden="true"
+          class={styles.canvas}
+          data-testid="editor-canvas"
+          onPointerDown={onCanvasPointerDown}
+          onPointerMove={onCanvasPointerMove}
+          onPointerLeave={onCanvasPointerLeave}
+        />
+        <CutRegions />
+        <SilenceRegions />
+        <KeepWindow />
+        <canvas
+          ref={minimapRef}
+          aria-hidden="true"
+          class={styles.minimap}
+          data-testid="editor-minimap"
+          onPointerDown={onMinimapPointerDown}
+        />
+      </div>
+      <SelectionBubble />
     </div>
   );
 }

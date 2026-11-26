@@ -48,6 +48,7 @@ import { checkChannels } from "./channel-check";
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import { seekTo, teardownPlayback } from "./playback";
+import { resetSuggestions } from "./silence-suggest";
 import { rememberPeaks } from "../pages/library/peaks-store";
 import { fitAll } from "./viewport";
 import { scheduleDraw } from "./waveform";
@@ -123,6 +124,7 @@ function closeFileNow(): void {
   teardownPlayback();
   resetSound();
   resetExport();
+  resetSuggestions();
   resetFileState();
   resetHistoryMirror();
   loadState.value = "idle";
@@ -209,6 +211,7 @@ async function openFileNow(
   teardownPlayback();
   resetSound();
   resetExport();
+  resetSuggestions();
   resetFileState();
   resetHistoryMirror();
 
