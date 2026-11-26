@@ -107,6 +107,21 @@ pub fn supervisor_should_fire(wait_ms: u64) -> bool {
 /// Longer than any realistic service; the user's chosen slot max wins when set.
 pub const SCHEDULED_MAX_BACKSTOP_MINUTES: u32 = 240;
 
+/// Absolute ceiling (24 h) for a slot's own recording: the slot's stop is the
+/// deadline, so the cap is the slot's real length — never the flat 240-min
+/// backstop, which silently cut long blocks from the week view.
+pub const SCHEDULED_MAX_CEILING_MINUTES: u32 = 24 * 60;
+
+/// The cap for a slot's own recording: its `max` when set (> 0), else the
+/// 24 h ceiling (the stop time itself is the real deadline).
+fn slot_cap_minutes(slot_max: u32) -> u32 {
+    if slot_max > 0 {
+        slot_max.min(SCHEDULED_MAX_CEILING_MINUTES)
+    } else {
+        SCHEDULED_MAX_CEILING_MINUTES
+    }
+}
+
 /// The manual-max a scheduled recording is started with: the user's slot `max`
 /// when they set one (> 0), else the [`SCHEDULED_MAX_BACKSTOP_MINUTES`] safety net
 /// so a missed Stop can never leave a recording running indefinitely.
@@ -121,7 +136,7 @@ pub fn scheduled_max_minutes(slot_max: u32) -> u32 {
 /// The auto-stop a scheduled recording is started with: whole minutes from
 /// `now` to the next wall-clock `stop` ("HH:MM" — tomorrow's when today's has
 /// passed, which is what a past-midnight stop is), rounded UP and at least 1,
-/// capped by [`scheduled_max_minutes`].
+/// capped by the slot's `max` when set, else the 24 h ceiling.
 ///
 /// Armed as the engine's own deadline, so the countdown the volunteer sees, the
 /// «+15 min» / «Avbryt auto-stop» buttons and the slot's stop are ONE clock —
@@ -134,12 +149,12 @@ pub fn minutes_until_stop(stop: &str, now: NaiveDateTime, slot_max: u32) -> u32 
         at += Duration::days(1);
     }
     let secs = (at - now).num_seconds().max(1) as u32;
-    secs.div_ceil(60).clamp(1, scheduled_max_minutes(slot_max))
+    secs.div_ceil(60).clamp(1, slot_cap_minutes(slot_max))
 }
 
 /// How long a scheduled recording is PLANNED to run, in minutes: start → stop
 /// (past midnight when the stop is earlier), capped by the same max the start
-/// is armed with ([`scheduled_max_minutes`]). `None` for a degenerate
+/// is armed with (the slot's `max`, else the real length). `None` for a degenerate
 /// start == stop, which is never scheduled. What the preflight disk check
 /// sizes the free space against.
 pub fn planned_duration_minutes(start: &str, stop: &str, slot_max: u32) -> Option<u32> {
@@ -152,7 +167,7 @@ pub fn planned_duration_minutes(start: &str, stop: &str, slot_max: u32) -> Optio
     if span <= 0 {
         span += 24 * 60;
     }
-    Some((span as u32).min(scheduled_max_minutes(slot_max)))
+    Some((span as u32).min(slot_cap_minutes(slot_max)))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1197,22 +1212,23 @@ mod tests {
             minutes_until_stop("14:00", dt("2026-06-07 11:00"), 120),
             120
         );
-        assert_eq!(
-            minutes_until_stop("23:00", dt("2026-06-07 08:00"), 0),
-            SCHEDULED_MAX_BACKSTOP_MINUTES
-        );
+        // A long slot is NOT cut at the 240-min backstop: 08:00 → 23:00 = 15 h.
+        assert_eq!(minutes_until_stop("23:00", dt("2026-06-07 08:00"), 0), 900);
+        // 8 h slot → stop deadline is exactly 8 h.
+        assert_eq!(minutes_until_stop("16:00", dt("2026-06-07 08:00"), 0), 480);
+        // Midnight-crossing long slot: 20:00 → 06:00 = 10 h.
+        assert_eq!(minutes_until_stop("06:00", dt("2026-06-07 20:00"), 0), 600);
     }
 
     #[test]
     fn planned_duration_spans_midnight_and_is_capped_by_the_max() {
         assert_eq!(planned_duration_minutes("11:00", "12:30", 0), Some(90));
         assert_eq!(planned_duration_minutes("23:00", "00:30", 0), Some(90));
-        // Capped by the slot max, and by the backstop when none is set.
+        // Capped by the slot max; else the real length.
         assert_eq!(planned_duration_minutes("11:00", "14:00", 120), Some(120));
-        assert_eq!(
-            planned_duration_minutes("08:00", "20:00", 0),
-            Some(SCHEDULED_MAX_BACKSTOP_MINUTES)
-        );
+        assert_eq!(planned_duration_minutes("08:00", "20:00", 0), Some(720));
+        assert_eq!(planned_duration_minutes("20:00", "06:00", 0), Some(600));
+        assert_eq!(planned_duration_minutes("08:00", "20:00", 90), Some(90));
         assert_eq!(planned_duration_minutes("11:00", "11:00", 0), None);
     }
 

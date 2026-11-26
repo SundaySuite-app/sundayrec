@@ -563,9 +563,9 @@ fn adopt_running_take(engine: &RecorderEngine, settings: &Settings, source: Trig
 /// The name and auto-stop (minutes) a scheduled start of `kind` begins with.
 ///
 /// The auto-stop runs to the slot's own stop (`minutes_until_stop`),
-/// capped by the slot's max — and by the 240-min backstop when none is set, so
-/// even a missed Stop event can't leave a recording running until the disk
-/// fills. `Slot(i)` indexes `active_slots()` — the SAME slice `upcoming_events`
+/// capped by the slot's max when set, else by the slot's real length (24 h
+/// ceiling) — the stop IS the deadline, so a long block is never cut short.
+/// A vanished source falls back to the 240-min backstop. `Slot(i)` indexes `active_slots()` — the SAME slice `upcoming_events`
 /// indexed — so it keeps meaning what it meant when it was made.
 fn start_plan(settings: &Settings, kind: TriggerKind, now: NaiveDateTime) -> (Option<String>, u32) {
     match kind {

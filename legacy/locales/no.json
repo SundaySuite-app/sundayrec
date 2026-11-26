@@ -581,6 +581,7 @@
       "newTitle": "Ny tid",
       "stop": "Slutter",
       "nextDay": "slutter neste dag",
+      "runningNote": "Endringen gjelder fra neste gang — opptaket som går nå stopper kl. {time}",
       "delete": "Slett",
       "summaryMany": {
         "one": "{n} fast tid hver uke",

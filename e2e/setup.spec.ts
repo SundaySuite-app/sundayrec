@@ -150,27 +150,31 @@ test.describe("kvalitet", () => {
 });
 
 test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => {
-  test("et lagret «de» faller stille på systemregelen: engelsk på et engelsk system", async ({
-    page,
-  }) => {
-    // Migrert fra før F4: `settings.language` kan stå på et språk som ikke finnes lenger. Appen
-    // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og boksen
-    // viser språket som GJELDER — ikke den lagrede strengen, som en `<select>` uten treff ville
-    // fortiet ved å vise den første optionen.
-    await boot(page, {
-      fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, language: "de" },
-      goto: "settings",
-    });
+  test.describe("på et engelsk system", () => {
+    test.use({ locale: "en-US" });
 
-    await expect(page.getByTestId("setup-language")).toBeVisible();
-    await expect(page.getByTestId("setup-language-lede")).toHaveText(
-      "The language the app uses.",
-    );
-    const select = page.getByTestId("language-control-input");
-    await expect(select).toHaveValue("en");
-    await expect(select.locator("option")).toHaveCount(2);
-    await expect(select.locator("option:disabled")).toHaveCount(0);
+    test("et lagret «de» faller stille på systemregelen: engelsk på et engelsk system", async ({
+      page,
+    }) => {
+      // Migrert fra før F4: `settings.language` kan stå på et språk som ikke finnes lenger. Appen
+      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og boksen
+      // viser språket som GJELDER — ikke den lagrede strengen, som en `<select>` uten treff ville
+      // fortiet ved å vise den første optionen.
+      await boot(page, {
+        fixtures: BOOT_FIXTURES,
+        settings: { ...SETTLED_SETTINGS, language: "de" },
+        goto: "settings",
+      });
+
+      await expect(page.getByTestId("setup-language")).toBeVisible();
+      await expect(page.getByTestId("setup-language-lede")).toHaveText(
+        "The language the app uses.",
+      );
+      const select = page.getByTestId("language-control-input");
+      await expect(select).toHaveValue("en");
+      await expect(select.locator("option")).toHaveCount(2);
+      await expect(select.locator("option:disabled")).toHaveCount(0);
+    });
   });
 
   test.describe("på et norsk system", () => {

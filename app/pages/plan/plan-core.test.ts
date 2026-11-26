@@ -23,7 +23,9 @@ import {
   nextKey,
   occurrenceKey,
   occurrencesOf,
+  placementActiveAt,
   placementsOverlap,
+  coreTime,
   pxToMinutes,
   rangeLabel,
   replaceOccurrence,
@@ -102,14 +104,42 @@ describe("slot → opptredener → segmenter", () => {
     expect(occs.every((o) => o.index === 0)).toBe(true);
   });
 
-  it("hopper over ugyldige og degenererte slots uten å miste indeksene", () => {
+  it("hopper over degenererte slots og slots uten gyldig dag uten å miste indeksene", () => {
     const occs = occurrencesOf([
-      slot([0], "xx", "12:00"),
+      slot([0], "10:00", "10:00"),
       slot([1], "10:00", "10:00"),
       slot([9], "10:00", "11:00"),
       slot([3], "10:00", "11:00"),
     ]);
     expect(occs).toEqual([{ index: 3, day: 3, start: 600, duration: 60 }]);
+  });
+
+  it("uleselige tider tegnes på kjernens reservetid 11:00–12:00 (og tar del i overlapp)", () => {
+    const occs = occurrencesOf([
+      slot([2], "", "13:00"),
+      slot([3], "10:00", ""),
+      slot([4], "xx", "yy"),
+    ]);
+    expect(occs).toEqual([
+      { index: 0, day: 2, start: 660, duration: 120 },
+      { index: 1, day: 3, start: 600, duration: 120 },
+      { index: 2, day: 4, start: 660, duration: 60 },
+    ]);
+    // Samme regel som Rust: «9:5» er lesbart, 25:00 er det ikke.
+    expect(coreTime("9:5", "11:00")).toBe("09:05");
+    expect(coreTime("25:00", "11:00")).toBe("11:00");
+    // Den usynlige slotten blokkerer nå plassen sin.
+    expect(
+      findConflict(occs, { day: 4, start: 690, duration: 15 }),
+    ).not.toBeNull();
+  });
+
+  it("placementActiveAt: inni, utenfor og over midnatt", () => {
+    const p = { day: 6 as const, start: 1380, duration: 120 }; // søn 23:00–01:00
+    expect(placementActiveAt(p, new Date(2026, 10, 29, 23, 30))).toBe(true); // søn
+    expect(placementActiveAt(p, new Date(2026, 10, 30, 0, 30))).toBe(true); // man
+    expect(placementActiveAt(p, new Date(2026, 10, 30, 1, 0))).toBe(false);
+    expect(placementActiveAt(p, new Date(2026, 10, 29, 22, 59))).toBe(false);
   });
 
   it("midnattskryssende slot deles i hode og hale på neste dag", () => {
@@ -388,7 +418,7 @@ describe("tastaturet", () => {
 });
 
 describe("skriving til slot-listen", () => {
-  it("replaceOccurrence skriver på plass og beholder max", () => {
+  it("replaceOccurrence skriver på plass og nullstiller max", () => {
     const slots = [
       slot([6], "11:00", "12:30", 100),
       slot([2], "19:00", "20:00"),
@@ -402,12 +432,26 @@ describe("skriving til slot-listen", () => {
       days: [0],
       start: "09:00",
       stop: "10:00",
-      max: 100,
+      max: null,
     });
     expect(out.slots[1]).toEqual(slots[1]);
     expect(out.ref).toEqual({ index: 0, day: 0 });
     // Inndata er urørt.
     expect(slots[0].days).toEqual([6]);
+  });
+
+  it("å strekke en slot med gammel max nullstiller max: opptaket varer til stopptiden", () => {
+    const out = replaceOccurrence(
+      [slot([6], "08:00", "09:00", 60)],
+      { index: 0, day: 6 },
+      { day: 6, start: 480, duration: 600 },
+    );
+    expect(out.slots[0]).toEqual({
+      days: [6],
+      start: "08:00",
+      stop: "18:00",
+      max: null,
+    });
   });
 
   it("skriver slutt etter midnatt som en stopp som er mindre enn starten", () => {
@@ -428,7 +472,7 @@ describe("skriving til slot-listen", () => {
     );
     expect(out.slots).toEqual([
       { days: [1], start: "10:00", stop: "11:00", max: 70 },
-      { days: [4], start: "12:00", stop: "12:30", max: 70 },
+      { days: [4], start: "12:00", stop: "12:30", max: null },
     ]);
     expect(out.ref).toEqual({ index: 1, day: 4 });
   });

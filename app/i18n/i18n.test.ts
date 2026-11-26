@@ -128,7 +128,8 @@ describe("app i18n", () => {
 
   // [navn, lagret, system, forventet]
   it.each([
-    ["nothing stored", null, "en", "no"],
+    ["nothing stored, english system", null, "en", "en"],
+    ["nothing stored, norwegian system", null, "no", "no"],
     ["norsk", "no", "en", "no"],
     ["engelsk", "en", "no", "en"],
     // F4: et lagret språk som ikke finnes lenger faller STILLE på systemregelen.
@@ -137,7 +138,7 @@ describe("app i18n", () => {
     ["tysk, engelsk system", "de", "en", "en"],
     ["fransk, norsk system", "fr", "no", "no"],
     ["noe helt annet, engelsk system", "kv", "en", "en"],
-    ["tom streng", "", "en", "no"],
+    ["tom streng, engelsk system", "", "en", "en"],
   ])("startup locale for %s", (_name, stored, system, expected) => {
     expect(resolveStartupLocale(stored, system as "no" | "en")).toBe(expected);
   });

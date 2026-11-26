@@ -346,7 +346,6 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "recording-device-substituted": "recording://device-substituted",
-  "master-progress": "editor-master-progress",
   "editor-export-progress": "editor://export-progress",
   // B5b: what the playback engine tells the sound step (position, end, underrun, …).
   "editor-listen": "editor://listen",
@@ -383,30 +382,6 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
   "recording-warning": (p) => {
     const d = (p ?? {}) as { code?: string; message?: string };
     return { ...d, error: d.code };
-  },
-  // EditorMasterProgress → the mastering panel reads jobId/currentSec/totalSec.
-  //
-  // The DTO is `#[serde(rename_all = "camelCase")]` (editor/mod.rs), so the
-  // payload ALREADY arrives camelCase. This adapter used to read the snake_case
-  // names only and spread the results on top — overwriting three perfectly good
-  // fields with `undefined` and leaving the bar frozen at 0 % for the entire
-  // mastering apply. It is now camelCase-first, with the snake_case read kept
-  // purely as a fallback in case an older/renamed emitter ever shows up.
-  "master-progress": (p) => {
-    const d = (p ?? {}) as {
-      jobId?: string;
-      currentSec?: number;
-      totalSec?: number;
-      job_id?: string;
-      current_sec?: number;
-      total_sec?: number;
-    };
-    return {
-      ...d,
-      jobId: d.jobId ?? d.job_id,
-      currentSec: d.currentSec ?? d.current_sec,
-      totalSec: d.totalSec ?? d.total_sec,
-    };
   },
 };
 

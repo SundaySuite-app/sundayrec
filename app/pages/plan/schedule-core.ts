@@ -148,22 +148,20 @@ export function planFromSlots(
  * Slot-listen en plan gir, med alt annet urørt.
  *
  * De øvrige slotene beholdes med vilje: de er ikke nivå 1 sine, og en skjerm
- * skal ikke slette data den ikke viser. `max` fra den gamle sloten følger med
- * av samme grunn — det er en grense noen satte, og varigheten her er ikke den
- * samme tingen.
+ * skal ikke slette data den ikke viser. `max` nullstilles: opptaket varer
+ * til stopptiden, og en gammel `max` er usynlig i visningen.
  */
 export function slotsFromPlan(
   plan: WeeklyPlan,
   existing: readonly ScheduleSlot[] | null | undefined,
 ): ScheduleSlot[] {
   const rest = (existing ?? []).slice(1);
-  const previous = existing?.[0];
   return [
     {
       days: [plan.day],
       start: plan.start,
       stop: stopFor(plan.start, plan.minutes),
-      max: previous?.max ?? null,
+      max: null,
     },
     ...rest,
   ];

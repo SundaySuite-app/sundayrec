@@ -96,13 +96,12 @@ describe("slotsFromPlan", () => {
     ]);
   });
 
-  it("beholder `max` fra sloten den erstatter", () => {
-    // Noen satte en hard grense. Varigheten her er ikke den samme tingen, og
-    // en skjerm som ikke viser grensen skal ikke slette den heller.
+  it("nullstiller `max` fra sloten den erstatter", () => {
+    // Opptaket varer til stopptiden; en gammel, usynlig grense skal ikke kutte det.
     const before = [{ days: [6], start: "11:00", stop: "12:00", max: 120 }];
     expect(
       slotsFromPlan({ day: 6, start: "11:00", minutes: 90 }, before),
-    ).toEqual([{ days: [6], start: "11:00", stop: "12:30", max: 120 }]);
+    ).toEqual([{ days: [6], start: "11:00", stop: "12:30", max: null }]);
   });
 
   it("rører ikke tidspunkter nivå 1 ikke viser", () => {

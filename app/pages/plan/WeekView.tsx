@@ -49,6 +49,7 @@ import { capitalizeFirst } from "@lib/ui/capitalize";
 import { locale, t, tDyn, tf, tn } from "../../i18n";
 import { useReceipt } from "../../settings/use-receipt";
 import { nextRecording } from "../../state/next-recording";
+import { isRecording, scheduledStopMs } from "../../state/recording";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -83,6 +84,7 @@ import {
   nextKey,
   occurrenceKey,
   occurrencesOf,
+  placementActiveAt,
   pxToMinutes,
   rangeLabel,
   replaceOccurrence,
@@ -1017,6 +1019,17 @@ function SlotEditor({
           })()
         : null;
 
+  // Redigerer du sloten som tar opp akkurat nå, gjelder endringen først neste
+  // gang: det løpende stoppet er allerede satt.
+  const stopMs = scheduledStopMs.value;
+  const runningStopText =
+    ref &&
+    isRecording.value &&
+    stopMs !== null &&
+    placementActiveAt(initial, new Date())
+      ? timeOfDay(minutesOfDate(new Date(stopMs)))
+      : null;
+
   const crosses = placement ? endOf(placement) > DAY_MINUTES : false;
 
   function submit(e: Event): void {
@@ -1086,6 +1099,11 @@ function SlotEditor({
         <p class={styles.popInfo} data-testid="plan-editor-info">
           {tf("app.setup.auto.minutes", { n: duration })}
           {crosses ? ` · ${t("app.plan.nextDay")}` : ""}
+        </p>
+      ) : null}
+      {runningStopText ? (
+        <p class={styles.popInfo} data-testid="plan-editor-running">
+          {tf("app.plan.runningNote", { time: runningStopText })}
         </p>
       ) : null}
       {problem || error ? (

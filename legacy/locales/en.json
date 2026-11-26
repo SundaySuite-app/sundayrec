@@ -581,6 +581,7 @@
       "newTitle": "New time",
       "stop": "Ends",
       "nextDay": "ends the next day",
+      "runningNote": "The change applies from next time — the recording running now stops at {time}",
       "delete": "Delete",
       "summaryMany": {
         "one": "{n} fixed time each week",

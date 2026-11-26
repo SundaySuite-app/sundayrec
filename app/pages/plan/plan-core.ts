@@ -40,7 +40,6 @@ import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
 import {
   durationBetween,
-  isValidTime,
   minutesOfDay,
   stopFor,
   timeOfDay,
@@ -172,19 +171,51 @@ function distinctDays(slot: ScheduleSlot): Weekday[] {
 }
 
 /**
+ * Klokkeslettet kjernen (`sundayrec-core::schedule::parse_hm`) ender med:
+ * `H:M` med timer < 24 og minutter < 60, ellers reservetiden.
+ */
+export function coreTime(
+  value: string | null | undefined,
+  fallback: string,
+): string {
+  const parts = (value ?? "").split(":");
+  if ((value ?? "").trim() !== "") {
+    const h = /^\s*\d+\s*$/.test(parts[0] ?? "") ? Number(parts[0]) : NaN;
+    const m = /^\s*\d+\s*$/.test(parts[1] ?? "") ? Number(parts[1]) : NaN;
+    if (h < 24 && m < 60) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  return fallback;
+}
+
+/** Ligger `now` innenfor plasseringen (på dens dag, over midnatt inkludert)? */
+export function placementActiveAt(p: Placement, now: Date): boolean {
+  const abs = weekdayOf(now) * DAY_MINUTES + minutesOfDate(now);
+  const from = p.day * DAY_MINUTES + p.start;
+  const week = 7 * DAY_MINUTES;
+  const into = (((abs - from) % week) + week) % week;
+  return into < p.duration;
+}
+
+/**
  * Alle opptredener i en slot-liste. En slot uten gyldig klokkeslett, eller med
  * start = stopp (kjernen avviser den), tegnes ikke — men røres heller ikke.
+ * Uleselige tider tegnes på kjernens reservetid (11:00–12:00).
  */
 export function occurrencesOf(
   slots: readonly ScheduleSlot[] | null | undefined,
 ): Occurrence[] {
   const out: Occurrence[] = [];
   (slots ?? []).forEach((slot, index) => {
-    if (!isValidTime(slot.start) || !isValidTime(slot.stop)) return;
-    if (slot.start === slot.stop) return;
-    const start = minutesOfDay(slot.start);
+    // Samme regel som kjernen (`parse_hm`): en uleselig tid får reservetiden
+    // 11:00 / 12:00, så sloten vises der Rust faktisk planlegger den.
+    const startText = coreTime(slot.start, "11:00");
+    const stopText = coreTime(slot.stop, "12:00");
+    if (startText === stopText) return;
+    const start = minutesOfDay(startText);
     if (start === null) return;
-    const duration = durationBetween(slot.start, slot.stop);
+    const duration = durationBetween(startText, stopText);
     for (const day of distinctDays(slot)) {
       out.push({ index, day, start, duration });
     }
@@ -435,7 +466,7 @@ function withoutDay(slot: ScheduleSlot, day: Weekday): ScheduleSlot | null {
 
 /**
  * Sett en ny plassering på en opptreden. Slot med bare denne dagen skrives
- * på plass (og beholder `max`); en slot med FLERE dager deles: den andre
+ * på plass (og nullstiller `max`: opptaket varer til stopptiden); en slot med FLERE dager deles: den andre
  * dagene står, og denne dagen blir en egen slot sist i lista. Så rører
  * visningen aldri dager den ikke viser.
  *
@@ -452,12 +483,12 @@ export function replaceOccurrence(
   const rest = withoutDay(slot, ref.day);
   if (rest === null) {
     const out = [...slots];
-    out[ref.index] = { ...slot, days: [next.day], ...times };
+    out[ref.index] = { ...slot, days: [next.day], ...times, max: null };
     return { slots: out, ref: { index: ref.index, day: next.day } };
   }
   const out = [...slots];
   out[ref.index] = rest;
-  out.push({ ...slot, days: [next.day], ...times });
+  out.push({ ...slot, days: [next.day], ...times, max: null });
   return { slots: out, ref: { index: out.length - 1, day: next.day } };
 }
 

@@ -69,7 +69,7 @@ export function systemLocale(
  * Hvilket språk skallet skal starte på, gitt det som står lagret.
  *
  * `no` og `en` brukes som de er. Ingenting lagret (`null`, den ekte førstegangsinstallasjonen)
- * er norsk, som alltid. Et lagret språk som ikke finnes lenger — sv, da, de, fr, pl fra før
+ * følger systemet: norsk på et norsk system, ellers engelsk. Et lagret språk som ikke finnes lenger — sv, da, de, fr, pl fra før
  * F4, eller en korrupt eller håndredigert rad — faller STILLE tilbake på systemregelen
  * ([`systemLocale`]): norsk på et norsk system, ellers engelsk. Ingen feilmelding og ingen
  * skriving tilbake til basen: den lagrede verdien står, og blir bare ikke brukt.
@@ -78,7 +78,7 @@ export function resolveStartupLocale(
   stored: string | null,
   system: Locale = systemLocale(),
 ): Locale {
-  if (!stored) return "no";
+  if (!stored) return system;
   if ((ALL_LOCALES as readonly string[]).includes(stored)) {
     return stored as Locale;
   }

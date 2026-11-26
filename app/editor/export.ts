@@ -423,9 +423,9 @@ export async function runExport(
   const video = isVideoExport();
   const sound = soundExportFields(podcastAudio.value);
 
-  // Innholdet slik det står NÅ, trimmet i endene. Datoen og menighetsnavnet
-  // følger med uansett om noe er skrevet: `date`/`album`-taggene er sanne for
-  // enhver eksport av et opptak vi vet når ble tatt.
+  // Innholdet slik det står NÅ, trimmet i endene. Datoen følger med uansett
+  // om noe er skrevet: `date`-taggen er sann for enhver eksport av et opptak
+  // vi vet når ble tatt.
   // Lappen peker ut både kilden og sidevognen («Innhold», A3): Rust avleder
   // `<stem>.meta.json` selv. Stien sendes ingen steder.
   const sourceToken = E.sourceToken;

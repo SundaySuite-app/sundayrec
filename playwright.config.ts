@@ -80,6 +80,8 @@ export default defineConfig({
 
   use: {
     baseURL: `http://localhost:${PORT}`,
+    // Pinned: first run follows the system language, and the suites assert Norwegian.
+    locale: "nb-NO",
     // A trace is worth having exactly when something failed and you are not
     // watching. Not `on`: a full trace per passing test is megabytes of nothing.
     trace: "retain-on-failure",
