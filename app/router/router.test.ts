@@ -145,13 +145,6 @@ describe("resolveRoute", () => {
     warn.mockRestore();
   });
 
-  it("carries firstRun through", () => {
-    expect(resolveRoute("settings", { firstRun: true })).toEqual({
-      page: "settings",
-      firstRun: true,
-    });
-  });
-
   it("an unknown settings anchor opens the gear and keeps the anchor", () => {
     expect(resolveRoute("settings", { anchor: "licenses" })).toEqual({
       page: "settings",

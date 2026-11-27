@@ -52,6 +52,7 @@ import {
 } from "../plan/plan-core";
 import { autoRecordOn, WEEKDAYS, type Weekday } from "../plan/schedule-core";
 import { WeekView } from "../plan/WeekView";
+import { hintSpot } from "./first-run-hint";
 import { StripTiles } from "./StripTiles";
 import styles from "./WeekStrip.module.css";
 
@@ -60,6 +61,9 @@ export const STRIP_CLOSED_PX = 112;
 
 export function WeekStrip() {
   const expanded = panel.value === "strip";
+  // Første gang: kalenderknappen (eller stripas topp) pulserer gull mens
+  // hintboblen «Faste opptak» peker på den.
+  const spot = hintSpot.value === "plan" ? "true" : undefined;
   const s = settings.value;
   const planOn = autoRecordOn(s);
   const state = nextRecording.value;
@@ -103,6 +107,7 @@ export function WeekStrip() {
           data-testid="record-next-plan"
           aria-label={t("app.record.planAria")}
           title={t("app.record.planAria")}
+          data-spot={spot}
           class={styles.pill}
           onClick={open}
         >
@@ -192,6 +197,7 @@ export function WeekStrip() {
           aria-expanded={expanded}
           aria-controls="strip-body"
           title={t("app.strip.title")}
+          data-spot={spot}
           class={styles.head}
           onClick={toggle}
         >

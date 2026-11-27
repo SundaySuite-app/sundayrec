@@ -44,10 +44,7 @@ import {
   useState,
 } from "preact/hooks";
 
-import { formatWakeHint, intlParts } from "@lib/status/next-recording-core";
-import { capitalizeFirst } from "@lib/ui/capitalize";
-
-import { locale, t, tDyn, tf, tn } from "../../i18n";
+import { t, tDyn, tf } from "../../i18n";
 import { useReceipt } from "../../settings/use-receipt";
 import { nextRecording } from "../../state/next-recording";
 import { isRecording, scheduledStopMs } from "../../state/recording";
@@ -59,7 +56,6 @@ import {
 } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
 import { Icon } from "../../ui/Icon/Icon";
-import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { toast } from "../../ui/toast";
 import {
@@ -74,7 +70,6 @@ import {
   endOf,
   findConflict,
   fitDuration,
-  HOUR_PX,
   initialTopMinutes,
   keyPlacement,
   minutesOfDate,
@@ -185,21 +180,15 @@ function blockLabel(occ: Occurrence): string {
   });
 }
 
-export interface WeekViewProps {
-  /**
-   * `strip` (standard): uka inne i ukestripa på TA OPP — ingen verktøylinje,
-   * tapp velger en blokk, slett-boble nede til høyre.
-   * `page`: den eldre flaten med verktøylinje («Legg til tid», kvittering);
-   * førstegangssekvensen bruker den til E9 river den.
-   */
-  variant?: "strip" | "page";
-}
-
-export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
-  const compact = variant === "strip";
-  // Timehøyden: stripa viser dagen tettere (flere timer i synsfeltet) enn den
-  // eldre flaten; geometrien i `plan-core` tar høyden som parameter.
-  const hp = compact ? STRIP_HOUR_PX : HOUR_PX;
+/**
+ * Uka inne i ukestripa på TA OPP — ingen verktøylinje, tapp velger en blokk,
+ * slett-boble nede til høyre. (Den eldre `page`-varianten med verktøylinje
+ * gikk ut sammen med første-gang-sekvensen i E9.)
+ */
+export function WeekView() {
+  // Timehøyden: stripa viser dagen tett (flere timer i synsfeltet); geometrien
+  // i `plan-core` tar høyden som parameter.
+  const hp = STRIP_HOUR_PX;
   const s = settings.value;
   const slots = s.slots ?? [];
   const armed = s.autoRecordEnabled !== false;
@@ -215,7 +204,7 @@ export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
     kind: MessageKind;
     text: string;
   } | null>(null);
-  const { receipt, show: showReceipt } = useReceipt();
+  const { show: showReceipt } = useReceipt();
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -632,15 +621,6 @@ export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
   const todayDay = weekdayOf(now);
   const nowMinutes = minutesOfDate(now);
 
-  const parts = state.next ? intlParts(locale.value)(state.next.atMs) : null;
-  const wake = formatWakeHint(state, {
-    t,
-    tf,
-    tn,
-    parts: intlParts(locale.value),
-    nowMs: now.getTime(),
-  });
-
   const selectedOcc = selected
     ? (occs.find((o) => sameRef(o, selected)) ?? null)
     : null;
@@ -649,62 +629,23 @@ export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
     <section
       ref={wrapRef}
       class={styles.wrap}
-      data-variant={variant}
+      data-variant="strip"
       data-testid="plan-week"
       data-armed={armed ? "true" : "false"}
       aria-label={t("app.plan.gridLabel")}
       style={`--hour-px:${hp}px`}
     >
-      {compact ? (
-        /* Ingen verktøylinje i stripa: «neste» står i stripas topp. Knappen
-           under finnes for tastatur og skjermleser (synlig ved fokus), siden
-           skissen ikke har noen «+». */
-        <button
-          type="button"
-          data-testid="plan-add"
-          class={styles.addKeys}
-          onClick={(e) => openAdd(e.currentTarget)}
-        >
-          {t("app.plan.add")}
-        </button>
-      ) : (
-        <div class={styles.toolbar}>
-          <div class={styles.nextWrap}>
-            <div class={styles.nextLabel}>{t("app.record.nextAuto")}</div>
-            {parts ? (
-              <div data-testid="plan-next" class={styles.nextValue}>
-                {tf("app.record.nextAutoWhen", {
-                  day: capitalizeFirst(parts.weekdayLong, locale.value),
-                  time: parts.time,
-                })}
-              </div>
-            ) : (
-              <div data-testid="plan-next-none" class={styles.nextValue}>
-                {t("app.record.nextNone")}
-              </div>
-            )}
-            {wake ? (
-              <div data-testid="plan-next-wake" class={styles.nextWake}>
-                {wake}
-              </div>
-            ) : null}
-          </div>
-          <Receipt state={receipt} testId="plan-receipt" />
-          <Button
-            variant="secondary"
-            testId="plan-add"
-            onClick={(e) => openAdd(e.currentTarget)}
-          >
-            {t("app.plan.add")}
-          </Button>
-        </div>
-      )}
-
-      {!armed && !compact ? (
-        <p class={styles.offNote} data-testid="plan-off">
-          {t("app.plan.off")}
-        </p>
-      ) : null}
+      {/* Ingen verktøylinje i stripa: «neste» står i stripas topp. Knappen
+          under finnes for tastatur og skjermleser (synlig ved fokus), siden
+          skissen ikke har noen «+». */}
+      <button
+        type="button"
+        data-testid="plan-add"
+        class={styles.addKeys}
+        onClick={(e) => openAdd(e.currentTarget)}
+      >
+        {t("app.plan.add")}
+      </button>
 
       <div class={styles.scroll} ref={scrollRef} data-testid="plan-scroll">
         <div class={styles.head}>
@@ -808,17 +749,9 @@ export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
                   />
                 ) : null}
 
-                {compact && d === 6 && occs.length === 0 && !preview ? (
-                  <DragHint />
-                ) : null}
+                {d === 6 && occs.length === 0 && !preview ? <DragHint /> : null}
               </div>
             ))}
-
-            {occs.length === 0 && !preview && !compact ? (
-              <div class={styles.empty} data-testid="plan-empty">
-                <span class={styles.emptyNote}>{t("app.plan.empty")}</span>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -836,7 +769,7 @@ export function WeekView({ variant = "strip" }: WeekViewProps = {}) {
         {t("app.plan.keys")}
       </p>
 
-      {compact && selectedOcc && !editing ? (
+      {selectedOcc && !editing ? (
         <div class={styles.bubble} data-testid="plan-bubble">
           <button
             type="button"

@@ -1,0 +1,148 @@
+/*
+ * Hintboblene på TA OPP. `position: fixed` med koordinater regnet av komponenten
+ * fra målet (kilde-brikka, mappe-raden, kalenderknappen); over lydarket (z 10)
+ * og stripa, men under tannhjulet (z 60).
+ *
+ * Bare `opacity` animeres inn — `transform` brukes til å sentrere boblen på
+ * målet, og en animasjon på den ville hoppet.
+ */
+
+.bubble {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: max-content;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5);
+  border-radius: 18px;
+  border: 1px solid var(--gold);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 16px 48px var(--scrim);
+  animation: fadein var(--dur) var(--ease-out);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-right: var(--sp-6);
+  font-size: var(--fs-lg);
+}
+
+.arrow {
+  display: inline-flex;
+  flex: none;
+  color: var(--gold);
+}
+
+.gate {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-2);
+  transition: width var(--dur-fast) var(--ease-out);
+}
+
+.dot[data-state="active"] {
+  width: 18px;
+  background: var(--gold);
+}
+
+.dot[data-state="done"] {
+  background: var(--gold);
+  opacity: 0.55;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.next {
+  height: 44px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.next[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.link {
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.skip {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.skip:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.next:focus-visible,
+.link:focus-visible,
+.skip:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

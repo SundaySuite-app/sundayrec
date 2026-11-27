@@ -221,3 +221,8 @@
   font-size: var(--fs-sm);
   color: var(--ink-3);
 }
+
+/* Første gang: hintboblen peker på mappe-raden (`FirstRunHints`). */
+.folderWrap[data-spot="true"] .folder {
+  animation: spot 1.5s ease-out infinite;
+}

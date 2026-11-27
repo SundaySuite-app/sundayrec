@@ -48,7 +48,6 @@ import {
   panel,
   pendingAction,
 } from "../../router/router";
-import { FirstRunResumeChip } from "../firstrun/FirstRunResumeChip";
 import {
   audioDevices,
   loadAudioDevices,
@@ -66,6 +65,7 @@ import { toast } from "../../ui/toast";
 import { BigButton } from "./BigButton";
 import { CameraControls, useCameraToggle } from "./CameraControls";
 import { CameraStage } from "./CameraStage";
+import { FirstRunHints } from "./FirstRunHints";
 import { nativeErrorSuffixFromText, sourceState } from "./record-core";
 import { RecordBanners } from "./RecordBanners";
 import { Consent, Done } from "./RecordDone";
@@ -195,9 +195,6 @@ export function RecordPage() {
     <div class={styles.page}>
       <div class={styles.notices}>
         <RecordBanners />
-        {/* R6: synlig helt til «Åpne SundayRec» setter onboardingDone — se
-            `FirstRunResumeChip.tsx`. */}
-        <FirstRunResumeChip />
         <Consent />
         <Done />
       </div>
@@ -281,6 +278,10 @@ export function RecordPage() {
           <SheetMore initiallyOpen={panel.value === "source-more"} />
         </SourceSheet>
       </div>
+
+      {/* Første gang: tre hintbobler oppå flaten, så lenge `onboardingDone` er
+          falsk — se `FirstRunHints.tsx`. */}
+      <FirstRunHints />
     </div>
   );
 }

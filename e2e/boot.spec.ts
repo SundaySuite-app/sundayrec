@@ -53,15 +53,9 @@ test.describe("app shell boot", () => {
     // An empty heading is what a broken `@lib` alias looks like — `t()` would
     // return its empty fallback.
     //
-    // «Hvilken lyd?» and not TA OPP because nothing is seeded here:
-    // `onboardingDone` is false, so the first-run gate sends a
-    // never-configured app into the sequence — and the sequence's first screen
-    // is question 1, whose heading is the question (P1b). Before P1b it stopped
-    // at level 1 and read «Oppsett» (the destination D2 renamed to
-    // «Innstillinger» and moved onto the gear).
-    await expect(page.getByTestId("app-heading")).toHaveText(
-      "Lydkort og kanaler",
-    );
+    // TA OPP: nothing is seeded, so `onboardingDone` is false — and first run
+    // is now hint bubbles ON TA OPP, not a screen of its own (E9).
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
 
     const violations = await page.evaluate(
       () => (window as any).__cspViolations as string[],
@@ -163,29 +157,26 @@ test.describe("app shell foundation", () => {
     await expect(page.getByTestId("hydrate-error")).toHaveCount(0);
   });
 
-  test("first run opens OPPSETT, and only when there was no deep link", async ({
+  test("first run shows the hints on TA OPP, and only when there was no deep link", async ({
     page,
   }) => {
     // `?goto=` forces onboardingDone true inside the shim, so a deep-linked
-    // boot must never be hijacked by the gate — that is why this boots WITHOUT
-    // one, exactly like e2e/onboarding.spec.ts does for the legacy shell.
+    // boot must never get the hints — that is why this boots WITHOUT one,
+    // exactly like e2e/onboarding.spec.ts.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: false },
     });
-    // P1b: the route is still OPPSETT — `data-first-run` is what changes the
-    // screen — but the heading is the first QUESTION, because that is what the
-    // sequence shows. The shell stays on OPPSETT the whole way.
-    await expect(page.getByTestId("app-heading")).toHaveText(
-      "Lydkort og kanaler",
-    );
+    // E9: first run is not a screen — the shell stays on TA OPP and the hint
+    // bubble sits on top of it.
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "settings",
+      "record",
     );
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-first-run",
-      "true",
+    await expect(page.getByTestId("hint-bubble")).toHaveAttribute(
+      "data-step",
+      "source",
     );
   });
 
@@ -206,15 +197,14 @@ test.describe("app shell foundation", () => {
     await expect(page.getByTestId("hydrate-error")).toHaveText(
       /Kunne ikke lese innstillingene/,
     );
+    // …og en base vi ikke fikk lest er ikke «første gang»: ingen hint.
+    await expect(page.getByTestId("hint-bubble")).toHaveCount(0);
   });
 
   test("a settled app opens on TA OPP", async ({ page }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SETTLED_SETTINGS });
     await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
-    await expect(page.getByTestId("main")).not.toHaveAttribute(
-      "data-first-run",
-      "true",
-    );
+    await expect(page.getByTestId("hint-bubble")).toHaveCount(0);
   });
 });
 

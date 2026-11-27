@@ -146,11 +146,11 @@ describe("docs-truth", () => {
   // ingen steder — og nettopp denne setningen er den slags som blir stående i
   // en runbook lenge etter at skjermen sluttet å gjøre det den sier, fordi
   // ingen leser runbooken før neste riggdag.
-  it("SMOKE-TEST.md beskriver første gang som tre steg (F7)", () => {
+  it("SMOKE-TEST.md beskriver første gang som tre hint på Ta opp (F7, E9)", () => {
     // Linjeskiftene er prettiers, ikke forfatterens: en påstand som brakk
     // fordi en setning ble ombrutt ville vært en gate om tekstbredde.
     const text = readDoc("docs/SMOKE-TEST.md").replace(/\s+/g, " ");
-    expect(text).toContain("three-step first-run sequence");
+    expect(text).toContain("three hint bubbles sit on **Ta opp**");
     expect(text).not.toMatch(/five real question screens/i);
   });
 

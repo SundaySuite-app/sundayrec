@@ -21,44 +21,6 @@
 
 /* ── Topplinja: neste opptak, kvittering, «Legg til» ───────────────────── */
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-}
-
-.nextWrap {
-  flex: 1;
-  min-width: 0;
-}
-
-.nextLabel {
-  color: var(--ink-3);
-  font-size: var(--label-fs);
-  letter-spacing: var(--label-ls);
-  text-transform: uppercase;
-}
-
-.nextValue {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-md);
-}
-
-.nextWake {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-base);
-  color: var(--ink-2);
-}
-
-.offNote {
-  margin: 0;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-sm);
-  background: var(--warn-soft);
-  font-size: var(--fs-base);
-}
-
 /* ── Rutenettet ─────────────────────────────────────────────────────────── */
 
 .scroll {
@@ -168,27 +130,6 @@
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--rec);
-}
-
-.empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: var(--sp-8);
-  pointer-events: none;
-  color: var(--ink-3);
-  font-size: var(--fs-base);
-  text-align: center;
-  z-index: 1;
-}
-
-.emptyNote {
-  background: var(--bg);
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line);
 }
 
 /* ── Blokkene ───────────────────────────────────────────────────────────── */

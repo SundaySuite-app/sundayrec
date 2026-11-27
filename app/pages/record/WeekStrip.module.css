@@ -218,3 +218,9 @@
   background: var(--gold);
   animation: glow 2.6s ease-in-out infinite;
 }
+
+/* Første gang: hintboblen peker på kalenderknappen/stripa (`FirstRunHints`). */
+.pill[data-spot="true"],
+.head[data-spot="true"] {
+  animation: spot 1.5s ease-out infinite;
+}

@@ -73,8 +73,6 @@
       "canStart": "Du kan starte likevel — opptaket blir stille til miksebordet er tilbake.",
       "startHint": "Mellomromstasten starter opptaket.",
       "useBuiltIn": "Bruk maskinens mikrofon",
-      "nextAuto": "Neste automatiske opptak",
-      "nextAutoWhen": "{day} {time}",
       "camera": {
         "searching": "Leter etter kameraer…",
         "noneFound": "Ingen kameraer funnet — sjekk tilkobling",
@@ -86,7 +84,6 @@
         "denied": "Kameratilgang nektet — sjekk Systeminnstillinger",
         "noResponse": "Kamera svarte ikke — er det i bruk av et annet program?"
       },
-      "nextNone": "Ingen planlagte opptak ennå.",
       "bigLabel": "Ta opp",
       "camOn": "Slå på kamera",
       "camOff": "Slå av kamera",
@@ -108,35 +105,19 @@
       "save": "Lagre",
       "cancel": "Avbryt",
       "sound": {
-        "lede": "Velg lydkilden dere tar opp fra, og sjekk at vi hører den.",
         "gone": "Finner ikke {name}",
         "goneDesc": "Sjekk at den er på og at kabelen sitter.",
-        "noneDesc": "Vi tar aldri opp fra en lydkilde ingen har valgt.",
-        "builtIn": "Maskinens egen mikrofon",
-        "builtInDesc": "Bare til prøving, eller hvis dere ikke har miksebord.",
-        "external": "Koblet til med kabel",
-        "mixer": {
-          "one": "Miksebord · {n} inngang",
-          "other": "Miksebord · {n} innganger"
-        },
-        "whichChannels": "Hvilke innganger på miksebordet?",
         "pairLabel": "Inngang {l} og {r}",
-        "channelHint": "Velg paret med lyden dere vil ta opp — én inngang til venstre og én til høyre. De som har lyd nå, lyser.",
         "testHint": "Snakk i mikrofonen eller spill litt.",
-        "useThis": "Bruk denne lydkilden",
-        "noChange": "Ingenting er endret.",
         "empty": "Finner ingen lydkilder",
         "emptyDesc": "Ikke engang maskinens egen mikrofon. Sjekk tilgangen under Systeminnstillinger → Personvern.",
         "retry": "Søk igjen"
       },
       "folder": {
-        "lede": "Opptakene legges i denne mappen på maskinen.",
-        "label": "Lagres i",
         "pick": "Velg mappe …",
         "free": "{gb} GB ledig",
         "space": "{gb} GB ledig · plass til {hours} t",
         "unknownSpace": "Vi vet ikke hvor mye plass det er igjen her.",
-        "none": "Opptakene har ingen plass å ligge på",
         "noneDesc": "Velg en mappe på denne maskinen. Uten den kan ikke appen ta opp.",
         "refusedPackage": "Den mappen er en app eller en pakke (som et Keynote- eller Logic-prosjekt), ikke en vanlig mappe. Velg en annen mappe.",
         "refusedTooBroad": "Velg en mappe inne i hjemmemappen, for eksempel «SundayRec» i Dokumenter – ikke selve hjemmemappen eller roten av disken.",
@@ -178,14 +159,9 @@
         }
       },
       "auto": {
-        "title": "Ta opp automatisk",
-        "desc": "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
-        "summary": "{day} {start} · {n} min",
         "day": "Dag",
         "start": "Starter",
-        "minutes": "{n} min",
-        "launch": "Start automatisk med maskinen",
-        "launchDesc": "Uten dette starter ikke opptaket etter en omstart."
+        "minutes": "{n} min"
       },
       "days": {
         "0": "Mandag",
@@ -197,7 +173,6 @@
         "6": "Søndag"
       },
       "advanced": {
-        "soundLink": "Flere valg for opptaket",
         "preroll": "Ta med lyd fra før Start",
         "silence": "Stopp ved lang stillhet",
         "maxLen": "Maks lengde på et opptak",
@@ -300,22 +275,19 @@
       }
     },
     "first": {
+      "hint": {
+        "source": "Velg lydkilde",
+        "folder": "Velg mappe",
+        "plan": "Faste opptak"
+      },
+      "hintLabel": "Kom i gang",
+      "hintGate": "«Neste» åpnes når vi hører lyd.",
+      "done": "Ferdig",
+      "skip": "Hopp over",
       "step": "Steg {n} av {total}",
       "next": "Neste",
-      "back": "Tilbake",
       "skipSound": "Fortsett uten lyd",
-      "gate": "Velg lydkilde og trykk «Bruk denne lydkilden». «Neste» åpnes når vi hører lyd.",
-      "gateReason": "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på miksebordet.",
-      "open": "Åpne SundayRec",
-      "progress": "Framdrift",
-      "resumeChip": "Fortsett oppsettet",
-      "title": {
-        "sound": "Lydkort og kanaler",
-        "folder": "Lagringsmappe",
-        "plan": "Første faste opptak"
-      },
-      "planLede": "Legg inn tiden SundayRec skal ta opp av seg selv hver uke. Dra i uka for å legge til et opptak. Vil du vente, velg «Senere» — du finner det igjen under Plan.",
-      "later": "Senere"
+      "gateReason": "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på miksebordet."
     },
     "consent": {
       "title": "Vil du hjelpe oss å gjøre SundayRec bedre?",
@@ -471,8 +443,6 @@
       "blockNext": "neste opptak",
       "blockMissed": "ikke tatt opp denne uka",
       "continues": "fortsetter fra dagen før",
-      "empty": "Ingen faste tider ennå. Dra i uka for å legge til et opptak.",
-      "off": "Automatisk opptak er av. Tidene står i uka, men ingenting starter av seg selv.",
       "keys": "Tidene gjentas hver uke. Dra i en tom flate for å legge til et opptak, i blokken for å flytte den, og i kanten for å endre start eller slutt. Med tastatur: Enter åpner, piltaster flytter (Skift + opp/ned endrer lengden), Delete fjerner.",
       "changed": "Endret til {day} {range}.",
       "added": "Lagt til: {day} {range}.",
@@ -486,11 +456,7 @@
       "stop": "Slutter",
       "nextDay": "slutter neste dag",
       "runningNote": "Endringen gjelder fra neste gang — opptaket som går nå stopper kl. {time}",
-      "delete": "Slett",
-      "summaryMany": {
-        "one": "{n} fast tid hver uke",
-        "other": "{n} faste tider hver uke"
-      }
+      "delete": "Slett"
     },
     "sheet": {
       "title": "Lyd",

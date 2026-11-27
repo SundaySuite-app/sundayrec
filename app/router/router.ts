@@ -56,10 +56,6 @@ export interface Route {
   /** Puls på ankeret. Standard `true` når det er et anker — å komme et sted
    *  uten å skjønne hvorfor er feilmodusen dette erstatter. */
   highlight?: boolean;
-  /** Første gang appen åpnes: OPPSETT er ikke et sted brukeren valgte å gå,
-   *  det er starten. S1b bruker flagget til å vise en annen ramme rundt siden
-   *  — og ruten «husker» ikke flagget, for det gjelder bare denne ankomsten. */
-  firstRun?: boolean;
   /** Panelet som skal åpnes på TA OPP (`record`). */
   panel?: Panel;
 }
@@ -92,7 +88,6 @@ export interface NavigateOpts {
   tab?: string;
   anchor?: string;
   highlight?: boolean;
-  firstRun?: boolean;
   panel?: Panel;
 }
 
@@ -128,7 +123,6 @@ export function resolveRoute(page: string, opts: NavigateOpts = {}): Route {
   if (target !== "record") panelOut = undefined;
 
   const next: Route = { page: target };
-  if (opts.firstRun) next.firstRun = true;
   if (tab) next.tab = tab;
   if (panelOut) next.panel = panelOut;
   if (anchor) {

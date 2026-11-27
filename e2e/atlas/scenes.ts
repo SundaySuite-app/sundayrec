@@ -321,13 +321,13 @@ const FIRST_RUN_SETTINGS = {
 /** Step 1 is gated on hearing something. «Fortsett uten lyd» is the
  *  deterministic way past it, and it keeps the gate open for the rest. */
 async function skipGate(page: Page): Promise<void> {
-  await page.getByTestId("first-run-skip-sound").click();
+  await page.getByTestId("hint-skip-sound").click();
 }
 
 /** Advance N times from wherever the sequence currently stands. */
 async function nextSteps(page: Page, n: number): Promise<void> {
   for (let i = 0; i < n; i += 1) {
-    await page.getByTestId("first-run-next").click();
+    await page.getByTestId("hint-next").click();
   }
 }
 
@@ -1272,23 +1272,23 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--1-lyd-lukket",
     page: "Første gang",
-    state: "Steg 1 av 3 — lydporten er LUKKET: «Neste» venter på lyd",
+    state: "Hint 1 av 3 — lydporten er LUKKET: «Neste» venter på lyd",
     recipe: "`onboardingDone:false`, ingen VU-pakker",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
+    wait: "hint-bubble",
     full: true,
     narrow: true,
   },
   {
     id: "forste-gang--1-lyd-apen",
     page: "Første gang",
-    state: "Steg 1 av 3 — lydporten er ÅPEN: vi hører noe",
+    state: "Hint 1 av 3 — lydporten er ÅPEN: vi hører noe",
     recipe: "`emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await settleVu(page, "vu-levels", -20, -20);
-      await expect(page.getByTestId("first-run-next")).not.toHaveAttribute(
+      await expect(page.getByTestId("hint-next")).not.toHaveAttribute(
         "aria-disabled",
         "true",
       );
@@ -1298,10 +1298,10 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--2-mappe",
     page: "Første gang",
-    state: "Steg 2 av 3 — hvor skal opptakene?",
+    state: "Hint 2 av 3 — hvor skal opptakene? (lydarket med «Mer»)",
     recipe: "«Fortsett uten lyd», så ett steg fram",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await skipGate(page);
       await expect(page.getByTestId("setup-folder")).toBeVisible();
@@ -1311,7 +1311,7 @@ export const SCENES: Scene[] = [
   {
     id: "forste-gang--3-plan",
     page: "Første gang",
-    state: "Steg 3 av 3 — første faste opptak, i ukevisningen fra Plan",
+    state: "Hint 3 av 3 — faste opptak, over kalenderknappen",
     recipe: "«Fortsett uten lyd», så to steg fram",
     boot: {
       fixtures: FIRST_RUN_FIXTURES,
@@ -1320,11 +1320,14 @@ export const SCENES: Scene[] = [
         saveFolder: "/Users/frivillig/Opptak",
       },
     },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await skipGate(page);
       await nextSteps(page, 1);
-      await expect(page.getByTestId("first-run-plan")).toBeVisible();
+      await expect(page.getByTestId("hint-bubble")).toHaveAttribute(
+        "data-step",
+        "plan",
+      );
     },
     full: true,
     narrow: true,

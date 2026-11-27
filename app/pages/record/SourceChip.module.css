@@ -43,3 +43,8 @@
   font-size: var(--fs-sm);
   color: var(--ink-3);
 }
+
+/* Første gang: hintboblen peker på brikka (`FirstRunHints`). */
+.wrap[data-spot="true"] .chip {
+  animation: spot 1.5s ease-out infinite;
+}

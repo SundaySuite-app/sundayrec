@@ -73,8 +73,6 @@
       "canStart": "You can start anyway — the recording stays silent until the mixing desk is back.",
       "startHint": "The space bar starts the recording.",
       "useBuiltIn": "Use the computer’s microphone",
-      "nextAuto": "Next automatic recording",
-      "nextAutoWhen": "{day} {time}",
       "camera": {
         "searching": "Looking for cameras…",
         "noneFound": "No cameras found — check the connection",
@@ -86,7 +84,6 @@
         "denied": "Camera access denied — check System Settings",
         "noResponse": "Camera not responding — is another app using it?"
       },
-      "nextNone": "No planned recordings yet.",
       "bigLabel": "Record",
       "camOn": "Turn camera on",
       "camOff": "Turn camera off",
@@ -108,35 +105,19 @@
       "save": "Save",
       "cancel": "Cancel",
       "sound": {
-        "lede": "Choose the sound source you record from, and check that we hear it.",
         "gone": "Can’t find {name}",
         "goneDesc": "Check that it is on and the cable is in.",
-        "noneDesc": "We never record from a sound source nobody chose.",
-        "builtIn": "The computer’s own microphone",
-        "builtInDesc": "For trying things out only, or if you have no mixing desk.",
-        "external": "Connected by cable",
-        "mixer": {
-          "one": "Mixing desk · {n} input",
-          "other": "Mixing desk · {n} inputs"
-        },
-        "whichChannels": "Which inputs on the mixing desk?",
         "pairLabel": "Input {l} and {r}",
-        "channelHint": "Pick the pair carrying the sound you want to record — one input for left, one for right. The ones with sound right now light up.",
         "testHint": "Speak into the microphone or play something.",
-        "useThis": "Use this sound source",
-        "noChange": "Nothing has changed.",
         "empty": "Can’t find any sound sources",
         "emptyDesc": "Not even the computer’s own microphone. Check access under System Settings → Privacy.",
         "retry": "Search again"
       },
       "folder": {
-        "lede": "Recordings are placed in this folder on the computer.",
-        "label": "Saved to",
         "pick": "Choose folder …",
         "free": "{gb} GB free",
         "space": "{gb} GB free · room for {hours} h",
         "unknownSpace": "We don’t know how much space is left here.",
-        "none": "Recordings have nowhere to go",
         "noneDesc": "Choose a folder on this computer. Without it the app can’t record.",
         "refusedPackage": "That folder is an app or a package (like a Keynote or Logic project), not an ordinary folder. Choose another folder.",
         "refusedTooBroad": "Choose a folder inside your home folder, for example “SundayRec” in Documents – not the home folder itself or the root of the disk.",
@@ -178,14 +159,9 @@
         }
       },
       "auto": {
-        "title": "Record automatically",
-        "desc": "Add the times in the week below. The computer wakes and starts on its own.",
-        "summary": "{day} {start} · {n} min",
         "day": "Day",
         "start": "Starts",
-        "minutes": "{n} min",
-        "launch": "Start automatically with the computer",
-        "launchDesc": "Without this the recording won’t start after a restart."
+        "minutes": "{n} min"
       },
       "days": {
         "0": "Monday",
@@ -197,7 +173,6 @@
         "6": "Sunday"
       },
       "advanced": {
-        "soundLink": "More recording options",
         "preroll": "Include sound from before Start",
         "silence": "Stop on long silence",
         "maxLen": "Maximum recording length",
@@ -300,22 +275,19 @@
       }
     },
     "first": {
+      "hint": {
+        "source": "Choose a sound source",
+        "folder": "Choose a folder",
+        "plan": "Scheduled recordings"
+      },
+      "hintLabel": "Getting started",
+      "hintGate": "“Next” unlocks when we hear sound.",
+      "done": "Done",
+      "skip": "Skip",
       "step": "Step {n} of {total}",
       "next": "Next",
-      "back": "Back",
       "skipSound": "Continue without sound",
-      "gate": "Choose a sound source and press “Use this sound source”. “Next” opens once we hear sound.",
-      "gateReason": "We don’t hear any sound yet. Speak into the microphone, or turn on the mixing desk.",
-      "open": "Open SundayRec",
-      "progress": "Progress",
-      "resumeChip": "Continue setup",
-      "title": {
-        "sound": "Sound card and channels",
-        "folder": "Storage folder",
-        "plan": "First weekly recording"
-      },
-      "planLede": "Add the time SundayRec should record by itself every week. Drag in the week to add a recording. To wait, choose “Later” — you will find it again under Plan.",
-      "later": "Later"
+      "gateReason": "We don’t hear any sound yet. Speak into the microphone, or turn on the mixing desk."
     },
     "consent": {
       "title": "Want to help make SundayRec better?",
@@ -471,8 +443,6 @@
       "blockNext": "next recording",
       "blockMissed": "not recorded this week",
       "continues": "continues from the day before",
-      "empty": "No fixed times yet. Drag in the week to add a recording.",
-      "off": "Automatic recording is off. The times stay in the week, but nothing starts on its own.",
       "keys": "Times repeat every week. Drag on an empty area to add a recording, drag a block to move it, and drag an edge to change the start or end. With the keyboard: Enter opens, arrow keys move (Shift + up/down changes the length), Delete removes.",
       "changed": "Changed to {day} {range}.",
       "added": "Added: {day} {range}.",
@@ -486,11 +456,7 @@
       "stop": "Ends",
       "nextDay": "ends the next day",
       "runningNote": "The change applies from next time — the recording running now stops at {time}",
-      "delete": "Delete",
-      "summaryMany": {
-        "one": "{n} fixed time each week",
-        "other": "{n} fixed times each week"
-      }
+      "delete": "Delete"
     },
     "sheet": {
       "title": "Sound",

@@ -374,29 +374,20 @@ test.describe("treffflater", () => {
     }
   });
 
-  // Første gang, steg 3: ukevisningen og bryterkortet må ha treffflater som
-  // ikke stjeler midtpunktet fra naboene.
+  // Første gang: hintboblens knapper må ha treffflater som ikke stjeler fra
+  // naboene.
   //
   // ⚠️ Booter UTEN `?goto=`: api-shim tvinger `onboardingDone` sann når
   // parameteren finnes, så en dyplenket oppstart kan aldri se første gang.
-  test("første gang: steg 3, bryterkortet og knappene", async ({ page }) => {
+  test("første gang: hintboblens knapper har treffmål", async ({ page }) => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...CHOSEN, onboardingDone: false },
     });
-    await page.getByTestId("first-run-skip-sound").click();
-    await page.getByTestId("first-run-next").click();
-    await expect(page.getByTestId("first-run-plan")).toBeVisible();
-
-    const toggles = await measure(page, 'button[role="switch"]');
-    // To: «Ta opp automatisk» og «Start automatisk med maskinen».
-    expect(toggles.length, "first-run/plan: antall brytere målt").toBe(2);
-    for (const t of toggles) {
-      expect(
-        t.hitH,
-        `first-run/plan/${t.id}: treffhøyde`,
-      ).toBeGreaterThanOrEqual(TOGGLE_FLOOR - PROBE_STEP);
-      expect(t.boxH, `first-run/plan/${t.id}: boksen står stille`).toBe(22);
+    await expect(page.getByTestId("hint-bubble")).toBeVisible();
+    for (const id of ["hint-next", "hint-skip", "hint-skip-sound"]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
     }
     await nobodyStolen(page);
   });

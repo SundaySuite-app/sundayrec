@@ -130,10 +130,10 @@ export function PageShell({ children, heading, inert }: PageShellProps) {
     // overskrift bak sløret skal ikke stjele det.
     const wasGear = prevPage.current === "settings";
     prevPage.current = current.page;
-    if (current.page === "settings" && !current.firstRun) return;
+    if (current.page === "settings") return;
     // …og det samme når tannhjulet LUKKES: fokus går tilbake til tannhjulknappen
     // (`useSheetBehavior`), ikke til overskriften.
-    if (wasGear && !current.firstRun) return;
+    if (wasGear) return;
     headingRef.current?.focus();
   }, [current.page, current.tab]);
 
@@ -200,8 +200,8 @@ export function PageShell({ children, heading, inert }: PageShellProps) {
       </header>
 
       {/*
-        Ruten som ATTRIBUTTER, ikke som synlig tekst. S1a viste `tab`, `anchor`
-        og `firstRun` som små avsnitt i treet fordi det ikke fantes noe annet å
+        Ruten som ATTRIBUTTER, ikke som synlig tekst. S1a viste `tab` og `anchor`
+        som små avsnitt i treet fordi det ikke fantes noe annet å
         se; det var feilsøkingstekst i en app en frivillig skal lese. Nå er de
         det de alltid var — noe e2e kan spørre om, og som ingen ser.
       */}
@@ -213,7 +213,6 @@ export function PageShell({ children, heading, inert }: PageShellProps) {
         data-tab={current.tab}
         data-panel={current.panel}
         data-anchor={current.anchor}
-        data-first-run={current.firstRun ? "true" : undefined}
         class={styles.main}
       >
         <h1

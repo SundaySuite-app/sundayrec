@@ -31,14 +31,14 @@ Expect both green before spending time on a rig.
 
 ## 2. First launch and first run
 
-- [ ] Fresh install (no `onboardingDone`): the three-step first-run sequence opens; a settled install goes straight to **Ta opp**.
-- [ ] Step 1 (sound card and channels): pick the real device, speak into the mic — the meter moves and «Neste» opens only once sound is heard. «Fortsett uten lyd» is the emergency exit.
-- [ ] Step 2: «Velg mappe» opens the native folder dialog; a folder the app refuses (its own data folder) is refused with a sentence.
-- [ ] Step 3: add a weekly slot in the week view — «Ta opp automatisk» and «Start automatisk med maskinen» switch on; «Senere» skips the step. Quit mid-sequence and relaunch: first run comes back.
+- [ ] Fresh install (no `onboardingDone`): three hint bubbles sit on **Ta opp** (sound source → folder → scheduled recordings); a settled install goes straight to **Ta opp**.
+- [ ] Hint 1 (sound source): pick the real device, speak into the mic — the meter moves and «Neste» opens only once sound is heard. «Fortsett uten lyd» is the emergency exit.
+- [ ] Hint 2: the sound sheet opens with «Mer» and the folder row pulses; «Velg mappe» opens the native folder dialog; a folder the app refuses (its own data folder) is refused with a sentence.
+- [ ] Hint 3: the calendar button pulses; add a weekly slot in the week strip — «Auto» and «Oppstart» switch on. «Ferdig» (or the ✕) ends first run; quit before it and relaunch: the hints come back.
 - [ ] The consent card on **Ta opp** asks once; «Nei takk» is as good as «Ja».
 
-- VERIFIED-BY: e2e/first-run.spec.ts::den første tiden slår på «Ta opp automatisk» og automatisk start
-- VERIFIED-BY: e2e/first-run.spec.ts::bunnlinja forlater sekvensen, og chippen fører tilbake til steget man sto på
+- VERIFIED-BY: e2e/strip.spec.ts::knappen åpner stripa; første blokk slår på Auto og Oppstart; lukket stripe viser «Neste»
+- VERIFIED-BY: e2e/first-run.spec.ts::hint 2 åpner lydarket med «Mer» og pulserer mappe-raden; hint 3 peker på kalenderen; «Ferdig» lagrer
 - VERIFIED-BY: e2e/onboarding.spec.ts::first run shows the wizard; a settled install does not
 - VERIFIED-BY: e2e/onboarding.spec.ts::the consent step exists, and says what is and is not collected
 - VERIFIED-BY: e2e/onboarding.spec.ts::«Ja, del anonymt» grants consent and finishes the wizard

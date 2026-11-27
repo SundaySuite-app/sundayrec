@@ -23,6 +23,7 @@ import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { Icon } from "../../ui/Icon/Icon";
 import { toast } from "../../ui/toast";
+import { hintSpot } from "./first-run-hint";
 import { defaultDeviceOf, type SourceState } from "./record-core";
 import { pickForSource } from "./source-pick";
 import styles from "./SourceChip.module.css";
@@ -133,7 +134,13 @@ export function SourceControl({
   }
 
   return (
-    <section id="sound" data-testid="control-sound" class={styles.wrap}>
+    <section
+      id="sound"
+      data-testid="control-sound"
+      // Første gang: brikka pulserer gull mens hintboblen peker på den.
+      data-spot={hintSpot.value === "source" ? "true" : undefined}
+      class={styles.wrap}
+    >
       <button
         type="button"
         data-testid="record-change-source"

@@ -14,7 +14,7 @@
  * tilbakerulling om lagringen feiler.
  */
 
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 
 import { errorCode } from "@lib/error-code-core";
 
@@ -34,6 +34,7 @@ import { Receipt } from "../../ui/Receipt/Receipt";
 import { toast } from "../../ui/toast";
 import { qualityIdFor, type QualityId } from "../settings/decisions-core";
 import { folderRefusalMessage } from "../settings/folder-refusal";
+import { hintSpot } from "./first-run-hint";
 import styles from "./SheetMore.module.css";
 
 // ── Forhåndsvalgene — de gamle nedtrekkslistenes egne ───────────────────────
@@ -74,6 +75,12 @@ function minutesText(n: number): string {
 
 export function SheetMore({ initiallyOpen }: { initiallyOpen: boolean }) {
   const [open, setOpen] = useState(initiallyOpen);
+  // Arket kan allerede stå åpent når «Mer» bes utfoldet (første-gang-hintet
+  // «Velg mappe» navigerer til `source-more` mens arket er oppe) — da er
+  // `useState`-startverdien for gammel.
+  useEffect(() => {
+    if (initiallyOpen) setOpen(true);
+  }, [initiallyOpen]);
   return (
     <>
       <button
@@ -154,7 +161,12 @@ function FolderRow() {
   }
 
   return (
-    <div data-testid="setup-folder" class={styles.folderWrap}>
+    <div
+      data-testid="setup-folder"
+      // Første gang: mappe-raden pulserer gull mens hintboblen peker på den.
+      data-spot={hintSpot.value === "folder" ? "true" : undefined}
+      class={styles.folderWrap}
+    >
       <button
         type="button"
         data-testid="folder-pick"

@@ -1,27 +1,27 @@
 /**
- * Første gang — sekvensen, som en ren avgjørelse.
+ * Første gang — hintene på TA OPP, som en ren avgjørelse.
  *
- * Tre steg, og ingen egen veiviser-kode: stegene er skjermene som allerede
- * finnes i INNSTILLINGER (`SoundPage`, `FolderPage`) og ukevisningen fra PLAN
- * (`FirstRunAuto` + `WeekView`). Denne fila er bare rekkefølgen og porten.
+ * Tre hintbobler, og ingen egen veiviser-kode: boblene peker på ting som
+ * allerede finnes på TA OPP — lydkilde-brikka, mappen under «Mer» i lydarket
+ * og kalenderknappen. Denne fila er bare rekkefølgen og lydporten.
  *
- * Språk følger systemet (`resolveStartupLocale`) og velges under Innstillinger;
- * kvalitet og varsler har gode standardverdier og ligger der også.
+ * Språk følger systemet (`resolveStartupLocale`) og velges i tannhjulet;
+ * kvalitet og varsler har gode standardverdier og ligger i lydarket og stripa.
  */
 
 /** De tre stegene, i den rekkefølgen de stilles. */
-export const FIRST_RUN_STEPS = ["sound", "folder", "plan"] as const;
+export const FIRST_RUN_STEPS = ["source", "folder", "plan"] as const;
 
 export type FirstRunStepId = (typeof FIRST_RUN_STEPS)[number];
 
-/** Hvor mange prikker linjalen har. */
+/** Hvor mange prikker linjalen i boblen har. */
 export const FIRST_RUN_STEP_COUNT = FIRST_RUN_STEPS.length;
 
 /**
  * Steget ved en posisjon, klampet.
  *
- * Klampingen er ikke pynt: en «tilbake» på første steg eller en «neste» på det
- * siste kan komme to ganger, og en indeks utenfor listen ville gitt en tom
+ * Klampingen er ikke pynt: en «neste» på det siste steget kan komme to ganger
+ * (dobbeltklikk), og en indeks utenfor listen ville gitt en tom
  * skjerm uten knapper.
  */
 export function stepAt(index: number): { step: number; id: FirstRunStepId } {
@@ -44,7 +44,7 @@ export function dots(index: number): DotState[] {
 }
 
 /**
- * Porten på steg 1: er «Neste» åpen?
+ * Porten på steg 1 (lydkilden): er «Neste» åpen?
  *
  * `hear` og `loud` er begge lyd — «for høyt» er et problem, men det er ikke
  * «vi hører ingenting». `skipped` er nødutgangen («Fortsett uten lyd»): en port
@@ -61,10 +61,5 @@ export function soundGateOpen(
 
 /** Gjelder porten på dette steget? Bare det første. */
 export function isGatedStep(index: number): boolean {
-  return stepAt(index).id === "sound";
-}
-
-/** Skal «Fortsett oppsettet»-chippen vises? Så lenge første gang ikke er fullført. */
-export function showFirstRunResumeChip(onboardingDone: boolean): boolean {
-  return !onboardingDone;
+  return stepAt(index).id === "source";
 }

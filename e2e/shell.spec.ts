@@ -244,30 +244,24 @@ test.describe("skallet", () => {
     }
   });
 
-  test("første gang bytter bare innholdet — topplinja og bunnlinja står", async ({
+  test("første gang legger hint oppå TA OPP — topplinja og bunnlinja står", async ({
     page,
   }) => {
-    // Sekvensen er tre skjermer inne i `<main>`, ikke en egen app. Skinnen sto
-    // gjennom hele den; de to linjene gjør det samme, og det er det som gjør at
-    // en frivillig kan se hvilken app hun setter opp mens hun setter den opp.
+    // Hintene er bobler over Ta opp, ikke en egen app. De to linjene står, og
+    // det er det som gjør at en frivillig ser hvilken app hun setter opp mens
+    // hun setter den opp.
     // ⚠️ Uten `?goto=`: dyplenken tvinger `onboardingDone` true.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: false },
     });
-    await expect(page.getByTestId("first-run")).toBeVisible();
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-first-run",
-      "true",
-    );
-
+    await expect(page.getByTestId("hint-bubble")).toBeVisible();
     await expect(page.getByTestId("topbar")).toBeVisible();
-    await expect(page.getByTestId("app-logo")).toBeVisible();
     await expect(page.getByTestId("bottombar")).toBeVisible();
-    await expect(page.getByTestId("status-line")).toBeVisible();
-    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
-    // Og ingen skinne noe sted — heller ikke her.
-    await expect(page.getByTestId("rail")).toHaveCount(0);
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "record",
+    );
   });
 
   test("statuslinjen sier «Lyden er ikke koblet til» når ingen kilde er valgt", async ({
