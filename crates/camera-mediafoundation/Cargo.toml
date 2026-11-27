@@ -15,7 +15,7 @@ parking_lot = "0.12"
 # Vår egen, skrevet fra Microsofts dokumentasjon — erstatter Caps AGPL-lisensierte
 # `cap-mediafoundation-utils`, som IKKE er lest. Se UPSTREAM.md.
 sundayrec-mf-util = { path = "../mf-util" }
-windows-core = "=0.62.2"
+windows-core = "=0.100.0"
 windows = { version = "=0.62.2", features = [
     "Win32_Media_MediaFoundation",
     "Win32_Media_DirectShow",
