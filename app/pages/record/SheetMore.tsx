@@ -66,6 +66,16 @@ export function nextChoice(
   return choices.find((n) => n > current) ?? choices[0]!;
 }
 
+/**
+ * Neste valg for «Maks»: det neste større, og etter det STØRSTE «Av» (0 = ingen
+ * grense) — aldri tilbake til det minste. Å gå fra 6 t til 60 min i det
+ * stille ville gjort et opptak uten tak til et opptak som stopper etter en
+ * time, uten at noen så hvorfor.
+ */
+export function nextMax(current: number): number {
+  return MAX_CHOICES.find((n) => n > current) ?? 0;
+}
+
 /** «90 min» / «1 t» / «2 t» — kort nok til å stå under en flis. */
 function minutesText(n: number): string {
   return n % 60 === 0
@@ -419,9 +429,7 @@ function Tiles() {
         busy={save.busy}
         testId="tile-max"
         onToggle={() => write({ manualMaxMinutes: max > 0 ? 0 : MAX_DEFAULT })}
-        onCycle={() =>
-          write({ manualMaxMinutes: nextChoice(MAX_CHOICES, max) })
-        }
+        onCycle={() => write({ manualMaxMinutes: nextMax(max) })}
       />
       {/* Forhåndsbufferen holder mikrofonen åpen — det sies høyt mens den er på. */}
       {pre > 0 ? (

@@ -135,7 +135,13 @@
         "minutes": "{n} min before",
         "permissionDenied": "Off for SundayRec.",
         "openSettings": "Open system settings",
-        "openSettingsFailed": "Couldn't open the notification settings. Open them from the system settings."
+        "openSettingsFailed": "Couldn't open the notification settings. Open them from the system settings.",
+        "permissionGranted": "On — SundayRec can tell you here.",
+        "permissionUnknown": "Can't be read on this computer. Send a test notification to see that they come through.",
+        "sendTest": "Send test notification",
+        "testSent": "The test notification was sent. If it didn't appear, open the settings and turn on notifications for SundayRec.",
+        "testSentDenied": "The test notification was sent, but notifications are off — it won't show until they're turned on.",
+        "testFailed": "The test notification could not be sent."
       },
       "camera": {
         "pick": "Camera",
@@ -403,7 +409,9 @@
       "saveBtn": "Save",
       "saved": "Saved",
       "destSame": "Same folder",
-      "destReset": "Back to the same folder"
+      "destReset": "Back to the same folder",
+      "jingleRemove": "Remove",
+      "jingleMenuLabel": "More for the {which}"
     },
     "export": {
       "content": "Content",
@@ -503,7 +511,10 @@
         "wakeTitle": "Wake the computer from sleep before a recording",
         "notify": "Alert",
         "notifyTitle": "Alert when a recording starts and stops"
-      }
+      },
+      "autoNoTimes": "No times",
+      "autoNoTimesTitle": "Auto is on, but the week is empty. Drag in the week to add a recording.",
+      "notifyMore": "Notifications: status and test"
     },
     "rec": {
       "hold": "Hold",
@@ -521,7 +532,11 @@
         "videoSkipped": "Frames skipped",
         "cameraLost": "Camera lost",
         "noVideo": "No picture"
-      }
+      },
+      "stopQuestion": "Stop the recording?",
+      "stopQuestionDesc": "{elapsed} recorded so far. If you stop now, what you have is saved.",
+      "keep": "Keep recording",
+      "stopYes": "Stop"
     },
     "gear": {
       "title": "Settings",

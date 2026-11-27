@@ -135,7 +135,13 @@
         "minutes": "{n} min før",
         "permissionDenied": "Slått av for SundayRec.",
         "openSettings": "Åpne systeminnstillinger",
-        "openSettingsFailed": "Fant ikke varslingsinnstillingene. Åpne dem fra systeminnstillingene."
+        "openSettingsFailed": "Fant ikke varslingsinnstillingene. Åpne dem fra systeminnstillingene.",
+        "permissionGranted": "Slått på — SundayRec kan si fra her.",
+        "permissionUnknown": "Kan ikke leses på denne maskinen. Send et testvarsel for å se at de kommer fram.",
+        "sendTest": "Send testvarsel",
+        "testSent": "Testvarselet er sendt. Kom det ikke fram, åpne innstillingene og slå på varsler for SundayRec.",
+        "testSentDenied": "Testvarselet er sendt, men varsler er slått av — det vises ikke før de slås på.",
+        "testFailed": "Testvarselet kunne ikke sendes."
       },
       "camera": {
         "pick": "Kamera",
@@ -403,7 +409,9 @@
       "saveBtn": "Lagre",
       "saved": "Lagret",
       "destSame": "Samme mappe",
-      "destReset": "Tilbake til samme mappe"
+      "destReset": "Tilbake til samme mappe",
+      "jingleRemove": "Fjern",
+      "jingleMenuLabel": "Mer for {which}"
     },
     "export": {
       "content": "Innhold",
@@ -503,7 +511,10 @@
         "wakeTitle": "Vekk maskinen fra dvale før opptak",
         "notify": "Varsel",
         "notifyTitle": "Varsel når opptak starter og stopper"
-      }
+      },
+      "autoNoTimes": "Ingen tider",
+      "autoNoTimesTitle": "Auto er på, men uka er tom. Dra i uka for å legge inn et opptak.",
+      "notifyMore": "Varsler: status og testvarsel"
     },
     "rec": {
       "hold": "Hold",
@@ -521,7 +532,11 @@
         "videoSkipped": "Bilder hoppet over",
         "cameraLost": "Kamera borte",
         "noVideo": "Uten bilde"
-      }
+      },
+      "stopQuestion": "Stoppe opptaket?",
+      "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
+      "keep": "Fortsett å ta opp",
+      "stopYes": "Stopp"
     },
     "gear": {
       "title": "Innstillinger",

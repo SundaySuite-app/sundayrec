@@ -16,8 +16,16 @@
  * kvarte sekund) — ingen animasjon, men ringen sier ærlig hvor langt holdet har
  * kommet. Selve holdet er like langt: `HOLD_TO_STOP_MS`.
  *
+ * ## Skjermlesere
+ *
+ * VoiceOver og Narrator kan ikke HOLDE en knapp: de «klikker» den, og et
+ * klikk uten pekertrykk (`event.detail === 0`) går til `onAssistiveClick` —
+ * bekreftelsesdialogen i `stop.ts`. Et pekerklikk (`detail > 0`) gjør
+ * fortsatt ingenting: holdet er hele sikringen mot uhell.
+ *
  * Selve stoppet (vaktene, øktas identitet) bor i `stop.ts`; denne komponenten
- * eier bare «har hun holdt lenge nok?».
+ * eier bare «har hun holdt lenge nok?». `onBegin` kalles når holdet STARTER
+ * (der økta leses) og kan avvise det ved å svare `false`.
  */
 
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -29,6 +37,11 @@ import { HOLD_TO_STOP_MS } from "./stop";
 export interface HoldStopProps {
   /** Holdet er fullført. */
   onStop: () => void;
+  /** Holdet begynner. `false` = avvis (motoren skriver ferdig, eller det går
+   *  ikke noe opptak): ringen fyller seg da ikke. */
+  onBegin?: () => boolean;
+  /** Et klikk uten pekertrykk (skjermleser): spør i stedet for å holde. */
+  onAssistiveClick?: () => void;
   /** Motoren skriver ferdig: knappen er av. */
   disabled?: boolean;
 }
@@ -49,7 +62,12 @@ function reducedMotion(): boolean {
   );
 }
 
-export function HoldStop({ onStop, disabled = false }: HoldStopProps) {
+export function HoldStop({
+  onStop,
+  onBegin,
+  onAssistiveClick,
+  disabled = false,
+}: HoldStopProps) {
   const [holding, setHolding] = useState(false);
   // 0…1: bare brukt i redusert bevegelse; ellers går ringen mot 1 på egen hånd.
   const [step, setStep] = useState(0);
@@ -57,6 +75,10 @@ export function HoldStop({ onStop, disabled = false }: HoldStopProps) {
   const heldKey = useRef<string | null>(null);
   const onStopRef = useRef(onStop);
   onStopRef.current = onStop;
+  const onBeginRef = useRef(onBegin);
+  onBeginRef.current = onBegin;
+  const onClickRef = useRef(onAssistiveClick);
+  onClickRef.current = onAssistiveClick;
   const button = useRef<HTMLButtonElement | null>(null);
 
   function clearTimers(): void {
@@ -73,6 +95,10 @@ export function HoldStop({ onStop, disabled = false }: HoldStopProps) {
 
   function begin(): void {
     if (disabled || holding || timers.current.length > 0) return;
+    if (onBeginRef.current && onBeginRef.current() === false) {
+      heldKey.current = null;
+      return;
+    }
     setHolding(true);
     if (reducedMotion()) {
       for (let i = 1; i < STEPS; i++) {
@@ -149,7 +175,18 @@ export function HoldStop({ onStop, disabled = false }: HoldStopProps) {
         begin();
       }}
       onKeyUp={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          // Mellomrom «klikker» først ved slipp: uten dette ville et hold
+          // som slutter på tastaturet ende i dialogen.
+          e.preventDefault();
+        }
         if (e.key === heldKey.current) cancel();
+      }}
+      onClick={(e) => {
+        // Pekerklikk (detail > 0) og tastatur (stoppet over) er holdets
+        // saker. Bare et syntetisk klikk fra hjelpeteknologi har detail 0.
+        if (e.detail !== 0 || disabled) return;
+        onClickRef.current?.();
       }}
       onContextMenu={(e) => e.preventDefault()}
     >

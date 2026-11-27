@@ -4,8 +4,9 @@
  * sjekker ikke tilstanden etter spørsmålet»). Samme vakter som dialogen hadde.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { setLocale } from "../../i18n";
 import {
   endSessionLocally,
   enterFinalizing,
@@ -13,10 +14,15 @@ import {
   isRecording,
   markSessionStarted,
 } from "../../state/recording";
-import { beginStop, completeStop, stopNow } from "./stop";
+import { activeDialog, cancelAllDialogs, resolveDialog } from "../../ui/dialog";
+import { beginStop, completeStop, confirmAndStop, stopNow } from "./stop";
 
 let stops = 0;
 let failStop = false;
+
+beforeAll(async () => {
+  await setLocale("no");
+});
 
 beforeEach(() => {
   stops = 0;
@@ -33,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cancelAllDialogs();
   endSessionLocally();
   delete (globalThis as unknown as { window?: unknown }).window;
 });
@@ -101,5 +108,60 @@ describe("stopNow (menylinja)", () => {
     expect(stops).toBe(1);
     await stopNow();
     expect(stops).toBe(1);
+  });
+});
+
+describe("confirmAndStop (skjermleser-veien: klikk uten hold)", () => {
+  function answer(keep: boolean): void {
+    const open = activeDialog.value;
+    if (!open) throw new Error("no dialog is open");
+    resolveDialog(open.id, keep);
+  }
+
+  it("spør først, og stopper på «Stopp»", async () => {
+    const p = confirmAndStop();
+    expect(activeDialog.value?.spec).toMatchObject({
+      title: "Stoppe opptaket?",
+      confirmLabel: "Fortsett å ta opp",
+      cancelLabel: "Stopp",
+      escapeConfirms: true,
+    });
+    expect(stops).toBe(0);
+    answer(false);
+    await p;
+    expect(stops).toBe(1);
+  });
+
+  it("«Fortsett å ta opp» (og Escape, som velger den) lar opptaket gå", async () => {
+    const p = confirmAndStop();
+    answer(true);
+    await p;
+    expect(stops).toBe(0);
+    expect(isRecording.peek()).toBe(true);
+  });
+
+  it("et andre trykk mens spørsmålet står legger ikke en ny dialog i køen", async () => {
+    const first = confirmAndStop();
+    const second = confirmAndStop();
+    await second;
+    answer(false);
+    await first;
+    expect(stops).toBe(1);
+    expect(activeDialog.value).toBeNull();
+  });
+
+  it("stopper IKKE hvis opptaket tok slutt mens spørsmålet sto åpent", async () => {
+    const p = confirmAndStop();
+    endSessionLocally();
+    answer(false);
+    await p;
+    expect(stops).toBe(0);
+  });
+
+  it("gjør ingenting mens motoren skriver ferdig", async () => {
+    enterFinalizing();
+    await confirmAndStop();
+    expect(activeDialog.value).toBeNull();
+    expect(stops).toBe(0);
   });
 });

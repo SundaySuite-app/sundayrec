@@ -182,6 +182,35 @@ test.describe("første gang", () => {
     await expect(bubble(page)).toHaveAttribute("data-step", "source");
   });
 
+  test("boblen kan nås med Tab mens lydarket fanger fokus", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: FIXTURES, settings: FRESH });
+    await page.getByTestId("hint-skip-sound").click();
+    await expect(page.getByTestId("source-sheet")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
+    await page.getByTestId("sheet-close").focus();
+    // Runden: arkets egne, så boblens — og tilbake til arket.
+    let reached = false;
+    for (let i = 0; i < 40 && !reached; i++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(
+        () => !!document.activeElement?.closest('[data-testid="hint-bubble"]'),
+      );
+    }
+    expect(reached, "Tab nådde aldri hint-boblen").toBe(true);
+    let back = false;
+    for (let i = 0; i < 10 && !back; i++) {
+      await page.keyboard.press("Tab");
+      back = await page.evaluate(
+        () => !!document.activeElement?.closest('[data-testid="source-sheet"]'),
+      );
+    }
+    expect(back, "Tab kom aldri tilbake til arket").toBe(true);
+  });
+
   test("en lagring som feiler ruller «Ferdig» tilbake, og hintene står igjen", async ({
     page,
   }) => {

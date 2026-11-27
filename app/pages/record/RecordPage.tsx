@@ -57,9 +57,12 @@ import {
 import { refreshDiskSpace } from "../../state/disk";
 import { prerollActive } from "../../state/preroll";
 import { runSilentPreflightOnce } from "../../state/preflight";
-import { isRecording, markSessionStarted } from "../../state/recording";
+import {
+  isRecording,
+  markSessionStarted,
+  recordStarting,
+} from "../../state/recording";
 import { settings } from "../../state/settings";
-import { autoRecordOn } from "../plan/schedule-core";
 import { Chip } from "../../ui/Chip/Chip";
 import { toast } from "../../ui/toast";
 import { BigButton } from "./BigButton";
@@ -86,7 +89,14 @@ export function RecordPage() {
   const devices = audioDevices.value;
   const source = sourceState(s, devices);
   const live = isRecording.value;
-  const [starting, setStarting] = useState(false);
+  const [starting, setStartingState] = useState(false);
+  // Speilet til `recordStarting`: den første-gang-boblen lytter ikke på lyd
+  // mens opptaket åpner enheten.
+  const setStarting = (value: boolean): void => {
+    recordStarting.value = value;
+    setStartingState(value);
+  };
+  useEffect(() => () => void (recordStarting.value = false), []);
 
   // Enhetslisten og ledig plass leses når SIDEN åpnes, ikke ved oppstart:
   // fakta hentet ved boot er gamle når noen faktisk står foran mikseren. Begge
@@ -201,9 +211,9 @@ export function RecordPage() {
 
       <div
         class={styles.stage}
-        // Med plan står stripa (112 px) under kamerabildet; uten står bare
-        // kalenderknappen.
-        style={autoRecordOn(s) ? "--strip-clear:132px" : undefined}
+        // Med faste tider står stripa (112 px) under kamerabildet (også med
+        // «Auto» av, dempet); uten tider står bare kalenderknappen.
+        style={(s.slots ?? []).length > 0 ? "--strip-clear:132px" : undefined}
       >
         <div class={styles.listening}>
           <Listening />
@@ -220,6 +230,7 @@ export function RecordPage() {
               busy={starting}
               meter={showMeter}
               camera={camera}
+              picture={!live}
             />
           </>
         ) : (

@@ -57,7 +57,7 @@
  */
 
 import { signal } from "@preact/signals";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import { exactSpan, keptSeconds } from "./editor-core";
 import { profileLabel, resultLine } from "./summary";
@@ -102,6 +102,7 @@ import {
   outroOn,
   jingleOnSignal,
   pickExportFolder,
+  clearJingle,
   pickJingle,
   runExport,
   sourceHasVideo,
@@ -466,7 +467,8 @@ function PodcastTile() {
  * Uten fil: «+ Velg fil», og trykk åpner velgeren (Rust åpner den, og lagrer
  * valget i innstillingene — siden sender ingenting og får innstillingene
  * tilbake). Med fil: flisen viser filnavnet og trykk slår den av og på, og en
- * liten rund mappeknapp i hjørnet bytter fil. Med video er flisen dempet og
+ * liten rund knapp i hjørnet åpner en minimeny: «Velg en annen fil» og
+ * «Fjern» (`clearJingle`: Rust glemmer klippet). Med video er flisen dempet og
  * forklaringen står under: motoren legger jinglene rundt lydsporet.
  */
 function JingleTile({ slot, video }: { slot: JingleSlot; video: boolean }) {
@@ -480,9 +482,39 @@ function JingleTile({ slot, video }: { slot: JingleSlot; video: boolean }) {
   const reason = video ? t("app.editor.jingleVideoNote") : undefined;
   void introOn.value;
   void outroOn.value;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement | null>(null);
+
+  // Menyen lukker seg selv: Esc (bare menyen, ikke arket), trykk utenfor, og
+  // når fila er borte (Fjern) finnes ikke hjørneknappen lenger.
+  // Layout-effekt: lytteren skal stå FØR neste tastetrykk, ikke etter malingen.
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMenuOpen(false);
+    };
+    const onDown = (e: PointerEvent): void => {
+      const target = e.target as Node | null;
+      if (target && wrap.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [menuOpen]);
 
   return (
-    <div class={styles.tileWrap} data-testid={`export-jingle-${slot}`}>
+    <div
+      ref={wrap}
+      class={styles.tileWrap}
+      data-testid={`export-jingle-${slot}`}
+    >
       <button
         type="button"
         aria-disabled={video ? "true" : undefined}
@@ -513,19 +545,56 @@ function JingleTile({ slot, video }: { slot: JingleSlot; video: boolean }) {
         </span>
       </button>
       {name !== null ? (
-        <button
-          type="button"
-          class={styles.swap}
-          aria-disabled={video ? "true" : undefined}
-          aria-label={tf("app.editor.jingleSwapLabel", { which })}
-          title={reason ?? t("app.editor.jingleSwap")}
-          data-testid={`export-jingle-${slot}-pick`}
-          onClick={() => {
-            if (!video) void pickJingle(slot);
-          }}
-        >
-          <Icon name="folder" size={16} strokeWidth={2} />
-        </button>
+        <>
+          <button
+            type="button"
+            class={styles.swap}
+            aria-disabled={video ? "true" : undefined}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={tf("app.editor.jingleMenuLabel", { which })}
+            title={reason ?? tf("app.editor.jingleMenuLabel", { which })}
+            data-testid={`export-jingle-${slot}-more`}
+            onClick={() => {
+              if (!video) setMenuOpen(!menuOpen);
+            }}
+          >
+            <Icon name="sliders" size={16} strokeWidth={2} />
+          </button>
+          {menuOpen ? (
+            <div
+              role="menu"
+              class={styles.jingleMenu}
+              data-testid={`export-jingle-${slot}-menu`}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                class={styles.jingleMenuItem}
+                aria-label={tf("app.editor.jingleSwapLabel", { which })}
+                data-testid={`export-jingle-${slot}-pick`}
+                onClick={() => {
+                  setMenuOpen(false);
+                  void pickJingle(slot);
+                }}
+              >
+                {t("app.editor.jingleSwap")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class={styles.jingleMenuItem}
+                data-testid={`export-jingle-${slot}-remove`}
+                onClick={() => {
+                  setMenuOpen(false);
+                  void clearJingle(slot);
+                }}
+              >
+                {t("app.editor.jingleRemove")}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

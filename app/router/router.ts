@@ -72,14 +72,29 @@ const PAGES: readonly Page[] = ["record", "recordings", "settings"];
 /** Den gamle PLAN-siden: kjent, men løses til TA OPP + stripa. */
 const LEGACY_PLAN = "plan";
 
-/** Innstillingsankre som flyttet til lydkilde-arket, og hvilket panel de åpner. */
-const SOURCE_ANCHORS: Readonly<Record<string, Panel>> = {
+/**
+ * Innstillingsankre som flyttet vekk fra Innstillinger, og hvor de bor nå:
+ * panelet de åpner på TA OPP, eller `null` for «TA OPP uten panel».
+ *
+ * Gamle `?goto=settings:…`-lenker, tray og dyplenker i eldre meldinger bruker
+ * ankrene fra de gamle undersidene (lyd, kvalitet, opptaksvalg, varsler,
+ * kamera) — de skal lande på flaten som nå eier innstillingen, ikke på et
+ * tannhjul uten den.
+ */
+const SOURCE_ANCHORS: Readonly<Record<string, Panel | null>> = {
   sound: "source",
   engine: "source-more",
   folder: "source-more",
   autodelete: "source-more",
+  // Kvalitet og opptaksvalg er fliser og kort i «Mer» i lydarket.
+  recording: "source-more",
+  quality: "source-more",
   // Varslene (OS-varsler, påminnelse) bor i ukestripas fliser.
   notify: "strip",
+  notifications: "strip",
+  // Kameraet er bryteren på TA OPP (og kameraknappene på bildet): ingen
+  // panel å åpne.
+  camera: null,
 };
 
 /** Samme form som legacy `navigateTo`s opsjoner, så et kallsted kan flyttes
@@ -118,7 +133,7 @@ export function resolveRoute(page: string, opts: NavigateOpts = {}): Route {
   if (legacyPlan) panelOut = "strip";
   else if (target === "settings" && anchor && anchor in SOURCE_ANCHORS) {
     target = "record";
-    panelOut = SOURCE_ANCHORS[anchor];
+    panelOut = SOURCE_ANCHORS[anchor] ?? undefined;
   }
   if (target !== "record") panelOut = undefined;
 

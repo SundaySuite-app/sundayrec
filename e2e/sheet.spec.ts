@@ -197,6 +197,29 @@ test.describe("lydarket", () => {
       .toBe(5);
   });
 
+  test("Maks blar til «Av» etter det største valget, og aldri tilbake til 60 min", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...CHOSEN, manualMaxMinutes: 240 },
+      goto: "settings:engine",
+    });
+    await expect(page.getByTestId("tile-max-value")).toHaveText("4 t");
+    await page.getByTestId("tile-max-value").click();
+    await expect(page.getByTestId("tile-max-value")).toHaveText("6 t");
+    await page.getByTestId("tile-max-value").click();
+    // «Av»: 0 = ingen grense. Verdien er borte, flisen er av.
+    await expect
+      .poll(async () => (await storedSettings(page)).manualMaxMinutes)
+      .toBe(0);
+    await expect(page.getByTestId("tile-max-value")).toHaveCount(0);
+    await expect(page.getByTestId("tile-max")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
   test("Rydd under 30 dager spør først, og «Avbryt» lar verdien stå", async ({
     page,
   }) => {

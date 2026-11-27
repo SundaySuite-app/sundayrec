@@ -71,11 +71,12 @@
  * detektoren som varsler før auto-stoppen — får sitt eget banner.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import { intlParts } from "@lib/status/next-recording-core";
 
 import { locale, t, tf } from "../../i18n";
+import { lockApp } from "../../ui/app-inert";
 import { activeDialog } from "../../ui/dialog";
 import { CameraPreview } from "../../ui/CameraPreview/CameraPreview";
 import { Icon, type IconName } from "../../ui/Icon/Icon";
@@ -99,7 +100,12 @@ import { cancelAutostop, extendAutostop } from "./autostop";
 import { HoldStop } from "./HoldStop";
 import { formatClock, spanOfMinutes } from "./record-core";
 import { spanText } from "./span-text";
-import { beginStop, completeStop } from "./stop";
+import {
+  beginStop,
+  completeStop,
+  confirmAndStop,
+  type StopTicket,
+} from "./stop";
 import { StereoMeter } from "./StereoMeter";
 import styles from "./overlay.module.css";
 
@@ -124,6 +130,46 @@ function Overlay() {
   const done = finalizing.value;
   const startedAt = sessionStartedAtMs.value;
   const [now, setNow] = useState(() => Date.now());
+  const root = useRef<HTMLDivElement | null>(null);
+  // Øktas identitet slik den var da holdet BEGYNTE (`HoldStop.onBegin`) — ikke
+  // da det var ferdig: sjekken i `completeStop` er bare noe verdt mot en
+  // billett fra starten av sekundet.
+  const ticket = useRef<StopTicket | null>(null);
+
+  // Alt utenfor overlegget er `inert` så lenge opptaket går: Tab skal gå
+  // mellom Hold, +30 og ∞ og ingenting bak (skallet, et ark som sto åpent da
+  // en planlagt start kom). Telleren (`app-inert.ts`) hindrer at en dialog som
+  // lukkes åpner skallet igjen. Tab fanges også her, så den ikke forlater
+  // vinduet.
+  useEffect(() => {
+    const unlock = lockApp();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Tab" || !root.current) return;
+      if (activeDialog.peek() !== null) return; // dialogen eier tasten
+      const items = [
+        ...root.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement;
+      const inside = active !== null && root.current.contains(active);
+      if (e.shiftKey && (!inside || active === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || active === last)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      unlock();
+    };
+  }, []);
 
   // Klokken. Ett hakk i sekundet, og bare mens den faktisk teller: når motoren
   // skriver ferdig er økta over, og en klokke som fortsetter å telle ville
@@ -180,6 +226,7 @@ function Overlay() {
 
   return (
     <div
+      ref={root}
       data-testid="recording-overlay"
       data-finalizing={done ? "true" : undefined}
       data-camera={withCamera ? "true" : undefined}
@@ -261,7 +308,19 @@ function Overlay() {
       <footer class={styles.bottom}>
         <HoldStop
           disabled={done}
-          onStop={() => void completeStop(beginStop())}
+          onBegin={() => {
+            // Billetten lages når holdet BEGYNNER; `null` (motoren skriver
+            // allerede ferdig) avviser holdet i stedet for å la ringen fylle
+            // seg mot et stopp som ikke kommer.
+            ticket.current = beginStop();
+            return ticket.current !== null;
+          }}
+          onStop={() => {
+            const held = ticket.current;
+            ticket.current = null;
+            void completeStop(held);
+          }}
+          onAssistiveClick={() => void confirmAndStop()}
         />
         <span data-testid="overlay-hold-label" class={styles.holdLabel}>
           {done ? t("recording.finalizing") : t("app.rec.hold")}

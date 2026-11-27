@@ -4,14 +4,19 @@
  * Hver flis er en bryter (`role="switch"`), og bak hver ligger nøyaktig den
  * innstillingen den hadde som rad på de gamle sidene:
  *
- *   Auto      `autoRecordEnabled` — bare flagget. Av/på sletter INGENTING: tidene
- *             blir stående i uka (dempet) og kommer tilbake som de var.
+ *   Auto      `autoRecordEnabled` — bare flagget skrives. Av/på sletter
+ *             INGENTING: tidene blir stående i uka (dempet) og kommer tilbake
+ *             som de var. Flisen LYSER bare med flagget OG minst én tid
+ *             (`autoRecordOn`); på i en tom uke står «Ingen tider» under, og
+ *             ingen tid fantaseres fram.
  *   Oppstart  `launchAtLogin` — meningsløs alene, den er svaret på «skjer det
  *             planlagte opptaket også etter en omstart?». OS-et er fasit: er
  *             det uenig med det lagrede, vinner OS-et (`syncLaunchAtLoginFromOs`).
  *   Vekk      `wakeFromSleep`. Hjørneknappen åpner `WakePopover` (prøv vekking,
  *             logg).
- *   Varsel    `notifyStart` + `notifyStop` (én bryter, to nøkler). Verdien under
+ *   Varsel    `notifyStart` + `notifyStop` (én bryter, to nøkler). Hjørneknappen
+ *             åpner `NotifyPopover` (status fra OS-et, «Send testvarsel»,
+ *             «Åpne systeminnstillinger»). Verdien under
  *             — `reminderMinutes` — trykkes for å bla gjennom forhåndsvalgene.
  *             Slås varsler PÅ uten at OS-et viser dem, sier stripa fra (og
  *             tilbyr å åpne systeminnstillingene) — feilvarslene er det eneste
@@ -35,6 +40,8 @@ import { settings, syncLaunchAtLoginFromOs } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
 import { Icon, type IconName } from "../../ui/Icon/Icon";
 import { toast } from "../../ui/toast";
+import { autoRecordOn } from "../plan/schedule-core";
+import { NotifyPopover } from "./NotifyPopover";
 import { WakePopover } from "./WakePopover";
 import styles from "./StripTiles.module.css";
 
@@ -100,13 +107,18 @@ export function StripTiles() {
   const wake = useSetting("wakeFromSleep", { kind: "toggle" });
   const reminder = useSetting("reminderMinutes", { kind: "select" });
   const [wakeOpen, setWakeOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   useEffect(() => {
     void syncLaunchAtLoginFromOs();
     void refreshNotificationPermission();
   }, []);
 
-  const autoOn = s.autoRecordEnabled !== false;
+  // Flagget er det som skrives; «lyser» gjør det først med minst én tid —
+  // «Auto» på i en tom uke er en bryter som lover noe uten å ha noe å love.
+  const autoFlag = s.autoRecordEnabled !== false;
+  const autoOn = autoRecordOn(s);
+  const needsTimes = autoFlag && !autoOn;
   const launchOn = s.launchAtLogin === true;
   const wakeOn = s.wakeFromSleep !== false;
   const notifyOn = s.notifyStart === true || s.notifyStop === true;
@@ -144,12 +156,28 @@ export function StripTiles() {
         <Tile
           icon="calendar-check"
           label={t("app.strip.tile.auto")}
-          title={t("app.strip.tile.autoTitle")}
+          title={
+            needsTimes
+              ? t("app.strip.autoNoTimesTitle")
+              : t("app.strip.tile.autoTitle")
+          }
           on={autoOn}
           busy={autoPatch.busy}
-          onToggle={() => void autoPatch.write({ autoRecordEnabled: !autoOn })}
+          onToggle={() =>
+            void autoPatch.write({ autoRecordEnabled: !autoFlag })
+          }
           testId="strip-tile-auto"
-        />
+        >
+          {needsTimes ? (
+            <span
+              class={styles.hint}
+              data-testid="strip-auto-needs-times"
+              title={t("app.strip.autoNoTimesTitle")}
+            >
+              {t("app.strip.autoNoTimes")}
+            </span>
+          ) : null}
+        </Tile>
         <Tile
           icon="power"
           label={t("app.strip.tile.launch")}
@@ -168,7 +196,14 @@ export function StripTiles() {
           onToggle={() => wake.set(!wakeOn)}
           testId="strip-tile-wake"
         >
-          <WakeCorner open={wakeOpen} onOpen={setWakeOpen} />
+          <PopCorner
+            open={wakeOpen}
+            onOpen={setWakeOpen}
+            testId="strip-wake-more"
+            label={t("app.strip.wakeMore")}
+          >
+            <WakePopover />
+          </PopCorner>
         </Tile>
         <Tile
           icon="bell"
@@ -179,6 +214,14 @@ export function StripTiles() {
           onToggle={() => void toggleNotify()}
           testId="strip-tile-notify"
         >
+          <PopCorner
+            open={notifyOpen}
+            onOpen={setNotifyOpen}
+            testId="strip-notify-more"
+            label={t("app.strip.notifyMore")}
+          >
+            <NotifyPopover />
+          </PopCorner>
           <button
             type="button"
             class={styles.value}
@@ -215,17 +258,25 @@ export function StripTiles() {
 }
 
 /**
- * Hjørneknappen på Vekk-flisen og popoveren den åpner. Popoveren er
- * `position: fixed` og plasseres over knappen ved åpning: stripa klipper
- * innholdet sitt (`overflow: hidden` for glidet), og en popover inne i det
- * ville blitt kuttet.
+ * Hjørneknappen på en flis og popoveren den åpner (Vekk: `WakePopover`; Varsel:
+ * `NotifyPopover`). Popoveren er `position: fixed` og plasseres over knappen ved
+ * åpning: stripa klipper innholdet sitt (`overflow: hidden` for glidet), og en
+ * popover inne i det ville blitt kuttet.
  */
-function WakeCorner({
+function PopCorner({
   open,
   onOpen,
+  testId,
+  label,
+  icon = "sliders",
+  children,
 }: {
   open: boolean;
   onOpen: (open: boolean) => void;
+  testId: string;
+  label: string;
+  icon?: IconName;
+  children: ComponentChildren;
 }) {
   const btn = useRef<HTMLButtonElement | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -278,13 +329,13 @@ function WakeCorner({
         ref={btn}
         type="button"
         class={styles.corner}
-        data-testid="strip-wake-more"
-        aria-label={t("app.strip.wakeMore")}
-        title={t("app.strip.wakeMore")}
+        data-testid={testId}
+        aria-label={label}
+        title={label}
         aria-expanded={open}
         onClick={() => onOpen(!open)}
       >
-        <Icon name="sliders" size={14} />
+        <Icon name={icon} size={14} />
       </button>
       {open ? (
         <div
@@ -296,7 +347,7 @@ function WakeCorner({
             maxHeight: `${pos.max}px`,
           }}
         >
-          <WakePopover />
+          {children}
         </div>
       ) : null}
     </>

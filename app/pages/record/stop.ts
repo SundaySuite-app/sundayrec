@@ -27,6 +27,7 @@
  * ber ikke om noe hold: `stopNow()` går gjennom de samme vaktene.
  */
 
+import { t, tf } from "../../i18n";
 import {
   endSessionLocally,
   enterFinalizing,
@@ -34,6 +35,8 @@ import {
   isRecording,
   sessionStartedAtMs,
 } from "../../state/recording";
+import { confirmDialog } from "../../ui/dialog";
+import { formatClock } from "./record-core";
 
 /** Hvor lenge knappen holdes inne (ms). Ringen i `HoldStop` fyller seg over det samme. */
 export const HOLD_TO_STOP_MS = 1000;
@@ -70,6 +73,45 @@ export async function completeStop(ticket: StopTicket | null): Promise<void> {
     console.error("[record] stop_recording feilet:", err);
     endSessionLocally();
   }
+}
+
+/** True mens spørsmålet står på skjermen: et andre trykk skal ikke legge en
+ *  andre dialog i køen. */
+let asking = false;
+
+/**
+ * Stopp med en BEKREFTELSE i stedet for et hold — veien for skjermlesere.
+ *
+ * VoiceOver og Narrator «klikker» knappen (et click-event uten pekertrykk), og
+ * et hold kan ikke gjøres med en slik handling. Samme vakter som holdet:
+ * øktas identitet leses FØR spørsmålet og sjekkes etter det (dialogen kan stå
+ * åpen i minutter). Escape og klikk på sløret velger «Fortsett å ta opp»
+ * (`escapeConfirms`: «Fortsett» er dialogens bekreft-knapp, «Stopp» er den
+ * AKTIVE handlingen) — et uhell skal aldri stoppe en gudstjeneste.
+ */
+export async function confirmAndStop(): Promise<void> {
+  if (finalizing.peek() || !isRecording.peek() || asking) return;
+  const ticket = beginStop();
+  if (ticket === null) return;
+  asking = true;
+  let keepRecording: boolean;
+  try {
+    keepRecording = await confirmDialog({
+      title: t("app.rec.stopQuestion"),
+      message: tf("app.rec.stopQuestionDesc", {
+        elapsed: formatClock(
+          ticket.startedAt === null ? 0 : Date.now() - ticket.startedAt,
+        ),
+      }),
+      confirmLabel: t("app.rec.keep"),
+      cancelLabel: t("app.rec.stopYes"),
+      escapeConfirms: true,
+    });
+  } finally {
+    asking = false;
+  }
+  if (keepRecording) return;
+  await completeStop(ticket);
 }
 
 /** Stopp nå, uten hold (menylinja). Samme vakter. */

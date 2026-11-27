@@ -246,13 +246,16 @@ test.describe("PLAN (ukestripa)", () => {
     );
 
     await page.getByTestId("strip-tile-auto").click();
-    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
     await expect
       .poll(async () => (await storedSettings(page)).autoRecordEnabled)
       .toBe(true);
+    // Flagget er på, men flisen LYSER ikke i en tom uke: den sier at den
+    // trenger tider.
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await expect(page.getByTestId("strip-auto-needs-times")).toBeVisible();
     // Ingen tid ble funnet på: planen er fortsatt tom.
     await expect(page.getByTestId("plan-block")).toHaveCount(0);
     expect((await storedSettings(page)).slots).toEqual([]);

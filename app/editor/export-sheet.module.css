@@ -106,6 +106,7 @@
 .formatCard:focus-visible,
 .tile:focus-visible,
 .swap:focus-visible,
+.jingleMenuItem:focus-visible,
 .save:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
@@ -317,6 +318,39 @@
   background: var(--bg);
   color: var(--gold);
   cursor: pointer;
+}
+
+/* Minimenyen under hjørneknappen: «Velg en annen fil» og «Fjern». */
+.jingleMenu {
+  position: absolute;
+  top: calc(var(--sp-2) + 34px);
+  right: var(--sp-2);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--sp-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-toast);
+}
+
+.jingleMenuItem {
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.jingleMenuItem:hover,
+.jingleMenuItem:focus-visible {
+  background: var(--ink-soft);
 }
 
 .swap[aria-disabled="true"] {

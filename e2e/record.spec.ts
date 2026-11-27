@@ -447,6 +447,93 @@ test.describe("opptaksoverlegget", () => {
     );
   });
 
+  test("skjermleser: et klikk uten pekertrykk spør først; Escape lar opptaket gå, «Stopp» stopper", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    // VoiceOver/Narrator «klikker»: click-event med detail 0, uten pekertrykk.
+    const assistiveClick = (): Promise<void> =>
+      page.getByTestId("overlay-stop").evaluate((el) => {
+        el.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            detail: 0,
+          }),
+        );
+      });
+    await assistiveClick();
+    await expect(page.locator("[data-dialog-button]").first()).toBeVisible();
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+    // Fokus flyttes inn i dialogen etter maling; Escape = «Fortsett å ta opp».
+    await expect(page.getByTestId("dialog").locator(":focus")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+    await expect(page.getByTestId("recording-overlay")).not.toHaveAttribute(
+      "data-finalizing",
+      "true",
+    );
+
+    await assistiveClick();
+    await page.locator('[data-dialog-button="cancel"]').click();
+    await expect.poll(async () => (await calls(page)).stop_recording).toBe(1);
+    // Dialogen er lukket, og skallet bak overlegget er fortsatt av.
+    await expect(page.locator("#app")).toHaveAttribute("inert", "");
+  });
+
+  test("et vanlig museklikk (detail > 0) gjør ingenting: holdet er sikringen", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await page.getByTestId("overlay-stop").click();
+    await page.waitForTimeout(300);
+    await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+  });
+
+  test("Tab går bare mellom knappene i overlegget; skallet bak er inert", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.locator("#app")).toHaveAttribute("inert", "");
+    await expect(page.getByTestId("overlay-stop")).toBeFocused();
+
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(
+        () =>
+          !!document.activeElement?.closest(
+            '[data-testid="recording-overlay"]',
+          ),
+      );
+      expect(inside, `Tab ${i + 1} forlot overlegget`).toBe(true);
+    }
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Shift+Tab");
+      const inside = await page.evaluate(
+        () =>
+          !!document.activeElement?.closest(
+            '[data-testid="recording-overlay"]',
+          ),
+      );
+      expect(inside, `Shift+Tab ${i + 1} forlot overlegget`).toBe(true);
+    }
+
+    // Opptaket er over: skallet er åpent igjen.
+    await emit(page, "recording-finished", FINISHED);
+    await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
+    await expect(page.locator("#app")).not.toHaveAttribute("inert", /.*/);
+  });
+
   test("kvitteringen står som et kort når motoren melder at fila er ferdig", async ({
     page,
   }) => {
@@ -1386,7 +1473,9 @@ test.describe("kamera-preview på Opptak", () => {
     await expect
       .poll(async () => (await tileColor(page, "overlay-camera-preview"))[2])
       .toBeGreaterThan(200);
-    near(await tileColor(page, "record-camera-preview"), BLUE);
+    // Bare ÉN visning maler mens opptaket går: Opptak-rammen er avmontert
+    // (CPU på en svak PC), overlegget har bildet.
+    await expect(page.getByTestId("record-camera-preview")).toHaveCount(0);
 
     // STOPP. Motoren er ferdig; økta gis tilbake til Opptak.
     await emit(page, "recording-finished", FINISHED);
@@ -1402,8 +1491,14 @@ test.describe("kamera-preview på Opptak", () => {
     const states = await tileStates(page);
     const rec = states["record-camera-preview"];
     const ov = states["overlay-camera-preview"];
-    // Opptak-rammen: fra første bilde og ut skjedde det ingenting.
-    expect(rec.slice(rec.indexOf("live+img"))).toEqual(["live+img"]);
+    // Opptak-rammen: fra første bilde og ut skjedde det ingenting annet enn at
+    // den ble avmontert under opptaket og kom tilbake med siste bilde — aldri
+    // «Starter kamera…».
+    expect(
+      rec
+        .slice(rec.indexOf("live+img"))
+        .every((x) => x === "live+img" || x === "absent" || x === "live-img"),
+    ).toBe(true);
     // Overlegget: ikke til stede, så bilde. Aldri «starting», aldri tom.
     expect(ov.filter((x) => x !== "absent")).toEqual(["live+img"]);
     // …og ÉN kameraøkt: aldri stoppet, aldri åpnet på nytt.

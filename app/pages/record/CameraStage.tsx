@@ -26,6 +26,13 @@ export interface CameraStageProps {
   /** Mens det starter/tas opp står ingen måler i treet. */
   meter: boolean;
   camera: CameraToggle;
+  /**
+   * Bildet bak scenen. Av mens opptaksoverlegget står oppå: overlegget viser
+   * SAMME kameraøkt, og to bilder som males og dekodes hver gang et bilde
+   * kommer er CPU brukt på noe ingen ser (svak Windows-PC midt i et opptak).
+   * Økta deles (`camera-feed.ts`), så den som blir igjen mister ikke bildet.
+   */
+  picture?: boolean;
 }
 
 export function CameraStage({
@@ -34,12 +41,13 @@ export function CameraStage({
   busy,
   meter,
   camera,
+  picture = true,
 }: CameraStageProps) {
   const name = (settings.value.videoDeviceName ?? "").trim();
   return (
     <div data-testid="camera-stage" class={styles.stage}>
       <div class={styles.picture}>
-        <CameraPreview fill />
+        {picture ? <CameraPreview fill /> : null}
       </div>
       <span class={styles.name}>
         <span aria-hidden="true" class={styles.live} />

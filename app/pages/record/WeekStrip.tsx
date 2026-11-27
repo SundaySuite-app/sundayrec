@@ -1,8 +1,9 @@
 /**
  * Ukestripa nederst på TA OPP — planen, uten egen side.
  *
- *   Uten plan (ingen faste tider, eller «Auto» av) og lukket: bare en liten
- *   kalenderknapp nede til venstre; det lille gullplusset sier «legg inn».
+ *   Uten faste tider og lukket: bare en liten kalenderknapp nede til venstre;
+ *   det lille gullplusset sier «legg inn». Med tider men «Auto» av: den lukkede
+ *   stripa, dempet, med «Automatisk opptak er av» — aldri den bare knappen.
  *
  *   Med plan, lukket: en 112 px stripe — mini-uke (sju dager, hver en liten
  *   tidslinje med gullmerker; neste opptak gløder), «Neste: søndag 11:00» med
@@ -99,7 +100,11 @@ export function WeekStrip() {
   const open = () => navigate("record", { panel: "strip" });
   const toggle = () => navigate("record", expanded ? {} : { panel: "strip" });
 
-  if (!planOn && !expanded) {
+  // Bare kalenderknappen når uka er TOM. Står tidene der men «Auto» er av, er
+  // stripa fortsatt synlig (dempet, med «Automatisk opptak er av») — ellers
+  // ville «av» og «ingen plan» sett nøyaktig likt ut.
+  const hasSlots = (s.slots ?? []).length > 0;
+  if (!hasSlots && !expanded) {
     return (
       <div data-testid="record-next-none" class={styles.dock}>
         <button
@@ -154,7 +159,8 @@ export function WeekStrip() {
     {
       icon: "calendar-check",
       label: t("app.strip.tile.auto"),
-      on: s.autoRecordEnabled !== false,
+      // Flagget OG minst én tid: «Auto» på i en tom uke er ikke «på».
+      on: planOn,
     },
     {
       icon: "power",
@@ -189,6 +195,7 @@ export function WeekStrip() {
         data-testid={planOn ? "record-next-auto" : "record-next-none"}
         data-expanded={expanded ? "true" : "false"}
         aria-label={t("app.strip.title")}
+        data-auto={planOn ? "on" : "off"}
         class={`${styles.strip} ${expanded ? styles.open : ""}`}
       >
         <button

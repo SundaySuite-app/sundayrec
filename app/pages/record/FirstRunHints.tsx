@@ -46,7 +46,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { t, tDyn, tf } from "../../i18n";
 import { navigate, panel, route } from "../../router/router";
 import { audioDevices } from "../../state/devices";
-import { isRecording } from "../../state/recording";
+import { isRecording, recordStarting } from "../../state/recording";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -165,7 +165,12 @@ function Bubble() {
   // Porten lytter bare på steg 1, og bare når en enhet FINNES å lytte på.
   const chosen = (s.deviceId ?? "").trim();
   const found = !!chosen && !!audioDevices.value?.some((d) => d.id === chosen);
-  const vuWord = useVuWord(s.deviceName, isGatedStep(index) && found);
+  // Av når opptaket STARTER: Rust slipper VU-strømmen i `start_recording`, og en
+  // `start_vu` etter det ber om enheten opptaket er i ferd med å åpne.
+  const vuWord = useVuWord(
+    s.deviceName,
+    isGatedStep(index) && found && !recordStarting.value,
+  );
   const gated = isGatedStep(index);
   const gateOpen = !gated || soundGateOpen(vuWord, soundSkipped.value);
 
@@ -217,6 +222,8 @@ function Bubble() {
       aria-label={t("app.first.hintLabel")}
       data-testid="hint-bubble"
       data-step={id}
+      // Lydarket fanger Tab; boblen er med i runden (`sheet-behavior.ts`).
+      data-focus-companion=""
       class={styles.bubble}
       style={place(id, box)}
     >

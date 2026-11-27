@@ -77,6 +77,22 @@
   color: var(--ink);
 }
 
+/* «Ingen tider» under Auto-flisen når uka er tom. Ikke en knapp. */
+.hint {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 6px;
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  text-align: center;
+  pointer-events: none;
+}
+
+.cell:has(.hint) .tile {
+  padding-bottom: var(--sp-4);
+}
+
 /* Varsel-flisen trenger rom til verdien under ordet. */
 .cell:has(.value) .tile {
   padding-bottom: var(--sp-4);

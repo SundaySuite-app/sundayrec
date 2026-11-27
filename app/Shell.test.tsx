@@ -148,14 +148,14 @@ describe("Shell", () => {
 
   it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {
     // På INNSTILLINGER er en `?goto=`-fane et anker, og bare det.
-    navigate("settings", { tab: "settings-camera" });
+    navigate("settings", { tab: "settings-updates" });
     const html = render(<Shell />);
     expect(html).toContain('data-page="settings"');
-    expect(html).toContain('data-anchor="camera"');
+    expect(html).toContain('data-anchor="updates"');
     expect(html).not.toContain("data-tab=");
     expect(route.value).toEqual({
       page: "settings",
-      anchor: "camera",
+      anchor: "updates",
       highlight: true,
     });
 

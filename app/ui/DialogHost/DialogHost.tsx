@@ -51,6 +51,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { buildAlert, buildConfirm, nextFocusIndex } from "@lib/ui/dialog-core";
 
 import { t } from "../../i18n";
+import { lockApp } from "../app-inert";
 import { Button, type ButtonVariant } from "../Button/Button";
 import {
   activeDialog,
@@ -97,7 +98,7 @@ export function DialogHost() {
         ? active
         : lastPointer.current;
 
-    host?.setAttribute("inert", "");
+    const unlock = lockApp();
 
     // Fokus inn på standardknappen. `requestAnimationFrame` fordi elementet
     // først finnes etter at Preact har committet denne renderen.
@@ -111,7 +112,7 @@ export function DialogHost() {
 
     return () => {
       cancelAnimationFrame(raf);
-      host?.removeAttribute("inert");
+      unlock();
       // Etter opprydningen, ellers fokuserer vi et element som fortsatt er
       // inert og nettleseren avviser det stille.
       const target = returnTo.current;

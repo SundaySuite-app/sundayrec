@@ -24,6 +24,12 @@
 //! (`video_conform`) holds each slot back 0.5 s for the audio; the preview does
 //! not go through it, so it is as live as the camera.
 //!
+//! **While a recording runs the picture is small and rare**: 640 px wide, 4/s
+//! ([`LOW_PREVIEW_WIDTH`], [`LOW_TARGET_FPS`]) instead of 1280 px at 12/s. It is
+//! only a sign of life then, and each JPEG competes with the recorder's own
+//! encoder for the CPU. The mode follows the session ([`Session::Recording`]),
+//! so the page cannot forget to ask.
+//!
 //! # One session, no hand-over, in either direction
 //!
 //! [`start`] opens the camera when the Opptak page shows the camera card. When
@@ -79,12 +85,24 @@ pub const TARGET_FPS: f64 = 12.0;
 /// JPEG quality: a 1280 px picture for the stage, not an archive.
 pub const JPEG_QUALITY: u8 = 70;
 
+/// While a recording runs the picture is only a check that the camera delivers
+/// ("kommer det noe fra det"), and every JPEG competes with the recorder's own
+/// encoder for the CPU — on a weak Windows machine that is the difference
+/// between a clean take and dropped frames. So the preview of a session that a
+/// recording holds ([`Session::Recording`]) is made at [`LOW_PREVIEW_WIDTH`]
+/// and [`LOW_TARGET_FPS`]: a sixth of the pixels, a third of the pictures.
+pub const LOW_PREVIEW_WIDTH: u32 = 640;
+/// Preview pictures per second while a recording runs.
+pub const LOW_TARGET_FPS: f64 = 4.0;
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The time between preview pictures: 1 / [`TARGET_FPS`].
 pub const PREVIEW_PERIOD_NS: u64 = (1_000_000_000.0 / TARGET_FPS) as u64;
+/// The time between preview pictures while a recording runs.
+pub const LOW_PERIOD_NS: u64 = (1_000_000_000.0 / LOW_TARGET_FPS) as u64;
 
 /// Whether the frame captured at `t_ns` becomes a preview picture, given the
 /// next due time `due_ns` (0 = none yet); returns the new due time when it
@@ -95,12 +113,17 @@ pub const PREVIEW_PERIOD_NS: u64 = (1_000_000_000.0 / TARGET_FPS) as u64;
 /// gap longer than a period it restarts from the frame instead of catching
 /// up with a burst.
 pub fn preview_due(t_ns: u64, due_ns: u64) -> Option<u64> {
+    preview_due_at(t_ns, due_ns, PREVIEW_PERIOD_NS)
+}
+
+/// [`preview_due`] for any `period_ns` (the recording rate is another period).
+pub fn preview_due_at(t_ns: u64, due_ns: u64, period_ns: u64) -> Option<u64> {
     if due_ns != 0 && t_ns < due_ns {
         return None;
     }
-    let next = due_ns.saturating_add(PREVIEW_PERIOD_NS);
+    let next = due_ns.saturating_add(period_ns);
     Some(if due_ns == 0 || t_ns >= next {
-        t_ns.saturating_add(PREVIEW_PERIOD_NS)
+        t_ns.saturating_add(period_ns)
     } else {
         next
     })
@@ -112,10 +135,15 @@ pub fn preview_due(t_ns: u64, due_ns: u64) -> Option<u64> {
 /// enlarged), height in proportion, both even (4:2:0 chroma). `None` for a
 /// degenerate frame.
 pub fn preview_size(w: u32, h: u32) -> Option<(u32, u32)> {
+    preview_size_within(w, h, PREVIEW_WIDTH)
+}
+
+/// [`preview_size`] for any maximum width.
+pub fn preview_size_within(w: u32, h: u32, max_w: u32) -> Option<(u32, u32)> {
     if w < 2 || h < 2 {
         return None;
     }
-    let dw = w.min(PREVIEW_WIDTH) & !1;
+    let dw = w.min(max_w) & !1;
     let dh = ((u64::from(h) * u64::from(dw) + u64::from(w) / 2) / u64::from(w)) as u32 & !1;
     (dw >= 2 && dh >= 2).then_some((dw, dh))
 }
@@ -214,12 +242,17 @@ impl PreviewEncoder {
     /// One frame → a JPEG at most [`PREVIEW_WIDTH`] wide. `None` when the frame
     /// cannot be read or coded (counted by the worker, never fatal).
     pub fn encode(&mut self, frame: &Frame) -> Option<Vec<u8>> {
+        self.encode_within(frame, PREVIEW_WIDTH)
+    }
+
+    /// [`Self::encode`] at most `max_w` wide.
+    pub fn encode_within(&mut self, frame: &Frame, max_w: u32) -> Option<Vec<u8>> {
         if frame.pixel_format == PixelFormat::Mjpeg {
             // The camera already made a JPEG; pass it through.
             return frame.with_planes(|p| p.first().map(|b| b.to_vec()))?;
         }
         let (w, h) = (frame.width, frame.height);
-        let (dw, dh) = preview_size(w, h)?;
+        let (dw, dh) = preview_size_within(w, h, max_w)?;
         let nv12 = tight_nv12(frame)?;
         let rgb = scale_to_rgb(&mut self.resizer, nv12, (w, h), (dw, dh))?;
         let mut jpeg = Vec::with_capacity(32 * 1024);
@@ -274,6 +307,10 @@ pub struct Preview {
     /// Where the pictures go. `None` = nobody is watching: the worker then
     /// makes no picture at all (the camera stays open for the recording).
     sink: Arc<Mutex<Option<Sink>>>,
+    /// A recording holds the camera: make small, rare pictures
+    /// ([`LOW_PREVIEW_WIDTH`], [`LOW_TARGET_FPS`]). Read by the tap and the
+    /// worker on every frame, so a switch takes effect at the next picture.
+    low: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
 
@@ -289,11 +326,21 @@ impl Preview {
             closed: AtomicBool::new(false),
         });
         let counters = Arc::new(Counters::default());
+        let low = Arc::new(AtomicBool::new(false));
         {
-            let (mailbox, counters) = (Arc::clone(&mailbox), Arc::clone(&counters));
+            let (mailbox, counters, low) = (
+                Arc::clone(&mailbox),
+                Arc::clone(&counters),
+                Arc::clone(&low),
+            );
             queue.set_tap(Some(Arc::new(move |frame: &Frame| {
                 counters.seen.fetch_add(1, Ordering::Relaxed);
-                match preview_due(frame.host_time_ns, due.load(Ordering::Relaxed)) {
+                let period = if low.load(Ordering::Relaxed) {
+                    LOW_PERIOD_NS
+                } else {
+                    PREVIEW_PERIOD_NS
+                };
+                match preview_due_at(frame.host_time_ns, due.load(Ordering::Relaxed), period) {
                     Some(next) => due.store(next, Ordering::Relaxed),
                     None => return,
                 }
@@ -314,10 +361,11 @@ impl Preview {
             })));
         }
         let join = {
-            let (mailbox, counters, sink) = (
+            let (mailbox, counters, sink, low) = (
                 Arc::clone(&mailbox),
                 Arc::clone(&counters),
                 Arc::clone(&sink),
+                Arc::clone(&low),
             );
             std::thread::Builder::new()
                 .name("camera-preview".into())
@@ -344,7 +392,12 @@ impl Preview {
                             // Nobody is watching: no scaling, no JPEG.
                             continue;
                         }
-                        match encoder.encode(&frame) {
+                        let max_w = if low.load(Ordering::Relaxed) {
+                            LOW_PREVIEW_WIDTH
+                        } else {
+                            PREVIEW_WIDTH
+                        };
+                        match encoder.encode_within(&frame, max_w) {
                             Some(jpeg) => {
                                 drop(frame);
                                 let mut slot = lock(&sink);
@@ -375,8 +428,19 @@ impl Preview {
             mailbox,
             counters,
             sink,
+            low,
             join: Some(join),
         }
+    }
+
+    /// Switch between the stage picture and the recording picture.
+    pub fn set_low_rate(&self, low: bool) {
+        self.low.store(low, Ordering::Relaxed);
+    }
+
+    /// Whether the preview is in the recording (small, rare) mode.
+    pub fn is_low_rate(&self) -> bool {
+        self.low.load(Ordering::Relaxed)
     }
 
     /// Send the pictures somewhere else from now on (the page was reopened
@@ -704,6 +768,8 @@ pub fn take_for_recording(key: &SessionKey) -> Taken {
             drain,
         }) if &k == key => {
             drain.finish(&source.frames());
+            // The picture is only a sign of life from here on.
+            preview.set_low_rate(true);
             *guard = Some(Session::Recording {
                 key: k,
                 spec: spec.clone(),
@@ -752,10 +818,12 @@ pub fn adopt_for_recording(
         return;
     }
     let fps = f64::from(spec.fps_num) / f64::from(spec.fps_den.max(1));
+    let preview = Preview::attach(queue, fps, carried);
+    preview.set_low_rate(true);
     *guard = Some(Session::Recording {
         key,
         spec: spec.clone(),
-        preview: Preview::attach(queue, fps, carried),
+        preview,
     });
 }
 
@@ -775,6 +843,8 @@ pub fn release_after_recording(source: Box<dyn VideoSource>) {
             // The recording closed the queue when it stopped; the camera did
             // not stop. Start from a clean queue, drained until the next taker.
             queue.reopen();
+            // Back to the stage picture for the page.
+            preview.set_low_rate(false);
             let drain = Drain::start(queue);
             *guard = Some(Session::Idle {
                 key,
@@ -958,6 +1028,42 @@ mod tests {
         let due = preview_due(0, 0).unwrap();
         let after_gap = preview_due(5_000_000_000, due).unwrap();
         assert!(preview_due(5_010_000_000, after_gap).is_none());
+    }
+
+    #[test]
+    fn the_recording_picture_is_four_a_second_and_640_wide() {
+        // Same selection by capture time, the longer period: ~4/s from any
+        // camera rate.
+        for fps in [60.0, 30.0, 25.0, 15.0] {
+            let period = 1e9 / fps;
+            let (mut due, mut picks) = (0u64, 0u32);
+            let mut k = 0u64;
+            while (k as f64) * period < 60e9 {
+                if let Some(next) = preview_due_at(((k as f64) * period) as u64, due, LOW_PERIOD_NS)
+                {
+                    due = next;
+                    picks += 1;
+                }
+                k += 1;
+            }
+            let rate = f64::from(picks) / 60.0;
+            assert!(
+                (LOW_TARGET_FPS - 0.2..=LOW_TARGET_FPS + 0.2).contains(&rate),
+                "{fps} fps → {rate:.2}/s"
+            );
+        }
+        assert_eq!(
+            preview_size_within(1920, 1080, LOW_PREVIEW_WIDTH),
+            Some((640, 360))
+        );
+        assert_eq!(
+            preview_size_within(320, 240, LOW_PREVIEW_WIDTH),
+            Some((320, 240))
+        );
+        let jpeg = PreviewEncoder::default()
+            .encode_within(&nv12(1920, 1080, 128, 128, 128), LOW_PREVIEW_WIDTH)
+            .expect("a jpeg");
+        assert_eq!(jpeg_size(&jpeg), Some((640, 360)));
     }
 
     #[test]
@@ -1184,12 +1290,13 @@ mod tests {
         let secs1 = t1.elapsed().as_secs_f64();
         let rate_during = (sent.load(Ordering::Relaxed) - mid) as f64 / secs1;
         let offered_during = (current_stats().map_or(0, |s| s.offered) - offered1) as f64 / secs1;
+        // DURING the recording the picture is the small, rare one.
         assert!(
-            (TARGET_FPS - 1.0..=TARGET_FPS + 1.0).contains(&offered_during),
+            (LOW_TARGET_FPS - 1.0..=LOW_TARGET_FPS + 1.0).contains(&offered_during),
             "{offered_during:.2} pictures/s offered DURING the recording"
         );
         assert!(
-            (min_sent..=TARGET_FPS + 1.0).contains(&rate_during),
+            (min_sent.min(2.5)..=LOW_TARGET_FPS + 1.0).contains(&rate_during),
             "{rate_during:.2} pictures/s DURING the recording"
         );
         let preview_stats = current_stats().expect("still previewing");

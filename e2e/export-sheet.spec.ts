@@ -658,10 +658,19 @@ test.describe("eksportering — innhold", () => {
       "aria-pressed",
       "true",
     );
+    await expect(page.getByTestId("export-jingle-outro-more")).toHaveAttribute(
+      "aria-label",
+      "Mer for Outro",
+    );
+    await page.getByTestId("export-jingle-outro-more").click();
     await expect(page.getByTestId("export-jingle-outro-pick")).toHaveAttribute(
       "aria-label",
       "Velg en annen fil for Outro",
     );
+    await page.keyboard.press("Escape");
+    // Esc lukker bare menyen, ikke arket.
+    await expect(page.getByTestId("export-jingle-outro-menu")).toHaveCount(0);
+    await expect(page.getByTestId("export-jingle-outro-tile")).toBeVisible();
 
     // Trykk på outro-flisen slår den AV uten å glemme fila.
     await page.getByTestId("export-jingle-outro-tile").click();
@@ -698,11 +707,36 @@ test.describe("eksportering — innhold", () => {
       "aria-pressed",
       "false",
     );
+    await page.getByTestId("export-jingle-intro-more").click();
     await page.getByTestId("export-jingle-intro-pick").click();
     await expect(page.getByTestId("export-jingle-intro-tile")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+  });
+
+  test("«Fjern» i hjørnemenyen glemmer fila, og eksporten går uten den", async ({
+    page,
+  }) => {
+    await openThenExport(page, JINGLE_FIXTURES());
+    await page.getByTestId("export-jingle-intro-tile").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+    await page.getByTestId("export-jingle-intro-more").click();
+    await page.getByTestId("export-jingle-intro-remove").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "+ Velg fil",
+    );
+    await expect(page.getByTestId("export-jingle-intro-more")).toHaveCount(0);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.useIntro).toBe(false);
   });
 
   test("intro og outro huskes til neste gang: etter en omlasting står de der", async ({
@@ -806,7 +840,7 @@ test.describe("eksportering — innhold", () => {
       "aria-disabled",
       "true",
     );
-    await expect(page.getByTestId("export-jingle-intro-pick")).toHaveAttribute(
+    await expect(page.getByTestId("export-jingle-intro-more")).toHaveAttribute(
       "aria-disabled",
       "true",
     );

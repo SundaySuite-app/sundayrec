@@ -58,9 +58,42 @@ describe("?goto= i de tre flatene", () => {
       },
     ],
     // Den fullt kvalifiserte skrivemåten betyr det samme som den bare.
+    // Kameraet er bryteren på TA OPP: ingen panel å åpne.
     [
       "?goto=settings:settings-camera",
-      { page: "settings", anchor: "camera", highlight: false },
+      { page: "record", anchor: "camera", highlight: false },
+    ],
+    [
+      "?goto=settings:camera",
+      { page: "record", anchor: "camera", highlight: false },
+    ],
+    // De gamle Kvalitet- og Opptaksvalg-ankrene: «Mer» i lydarket.
+    [
+      "?goto=settings:recording",
+      {
+        page: "record",
+        panel: "source-more",
+        anchor: "recording",
+        highlight: false,
+      },
+    ],
+    [
+      "?goto=settings:settings-quality",
+      {
+        page: "record",
+        panel: "source-more",
+        anchor: "quality",
+        highlight: false,
+      },
+    ],
+    [
+      "?goto=settings:notifications",
+      {
+        page: "record",
+        panel: "strip",
+        anchor: "notifications",
+        highlight: false,
+      },
     ],
     // Percent-encoded, som e2e/harness.ts faktisk skriver den.
     [

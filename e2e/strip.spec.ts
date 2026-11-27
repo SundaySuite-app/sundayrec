@@ -214,6 +214,124 @@ test.describe("flisene", () => {
   });
 });
 
+test.describe("tider uten «Auto»", () => {
+  test("tidene står, men Auto er av: lukket stripe sier det, dempet — ikke den bare knappen", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...WITH_PLAN, autoRecordEnabled: false },
+      goto: "record",
+    });
+    // Ikke kalenderknappen (56 px): hele stripa, med den ærlige tittelen.
+    const strip = page.getByTestId("record-next-none");
+    await expect(strip).toHaveAttribute("data-expanded", "false");
+    await expect(page.getByTestId("record-next-auto-when")).toHaveText(
+      "Automatisk opptak er av",
+    );
+    await expect(page.getByTestId("strip-mini-mark").first()).toHaveAttribute(
+      "data-off",
+      "true",
+    );
+    const head = await page.getByTestId("record-next-plan").boundingBox();
+    expect(head!.width).toBeGreaterThan(200);
+    // Auto-ikonet lyser ikke.
+    const icons = strip.getByRole("img");
+    await expect(icons.nth(0)).toHaveAttribute("data-on", "false");
+  });
+
+  test("uten tider finnes bare kalenderknappen, også med Auto på", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...WITH_PLAN, autoRecordEnabled: true, slots: [] },
+      goto: "record",
+    });
+    await expect(page.getByTestId("record-next-none")).toBeVisible();
+    const pill = await page.getByTestId("record-next-plan").boundingBox();
+    expect(Math.round(pill!.width)).toBe(56);
+  });
+
+  test("Auto på i en tom uke lyser ikke: flisen sier «Ingen tider» og finner ikke på en tid", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...WITH_PLAN, autoRecordEnabled: true, slots: [] },
+      goto: "plan",
+    });
+    const tile = page.getByTestId("strip-tile-auto");
+    await expect(tile).toHaveAttribute("aria-checked", "false");
+    await expect(tile).toHaveAttribute("data-on", "false");
+    await expect(page.getByTestId("strip-auto-needs-times")).toHaveText(
+      "Ingen tider",
+    );
+    expect((await storedSettings(page)).slots).toEqual([]);
+  });
+});
+
+test.describe("varsler: status og testvarsel", () => {
+  test("hjørneknappen viser status fra OS-et og sender et testvarsel", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        notification_permission: "granted",
+        notification_request_permission: "granted",
+        notification_send_test: true,
+      },
+      settings: WITH_PLAN,
+      goto: "plan",
+    });
+    await page.getByTestId("strip-notify-more").click();
+    await expect(page.getByTestId("strip-notify-pop")).toBeVisible();
+    await expect(page.getByTestId("strip-notify-status")).toHaveText(
+      "Slått på — SundayRec kan si fra her.",
+    );
+    // Slått på: ingen grunn til å tilby systeminnstillingene.
+    await expect(
+      page.getByTestId("strip-notify-pop-open-settings"),
+    ).toHaveCount(0);
+    await page.getByTestId("strip-notify-test").click();
+    await expect(page.getByTestId("strip-notify-test-word")).toContainText(
+      "Testvarselet er sendt",
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("strip-notify-pop")).toHaveCount(0);
+    // Esc lukket bare popoveren.
+    await expect(expanded(page)).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("slått av i systemet: statuslinja sier det, og systeminnstillingene tilbys", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        notification_permission: "denied",
+        notification_request_permission: "denied",
+        notification_send_test: true,
+        notification_open_settings: true,
+      },
+      settings: WITH_PLAN,
+      goto: "plan",
+    });
+    await page.getByTestId("strip-notify-more").click();
+    await expect(page.getByTestId("strip-notify-status")).toHaveText(
+      "Slått av for SundayRec.",
+    );
+    await expect(
+      page.getByTestId("strip-notify-pop-open-settings"),
+    ).toBeVisible();
+    await page.getByTestId("strip-notify-test").click();
+    await expect(page.getByTestId("strip-notify-test-word")).toContainText(
+      "varsler er slått av",
+    );
+  });
+});
+
 test.describe("lukke", () => {
   test("Esc og sløret lukker stripa; Esc i vekke-popoveren lukker bare popoveren", async ({
     page,
