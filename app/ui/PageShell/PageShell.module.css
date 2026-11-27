@@ -20,13 +20,14 @@
 /* ── Topplinja ────────────────────────────────────────────────────────────── */
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--sp-3);
   min-height: var(--topbar-h);
-  padding: 0 var(--sp-4);
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  padding: 0 var(--sp-4) 0 var(--sp-5);
+  background: var(--bg);
+  border-bottom: 1px solid var(--raised);
 }
 
 /*
@@ -55,14 +56,98 @@
   padding-left: var(--traffic-lights-w);
 }
 
-/*
- * Produktnavnet ved siden av merket, med den gamle appens mål: 15 px, 700, og
- * en anelse negativ sporing.
- */
-.logoText {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
+/* Logo, faner og tannhjul er direkte rutenettbarn av topplinja — se filhodet. */
+.topbar > :first-child {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.tabs {
+  grid-column: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+}
+
+/* Ikonfane: 52 px bred pille. Aktiv = hevet bakgrunn + gullikon. */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.tab.on {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.tab.on svg {
+  color: var(--gold);
+}
+
+.gear {
+  grid-column: 3;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.gear:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.gear.on {
+  color: var(--gold);
+}
+
+/* Under opptak: blinkende rød prikk og «Tar opp». */
+.recording {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--rec);
+}
+
+.recDot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--rec);
+  animation: blink 1.4s ease-in-out infinite;
 }
 
 /* ── Siden ───────────────────────────────────────────────────────────────── */
@@ -127,8 +212,8 @@
  * opptak søndag 10:00».
  */
 .bottombar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: var(--sp-4);
   min-height: var(--bottombar-h);
@@ -161,59 +246,6 @@
   white-space: nowrap;
 }
 
-.nav {
-  display: flex;
-  gap: var(--sp-1);
-  justify-self: center;
-}
-
-/*
- * Ikon over etikett, som i Resolve. `--fs-xs` er typeskalaens GULV (11 px) —
- * etiketten under et ikon er det ene stedet i appen som får stå der, fordi
- * ikonet bærer betydningen og ordet bekrefter den.
- *
- * `min-height: 44px` er treffmålet, ikke en høyde: 20 px ikon + 2 px + en 11
- * px etikett er 35 px innhold, og en knapp man skal treffe med musa mens man
- * ser på noe annet skal være større enn innholdet sitt.
- */
-.navItem {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 72px;
-  min-height: 44px;
-  border: 0;
-  background: transparent;
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-
-.navItem:hover {
-  background: var(--gold-soft);
-}
-
-.on {
-  background: var(--gold-soft);
-  color: var(--gold);
-}
-
-.navIcon {
-  display: inline-flex;
-  flex: none;
-}
-
-.navIcon svg {
-  width: 20px;
-  height: 20px;
-}
-
 .tail {
   display: flex;
   align-items: center;
@@ -227,5 +259,29 @@
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * TA OPP er en full-bleed flate («Én flate»): ingen sidepolstring, ingen
+ * lesebredde, og overskriften er der for skjermlesere og fokus — ikke for
+ * øynene (skissen har ingen sidetittel).
+ */
+.main[data-page="record"] {
+  padding: 0;
+  gap: 0;
+}
+
+.main[data-page="record"] > * {
+  max-width: none;
+}
+
+.main[data-page="record"] > .h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }

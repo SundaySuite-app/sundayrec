@@ -146,6 +146,10 @@ export const E = {
   minimapDragging: false,
   /** Spøkelseslinja der musa er. −99999 = ingen. Legacys egen sentinel. */
   hoverSec: -99999,
+  /** Markeringen som venter på «Klipp» (E7), eller −1 når det ikke er noen.
+   *  Tegneløkka leser disse; speilet for treet er `selection`. */
+  selStart: -1,
+  selEnd: -1,
 
   /** De to lerretene. Satt av `WaveformHost` ved montering, aldri byttet. */
   canvas: null as HTMLCanvasElement | null,
@@ -194,6 +198,13 @@ export const activeStep = signal<Step>("cut");
  * lever mellom `pointerdown` og `pointerup`.
  */
 export const dragWindow = signal<Range | null>(null);
+
+/**
+ * Markeringen etter et drag over bølgeformen, mens den venter på «Klipp»
+ * (E7). `null` = ingen. Et drag klipper ikke lenger av seg selv: det lager en
+ * markering med en boble over seg, og kuttet skjer først på tappen.
+ */
+export const selection = signal<Range | null>(null);
 
 // ── Synkroniseringen: ett par, ett sted ─────────────────────────────────────
 
@@ -248,6 +259,8 @@ export function resetFileState(): void {
   E.playheadDragging = false;
   E.minimapDragging = false;
   E.hoverSec = -99999;
+  E.selStart = -1;
+  E.selEnd = -1;
 
   filePath.value = "";
   fileName.value = "";
@@ -262,6 +275,7 @@ export function resetFileState(): void {
   loadProgress.value = null;
   loadError.value = null;
   dragWindow.value = null;
+  selection.value = null;
   syncCuts();
   syncViewport();
   clearDirty();

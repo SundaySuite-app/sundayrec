@@ -71,6 +71,173 @@ textarea {
 }
 
 /*
+ * Nøkkelbilder fra «Én flate»-skissen. Bruk med `animation: <navn> …` i
+ * komponentenes moduler. Reduced-motion-regelen under gjør dem alle til ett
+ * bilde (varighet 0,001 ms, én gjentakelse), så ingenting her er informasjon.
+ *
+ *   breathe/recring  opptaksknappen (hvile/opptak)
+ *   glow/spot        «neste»-markering og veiviserpuls (gull)
+ *   rise/pop         ting som kommer inn
+ *   blink            rød prikk som tar opp
+ *   coverx/covery    måler-dekke (vannrett/loddrett); lvl er et søyleutslag
+ *   dragbar/draghand «Hold og dra»-hintet i en tom uke
+ */
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.08;
+  }
+}
+@keyframes recring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes lvl {
+  0%,
+  100% {
+    transform: scaleY(0.22);
+  }
+  45% {
+    transform: scaleY(1);
+  }
+  70% {
+    transform: scaleY(0.55);
+  }
+}
+@keyframes spot {
+  0% {
+    box-shadow: 0 0 0 0 var(--gold-spot);
+  }
+  100% {
+    box-shadow: 0 0 0 14px var(--gold-clear);
+  }
+}
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--gold-clear);
+  }
+  50% {
+    box-shadow: 0 0 18px 2px var(--gold-strong);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes coverx {
+  0%,
+  100% {
+    width: 62%;
+  }
+  40% {
+    width: 14%;
+  }
+  60% {
+    width: 30%;
+  }
+  80% {
+    width: 20%;
+  }
+}
+@keyframes covery {
+  0%,
+  100% {
+    height: 62%;
+  }
+  40% {
+    height: 14%;
+  }
+  60% {
+    height: 30%;
+  }
+  80% {
+    height: 20%;
+  }
+}
+@keyframes dragbar {
+  0% {
+    height: 0;
+    opacity: 0;
+  }
+  12% {
+    height: 0;
+    opacity: 1;
+  }
+  65%,
+  88% {
+    height: 78px;
+    opacity: 1;
+  }
+  100% {
+    height: 78px;
+    opacity: 0;
+  }
+}
+@keyframes draghand {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  65%,
+  88% {
+    transform: translateY(78px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(78px);
+    opacity: 0;
+  }
+}
+
+/*
  * Bevegelse er et tillegg, aldri informasjon: alt som animerer her (bryteren
  * som glir, opptaksprikken som pulserer, toasten som kommer inn) sier det
  * samme med farge og form. Så den som har slått av bevegelse mister

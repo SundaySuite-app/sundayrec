@@ -31,9 +31,8 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
       goto: "settings",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    // (`settings:general` lands on the Innstillinger surface — church profile
-    // plus Avansert — since D2; before that it was a tab of its own.)
-    await expect(page.getByTestId("setup-advanced")).toBeVisible();
+    // (`settings` opens the gear — a card over TA OPP — since E8.)
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 
@@ -68,13 +67,13 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
         autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
-      // F5: kamera-kortet bor under Kamera i Innstillinger.
-      goto: "settings",
+      // E3: kamerabryteren sitter ved opptaksknappen på TA OPP.
+      goto: "record",
     });
 
     // The one change: slå på «Ta med kamera» (seeded av).
-    await page.getByTestId("setup-camera-toggle").click();
-    await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
+    await page.getByTestId("record-camera-toggle").click();
+    await expect(page.getByTestId("record-camera-receipt")).toHaveText(
       "Lagret ✓",
     );
 

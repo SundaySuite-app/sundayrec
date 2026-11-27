@@ -1,0 +1,265 @@
+/*
+ * Tannhjulet — et sentrert kort (520 px) over siden man kom fra, med slør bak.
+ * Ingen `transform` på kortet: lisensleseren inni det er `position: fixed`, og
+ * en transform ville gjort kortet til dens inneholdende blokk.
+ */
+
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: var(--scrim);
+  cursor: default;
+  animation: fadein var(--dur) var(--ease-out);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
+  border-radius: 22px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  box-shadow: 0 24px 70px var(--scrim);
+  animation: rise var(--dur) var(--ease-out);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--gold);
+}
+
+.titleText {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* ── Raden ─────────────────────────────────────────────────────────────── */
+
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-4);
+  row-gap: var(--sp-2);
+  min-height: 68px;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: 14px;
+  background: var(--raised);
+}
+
+.spot {
+  animation: spot 1.5s ease-out 3;
+}
+
+.rowIcon {
+  display: inline-flex;
+  color: var(--ink-2);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-lg);
+}
+
+.rowTitle {
+  color: var(--ink);
+}
+
+.rowControls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.rowExtra {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+/* ── Statuslinja (Oppdatering) ─────────────────────────────────────────── */
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.status[data-tone="good"] {
+  color: var(--good);
+}
+
+.status[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.status[data-tone="bad"] {
+  color: var(--bad);
+}
+
+.status[aria-disabled="true"] {
+  cursor: default;
+}
+
+.status:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.statusError {
+  font-size: var(--fs-sm);
+  color: var(--bad);
+}
+
+/* ── Små knapper ───────────────────────────────────────────────────────── */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.pill:hover {
+  background: var(--surface);
+}
+
+.pillGold {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--on-gold);
+  font-weight: 600;
+}
+
+.pillGold:hover {
+  background: var(--gold);
+}
+
+.pill[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pill:focus-visible,
+.iconBtn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.aboutLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.version {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.asio {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}

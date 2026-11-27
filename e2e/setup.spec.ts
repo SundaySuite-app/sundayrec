@@ -95,12 +95,12 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
       },
       goto: "record",
     });
-    await expect(page.getByTestId("record-source")).toBeVisible();
-    // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
+    await expect(page.getByTestId("record-change-source")).toBeVisible();
     await expect(page.getByTestId("record-source-value")).toHaveText(
-      "Behringer X32 · inngang 15–16",
+      "Behringer X32",
     );
-    await expect(page.getByTestId("record-change-source")).toHaveText("Endre");
+    // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
+    await expect(page.getByTestId("record-source-pair")).toHaveText("15–16");
   });
 });
 
@@ -119,9 +119,15 @@ test.describe("kvalitet", () => {
 
     // Kortet står øverst på skjermen som eier valget — valgt, men ikke
     // valgBART: det beskriver det lagrede, det er ikke et valg noen kan ta.
-    const custom = page.getByTestId("quality-choices-row-custom");
-    await expect(custom).toHaveAttribute("data-selected", "true");
-    await expect(custom.locator("input")).toBeDisabled();
+    // Linja over kortene sier hva det ER, og INGEN av de tre er valgt.
+    await expect(page.getByTestId("quality-choices-row-custom")).toContainText(
+      "320",
+    );
+    for (const id of ["mp3", "flac", "wav"]) {
+      await expect(
+        page.getByTestId(`quality-choices-row-${id}`),
+      ).toHaveAttribute("aria-pressed", "false");
+    }
   });
 
   test("å velge «God» skriver BÅDE format og bitrate, i én lagring", async ({
@@ -157,23 +163,27 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       page,
     }) => {
       // Migrert fra før F4: `settings.language` kan stå på et språk som ikke finnes lenger. Appen
-      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og boksen
-      // viser språket som GJELDER — ikke den lagrede strengen, som en `<select>` uten treff ville
-      // fortiet ved å vise den første optionen.
+      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og
+      // tannhjulet viser språket som GJELDER — ikke den lagrede strengen, som en gruppe uten treff
+      // ville fortiet ved å merke det første valget.
       await boot(page, {
         fixtures: BOOT_FIXTURES,
         settings: { ...SETTLED_SETTINGS, language: "de" },
         goto: "settings",
       });
 
-      await expect(page.getByTestId("setup-language")).toBeVisible();
-      await expect(page.getByTestId("setup-language-lede")).toHaveText(
-        "The language the app uses.",
+      await expect(page.getByTestId("gear-dialog")).toBeVisible();
+      await expect(page.getByTestId("gear-language-en")).toHaveAttribute(
+        "aria-checked",
+        "true",
       );
-      const select = page.getByTestId("language-control-input");
-      await expect(select).toHaveValue("en");
-      await expect(select.locator("option")).toHaveCount(2);
-      await expect(select.locator("option:disabled")).toHaveCount(0);
+      await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      await expect(
+        page.getByTestId("gear-language").getByRole("radio"),
+      ).toHaveCount(2);
     });
   });
 
@@ -187,16 +197,17 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
         goto: "settings",
       });
 
-      await expect(page.getByTestId("setup-language-lede")).toHaveText(
-        "Språket appen bruker.",
+      await expect(page.getByTestId("gear-dialog")).toContainText(
+        "Innstillinger",
       );
-      await expect(page.getByTestId("language-control-input")).toHaveValue(
-        "no",
+      await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+        "aria-checked",
+        "true",
       );
     });
   });
 
-  test("valgboksen tilbyr norsk og engelsk, ingen deaktivert", async ({
+  test("språkvalget tilbyr norsk og engelsk, ingen deaktivert", async ({
     page,
   }) => {
     await boot(page, {
@@ -205,10 +216,17 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       goto: "settings",
     });
 
-    const select = page.getByTestId("language-control-input");
-    await expect(select).toHaveValue("no");
-    await expect(select.locator("option")).toHaveCount(2);
-    await expect(select.locator("option:disabled")).toHaveCount(0);
+    const radios = page.getByTestId("gear-language").getByRole("radio");
+    await expect(radios).toHaveCount(2);
+    await expect(radios.nth(0)).toHaveText("Norsk");
+    await expect(radios.nth(1)).toHaveText("English");
+    await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(
+      page.getByTestId("gear-language").locator('[aria-disabled="true"]'),
+    ).toHaveCount(0);
   });
 
   test("et språkbytte til engelsk maler skjermen om, og lagres", async ({
@@ -222,11 +240,9 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       goto: "settings",
     });
 
-    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("gear-language-en").click();
 
-    await expect(page.getByTestId("setup-language-lede")).toHaveText(
-      "The language the app uses.",
-    );
+    await expect(page.getByTestId("gear-dialog")).toContainText("Settings");
     await expect
       .poll(async () => (await storedSettings(page)).language)
       .toBe("en");
@@ -257,8 +273,10 @@ test.describe("en innstilling som ikke kunne lagres", () => {
         videoEnabled: true,
         keepSeparateAudio: true,
       },
-      goto: "settings",
+      // E3: «egen lydfil» bor i kamera-popoveren ved opptaksknappen.
+      goto: "record",
     });
+    await page.getByTestId("record-camera-more").click();
 
     const toggle = page.getByTestId("camera-keep-audio-control-input");
     await expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -280,30 +298,35 @@ test.describe("en innstilling som ikke kunne lagres", () => {
 });
 
 test.describe("«Ta opp automatisk»", () => {
-  test("av til på setter søndag 11:00 · 90 min, og skriver en ekte slot", async ({
+  test("Auto- og Oppstart-flisene skriver hver sin nøkkel, og ingen tid finnes på", async ({
     page,
   }) => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, slots: [] },
+      settings: {
+        ...SETTLED_SETTINGS,
+        autoRecordEnabled: false,
+        launchAtLogin: false,
+        slots: [],
+      },
       goto: "plan",
     });
 
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
-    );
-    await page.getByTestId("setup-auto-toggle").click();
-
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Søndag 11:00 · 90 min",
-    );
+    await page.getByTestId("strip-tile-auto").click();
     await expect
-      .poll(async () => (await storedSettings(page)).slots)
-      .toEqual([{ days: [6], start: "11:00", stop: "12:30", max: null }]);
-
+      .poll(async () => (await storedSettings(page)).autoRecordEnabled)
+      .toBe(true);
     // «Start automatisk med maskinen» hører til HER, ikke i en systemfane:
     // uten den skjer ikke det planlagte opptaket etter en omstart.
-    await expect(page.getByTestId("auto-launch")).toBeVisible();
+    await page.getByTestId("strip-tile-launch").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).launchAtLogin)
+      .toBe(true);
+    await expect(page.getByTestId("strip-tile-launch")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect((await storedSettings(page)).slots).toEqual([]);
   });
 
   test("å slå av beholder ALLE tidspunktene — det er et flagg, ikke en sletting", async ({
@@ -328,9 +351,9 @@ test.describe("«Ta opp automatisk»", () => {
       goto: "plan",
     });
 
-    await page.getByTestId("setup-auto-toggle").click();
+    await page.getByTestId("strip-tile-auto").click();
     await expect(page.getByTestId("dialog")).toHaveCount(0);
-    await expect(page.getByTestId("setup-auto-toggle")).toHaveAttribute(
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
       "aria-checked",
       "false",
     );

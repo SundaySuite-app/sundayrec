@@ -48,6 +48,8 @@ import { checkChannels } from "./channel-check";
 import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import { seekTo, teardownPlayback } from "./playback";
+import { resetSuggestions } from "./silence-suggest";
+import { rememberPeaks } from "../pages/library/peaks-store";
 import { fitAll } from "./viewport";
 import { scheduleDraw } from "./waveform";
 
@@ -122,6 +124,7 @@ function closeFileNow(): void {
   teardownPlayback();
   resetSound();
   resetExport();
+  resetSuggestions();
   resetFileState();
   resetHistoryMirror();
   loadState.value = "idle";
@@ -208,6 +211,7 @@ async function openFileNow(
   teardownPlayback();
   resetSound();
   resetExport();
+  resetSuggestions();
   resetFileState();
   resetHistoryMirror();
 
@@ -281,6 +285,7 @@ async function openFileNow(
   if (seq !== E.loadSeq) return;
   if (peaks && Array.isArray(peaks.peaks) && peaks.peaks.length > 0) {
     E.peaks = Float32Array.from(peaks.peaks);
+    rememberPeaks(E.filePath, E.peaks);
     if (seconds <= 0) seconds = E.peaks.length / 100;
   }
 

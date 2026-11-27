@@ -14,8 +14,8 @@ import {
 // `decisions-core.test.ts`), og skjermene har sine egne spec. Det bare denne
 // kan bevise er SKJØTENE:
 //
-//   1. en seksjon på INNSTILLINGER lagrer der man står, og verdien står i
-//      basen (kvalitet, mappe, varsler),
+//   1. en innstilling lagrer der man står, og verdien står i basen
+//      (kvalitet, mappe — i lydarket),
 //   2. TA OPP peker dit det som er flyttet: «Endre» på kilden, banneret om lite
 //      plass og linja om neste planlagte opptak,
 //   3. dyplenkene (`?goto=settings:sound`, `?goto=plan:auto`) lander på siden og
@@ -49,12 +49,15 @@ test.describe("innstillingene lagrer der man står", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...CHOSEN, format: "flac", bitrate: "128" },
-      goto: "settings",
+      // E4: kvalitet og mappe står under «Mer» i lydarket.
+      goto: "settings:folder",
     });
 
-    // Den EKTE skjermen, med sin egen lede: Innstillinger er ikke innbygget.
     await expect(page.getByTestId("setup-quality")).toBeVisible();
-    await expect(page.getByTestId("setup-quality-lede")).toBeVisible();
+    await expect(page.getByTestId("quality-choices-row-flac")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await page.getByTestId("quality-choices-row-mp3").click();
     await expect(page.getByTestId("quality-receipt")).toHaveText("Lagret ✓");
@@ -66,61 +69,6 @@ test.describe("innstillingene lagrer der man står", () => {
       .toEqual(["mp3", "256"]);
   });
 
-  test("varsler lagrer der man står", async ({ page }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: { ...CHOSEN, notifyStart: true, notifyStop: true },
-      goto: "settings",
-    });
-
-    await page.getByTestId("notify-os-control-input").click();
-    await expect(page.getByTestId("notify-os-receipt")).toHaveText("Lagret ✓");
-    // Én bryter, to nøkler.
-    await expect
-      .poll(async () => {
-        const stored = await storedSettings(page);
-        return [stored.notifyStart, stored.notifyStop];
-      })
-      .toEqual([false, false]);
-  });
-
-  test("varsler slått av i OS-et sier det, og peker på bryteren", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: {
-        ...FIXTURES,
-        notification_permission: "denied",
-        notification_request_permission: "denied",
-        notification_open_settings: fn(`() => {
-          window.__E2E_OPENED__ = (window.__E2E_OPENED__ ?? 0) + 1;
-        }`),
-        notification_send_test: fn(`() => {
-          window.__E2E_TESTED__ = (window.__E2E_TESTED__ ?? 0) + 1;
-        }`),
-      },
-      settings: CHOSEN,
-      goto: "settings",
-    });
-
-    await expect(page.getByTestId("notify-permission")).toContainText(
-      "Slått av for SundayRec.",
-    );
-    await page.getByTestId("notify-open-settings").click();
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_OPENED__))
-      .toBe(1);
-
-    // Sendt er ikke det samme som vist — teksten sier det.
-    await page.getByTestId("notify-send-test").click();
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_TESTED__))
-      .toBe(1);
-    await expect(page.getByTestId("toast-host")).toContainText(
-      "varsler er slått av",
-    );
-  });
-
   test("lagringsmappen sier hvor opptakene havner", async ({ page }) => {
     await boot(page, {
       fixtures: {
@@ -128,7 +76,7 @@ test.describe("innstillingene lagrer der man står", () => {
         get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500e9 },
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
 
     await expect(page.getByTestId("folder-path")).toHaveText(
@@ -153,7 +101,7 @@ test.describe("innstillingene lagrer der man står", () => {
         }`),
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
     await page.getByTestId("folder-pick").click();
 
@@ -180,7 +128,7 @@ test.describe("innstillingene lagrer der man står", () => {
         }`),
       },
       settings: CHOSEN,
-      goto: "settings",
+      goto: "settings:folder",
     });
     await page.getByTestId("folder-pick").click();
 
@@ -188,51 +136,6 @@ test.describe("innstillingene lagrer der man står", () => {
     await expect(page.getByTestId("folder-path")).toHaveText(
       "/Users/frivillig/SundayRec",
     );
-  });
-
-  test("kamera-bryteren styrer kroppen, uten en utfoldingsknapp", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: { ...CHOSEN, videoEnabled: false },
-      goto: "settings",
-    });
-
-    await expect(page.getByTestId("setup-camera-expand")).toHaveCount(0);
-    await expect(page.getByTestId("setup-camera-body")).toHaveCount(0);
-    await page.getByTestId("setup-camera-toggle").click();
-    await expect(page.getByTestId("setup-camera-body")).toBeVisible();
-  });
-
-  test("seksjonene er der, og innholdslista hopper til dem", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: CHOSEN,
-      goto: "settings",
-    });
-    for (const key of [
-      "sound",
-      "camera",
-      "folder",
-      "notify",
-      "language",
-      "recording",
-      "updates",
-      "privacy",
-      "about",
-    ]) {
-      await expect(page.getByTestId(`setup-sec-${key}`)).toBeVisible();
-      await expect(page.getByTestId(`setup-toc-${key}`)).toBeVisible();
-    }
-    // Tidsplanen bor på PLAN.
-    await expect(page.getByTestId("plan-week")).toHaveCount(0);
-    await expect(page.getByTestId("plan-wake")).toHaveCount(0);
-
-    await page.getByTestId("setup-toc-about").click();
-    await expect(page.locator("#sec-about-h")).toBeFocused();
   });
 });
 
@@ -250,8 +153,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
 
     await page.getByTestId("record-change-source").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -271,8 +174,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
     });
     await page.getByTestId("record-choose-sound").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("sound-devices")).toBeVisible();
   });
@@ -293,8 +196,8 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
 
     await page.getByTestId("banner-low-disk-free").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source-more",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -314,42 +217,48 @@ test.describe("TA OPP peker dit det som er flyttet", () => {
     // Ingenting planlagt: linja sier det, og tilbyr planen.
     await expect(page.getByTestId("record-next-none")).toBeVisible();
     await page.getByTestId("record-next-plan").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
-    await expect(page.getByTestId("setup-auto")).toBeVisible();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-panel",
+      "strip",
+    );
+    await expect(page.getByTestId("strip-tiles")).toBeVisible();
+    await expect(page.getByTestId("plan-week")).toBeVisible();
   });
 });
 
-test.describe("PLAN", () => {
-  test("bryteren slår «Ta opp automatisk» på med søndag 11:00, og blokken står i uka", async ({
+test.describe("PLAN (ukestripa)", () => {
+  test("Auto-flisa skriver bare flagget — den finner ikke på en tid", async ({
     page,
   }) => {
     await boot(page, {
       fixtures: FIXTURES,
-      settings: { ...CHOSEN, slots: [] },
+      settings: { ...CHOSEN, autoRecordEnabled: false, slots: [] },
       goto: "plan",
     });
 
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Legg inn tidene i uka under. Maskinen vekkes og starter selv.",
-    );
     // Uka er der, tom, og sier det.
     await expect(page.getByTestId("plan-week")).toBeVisible();
     await expect(page.getByTestId("plan-empty")).toBeVisible();
     await expect(page.getByTestId("plan-block")).toHaveCount(0);
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
 
-    await page.getByTestId("setup-auto-toggle").click();
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Søndag 11:00 · 90 min",
+    await page.getByTestId("strip-tile-auto").click();
+    await expect
+      .poll(async () => (await storedSettings(page)).autoRecordEnabled)
+      .toBe(true);
+    // Flagget er på, men flisen LYSER ikke i en tom uke: den sier at den
+    // trenger tider.
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
+      "aria-checked",
+      "false",
     );
-    await expect(page.getByTestId("plan-block")).toHaveCount(1);
-    await expect(page.getByTestId("plan-block")).toHaveAttribute(
-      "data-day",
-      "6",
-    );
-    await expect(page.getByTestId("plan-block")).toContainText("11:00–12:30");
-    // Vekkingen står på samme side, og skjemaet fra før er borte.
-    await expect(page.getByTestId("plan-wake")).toBeVisible();
-    await expect(page.getByTestId("auto-day")).toHaveCount(0);
+    await expect(page.getByTestId("strip-auto-needs-times")).toBeVisible();
+    // Ingen tid ble funnet på: planen er fortsatt tom.
+    await expect(page.getByTestId("plan-block")).toHaveCount(0);
+    expect((await storedSettings(page)).slots).toEqual([]);
   });
 });
 
@@ -362,8 +271,8 @@ test.describe("dyplenkene lander på siden de navngir", () => {
     });
 
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "settings",
+      "data-panel",
+      "source",
     );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
@@ -383,13 +292,17 @@ test.describe("dyplenkene lander på siden de navngir", () => {
       goto: "plan:auto",
     });
 
-    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "plan");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-panel",
+      "strip",
+    );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
       "auto",
     );
-    await expect(page.getByTestId("setup-auto-summary")).toHaveText(
-      "Søndag 11:00 · 90 min",
+    await expect(page.getByTestId("record-next-plan")).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
     await expect(page.getByTestId("plan-block")).toHaveCount(1);
   });

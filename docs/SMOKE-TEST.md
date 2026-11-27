@@ -2,9 +2,37 @@
 
 A hands-on checklist for what the headless gate cannot prove: it needs a real
 display, sound card, camera and (for the schedule) a machine that can sleep.
-Written for the «rent bord» core: four pages — **Ta opp**, **Opptak**, **Plan**,
-**Innstillinger**. Everything removed in «rent bord» (see [PLAN.md](PLAN.md)) has
-no section here; older versions of this runbook are in git history.
+Written for the «én flate» app (v0.32.0-beta.1): two surfaces — **Ta opp** and
+**Opptak** — and the gear. Everything removed in «rent bord» and «én flate» (see
+[PLAN.md](PLAN.md)) has no section here; older versions of this runbook are in
+git history.
+
+### Where did it go? (older runbooks and notes → today)
+
+Notes, bug reports and the [RIG-DAY.md](RIG-DAY.md) walk-throughs written before
+v0.32 name the old pages. This is the translation:
+
+| Before («rent bord», v0.31)                                      | Now («én flate»)                                                                                           |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Plan** page (week view, Auto, Oppstart)                        | **Ukestripa** at the bottom of Ta opp: the little calendar button opens it; the four tiles + the week view |
+| «Ta opp automatisk», «Start med maskinen»                        | Tiles **Auto** and **Oppstart** in the strip                                                               |
+| Vekking of the machine, «Test vekking»                           | Tile **Vekk** + the corner button (popover: «Legg inn vekking», «Prøv vekking om 2 min», the log)          |
+| Innstillinger › Varsler                                          | Tile **Varsel** (on/off, reminder) + the corner button (OS status, «Send testvarsel»)                      |
+| Innstillinger › Lyd og kanaler                                   | **Lydarket**: tap the source chip on Ta opp (device, channel pairs, big L/R meter)                         |
+| Innstillinger › Lagringsmappe, Kvalitet                          | Lydarket › **Mer**: the folder row and the quality cards (God / Best / Arkiv)                              |
+| Innstillinger › Opptaksvalg                                      | Lydarket › Mer › the five tiles **Før, Stille, Del, Rydd, Maks**                                           |
+| Innstillinger › Kamera                                           | The camera button on Ta opp (on/off) and the small arrow on it (which camera, «egen lydfil»)               |
+| Innstillinger › Språk, Oppdatering, Personvern, Om/logg/lisenser | The **gear** (top right): four rows — Språk, Oppdatering, Anonym statistikk, Om                            |
+| Stop dialog «Stoppe opptaket?»                                   | **Hold** the red button for one second (VoiceOver/Narrator get the old confirmation instead)               |
+| Autostop «+ 15 min» / «Avbryt»                                   | **+30** and **∞** on the stop line in the recording view                                                   |
+| First-run wizard (three steps)                                   | Three **hint bubbles** on Ta opp (source → folder → scheduled recordings)                                  |
+| Export dialog / page                                             | **Eksportarket**: a side sheet from the right; format cards, three tiles (Podkast, Intro, Outro), «Lagre»  |
+| Trash tab on Opptak                                              | The trash **icon** top right of Opptak (with the count); the arrow inside goes back                        |
+
+Old deep links keep working: `?goto=plan` opens the strip; `settings:sound`,
+`:engine`, `:folder`, `:autodelete`, `:recording`, `:quality` open the sound
+sheet (with «Mer» where the setting lives); `settings:notify`/`:notifications`
+open the strip; `settings:camera` lands on Ta opp.
 
 > Legend: a `VERIFIED-BY:` line is a claim the automated suite already proves
 > (`npm run smoke-verified` checks that the test still exists). What is left
@@ -31,14 +59,14 @@ Expect both green before spending time on a rig.
 
 ## 2. First launch and first run
 
-- [ ] Fresh install (no `onboardingDone`): the three-step first-run sequence opens; a settled install goes straight to **Ta opp**.
-- [ ] Step 1 (sound card and channels): pick the real device, speak into the mic — the meter moves and «Neste» opens only once sound is heard. «Fortsett uten lyd» is the emergency exit.
-- [ ] Step 2: «Velg mappe» opens the native folder dialog; a folder the app refuses (its own data folder) is refused with a sentence.
-- [ ] Step 3: add a weekly slot in the week view — «Ta opp automatisk» and «Start automatisk med maskinen» switch on; «Senere» skips the step. Quit mid-sequence and relaunch: first run comes back.
+- [ ] Fresh install (no `onboardingDone`): three hint bubbles sit on **Ta opp** (sound source → folder → scheduled recordings); a settled install goes straight to **Ta opp**.
+- [ ] Hint 1 (sound source): pick the real device, speak into the mic — the meter moves and «Neste» opens only once sound is heard. «Fortsett uten lyd» is the emergency exit.
+- [ ] Hint 2: the sound sheet opens with «Mer» and the folder row pulses; «Velg mappe» opens the native folder dialog; a folder the app refuses (its own data folder) is refused with a sentence.
+- [ ] Hint 3: the calendar button pulses; add a weekly slot in the week strip — «Auto» and «Oppstart» switch on. «Ferdig» (or the ✕) ends first run; quit before it and relaunch: the hints come back.
 - [ ] The consent card on **Ta opp** asks once; «Nei takk» is as good as «Ja».
 
-- VERIFIED-BY: e2e/first-run.spec.ts::den første tiden slår på «Ta opp automatisk» og automatisk start
-- VERIFIED-BY: e2e/first-run.spec.ts::bunnlinja forlater sekvensen, og chippen fører tilbake til steget man sto på
+- VERIFIED-BY: e2e/strip.spec.ts::knappen åpner stripa; første blokk slår på Auto og Oppstart; lukket stripe viser «Neste»
+- VERIFIED-BY: e2e/first-run.spec.ts::hint 2 åpner lydarket med «Mer» og pulserer mappe-raden; hint 3 peker på kalenderen; «Ferdig» lagrer
 - VERIFIED-BY: e2e/onboarding.spec.ts::first run shows the wizard; a settled install does not
 - VERIFIED-BY: e2e/onboarding.spec.ts::the consent step exists, and says what is and is not collected
 - VERIFIED-BY: e2e/onboarding.spec.ts::«Ja, del anonymt» grants consent and finishes the wizard
@@ -49,8 +77,11 @@ Expect both green before spending time on a rig.
 
 ## 3. Ta opp — record 30 s
 
-- [ ] Source and meter on the left, the big **Start** on a real sound card; the camera picture on the right when camera is on.
-- [ ] Start → overlay → Stop (confirm) → a history row and a receipt with «Vis i Finder» / «Rediger».
+- [ ] The source chip shows the real device and a live L/R mini-meter; the big breathing button starts the recording. Camera on: the picture fills the surface, the meter stands vertically at the edge, the small record button sits over the picture.
+- [ ] The source chip opens the sound sheet; the quality cards and the five tiles under «Mer» change what the next recording does (check «Maks» ends on «Av», never wraps to 60 min).
+- [ ] Start → the recording view: only the red «● Tar opp», the clock, the meter, «Hold» and the stop line. **Hold** the red button for one second to stop (a short press does nothing); with a keyboard hold Space/Enter; with VoiceOver/Narrator the button asks «Stoppe opptaket?» instead.
+- [ ] A scheduled recording with an end time shows «Stopper 12:30» with **+30** and **∞**; «+30» moves the time, «∞» turns it into «Til du stopper». Tab stays on Hold / +30 / ∞ and never reaches the page behind.
+- [ ] Stop → a history row and a receipt with «Vis i Finder» / «Rediger».
 - [ ] Long recording with «Del opp»: no audio lost at the file change (audio-only); a video recording has a short pause at the file change.
 - [ ] Unplug the interface mid-recording: the dead-channel and device warnings say so in plain words.
 
@@ -66,7 +97,12 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::a_renderer_supplied_path_never_reaches_the_engine
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_matches_what_main_planned
 - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_equals_the_old_plan_then_start_round_trip
-- VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
+- VERIFIED-BY: e2e/recorder.spec.ts::stop needs a one-second hold and then holds a finalizing overlay
+- VERIFIED-BY: e2e/record.spec.ts::å holde «Hold» i ett sekund stopper — én gang
+- VERIFIED-BY: e2e/record.spec.ts::skjermleser: et klikk uten pekertrykk spør først; Escape lar opptaket gå, «Stopp» stopper
+- VERIFIED-BY: e2e/record.spec.ts::Tab går bare mellom knappene i overlegget; skallet bak er inert
+- VERIFIED-BY: app/pages/record/stop.test.ts::spør først, og stopper på «Stopp»
+- VERIFIED-BY: app/pages/record/sheet-more.test.ts::går til «Av» (0) etter det største, ikke til det minste
 - VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
 - VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
 - VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id
@@ -78,9 +114,11 @@ Expect both green before spending time on a rig.
 ## 4. Opptak — list, editor and export
 
 - [ ] The list shows the recording; a click opens the editor on the same page, the back arrow returns to the list. «Åpne fil…» and a dropped file open too.
-- [ ] Waveform with two handles; cut, undo, play before/after. «Podkastklar lyd» on by default (−16 LUFS), off = as recorded.
-- [ ] «Eksporter» opens the sheet **as a sheet** (focus lands in it and returns on close — check in WKWebView and WebView2). Intro/outro via the native file dialog.
-- [ ] Trash tab: moved recordings arrive with their sidecar; «Tøm papirkurven» confirms with the count.
+- [ ] Waveform with two handles: drag across it for a selection with a «Klipp» bubble, undo, play before/after. «Podkastklar lyd» on by default (−16 LUFS), off = as recorded.
+- [ ] **Silence suggestions:** the button shows dashed regions; nothing is cut until you accept one («Godta») or all; «Avvis» removes the suggestion.
+- [ ] A video recording shows a large 16:9 picture that follows the playhead (play, seek, pause) — check **H.264 playback in WKWebView (Mac) and WebView2 (Windows)**; an audio recording has no picture.
+- [ ] «Eksporter» (top right) opens the sheet **from the right** (focus lands in it and returns on close — check in WKWebView and WebView2). MP4 «Video» is a card only when the recording has a picture and dims Intro/Outro. Intro/outro via the native file dialog: choose, switch, and **«Fjern»** in the corner menu.
+- [ ] Trash icon (top right, with the count): moved recordings arrive with their sidecar; «Tøm papirkurven» confirms with the count; the arrow goes back.
 
 - VERIFIED-BY: e2e/library.spec.ts::«Vis i Finder» på en rad sender radens id til Rust, aldri stien
 - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_recording_is_revealed_by_its_row_id_wherever_it_lies
@@ -143,11 +181,13 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::the_jingle_picker_accepts_the_common_audio_formats
 - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_podcast_export_levels_intro_and_outro_like_the_sermon_or_skips
 - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_mastered_export_levels_the_sermon_not_the_jingles_or_skips
-- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti
+- VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro: velg, se navnet, slå av — og eksporten sender en bryter, ikke en sti
 - VERIFIED-BY: e2e/export-sheet.spec.ts::intro og outro huskes til neste gang: etter en omlasting står de der
+- VERIFIED-BY: e2e/export-sheet.spec.ts::«Fjern» i hjørnemenyen glemmer fila, og eksporten går uten den
+- VERIFIED-BY: e2e/editor-cuts.spec.ts::knappen viser stiplede forslag, og ingenting er klippet
 - VERIFIED-BY: e2e/export-sheet.spec.ts::en fil Rust avviser blir en setning, og forrige valg står
 - VERIFIED-BY: e2e/export-sheet.spec.ts::en jingle som er borte når eksporten starter, sier det med egne ord
-- VERIFIED-BY: e2e/export-sheet.spec.ts::med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes
+- VERIFIED-BY: e2e/export-sheet.spec.ts::med MP4-kortet valgt er jingle-flisene dempet og sier hvorfor, og ingen bryter sendes
 - VERIFIED-BY: app/editor/jingles-core.test.ts::video får aldri jingler, selv med begge valgt
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_recording_round_trips_as_a_token_and_shows_its_name
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_source_token_is_refused_with_its_own_code
@@ -190,12 +230,15 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for
 - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_command_with_a_forged_token_never_touches_the_disk
 
-## 5. Plan — week view and wake
+## 5. Ukestripa — week view, tiles and wake
 
+- [ ] No fixed times: only the round calendar button. Times but «Auto» off: the closed strip stays, dimmed, saying «Automatisk opptak er av» (not the bare button). «Auto» on with an empty week does not light up and says «Ingen tider».
 - [ ] Drag in an empty cell to add a slot (quarter-hour snapping), drag a block to move it, drag an edge to stretch; click opens the small editor. Keyboard: arrows, Shift + arrows, Enter, Delete.
 - [ ] Touch: drag works on a touch screen / pen in the real Tauri window (not just a mouse).
 - [ ] Scheduled start/stop on a real machine: a slot a few minutes ahead starts and stops by itself; the machine wakes from sleep for it (macOS admin prompt once; Windows wake timers).
-- [ ] «Test vekking» is blocked during a recording, with a reason.
+- [ ] «Prøv vekking» (the Vekk tile's corner popover) is blocked during a recording, with a reason.
+- [ ] Varsel tile: the corner popover shows the OS status; «Send testvarsel» produces a real system notification (macOS asks for permission the first time).
+- [ ] «+30» / «∞» on a scheduled recording a few minutes ahead, on real hardware (the end really moves / really never comes).
 
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_stop_with_nothing_recording_is_not_announced
 - VERIFIED-BY: crates/sundayrec-core/src/wake.rs::a_wake_that_cannot_be_armed_is_told_to_the_operator
@@ -207,10 +250,12 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: src-tauri/src/wake/mod.rs::windows_clears_then_arms_one_waitable_timer_per_point
 - VERIFIED-BY: src-tauri/src/wake/mod.rs::engine_records_the_empty_key_so_a_re_add_re_registers
 - VERIFIED-BY: src-tauri/src/wake/mac_read.rs::live_iokit_read_is_callable_unprivileged
+- VERIFIED-BY: e2e/strip.spec.ts::tidene står, men Auto er av: lukket stripe sier det, dempet — ikke den bare knappen
+- VERIFIED-BY: e2e/strip.spec.ts::hjørneknappen viser status fra OS-et og sender et testvarsel
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra i en tom flate lager en tid, rundet til kvarter
 - VERIFIED-BY: e2e/plan-week.spec.ts::å dra en blokk til en annen dag og et annet klokkeslett flytter den
 - VERIFIED-BY: e2e/plan-week.spec.ts::bunnkanten endrer slutten, toppkanten starten
-- VERIFIED-BY: e2e/plan-week.spec.ts::et trykk på blokken åpner redigeringen; Lagre skriver eksakte tider og dag
+- VERIFIED-BY: e2e/plan-week.spec.ts::trykk på den valgte blokken åpner redigeringen; Lagre skriver eksakte tider og dag
 - VERIFIED-BY: e2e/plan-week.spec.ts::Slett fjerner tiden
 - VERIFIED-BY: e2e/plan-week.spec.ts::piler flytter, Skift + piler strekker, Enter åpner, Delete fjerner
 - VERIFIED-BY: e2e/plan-week.spec.ts::overlapp avvises med en setning, og tiden står der den var
@@ -224,18 +269,20 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: e2e/advanced.spec.ts::feilhistorikken viser hendelsene, og «Tøm» kaller SLETTEKOMMANDOEN
 - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::slots_round_trip_through_json
 
-## 6. Innstillinger
+## 6. Lydarket and the gear
 
-- [ ] Lyd og kanaler: device, channel pairs, the meter. A silent channel in the editor shows the dead-channel warning (check with a real mixer).
-- [ ] Camera, storage folder and format, notifications (OS permission off says so), language (no/en), recording options, updates (channel stable/beta), privacy (telemetry preview), log («Kopier siste logg») and licenses.
+- [ ] Sound sheet: device, channel pairs, the meter. A silent channel in the editor shows the dead-channel warning (check with a real mixer).
+- [ ] Sound sheet › Mer: storage folder and quality; camera (on Ta opp); notifications (OS permission off says so) in the strip.
+- [ ] The gear (top right) is a card over the page you came from: language (no/en), update (status; channel stable/beta; automatic), anonymous statistics (telemetry preview), and Om (log «Kopier siste logg», licenses). Esc closes it and focus returns to the gear.
 - [ ] Windows only: the database moves from Roaming to Local AppData on first launch after the update; a crash manifest from before the move is recovered.
 
+- VERIFIED-BY: e2e/gear.spec.ts::åpner et kort over siden man står på, med fire rader — og Esc lukker
 - VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksformatet lagrer BÅDE format og bitrate, og seksjonen står der
 - VERIFIED-BY: e2e/settings-plan.spec.ts::?goto=settings:sound lander på Lyd og kanaler
 - VERIFIED-BY: e2e/settings-plan.spec.ts::«Endre» på kilden fører til Lyd og kanaler i Innstillinger
 - VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksstart river måleren ut av TA OPP
 - VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
-- VERIFIED-BY: e2e/settings-plan.spec.ts::varsler slått av i OS-et sier det, og peker på bryteren
+- VERIFIED-BY: e2e/strip.spec.ts::slås varsler på mens OS-et har dem av, sier stripa det og tilbyr systeminnstillingene
 - VERIFIED-BY: crates/sundayrec-core/src/notify.rs::a_take_alert_reaches_the_os_only_when_nobody_is_looking
 - VERIFIED-BY: src-tauri/src/notify/take.rs::a_new_take_lets_every_kind_be_said_again
 - VERIFIED-BY: app/lib/api-shim-files.test.ts::en mappe som ikke finnes ennå, sies med vanlige ord — og huskes

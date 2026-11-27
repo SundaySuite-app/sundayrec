@@ -3,6 +3,9 @@
   right: var(--sp-7);
   /* Over bunnlinja OG handlingslinja: en stående feil skal ikke dekke Start. */
   bottom: calc(var(--bottombar-h) + var(--actionbar-h) + var(--sp-3));
+  /* Aldri høyere enn flaten mellom de to båndene (topplinja er 64 px). */
+  max-height: calc(100vh - var(--topbar-h) - var(--bottombar-h) - var(--sp-5));
+  overflow: hidden;
   z-index: var(--z-toast);
   display: grid;
   gap: var(--sp-3);

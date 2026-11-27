@@ -1,0 +1,86 @@
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: var(--scrim-sheet);
+  cursor: default;
+  border: 0;
+  animation: fadein var(--dur) var(--ease-out);
+}
+
+.sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  max-width: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--line-2);
+  box-shadow: -24px 0 60px var(--scrim-sheet);
+  transform: translateX(110%);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.open {
+  transform: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  flex: none;
+  padding: 0 var(--sp-4) 0 var(--sp-6);
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--gold);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.title span {
+  color: var(--ink);
+}
+
+.close {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-6) var(--sp-6);
+}
+
+/* Innholdet ruller; det krymper aldri for å få plass. */
+.body > * {
+  flex-shrink: 0;
+}

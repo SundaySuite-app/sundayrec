@@ -55,6 +55,8 @@ export interface CameraPreviewProps {
    * listefasene.
    */
   knownCamera?: boolean;
+  /** Fyll flaten rammen står i — se `CameraFrame`. */
+  fill?: boolean;
 }
 
 /** Hvor mange byte av en JPEG som leses for å finne størrelsen. */
@@ -63,6 +65,7 @@ const HEADER_BYTES = 2048;
 export function CameraPreview({
   testId = "record-camera-preview",
   knownCamera = false,
+  fill = false,
 }: CameraPreviewProps) {
   const s = settings.value;
   const enabled = s.videoEnabled === true;
@@ -142,6 +145,7 @@ export function CameraPreview({
       message={messageOf(view.key, savedName)}
       aspect={aspect}
       flip={flip}
+      fill={fill}
     >
       {/* Tom `alt`: et kamerabilde har ingen tekstversjon, og en påfunnet
           beskrivelse ville vært en påstand om noe vi ikke har sett. */}

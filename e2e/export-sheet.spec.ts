@@ -483,12 +483,12 @@ test.describe("eksportering — innhold", () => {
       }`),
     });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
       "true",
     );
-    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
       "Skrivebord",
     );
     await expect(page.getByTestId("editor-export-preview")).toContainText(
@@ -516,10 +516,13 @@ test.describe("eksportering — innhold", () => {
   }) => {
     await openThenExport(page, { editor_pick_output_folder: null });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-same")).toHaveAttribute(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
-      "true",
+      "false",
+    );
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
+      "Samme mappe",
     );
 
     await page.getByTestId("editor-export-go").click();
@@ -545,8 +548,8 @@ test.describe("eksportering — innhold", () => {
       }`),
     });
 
-    await page.getByTestId("editor-dest-row-pick").click();
-    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+    await page.getByTestId("editor-dest-row").click();
+    await expect(page.getByTestId("editor-dest-row")).toContainText(
       "USB-PINNE",
     );
     await page.getByTestId("editor-export-go").click();
@@ -555,9 +558,15 @@ test.describe("eksportering — innhold", () => {
       "Mappen du valgte, finnes ikke lenger",
     );
     // Valget står: målet bytter ikke til «Samme mappe» i det stille.
-    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
       "data-selected",
       "true",
+    );
+    // Pila på raden går tilbake til «Samme mappe».
+    await page.getByTestId("editor-dest-reset").click();
+    await expect(page.getByTestId("editor-dest-row")).toHaveAttribute(
+      "data-selected",
+      "false",
     );
   });
 
@@ -620,19 +629,21 @@ test.describe("eksportering — innhold", () => {
     };
   };
 
-  test("intro og outro: velg, se navnet, fjern — og eksporten sender en bryter, ikke en sti", async ({
+  test("intro og outro: velg, se navnet, slå av — og eksporten sender en bryter, ikke en sti", async ({
     page,
   }) => {
     await openThenExport(page, JINGLE_FIXTURES());
     const intro = page.getByTestId("export-jingle-intro-name");
     const outro = page.getByTestId("export-jingle-outro-name");
-    await expect(intro).toHaveText("Ingen");
-    await expect(outro).toHaveText("Ingen");
-    await expect(page.getByTestId("export-jingle-intro-remove")).toHaveCount(0);
+    // Uten fil: «+ Velg fil», og ingen bytt-fil-knapp.
+    await expect(intro).toHaveText("+ Velg fil");
+    await expect(outro).toHaveText("+ Velg fil");
+    await expect(page.getByTestId("export-jingle-intro-pick")).toHaveCount(0);
 
-    await page.getByTestId("export-jingle-intro-pick").click();
+    // Å trykke flisen åpner velgeren.
+    await page.getByTestId("export-jingle-intro-tile").click();
     await expect(intro).toHaveText("Velkommen.wav");
-    await page.getByTestId("export-jingle-outro-pick").click();
+    await page.getByTestId("export-jingle-outro-tile").click();
     await expect(outro).toHaveText("Utgang.mp3");
     // Velgeren får INGENTING fra siden å styre etter.
     const picks = await page.evaluate(
@@ -641,18 +652,33 @@ test.describe("eksportering — innhold", () => {
           .__E2E_PICKS__,
     );
     expect(picks.map((p) => p.args)).toEqual([null, null]);
-    // Knappene sier hvilken rad de hører til.
+    // Med fil er flisen en bryter (på), og den lille mappeknappen sier hvilken
+    // rad den hører til.
+    await expect(page.getByTestId("export-jingle-intro-tile")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("export-jingle-outro-more")).toHaveAttribute(
+      "aria-label",
+      "Mer for Outro",
+    );
+    await page.getByTestId("export-jingle-outro-more").click();
     await expect(page.getByTestId("export-jingle-outro-pick")).toHaveAttribute(
       "aria-label",
-      "Velg lydfil for Outro",
+      "Velg en annen fil for Outro",
     );
-    await expect(
-      page.getByTestId("export-jingle-intro-remove"),
-    ).toHaveAttribute("aria-label", "Fjern Intro");
+    await page.keyboard.press("Escape");
+    // Esc lukker bare menyen, ikke arket.
+    await expect(page.getByTestId("export-jingle-outro-menu")).toHaveCount(0);
+    await expect(page.getByTestId("export-jingle-outro-tile")).toBeVisible();
 
-    // Fjern outroen; introen blir stående.
-    await page.getByTestId("export-jingle-outro-remove").click();
-    await expect(outro).toHaveText("Ingen");
+    // Trykk på outro-flisen slår den AV uten å glemme fila.
+    await page.getByTestId("export-jingle-outro-tile").click();
+    await expect(page.getByTestId("export-jingle-outro-tile")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await expect(outro).toHaveText("Utgang.mp3");
     await expect(intro).toHaveText("Velkommen.wav");
 
     await page.getByTestId("editor-export-go").click();
@@ -668,11 +694,56 @@ test.describe("eksportering — innhold", () => {
     expect(Object.keys(sent).some((k) => /path/i.test(k))).toBe(false);
   });
 
+  test("mappeknappen i hjørnet bytter fil, og slår flisen på igjen", async ({
+    page,
+  }) => {
+    await openThenExport(page, JINGLE_FIXTURES());
+    await page.getByTestId("export-jingle-intro-tile").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+    await page.getByTestId("export-jingle-intro-tile").click();
+    await expect(page.getByTestId("export-jingle-intro-tile")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await page.getByTestId("export-jingle-intro-more").click();
+    await page.getByTestId("export-jingle-intro-pick").click();
+    await expect(page.getByTestId("export-jingle-intro-tile")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("«Fjern» i hjørnemenyen glemmer fila, og eksporten går uten den", async ({
+    page,
+  }) => {
+    await openThenExport(page, JINGLE_FIXTURES());
+    await page.getByTestId("export-jingle-intro-tile").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "Velkommen.wav",
+    );
+    await page.getByTestId("export-jingle-intro-more").click();
+    await page.getByTestId("export-jingle-intro-remove").click();
+    await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
+      "+ Velg fil",
+    );
+    await expect(page.getByTestId("export-jingle-intro-more")).toHaveCount(0);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.useIntro).toBe(false);
+  });
+
   test("intro og outro huskes til neste gang: etter en omlasting står de der", async ({
     page,
   }) => {
     await openThenExport(page, JINGLE_FIXTURES());
-    await page.getByTestId("export-jingle-intro-pick").click();
+    await page.getByTestId("export-jingle-intro-tile").click();
     await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
       "Velkommen.wav",
     );
@@ -699,7 +770,7 @@ test.describe("eksportering — innhold", () => {
       "Velkommen.wav",
     );
     await expect(page.getByTestId("export-jingle-outro-name")).toHaveText(
-      "Ingen",
+      "+ Velg fil",
     );
   });
 
@@ -707,9 +778,9 @@ test.describe("eksportering — innhold", () => {
     await openThenExport(page, {
       settings_pick_editor_intro: null,
     });
-    await page.getByTestId("export-jingle-intro-pick").click();
+    await page.getByTestId("export-jingle-intro-tile").click();
     await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
-      "Ingen",
+      "+ Velg fil",
     );
     await expect(page.getByTestId("editor-export-error")).toHaveCount(0);
   });
@@ -722,12 +793,12 @@ test.describe("eksportering — innhold", () => {
         throw { code: "validation", message: "validation: clip_refused: that file cannot be used as an intro or outro" };
       }`),
     });
-    await page.getByTestId("export-jingle-intro-pick").click();
+    await page.getByTestId("export-jingle-intro-tile").click();
     await expect(page.getByTestId("editor-export-error")).toContainText(
       "kan ikke brukes som intro eller outro",
     );
     await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
-      "Ingen",
+      "+ Velg fil",
     );
   });
 
@@ -745,7 +816,7 @@ test.describe("eksportering — innhold", () => {
     );
   });
 
-  test("med video er jingle-radene dempet og sier hvorfor, og ingen bryter sendes", async ({
+  test("med MP4-kortet valgt er jingle-flisene dempet og sier hvorfor, og ingen bryter sendes", async ({
     page,
   }) => {
     await openThenExport(page, {
@@ -759,13 +830,17 @@ test.describe("eksportering — innhold", () => {
         sampleRate: 48_000,
       },
     });
-    await page.getByTestId("export-jingle-intro-pick").click();
+    await page.getByTestId("export-jingle-intro-tile").click();
     await expect(page.getByTestId("export-jingle-intro-name")).toHaveText(
       "Velkommen.wav",
     );
-    await page.getByTestId("editor-video-toggle").click();
+    await page.getByTestId("editor-format-row-mp4").click();
     await expect(page.getByTestId("export-jingles-video-note")).toBeVisible();
-    await expect(page.getByTestId("export-jingle-intro-pick")).toHaveAttribute(
+    await expect(page.getByTestId("export-jingle-intro-tile")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(page.getByTestId("export-jingle-intro-more")).toHaveAttribute(
       "aria-disabled",
       "true",
     );
@@ -778,5 +853,15 @@ test.describe("eksportering — innhold", () => {
     );
     expect(sent.useIntro).toBe(false);
     expect(sent.useOutro).toBe(false);
+  });
+
+  test("«Lagre» ender i en hake som spretter inn og sier «Lagret»", async ({
+    page,
+  }) => {
+    await openThenExport(page);
+    await expect(page.getByTestId("editor-export-go")).toHaveText("Lagre");
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-saved")).toBeVisible();
+    await expect(page.getByTestId("editor-saved")).toContainText("Lagret");
   });
 });

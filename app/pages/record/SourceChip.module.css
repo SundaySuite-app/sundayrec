@@ -1,0 +1,50 @@
+.wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 52px;
+  padding: 0 var(--sp-4) 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--line-2);
+  background: var(--raised);
+}
+
+.chipIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  color: var(--gold);
+}
+
+.name {
+  font-size: var(--fs-md);
+}
+
+.pair {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+/* Første gang: hintboblen peker på brikka (`FirstRunHints`). */
+.wrap[data-spot="true"] .chip {
+  animation: spot 1.5s ease-out infinite;
+}

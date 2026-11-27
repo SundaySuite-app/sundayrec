@@ -49,9 +49,12 @@ function componentFiles(): string[] {
   return out;
 }
 
-/** Hvert `<VuMeter …/>`-element i en kilde, som råtekst. */
+/** Hvert `<VuMeter …/>`- og `<StereoMeter …/>`-element i en kilde, som råtekst
+ *  (E3: den nye hvilemåleren deler den samme strømmen og samme regel). */
 function vuMeterElements(source: string): string[] {
-  return [...source.matchAll(/<VuMeter\b[\s\S]*?\/>/g)].map((m) => m[0]);
+  return [...source.matchAll(/<(?:VuMeter|StereoMeter)\b[\s\S]*?\/>/g)].map(
+    (m) => m[0],
+  );
 }
 
 const rel = (p: string): string => relative(REPO_ROOT, p);
@@ -73,6 +76,8 @@ describe("VuMeter — hvert kallsted har tatt stilling til `off`", () => {
         // `source=` er unntaket: den måleren leser opptaksmotorens egen
         // telemetri og skal vise noe mens det tas opp.
         if (/\bsource=/.test(element)) continue;
+        // …og `live="recording"` er StereoMeters eget `source=`.
+        if (/\blive="recording"/.test(element)) continue;
         if (!/\boff=/.test(element)) offenders.push(rel(file));
       }
     }

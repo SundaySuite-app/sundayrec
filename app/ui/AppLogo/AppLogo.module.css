@@ -24,3 +24,9 @@
      den blir rammen noen piksler høyere enn merket og radien sitter skjevt. */
   display: block;
 }
+
+/* `bare`: ingen flis å runde av — og ingen klipp som kan skjære buene. */
+.bare {
+  border-radius: 0;
+  overflow: visible;
+}

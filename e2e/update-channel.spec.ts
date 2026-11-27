@@ -14,8 +14,8 @@ import {
 // deleted the pointer moves by changing the path and nothing else. The legacy
 // file stays where it is and stays green.
 //
-// What changed is the DOM only — `#opt-update-channel` is
-// `adv-update-channel-control-input` in `app/pages/settings/advanced/UpdateRow.tsx`,
+// What changed is the DOM only — `#opt-update-channel` is the Stabil/Beta
+// segmented control (`gear-channel-*`) in `app/pages/settings/gear/UpdateRow.tsx`,
 // and the dialog is the shared `DialogHost`. The assertion that matters is
 // unchanged: the beta opt-in must reach the STORE, because the backend is the
 // only reader that counts (`update/mod.rs::current_channel` reads
@@ -32,9 +32,7 @@ test.describe("update channel", () => {
     });
 
     // The owner's exact journey: pick Beta …
-    await page
-      .getByTestId("adv-update-channel-control-input")
-      .selectOption("beta");
+    await page.getByTestId("gear-channel-beta").click();
 
     // … answer the guard's «Ja, bruk beta» …
     const confirmBtn = page.getByTestId("dialog-ok");
@@ -64,10 +62,12 @@ test.describe("update channel", () => {
       settings: { ...SETTLED_SETTINGS, updateChannel: "beta" },
       goto: "settings",
     });
-    const select = page.getByTestId("adv-update-channel-control-input");
-    await expect(select).toHaveValue("beta");
+    await expect(page.getByTestId("gear-channel-beta")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
 
-    await select.selectOption("stable");
+    await page.getByTestId("gear-channel-stable").click();
 
     // Moving back to the safe channel is guard-free by design.
     await expect(page.getByTestId("dialog")).toHaveCount(0);

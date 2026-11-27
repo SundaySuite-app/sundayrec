@@ -36,6 +36,28 @@ describe("jingleFlags", () => {
     });
   });
 
+  it("en fil som er slått av sender ingen bryter, den andre er urørt", () => {
+    const both = {
+      editorIntroPath: "/m/intro.wav",
+      editorOutroPath: "/m/outro.wav",
+    };
+    expect(jingleFlags(false, both, { intro: false, outro: true })).toEqual({
+      useIntro: false,
+      useOutro: true,
+    });
+    expect(jingleFlags(false, both, { intro: true, outro: false })).toEqual({
+      useIntro: true,
+      useOutro: false,
+    });
+  });
+
+  it("«på» uten fil er fortsatt av", () => {
+    expect(jingleFlags(false, {}, { intro: true, outro: true })).toEqual({
+      useIntro: false,
+      useOutro: false,
+    });
+  });
+
   it("video får aldri jingler, selv med begge valgt", () => {
     expect(
       jingleFlags(true, {

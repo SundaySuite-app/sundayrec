@@ -57,6 +57,7 @@ import { spanText } from "../pages/record/span-text";
 import { Banner } from "../ui/Banner/Banner";
 import { ActionBar } from "../ui/ActionBar/ActionBar";
 import { Button } from "../ui/Button/Button";
+import { Icon } from "../ui/Icon/Icon";
 import { Tabs } from "../ui/Tabs/Tabs";
 import {
   canRedo,
@@ -82,25 +83,28 @@ import {
   loadError,
   loadState,
   playbackSource,
-  playheadSec,
-  playing,
   startedAtMs,
   type Step,
 } from "./model";
 import { byTestId, focusAfterRender } from "./focus";
-import { teardownPlayback, togglePlay } from "./playback";
+import { teardownPlayback } from "./playback";
 import {
-  PLAY_KEYS_ARIA,
-  playShortcutHint,
   REDO_KEYS_ARIA,
   redoShortcutHint,
   UNDO_KEYS_ARIA,
   undoShortcutHint,
 } from "./shortcut-labels";
+import {
+  acceptAllSuggestions,
+  suggestions,
+  suggestionsEmpty,
+  suggestSilences,
+} from "./silence-suggest";
 import { soundVisited } from "./sound";
 import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
 import { resultLine } from "./summary";
+import { Transport, VideoStage, hasVideo } from "./Transport";
 import { WaveformHost } from "./WaveformHost";
 import { longDateTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
@@ -202,23 +206,31 @@ function Workspace() {
         {step === "cut" ? <CutStep /> : <SoundStep />}
         <NextStep step={step} />
       </div>
-      {sheet ? <ExportSheet /> : null}
+      <ExportSheet open={sheet} />
     </>
   );
 }
 
-/** Steg 1 — canvasens 4.1, uendret fra P4a. */
+/**
+ * Steg 1 (E7): bildet først når opptaket har video, så bølgeformen.
+ *
+ * Med video står et stort 16:9-bilde midt på med transporten i en mørk stripe
+ * nederst i bildet, og bølgeformen er lavere under. Uten video er det som før:
+ * bølgeformen er stor og transporten står under den.
+ */
 function CutStep() {
   // Å gå til et annet STEG stopper avspillingen, av nøyaktig samme grunn som å
   // gå til en annen SIDE gjør det: lyd som går videre på en skjerm ingen ser
   // er den ene formen for feil som ikke ser ut som en feil.
   useEffect(() => teardownPlayback, []);
+  const video = hasVideo();
 
   return (
     <>
       <PlaybackNotice />
-      <WaveformHost />
-      <Transport />
+      {video ? <VideoStage /> : null}
+      <WaveformHost compact={video} />
+      {video ? null : <Transport />}
       <CutTools />
     </>
   );
@@ -233,26 +245,17 @@ function CutStep() {
  * skal.
  */
 function NextStep({ step }: { step: Step }) {
+  // «Eksporter» bor øverst til høyre i hodet (E8-fiks); her står bare veien
+  // videre til Lyd-steget.
+  if (step !== "cut") return null;
   return (
     <ActionBar testId="editor-actions">
-      {step === "cut" ? (
-        <Button
-          variant="secondary"
-          testId="editor-next"
-          onClick={() => (activeStep.value = "sound")}
-        >
-          {t("app.editor.nextSound")}
-        </Button>
-      ) : null}
       <Button
-        variant="primary"
-        size="lg"
-        testId="editor-export-open"
-        onClick={openExportSheet}
+        variant="secondary"
+        testId="editor-next"
+        onClick={() => (activeStep.value = "sound")}
       >
-        {exporting.value
-          ? t("editor.exportExporting")
-          : t("app.editor.exportOpen")}
+        {t("app.editor.nextSound")}
       </Button>
     </ActionBar>
   );
@@ -307,6 +310,21 @@ function Head() {
           />
         ) : null}
       </p>
+      {/* Gullpillen oppe til høyre: eksporten er det siste man gjør, og
+          knappen står der øyet ender. Åpner `ExportSheet` over editoren. */}
+      <button
+        type="button"
+        class={styles.exportBtn}
+        data-testid="editor-export-open"
+        onClick={openExportSheet}
+      >
+        <Icon name="download" size={20} strokeWidth={2} />
+        <span>
+          {exporting.value
+            ? t("editor.exportExporting")
+            : t("app.editor.exportOpen")}
+        </span>
+      </button>
     </div>
   );
 }
@@ -364,56 +382,30 @@ function PlaybackNotice() {
 
 const REMOVE_SELECTOR = '[data-testid="editor-cut-remove"]';
 
-/** Spill/pause, klokka, og resultatet. */
-function Transport() {
+/** «Ferdig lengde: 28 min av 1 t 20 min» — resultatet av kuttene. */
+function ResultLine() {
   const total = duration.value;
   const kept = keptSeconds(cuts.value, total);
-
   return (
-    <div class={styles.transport}>
-      <button
-        type="button"
-        class={styles.play}
-        data-testid="editor-play"
-        aria-label={playing.value ? t("app.editor.pause") : t("tooltip.play")}
-        title={playShortcutHint()}
-        aria-keyshortcuts={PLAY_KEYS_ARIA}
-        onClick={togglePlay}
-      >
-        {playing.value ? (
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <rect x="6" y="5" width="4" height="14" rx="1" />
-            <rect x="14" y="5" width="4" height="14" rx="1" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        )}
-      </button>
-      <b data-testid="editor-time" class={styles.time}>
-        {timecode(playheadSec.value)}
-      </b>
-      <span data-testid="editor-total" class={styles.total}>
-        {timecode(total)}
-      </span>
-      <span data-testid="editor-result" class={styles.result}>
-        {tf("app.editor.result", {
-          kept: spanLabel(exactSpan(kept)),
-          total: spanLabel(exactSpan(total)),
-        })}
-      </span>
-    </div>
+    <span data-testid="editor-result" class={styles.result}>
+      {tf("app.editor.result", {
+        kept: spanLabel(exactSpan(kept)),
+        total: spanLabel(exactSpan(total)),
+      })}
+    </span>
   );
 }
 
 /** Kuttverktøyene: angre, gjør om, fjern alle, og lista over kutt. */
 function CutTools() {
   const list = cuts.value;
+  const suggested = suggestions.value;
+  const emptyResult = suggestionsEmpty.value;
 
   return (
     <div data-testid="editor-tools" class={styles.tools}>
       <p class={styles.hint}>{t("editor.dragHint")}</p>
+      <ResultLine />
       <div class={styles.toolbar}>
         <Button
           variant="secondary"
@@ -438,6 +430,26 @@ function CutTools() {
           {t("app.editor.redo")}
         </Button>
         <Button
+          variant="secondary"
+          testId="editor-silence"
+          icon={<Icon name="wand" size={18} />}
+          onClick={suggestSilences}
+        >
+          {t("app.editor.silence")}
+        </Button>
+        {suggested.length > 0 ? (
+          <Button
+            variant="primary"
+            testId="editor-silence-all"
+            onClick={() => {
+              acceptAllSuggestions();
+              focusAfterRender(byTestId('[data-testid="editor-silence"]'));
+            }}
+          >
+            {tf("app.editor.silenceAll", { n: suggested.length })}
+          </Button>
+        ) : null}
+        <Button
           variant="ghost"
           testId="editor-clear-cuts"
           disabled={list.length === 0}
@@ -447,6 +459,11 @@ function CutTools() {
           {t("editor.cutsNone")}
         </Button>
       </div>
+      {suggested.length === 0 && emptyResult ? (
+        <p data-testid="editor-silence-none" class={styles.hint}>
+          {t("app.editor.silenceNone")}
+        </p>
+      ) : null}
       {list.length === 0 ? null : (
         <>
           <span class={styles.label}>{t("editor.cutsTitle")}</span>

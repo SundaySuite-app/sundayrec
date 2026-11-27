@@ -60,23 +60,21 @@ import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
  *    and `isRecording` also paints the recording overlay, which is
  *    `position: fixed; inset: 0` on purpose — while a recording runs, the
  *    overlay IS the app. The sentence exists; the pixel cannot.
- *    `overlegg--pagar` is what a recording actually looks like.
- *  - **The ASIO attribution card** (the engine row beside it left in C3b —
- *    there is one recording engine now): it gates on `currentOs() === "win"`,
- *    and `navigator.userAgentData.platform` beats any user-agent override, so
- *    Desktop Chrome can never be Windows here.
- *  - **Native pickers** («Åpne fil…», «Velg mappe»).
- *    All of them are opened by Rust itself (`editor_open_recording`,
- *    `settings_pick_save_folder`), which no fixture answers. The state
+ *    `opptaksmodus--*` is what a recording actually looks like.
+ *  - **The hold in progress.** The red «Hold» ring fills over one second of
+ *    CSS transition; a photograph of «halfway» would be a photograph of the
+ *    shutter, not of a state. The ring at rest, and the dialog that screen
+ *    readers get instead, are photographed.
+ *  - **The ASIO attribution card** (Om › ASIO-kreditering): it gates on
+ *    `currentOs() === "win"`, and `navigator.userAgentData.platform` beats any
+ *    user-agent override, so Desktop Chrome can never be Windows here.
+ *  - **Native pickers** («Åpne fil…», «Velg mappe», intro/outro «+ Velg fil»).
+ *    All of them are opened by Rust itself, which no fixture answers. The state
  *    BEFORE the click is photographed; the state after does not exist out here.
- *  - **Playback.** `asset://` is dead outside Tauri, so the editor's playback
- *    notice is always the honest «ikke tilgjengelig» one and the play button
- *    always `aria-disabled`.
- *  - **`adv-wake-caps` = «vet ikke ennå».** `wake_capabilities` goes through
- *    `call()`, which never rejects, so the component's null branch is only ever
- *    on screen for the frame before the promise resolves. The fixture answers
- *    as an Apple Silicon Mac, so `adv-wake-notes` photographs its one limit and
- *    three recommendations — the codes, rendered in the scene's own language.
+ *  - **Video in the editor.** `asset://` is dead outside Tauri and Chromium has
+ *    no H.264, so the editor's `<video>` frame is always black here (the frame,
+ *    its transport and the waveform under it are what the scene shows). The same
+ *    goes for playback: the play button is `aria-disabled`.
  */
 
 /** One photograph: what to boot, how to get there, and what it is called. */
@@ -321,39 +319,96 @@ const FIRST_RUN_SETTINGS = {
 /** Step 1 is gated on hearing something. «Fortsett uten lyd» is the
  *  deterministic way past it, and it keeps the gate open for the rest. */
 async function skipGate(page: Page): Promise<void> {
-  await page.getByTestId("first-run-skip-sound").click();
+  await page.getByTestId("hint-skip-sound").click();
 }
 
 /** Advance N times from wherever the sequence currently stands. */
 async function nextSteps(page: Page, n: number): Promise<void> {
   for (let i = 0; i < n; i += 1) {
-    await page.getByTestId("first-run-next").click();
+    await page.getByTestId("hint-next").click();
   }
 }
 
 // ── The table ───────────────────────────────────────────────────────────────
 
+/** A week with three fixed times, one of them missed. */
+const THREE_SLOTS = [
+  { days: [6], start: "11:00", stop: "12:30", max: null },
+  { days: [2], start: "19:00", stop: "20:30", max: null },
+  { days: [4], start: "09:30", stop: "10:30", max: null },
+];
+
+/** One Sunday service — enough for a strip with a «Neste». */
+const SUNDAY_SLOT = [{ days: [6], start: "11:00", stop: "12:30", max: null }];
+
+/** Peaks with two long silences (100–160 s and 300–330 s) for the suggestions. */
+const SILENT_PEAKS = fn(`() => ({
+  peaks: Array.from({ length: 600 * 100 }, (_, i) => {
+    const s = i / 100;
+    return (s >= 100 && s < 160) || (s >= 300 && s < 330) ? 0 : 0.6;
+  }),
+  sampleRate: 8000,
+})`);
+
+/** A recording that has a picture. */
+const WITH_VIDEO_TRACK = {
+  editor_load_recording: {
+    durationSec: 600,
+    hasVideo: true,
+    hasAudio: true,
+    channels: 2,
+    sampleFmt: "s16",
+    sampleRate: 48_000,
+  },
+};
+
+/** Start the recording overlay the way the planner would, and let it settle. */
+async function startOverlay(
+  page: Page,
+  over: Record<string, unknown> = {},
+): Promise<void> {
+  await emitAt(page, "recording-overlay-stop", {
+    state: "recording",
+    scheduled_stop_ms: null,
+    ...over,
+  });
+  await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  // Klokka står stille, så en teller som aldri hadde flyttet seg ville stått
+  // på 00:00:00 i hver eneste kjøring. Å flytte den FASTE tiden gir et tall
+  // som både er ekte og likt neste gang.
+  await advanceClock(page, 42);
+  await expect(page.getByTestId("overlay-timer")).toContainText("42:0");
+  await settleVu(page, "recording-levels", -14, -6);
+}
+
+/** The camera, live, before anything else happens. */
+async function liveCamera(page: Page, testId: string): Promise<void> {
+  await pushFrame(page, FRAME_16_9);
+  await expect(page.getByTestId(testId)).toHaveAttribute("data-phase", "live");
+}
+
 export const SCENES: Scene[] = [
-  // ══ OPPTAK ════════════════════════════════════════════════════════════════
+  // ══ TA OPP — hvile ════════════════════════════════════════════════════════
   {
     id: "opptak--kald",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Kald start — ingen lydkilde valgt ennå",
-    recipe: "ingen `deviceId`; Start er sperret og sier hvorfor",
+    recipe: "ingen `deviceId`; den store knappen er sperret og sier hvorfor",
     boot: {
       fixtures: { ...BASE, ...DEVICES },
       settings: SETTLED_SETTINGS,
       goto: "record",
     },
     wait: "record-no-source",
-    full: true,
     narrow: true,
   },
   {
     id: "opptak--klar",
-    page: "Opptak",
-    state: "Klar — kilde valgt, plass på disken, neste og siste opptak",
-    recipe: "`deviceId:x32` + `scheduler_status.next` + tre opptak i lista",
+    page: "Ta opp",
+    state:
+      "Klar — kilde-brikka med L/R-måler, den store knappen, og ukestripa med «Neste»",
+    recipe:
+      "`deviceId:x32` + én fast tid + `scheduler_status.next`; måleren settles",
     boot: {
       fixtures: {
         ...BASE,
@@ -364,20 +419,20 @@ export const SCENES: Scene[] = [
       settings: {
         ...CHOSEN,
         autoRecordEnabled: true,
-        slots: [{ days: [0], start: "11:00", stop: "12:30", max: null }],
+        slots: SUNDAY_SLOT,
       },
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-start",
     act: async (page) => {
+      await expect(page.getByTestId("record-next-auto")).toBeVisible();
       await settleVu(page);
     },
-    full: true,
     narrow: true,
   },
   {
     id: "opptak--kilde-borte",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Kilden er valgt, men ikke til stede nå",
     recipe: "`list_audio_devices` uten `x32`; Start er ÅPEN, med advarsel",
     boot: {
@@ -386,192 +441,14 @@ export const SCENES: Scene[] = [
       goto: "record",
     },
     wait: "record-source-missing",
-    full: true,
   },
 
-  // ── Det som bodde som kort på Ta opp, nå på Innstillinger og Plan ──────────
-  {
-    id: "opptak--kort-lyd",
-    page: "Opptak",
-    state: "Innstillinger › Lyd og kanaler — hele «Hvilken lydkilde?»",
-    recipe: "`?goto=settings:sound` → seksjonen `sec-sound`",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES },
-      settings: CHOSEN,
-      goto: "settings:sound",
-    },
-    wait: "setup-sound",
-    act: async (page) => {
-      await settleVu(page);
-    },
-    full: true,
-  },
-  {
-    id: "opptak--kort-mappe",
-    page: "Opptak",
-    state: "Innstillinger › Lagringsmappe",
-    recipe: "`?goto=settings:folder` → seksjonen `sec-folder`",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES },
-      settings: CHOSEN,
-      goto: "settings:folder",
-    },
-    wait: "setup-folder",
-    full: true,
-  },
-  {
-    id: "opptak--kort-kvalitet",
-    page: "Opptak",
-    state: "Innstillinger › opptaksformat (under Lagringsmappe)",
-    recipe: "`?goto=settings:folder` → `setup-quality` står under mappevalget",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES },
-      settings: CHOSEN,
-      goto: "settings:folder",
-    },
-    wait: "setup-quality",
-    full: true,
-  },
-  {
-    id: "opptak--kort-kamera",
-    page: "Opptak",
-    state: "«Ta med video» foldet ut, med kameravalget",
-    recipe:
-      "`?goto=settings:video` + `videoEnabled:true` — kortet kan BARE foldes ut når tillegget er på",
-    boot: {
-      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
-      settings: WITH_CAMERA,
-      goto: "settings:camera",
-    },
-    // ⚠️ `setup-camera-*`, ikke `control-camera-*`: CameraCard gir ControlCard
-    // sin egen testId. Samme for auto-kortet.
-    wait: "setup-camera-body",
-    act: async (page) => {
-      await pushFrame(page, FRAME_16_9);
-      await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
-        "data-phase",
-        "live",
-      );
-      await settleVu(page);
-    },
-    full: true,
-  },
-  {
-    id: "plan--ukevisning",
-    page: "Plan",
-    state:
-      "Ukevisningen — tre faste tider, «Neste» fremhevet, ett opptak denne uka ikke tatt opp",
-    recipe:
-      "`?goto=plan:auto`; tre slots, `scheduler_status.next` på søndagen, `emitEvent('scheduler://missed')`",
-    boot: {
-      fixtures: {
-        ...BASE,
-        ...DEVICES,
-        scheduler_status: { next: NEXT_SERVICE_ISO },
-      },
-      settings: {
-        ...CHOSEN,
-        autoRecordEnabled: true,
-        slots: [
-          { days: [6], start: "11:00", stop: "12:30", max: null },
-          { days: [2], start: "19:00", stop: "20:30", max: null },
-          { days: [4], start: "09:30", stop: "10:30", max: null },
-        ],
-      },
-      goto: "plan:auto",
-    },
-    wait: "plan-week",
-    act: async (page) => {
-      // ATLAS_NOW er søndag 23. august 2026: fredagen i samme uke er 21.
-      await emitEventAt(page, "scheduler://missed", [
-        { at: "2026-08-21T09:30:00", label: "Bibeltime" },
-      ]);
-      await expect(
-        page.locator('[data-testid="plan-block"][data-missed="true"]'),
-      ).toHaveCount(1);
-    },
-    full: true,
-  },
-  {
-    id: "plan--popover",
-    page: "Plan",
-    state: "Ukevisningen — redigeringen åpen ved siden av blokken",
-    recipe: "som over, så et trykk på søndagsblokka",
-    boot: {
-      fixtures: {
-        ...BASE,
-        ...DEVICES,
-        scheduler_status: { next: NEXT_SERVICE_ISO },
-      },
-      settings: {
-        ...CHOSEN,
-        autoRecordEnabled: true,
-        slots: [
-          { days: [6], start: "11:00", stop: "12:30", max: null },
-          { days: [2], start: "19:00", stop: "20:30", max: null },
-        ],
-      },
-      goto: "plan",
-    },
-    wait: "plan-week",
-    act: async (page) => {
-      await page.locator('[data-testid="plan-block"][data-day="6"]').click();
-      await expect(page.getByTestId("plan-editor")).toBeVisible();
-    },
-    full: true,
-  },
-  {
-    id: "plan--tom",
-    page: "Plan",
-    state: "Ukevisningen — ingen faste tider ennå",
-    recipe: "`slots: []`",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES },
-      settings: { ...CHOSEN, slots: [] },
-      goto: "plan",
-    },
-    wait: "plan-empty",
-    full: true,
-  },
-  {
-    id: "plan--vekking",
-    page: "Plan",
-    state: "Vekking av maskinen under uka",
-    recipe: "`wake_capabilities`; rullet ned til vekke-kortet",
-    boot: {
-      fixtures: HEALTHY,
-      settings: {
-        ...CHOSEN,
-        autoRecordEnabled: true,
-        slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
-      },
-      goto: "plan",
-    },
-    wait: "plan-wake",
-    act: async (page) => {
-      await page.getByTestId("plan-wake").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "opptak--kort-varsling",
-    page: "Opptak",
-    state: "Innstillinger › Varsler",
-    recipe: "`?goto=settings:notify` → seksjonen `sec-notify`",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES },
-      settings: CHOSEN,
-      goto: "settings:notify",
-    },
-    wait: "setup-notify",
-    full: true,
-  },
-
-  // ── Kamerabildet, fase for fase ───────────────────────────────────────────
+  // ── Kameraet: bildet fyller flaten ────────────────────────────────────────
   {
     id: "opptak--kamera-live",
-    page: "Opptak",
-    state: "Kamerabildet står — fasen `live`",
+    page: "Ta opp",
+    state:
+      "Kamera på — bildet fyller flaten, med kameranavn, måler i kanten og liten opptaksknapp",
     recipe:
       "`videoEnabled:true` + `camera_preview_start`-fixtur og en ekte JPEG ned kanalen",
     boot: {
@@ -581,20 +458,33 @@ export const SCENES: Scene[] = [
     },
     wait: "record-camera-preview",
     act: async (page) => {
-      await pushFrame(page, FRAME_16_9);
       // Vent til rammen SIER at bildet er der. Aldri en assertion på piksler:
       // `data-phase` er appens egen påstand, og det er den som kan være feil.
-      await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
-        "data-phase",
-        "live",
-      );
+      await liveCamera(page, "record-camera-preview");
       await settleVu(page);
     },
-    full: true,
+  },
+  {
+    id: "opptak--kamera-valg",
+    page: "Ta opp",
+    state: "Kamera på — popoveren bak den lille pila: kamera og egen lydfil",
+    recipe: "som over, så klikk `record-camera-more`",
+    boot: {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "record",
+    },
+    wait: "record-camera-preview",
+    act: async (page) => {
+      await liveCamera(page, "record-camera-preview");
+      await settleVu(page);
+      await page.getByTestId("record-camera-more").click();
+      await expect(page.getByTestId("record-camera-popover")).toBeVisible();
+    },
   },
   {
     id: "opptak--kamera-nektet",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Kamerabildet — fasen `denied` (OS-et sa nei)",
     recipe: "`camera_preview_start` som svarer «camera access is not allowed»",
     boot: {
@@ -613,7 +503,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "opptak--kamera-borte",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Kamerabildet — det lagrede kameraet finnes ikke",
     recipe: "`videoDeviceName` som ikke er i bakendens kameraliste",
     boot: {
@@ -630,10 +520,293 @@ export const SCENES: Scene[] = [
     },
   },
 
-  // ── Bannerne ──────────────────────────────────────────────────────────────
+  // ══ LYDARKET ══════════════════════════════════════════════════════════════
+  {
+    id: "lydark--enhet",
+    page: "Lydarket",
+    state: "Lydarket — enhetskort, kanalpar og stor L/R-måler",
+    recipe: "`?goto=settings:sound` → `record` + panelet `source`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "settings:sound",
+    },
+    wait: "setup-sound",
+    act: async (page) => {
+      await expect(page.getByTestId("source-sheet")).toHaveAttribute(
+        "data-open",
+        "true",
+      );
+      await settleVu(page);
+    },
+  },
+  {
+    id: "lydark--mer",
+    page: "Lydarket",
+    state:
+      "«Mer» utfoldet — mappe, kvalitet og de fem flisene (Før, Stille, Del, Rydd, Maks)",
+    recipe:
+      "`?goto=settings:engine` → panelet `source-more`; alle fem flisene på",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: {
+        ...CHOSEN,
+        preRollSeconds: 15,
+        stopOnSilence: true,
+        silenceTimeoutMinutes: 5,
+        splitMinutes: 60,
+        autoDeleteDays: 90,
+        manualMaxMinutes: 120,
+      },
+      goto: "settings:engine",
+    },
+    wait: "tile-max",
+    act: async (page) => {
+      await expect(page.getByTestId("setup-folder")).toBeVisible();
+      await settleVu(page);
+    },
+    full: true,
+  },
+  {
+    id: "lydark--mer-flisene-av",
+    page: "Lydarket",
+    state: "«Mer» utfoldet — alle fem flisene av, «Av» står under dem",
+    recipe: "som over, med alle fem verdiene på 0",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: {
+        ...CHOSEN,
+        preRollSeconds: 0,
+        stopOnSilence: false,
+        splitMinutes: 0,
+        autoDeleteDays: 0,
+        manualMaxMinutes: 0,
+      },
+      goto: "settings:engine",
+    },
+    wait: "tile-max",
+    act: async (page) => {
+      await settleVu(page);
+    },
+    full: true,
+  },
+
+  // ══ UKESTRIPA ═════════════════════════════════════════════════════════════
+  {
+    id: "strip--pille",
+    page: "Ukestripa",
+    state:
+      "Uten faste tider: bare den lille kalenderknappen nede til venstre, med gullplussen",
+    recipe: "`slots: []`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, slots: [] },
+      goto: "record",
+    },
+    wait: "record-next-none",
+    act: async (page) => {
+      await settleVu(page);
+    },
+  },
+  {
+    id: "strip--lukket",
+    page: "Ukestripa",
+    state:
+      "Lukket stripe — mini-uke, «Neste: søndag 11:00», nedtelling og de fire statusikonene",
+    recipe: "én fast tid + `scheduler_status.next`, Auto på",
+    boot: {
+      fixtures: {
+        ...BASE,
+        ...DEVICES,
+        scheduler_status: { next: NEXT_SERVICE_ISO },
+      },
+      settings: { ...CHOSEN, autoRecordEnabled: true, slots: THREE_SLOTS },
+      goto: "record",
+    },
+    wait: "record-next-auto",
+    act: async (page) => {
+      await settleVu(page);
+    },
+  },
+  {
+    id: "strip--lukket-auto-av",
+    page: "Ukestripa",
+    state:
+      "Lukket stripe med tider men Auto AV — dempet, «Automatisk opptak er av»",
+    recipe: "`slots` satt, `autoRecordEnabled:false`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, autoRecordEnabled: false, slots: THREE_SLOTS },
+      goto: "record",
+    },
+    wait: "record-next-none",
+    act: async (page) => {
+      await expect(page.getByTestId("record-next-auto-when")).toBeVisible();
+      await settleVu(page);
+    },
+  },
+  {
+    id: "strip--apen",
+    page: "Ukestripa",
+    state:
+      "Åpen stripe — de fire flisene og ukevisningen, «Neste» fremhevet, ett opptak denne uka ikke tatt opp",
+    recipe:
+      "`?goto=plan`; tre tider, `scheduler_status.next` på søndagen, `emitEvent('scheduler://missed')`",
+    boot: {
+      fixtures: {
+        ...BASE,
+        ...DEVICES,
+        scheduler_status: { next: NEXT_SERVICE_ISO },
+      },
+      settings: { ...CHOSEN, autoRecordEnabled: true, slots: THREE_SLOTS },
+      goto: "plan",
+    },
+    wait: "plan-week",
+    act: async (page) => {
+      // ATLAS_NOW er søndag 23. august 2026: fredagen i samme uke er 21.
+      await emitEventAt(page, "scheduler://missed", [
+        { at: "2026-08-21T09:30:00", label: "Bibeltime" },
+      ]);
+      await expect(
+        page.locator('[data-testid="plan-block"][data-missed="true"]'),
+      ).toHaveCount(1);
+      await settleVu(page);
+    },
+  },
+  {
+    id: "strip--blokk",
+    page: "Ukestripa",
+    state: "Åpen stripe — redigeringen åpen ved siden av en valgt blokk",
+    recipe: "som over, så et trykk på søndagsblokka",
+    boot: {
+      fixtures: {
+        ...BASE,
+        ...DEVICES,
+        scheduler_status: { next: NEXT_SERVICE_ISO },
+      },
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        slots: THREE_SLOTS.slice(0, 2),
+      },
+      goto: "plan",
+    },
+    wait: "plan-week",
+    act: async (page) => {
+      // Første trykk velger blokka, trykk på den valgte åpner redigeringen.
+      const block = page.locator('[data-testid="plan-block"][data-day="6"]');
+      await block.click();
+      await expect(block).toHaveAttribute("data-selected", "true");
+      await block.click();
+      await expect(page.getByTestId("plan-editor")).toBeVisible();
+    },
+  },
+  {
+    id: "strip--tom-uke",
+    page: "Ukestripa",
+    state: "Åpen stripe med tom uke — «Hold og dra», ingen faste tider ennå",
+    recipe: "`?goto=plan`, `slots: []`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, slots: [] },
+      goto: "plan",
+    },
+    wait: "plan-empty",
+  },
+  {
+    id: "strip--auto-uten-tider",
+    page: "Ukestripa",
+    state:
+      "Auto på i en tom uke — flisen lyser ikke og sier «Ingen tider» (ingen tid er funnet på)",
+    recipe: "`?goto=plan`, `autoRecordEnabled:true`, `slots: []`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: { ...CHOSEN, autoRecordEnabled: true, slots: [] },
+      goto: "plan",
+    },
+    wait: "strip-auto-needs-times",
+  },
+  {
+    id: "strip--vekking",
+    page: "Ukestripa",
+    state:
+      "Vekk-flisens popover — hva maskinen kan, «Legg inn vekking», prøv og logg",
+    recipe: "`wake_capabilities`; klikk hjørneknappen `strip-wake-more`",
+    boot: {
+      fixtures: HEALTHY,
+      settings: { ...CHOSEN, autoRecordEnabled: true, slots: SUNDAY_SLOT },
+      goto: "plan",
+    },
+    wait: "strip-wake-more",
+    act: async (page) => {
+      await page.getByTestId("strip-wake-more").click();
+      await expect(page.getByTestId("strip-wake-pop")).toBeVisible();
+      await expect(page.getByTestId("strip-wake-caps")).toBeVisible();
+    },
+  },
+  {
+    id: "strip--varsel",
+    page: "Ukestripa",
+    state: "Varsel-flisens popover — status fra systemet og «Send testvarsel»",
+    recipe:
+      "`notification_permission:granted`; klikk `strip-notify-more`, så «Send testvarsel»",
+    boot: {
+      fixtures: {
+        ...HEALTHY,
+        notification_permission: "granted",
+        notification_request_permission: "granted",
+        notification_send_test: true,
+      },
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        notifyStart: true,
+        notifyStop: true,
+        reminderMinutes: 10,
+        slots: SUNDAY_SLOT,
+      },
+      goto: "plan",
+    },
+    wait: "strip-notify-more",
+    act: async (page) => {
+      await page.getByTestId("strip-notify-more").click();
+      await page.getByTestId("strip-notify-test").click();
+      await expect(page.getByTestId("strip-notify-test-word")).toBeVisible();
+    },
+  },
+  {
+    id: "strip--varsel-av-i-systemet",
+    page: "Ukestripa",
+    state:
+      "Varsler slått på, men av i systemet — stripa sier fra og tilbyr systeminnstillingene",
+    recipe: "`notification_permission:denied` + klikk på Varsel-flisen",
+    boot: {
+      fixtures: {
+        ...HEALTHY,
+        notification_permission: "denied",
+        notification_request_permission: "denied",
+        notification_open_settings: true,
+      },
+      settings: {
+        ...CHOSEN,
+        autoRecordEnabled: true,
+        notifyStart: false,
+        notifyStop: false,
+        slots: SUNDAY_SLOT,
+      },
+      goto: "plan",
+    },
+    wait: "strip-tile-notify",
+    act: async (page) => {
+      await page.getByTestId("strip-tile-notify").click();
+      await expect(page.getByTestId("strip-notify-denied")).toBeVisible();
+    },
+  },
+
+  // ── Bannerne over Ta opp ──────────────────────────────────────────────────
   {
     id: "opptak--banner-avbrutt",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Banner: opptaket ble avbrutt, med grunnen i klartekst",
     recipe: "`emit('recording-error', { code: 'device_disconnected' })`",
     boot: {
@@ -641,7 +814,7 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-start",
     act: async (page) => {
       await emitAt(page, "recording-error", {
         code: "device_disconnected",
@@ -651,11 +824,10 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("banner-recording-error")).toBeVisible();
       await settleVu(page);
     },
-    full: true,
   },
   {
     id: "opptak--banner-lite-plass",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Banner: under to timer igjen på disken",
     recipe: "`get_disk_space.freeBytes = 200 MB`",
     boot: {
@@ -671,11 +843,10 @@ export const SCENES: Scene[] = [
     act: async (page) => {
       await settleVu(page);
     },
-    full: true,
   },
   {
     id: "opptak--banner-gikk-glipp",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Banner: et planlagt opptak ble aldri tatt",
     recipe: "`emitEvent('scheduler://missed', [{ at, label }])`",
     boot: {
@@ -683,7 +854,7 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-start",
     act: async (page) => {
       await emitEventAt(page, "scheduler://missed", [
         { at: "2026-08-16T11:00:00", label: "Gudstjeneste" },
@@ -691,11 +862,10 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("banner-missed")).toBeVisible();
       await settleVu(page);
     },
-    full: true,
   },
   {
     id: "opptak--banner-forhandssjekk",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Banner: forhåndssjekken fant noe å se på",
     recipe:
       "`media_permissions.microphone = denied` + ett `run_preflight`-funn",
@@ -720,11 +890,10 @@ export const SCENES: Scene[] = [
     act: async (page) => {
       await settleVu(page);
     },
-    full: true,
   },
   {
     id: "opptak--samtykkekort",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Samtykkekortet — det ene spørsmålet om diagnosedata",
     recipe: "`telemetry_consent_get.needsPrompt = true`",
     boot: {
@@ -747,11 +916,10 @@ export const SCENES: Scene[] = [
     act: async (page) => {
       await settleVu(page);
     },
-    full: true,
   },
   {
     id: "opptak--kvittering",
-    page: "Opptak",
+    page: "Ta opp",
     state: "Kvitteringen etter et ferdig opptak",
     recipe: "`emit('recording-finished', { path })`",
     boot: {
@@ -759,7 +927,7 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-start",
     act: async (page) => {
       await emitAt(page, "recording-finished", {
         path: "/Users/frivillig/Opptak/2026-08-23 Gudstjeneste.mp3",
@@ -770,52 +938,43 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("record-done-file")).toBeVisible();
       await settleVu(page);
     },
-    full: true,
   },
 
-  // ══ OPPTAKSOVERLEGGET ═════════════════════════════════════════════════════
+  // ══ OPPTAKSMODUS ══════════════════════════════════════════════════════════
   {
-    id: "overlegg--pagar",
-    page: "Opptaksoverlegget",
-    state: "Det tas opp — klokke, måler, kamerabilde og fakta",
+    id: "opptaksmodus--lyd",
+    page: "Opptaksmodus",
+    state:
+      "Det tas opp uten kamera — enorm klokke, bred L/R-måler, «Hold» og «Til du stopper»",
     recipe:
-      "`emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min, ekte JPEG ned kamerakanalen",
+      "`emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min",
     boot: {
-      fixtures: {
-        ...CAMERA_FIXTURES,
-        ...DEVICES,
-        ...cameraFixtures(),
-      },
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
+    wait: "record-start",
+    act: async (page) => {
+      await startOverlay(page);
+      await expect(page.getByTestId("overlay-until-stop")).toBeVisible();
+    },
+  },
+  {
+    id: "opptaksmodus--kamera",
+    page: "Opptaksmodus",
+    state:
+      "Det tas opp med kamera — bildet i ramme med rød kant, klokka som brikke, loddrett måler",
+    recipe:
+      "som over med `videoEnabled`, og en ekte JPEG ned kamerakanalen FØR opptaket (overlegget arver bildet)",
+    boot: {
+      fixtures: { ...CAMERA_FIXTURES, ...DEVICES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-camera-preview",
     act: async (page) => {
-      // Bildet står FØR opptaket, og overlegget arver det (samme økt).
-      await pushFrame(page, FRAME_16_9);
-      await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
-        "data-phase",
-        "live",
-      );
-      await emitAt(page, "recording-overlay-stop", {
-        state: "recording",
-        scheduled_stop_ms: null,
-      });
-      await expect(page.getByTestId("recording-overlay")).toBeVisible();
-      // Klokka står stille, så en teller som aldri hadde flyttet seg ville
-      // stått på 00:00:00 i hver eneste kjøring. Å flytte den FASTE tiden gir
-      // et tall som både er ekte og likt neste gang.
-      await advanceClock(page, 42);
-      await expect(page.getByTestId("overlay-timer")).toContainText("42:0");
-      await settleVu(page, "recording-levels", -14, -6);
-      // ⚠️ Tallene under måleren oppdateres av et intervall på ETT SEKUND, og
-      // de finnes ikke i treet før den første tikken. Uten denne ventingen er
-      // scenen et lotteri mellom «ingen tall», «−60 / −60» (tikken kom før
-      // pakkene) og de riktige tallene — tre forskjellige bilder av den samme
-      // tilstanden. Assertionen poller til intervallet har tatt igjen.
-      await expect(page.getByTestId("overlay-vu-numbers")).toContainText(
-        "-6 /",
-      );
+      await liveCamera(page, "record-camera-preview");
+      await startOverlay(page);
       await expect(page.getByTestId("overlay-camera-preview")).toHaveAttribute(
         "data-phase",
         "live",
@@ -823,37 +982,9 @@ export const SCENES: Scene[] = [
     },
   },
   {
-    id: "overlegg--stopp-dialog",
-    page: "Opptaksoverlegget",
-    state: "Stopp-bekreftelsen — «Fortsett å ta opp» er primærvalget",
-    recipe: "overlegget oppe, så klikk `overlay-stop`",
-    boot: {
-      fixtures: { ...BASE, ...DEVICES, stop_recording: true },
-      settings: CHOSEN,
-      goto: "record",
-    },
-    wait: "record-source",
-    act: async (page) => {
-      await emitAt(page, "recording-overlay-stop", {
-        state: "recording",
-        scheduled_stop_ms: null,
-      });
-      await expect(page.getByTestId("recording-overlay")).toBeVisible();
-      await advanceClock(page, 42);
-      await expect(page.getByTestId("overlay-timer")).toContainText("42:0");
-      await settleVu(page, "recording-levels", -14, -6);
-      // Se `overlegg--pagar`: tallene kommer på et sekundintervall.
-      await expect(page.getByTestId("overlay-vu-numbers")).toContainText(
-        "-6 /",
-      );
-      await page.getByTestId("overlay-stop").click();
-      await expect(page.getByTestId("dialog")).toBeVisible();
-    },
-  },
-  {
-    id: "overlegg--nedtelling",
-    page: "Opptaksoverlegget",
-    state: "Auto-stopp om 15 minutter, med «+ 15 min» og «Avbryt»",
+    id: "opptaksmodus--stopper-om",
+    page: "Opptaksmodus",
+    state: "Planlagt stopp om 15 minutter — «Stopper 11:52» med «+30» og «∞»",
     recipe: "`scheduled_stop_ms` = klokka + 57 min, så klokka flyttes til +42",
     boot: {
       fixtures: {
@@ -865,7 +996,7 @@ export const SCENES: Scene[] = [
       settings: { ...CHOSEN, manualMaxMinutes: 60 },
       goto: "record",
     },
-    wait: "record-source",
+    wait: "record-start",
     act: async (page) => {
       await emitAt(page, "recording-overlay-stop", {
         state: "recording",
@@ -874,20 +1005,63 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("recording-overlay")).toBeVisible();
       await advanceClock(page, 42);
       await expect(page.getByTestId("overlay-autostop-actions")).toBeVisible();
-      await expect(page.getByTestId("overlay-autostop")).toContainText("15:0");
+      await expect(page.getByTestId("overlay-autostop")).toContainText("11:");
       await settleVu(page, "recording-levels", -14, -6);
-      // Se `overlegg--pagar`: tallene kommer på et sekundintervall.
-      await expect(page.getByTestId("overlay-vu-numbers")).toContainText(
-        "-6 /",
-      );
+    },
+  },
+  {
+    id: "opptaksmodus--stillhet",
+    page: "Opptaksmodus",
+    state: "Stillhetsvarsel som liten ikon + ord-brikke øverst",
+    recipe: "overlegget oppe, så `emit('recording-silence', …)`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES },
+      settings: CHOSEN,
+      goto: "record",
+    },
+    wait: "record-start",
+    act: async (page) => {
+      await startOverlay(page);
+      await emitAt(page, "recording-silence", {
+        code: "silence_detected",
+        message: "Stillhet oppdaget i lydsignalet",
+      });
+      await expect(page.getByTestId("overlay-silence")).toBeVisible();
+    },
+  },
+  {
+    id: "opptaksmodus--skjermleser-stopp",
+    page: "Opptaksmodus",
+    state:
+      "Stopp-bekreftelsen som VoiceOver/Narrator får i stedet for holdet — «Fortsett å ta opp» er primærvalget",
+    recipe:
+      "overlegget oppe, så et `click` uten pekertrykk (`detail: 0`) på `overlay-stop`",
+    boot: {
+      fixtures: { ...BASE, ...DEVICES, stop_recording: true },
+      settings: CHOSEN,
+      goto: "record",
+    },
+    wait: "record-start",
+    act: async (page) => {
+      await startOverlay(page);
+      await page.getByTestId("overlay-stop").evaluate((el) => {
+        el.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            detail: 0,
+          }),
+        );
+      });
+      await expect(page.getByTestId("dialog")).toBeVisible();
     },
   },
 
-  // ══ REDIGERING ════════════════════════════════════════════════════════════
+  // ══ OPPTAK (lista) OG REDIGERING ══════════════════════════════════════════
   {
     id: "redigering--bibliotek",
-    page: "Bibliotek og redigering",
-    state: "Biblioteket med opptak — dato, lengde, notat",
+    page: "Opptak og redigering",
+    state: "Lista med opptak — mini-bølgeform, dato, lengde, notat",
     recipe: "tre rader i `recordings_list`, én med notat",
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
@@ -900,8 +1074,8 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--bibliotek-tomt",
-    page: "Bibliotek og redigering",
-    state: "Biblioteket er tomt — og sier hva man gjør nå",
+    page: "Opptak og redigering",
+    state: "Lista er tom — og sier hva man gjør nå",
     recipe: "`recordings_list: []`",
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: [] },
@@ -909,11 +1083,10 @@ export const SCENES: Scene[] = [
       goto: "recordings",
     },
     wait: "library-empty",
-    full: true,
   },
   {
     id: "redigering--sok-ingen-treff",
-    page: "Bibliotek og redigering",
+    page: "Opptak og redigering",
     state: "Søket ga ingen treff",
     recipe: "fyll `library-search` med «finnesikke»",
     boot: {
@@ -929,10 +1102,11 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--papirkurv",
-    page: "Bibliotek og redigering",
-    state: "Papirkurven — med «slettes om N dager»",
+    page: "Opptak og redigering",
+    state:
+      "Papirkurven (ikon oppe til høyre, med antall) — med «tømmes om N d»",
     recipe:
-      "to rader i `trash_list`, så klikk fanen `recordings-tabs-row-trash`",
+      "to rader i `trash_list`, så klikk søppelikonet `library-trash-open`",
     boot: {
       fixtures: {
         ...BASE,
@@ -952,18 +1126,18 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "recordings",
     },
-    wait: "recordings-tabs",
+    wait: "library-trash-open",
     act: async (page) => {
-      await page.getByTestId("recordings-tabs-row-trash").click();
+      await page.getByTestId("library-trash-open").click();
       await expect(page.getByTestId("trash-row").first()).toBeVisible();
     },
     full: true,
   },
   {
     id: "redigering--papirkurv-tom",
-    page: "Bibliotek og redigering",
+    page: "Opptak og redigering",
     state: "Papirkurven er tom",
-    recipe: "`trash_list: []`, så klikk fanen `recordings-tabs-row-trash`",
+    recipe: "`trash_list: []`, så klikk søppelikonet `library-trash-open`",
     boot: {
       fixtures: {
         ...BASE,
@@ -974,16 +1148,17 @@ export const SCENES: Scene[] = [
       settings: CHOSEN,
       goto: "recordings",
     },
-    wait: "recordings-tabs",
+    wait: "library-trash-open",
     act: async (page) => {
-      await page.getByTestId("recordings-tabs-row-trash").click();
+      await page.getByTestId("library-trash-open").click();
       await expect(page.getByTestId("trash-empty")).toBeVisible();
     },
   },
   {
     id: "redigering--klipp",
-    page: "Bibliotek og redigering",
-    state: "Arbeidsflaten, steget «Klipp» — bølgeform og de to håndtakene",
+    page: "Opptak og redigering",
+    state:
+      "Redigering, steget «Klipp» (lydopptak) — bølgeform med to håndtak, ingen video",
     recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
@@ -994,28 +1169,86 @@ export const SCENES: Scene[] = [
     narrow: true,
   },
   {
-    id: "redigering--kuttliste",
-    page: "Bibliotek og redigering",
-    state: "Kuttlista — det som blir borte, som rader man kan angre",
-    recipe: "åpne, så flytt startshåndtaket 3:30 inn med PageUp",
+    id: "redigering--markering",
+    page: "Opptak og redigering",
+    state: "Dra i bølgeformen — markering med boblen «Klipp» og lengden",
+    recipe: "åpne, så dra over bølgeformen fra 30 % til 40 %",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
     act: async (page) => {
       await openEditor(page);
-      const start = page.getByTestId("editor-handle-start");
-      await expect(start).toBeVisible();
-      await start.focus();
-      for (let i = 0; i < 7; i++) await page.keyboard.down("PageUp");
-      await page.keyboard.up("PageUp");
-      await page.evaluate(() =>
-        (document.activeElement as HTMLElement)?.blur(),
-      );
+      const box = (await page.getByTestId("editor-canvas").boundingBox())!;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width * 0.3, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.35, y, { steps: 4 });
+      await page.mouse.move(box.x + box.width * 0.4, y, { steps: 4 });
+      await page.mouse.up();
+      await expect(page.getByTestId("editor-selection")).toBeVisible();
+    },
+    full: true,
+  },
+  {
+    id: "redigering--kuttliste",
+    page: "Opptak og redigering",
+    state:
+      "Et klipp er gjort — skravert område med angre-knapp, og kuttlista under",
+    recipe: "åpne, dra en markering, trykk «Klipp»",
+    boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
+    act: async (page) => {
+      await openEditor(page);
+      const box = (await page.getByTestId("editor-canvas").boundingBox())!;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width * 0.3, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.35, y, { steps: 4 });
+      await page.mouse.move(box.x + box.width * 0.4, y, { steps: 4 });
+      await page.mouse.up();
+      await page.getByTestId("editor-selection-cut").click();
       await expect(page.getByTestId("editor-cut-list")).toBeVisible();
+      await page.mouse.move(2, 2);
+    },
+    full: true,
+  },
+  {
+    id: "redigering--stillhetsforslag",
+    page: "Opptak og redigering",
+    state:
+      "Stillhetsforslag — stiplede områder med «Godta» og «Avvis»; ingenting er klippet",
+    recipe: "`editor_peaks` med to stillheter, så klikk `editor-silence`",
+    boot: {
+      fixtures: editorScene({ editor_peaks: SILENT_PEAKS }),
+      settings: CHOSEN,
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await page.getByTestId("editor-silence").click();
+      await expect(page.getByTestId("editor-silence-region")).toHaveCount(2);
+      await page.mouse.move(2, 2);
+    },
+    full: true,
+  },
+  {
+    id: "redigering--video",
+    page: "Opptak og redigering",
+    state:
+      "Redigering av et videoopptak — stor 16:9-ramme med spill, tid og Inn/Ut, bølgeformen under",
+    recipe:
+      "`editor_load_recording.hasVideo = true`; `<video>` har ingen fil å vise i nettleseren, så rammen står svart",
+    boot: {
+      fixtures: editorScene(WITH_VIDEO_TRACK),
+      settings: CHOSEN,
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await expect(page.getByTestId("editor-video")).toBeVisible();
     },
     full: true,
   },
   {
     id: "redigering--lyd",
-    page: "Bibliotek og redigering",
+    page: "Opptak og redigering",
     state: "Steget «Lyd» — bryteren «Podkastklar lyd»",
     recipe: "åpne, så klikk `editor-steps-row-sound`",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "recordings" },
@@ -1029,7 +1262,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--laster",
-    page: "Bibliotek og redigering",
+    page: "Opptak og redigering",
     state: "Arbeidsflaten laster — «Analyserer …»",
     recipe: "`editor_load_recording` som aldri svarer",
     boot: {
@@ -1046,7 +1279,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "redigering--feil",
-    page: "Bibliotek og redigering",
+    page: "Opptak og redigering",
     state: "Arbeidsflaten kunne ikke åpne fila",
     recipe:
       "BÅDE `editor_load_recording: null` OG `editor_peaks: null` — toppene er en ANDRE kilde til varighet",
@@ -1064,11 +1297,12 @@ export const SCENES: Scene[] = [
     },
   },
 
-  // ══ EKSPORT (arket inne i editoren) ═══════════════════════════════════════
+  // ══ EKSPORTARKET ══════════════════════════════════════════════════════════
   {
     id: "eksport--valg",
-    page: "Eksport",
-    state: "Eksportarket — format, hvor, podkastklar lyd og hva som blir laget",
+    page: "Eksportarket",
+    state:
+      "Eksportarket (sideark fra høyre) — formatkortene MP3 «Podkast» og WAV «Arkiv», de tre flisene, mappe og «Lagre»",
     recipe: "åpne opptaket, så klikk `editor-export-open`",
     boot: {
       fixtures: editorScene({
@@ -1082,13 +1316,35 @@ export const SCENES: Scene[] = [
       await page.getByTestId("editor-export-open").click();
       await expect(page.getByTestId("editor-export")).toBeVisible();
     },
-    full: true,
+  },
+  {
+    id: "eksport--video",
+    page: "Eksportarket",
+    state:
+      "Eksportarket for et videoopptak — MP4 «Video» er med som tredje kort; med det valgt står intro/outro dempet",
+    recipe: "`hasVideo = true`, så klikk MP4-kortet",
+    boot: {
+      fixtures: editorScene({
+        ...WITH_VIDEO_TRACK,
+        recordings_list: [recordingRow({ file_path: FILE })],
+      }),
+      settings: {
+        ...CHOSEN,
+        editorIntroPath: "/Users/frivillig/Musikk/Velkommen.wav",
+      },
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
+      await page.getByTestId("editor-format-row-mp4").click();
+      await expect(page.getByTestId("export-jingles-video-note")).toBeVisible();
+    },
   },
   {
     id: "eksport--jingler",
-    page: "Eksport",
-    state:
-      "Eksportarket med intro og outro valgt — filnavn og «Fjern» på hver rad",
+    page: "Eksportarket",
+    state: "Intro og outro valgt — filnavn på flisene",
     recipe:
       "innstillingene har `editorIntroPath` og `editorOutroPath`; åpne opptaket, så klikk `editor-export-open`",
     boot: {
@@ -1109,11 +1365,33 @@ export const SCENES: Scene[] = [
         "Velkommen.wav",
       );
     },
-    full: true,
+  },
+  {
+    id: "eksport--jingle-meny",
+    page: "Eksportarket",
+    state: "Hjørneknappen på Intro-flisen — «Velg en annen fil» og «Fjern»",
+    recipe: "som over, så klikk `export-jingle-intro-more`",
+    boot: {
+      fixtures: editorScene({
+        recordings_list: [recordingRow({ file_path: FILE })],
+      }),
+      settings: {
+        ...CHOSEN,
+        editorIntroPath: "/Users/frivillig/Musikk/Velkommen.wav",
+        editorOutroPath: "/Users/frivillig/Musikk/Utgang.mp3",
+      },
+      goto: "recordings",
+    },
+    act: async (page) => {
+      await openEditor(page);
+      await page.getByTestId("editor-export-open").click();
+      await page.getByTestId("export-jingle-intro-more").click();
+      await expect(page.getByTestId("export-jingle-intro-menu")).toBeVisible();
+    },
   },
   {
     id: "eksport--kjorer",
-    page: "Eksport",
+    page: "Eksportarket",
     state: "Eksporten kjører — 40 %, med avbryt",
     recipe:
       "`editor_export` som henger (`EXPORT_HELD`) + `emit('editor-export-progress', {pct:40})`",
@@ -1141,7 +1419,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: "eksport--kvittering",
-    page: "Eksport",
+    page: "Eksportarket",
     state: "Kvitteringen — fila som ble laget, og hvor den ligger",
     recipe: "`editor-export-go` med `editor_export` som svarer med én gang",
     boot: {
@@ -1157,93 +1435,50 @@ export const SCENES: Scene[] = [
       await page.getByTestId("editor-export-go").click();
       await expect(page.getByTestId("editor-exported-file")).toBeVisible();
     },
-    full: true,
   },
 
-  // ══ INNSTILLINGER ═════════════════════════════════════════════════════════
+  // ══ TANNHJULET ════════════════════════════════════════════════════════════
   {
-    id: "innstillinger--landing",
-    page: "Innstillinger",
-    state: "Hele flaten — kirkeprofil øverst, Avansert under",
-    recipe: "`?goto=settings` på en frisk maskin",
+    id: "tannhjul--kort",
+    page: "Tannhjulet",
+    state:
+      "Tannhjulet åpent over siden man kom fra — Språk, Oppdatering, Anonym statistikk og Om",
+    recipe: "`?goto=settings` (kortet ligger over `underlay`)",
     boot: settingsScene(CHOSEN),
-    wait: "setup-language",
-    full: true,
+    wait: "gear-dialog",
+    act: async (page) => {
+      await expect(page.getByTestId("gear-row-language")).toBeVisible();
+    },
     narrow: true,
   },
   {
-    id: "innstillinger--opptakskortet",
-    page: "Innstillinger",
-    state: "Avansert › Opptak, med alle betingede rader åpne",
-    recipe: "`stopOnSilence`, `splitMinutes` og `autoDeleteDays` alle satt",
-    boot: settingsScene({
-      ...CHOSEN,
-      preRollSeconds: 30,
-      stopOnSilence: true,
-      splitMinutes: 90,
-      autoDeleteDays: 60,
-    }),
-    wait: "advanced-recording",
-    act: async (page) => {
-      await expect(page.getByTestId("adv-split-every")).toBeVisible();
-      await page.getByTestId("advanced-recording").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "innstillinger--systemkortet",
-    page: "Innstillinger",
-    state:
-      "Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg",
-    recipe: "rull til `advanced-help`",
-    boot: settingsScene(CHOSEN, {
-      ...HEALTHY,
-      telemetry_consent_get: {
-        status: "granted",
-        version: 2,
-        decidedAt: 1_754_000_000_000,
-        currentVersion: 2,
-        needsPrompt: false,
-        active: true,
-      },
-    }),
-    wait: "advanced-help",
-    act: async (page) => {
-      await page.getByTestId("advanced-help").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "innstillinger--oppdatering-klar",
-    page: "Innstillinger",
+    id: "tannhjul--oppdatering-klar",
+    page: "Tannhjulet",
     state: "Oppdateringsraden: en versjon er lastet ned og venter",
     recipe: "`emit('update-downloaded', { version })`",
     boot: settingsScene({ ...CHOSEN, autoUpdate: true }),
-    wait: "adv-update",
+    wait: "gear-row-update",
     act: async (page) => {
       await emitAt(page, "update-downloaded", { version: "0.18.0" });
       await expect(page.getByTestId("adv-update-install")).toBeVisible();
-      await page.getByTestId("adv-update").scrollIntoViewIfNeeded();
     },
-    full: true,
   },
   {
-    id: "innstillinger--oppdatering-feilet",
-    page: "Innstillinger",
+    id: "tannhjul--oppdatering-feilet",
+    page: "Tannhjulet",
     state: "Oppdateringsraden: sjekken gikk ikke",
     recipe: "`emit('update-error', 'boom')` — en BAR streng, ikke et objekt",
     boot: settingsScene({ ...CHOSEN, autoUpdate: true }),
-    wait: "adv-update",
+    wait: "gear-row-update",
     act: async (page) => {
       await emitAt(page, "update-error", "boom");
       await expect(page.getByTestId("adv-update-error")).toBeVisible();
-      await page.getByTestId("adv-update").scrollIntoViewIfNeeded();
     },
   },
   {
-    id: "innstillinger--telemetri-dialog",
-    page: "Innstillinger",
-    state: "«Vis» på diagnosedata — hva som faktisk sendes",
+    id: "tannhjul--statistikk",
+    page: "Tannhjulet",
+    state: "«Vis hva som sendes» på anonym statistikk — hele nyttelasten",
     recipe: "`telemetry_preview_payload` + klikk `adv-diag-preview`",
     boot: settingsScene(CHOSEN, {
       ...HEALTHY,
@@ -1256,7 +1491,7 @@ export const SCENES: Scene[] = [
         active: true,
       },
       telemetry_preview_payload: {
-        json: '{\n  "app": "sundayrec",\n  "version": "0.17.0",\n  "os": "macos"\n}',
+        json: '{\n  "app": "sundayrec",\n  "version": "0.32.0-beta.1",\n  "os": "macos"\n}',
         isNextPayload: true,
         isEmpty: false,
       },
@@ -1267,51 +1502,67 @@ export const SCENES: Scene[] = [
       await expect(page.getByTestId("dialog-pre")).toBeVisible();
     },
   },
+  {
+    id: "tannhjul--lisenser",
+    page: "Tannhjulet",
+    state: "Om › «Vis lisenser» — de medfølgende lisensene i en ramme",
+    recipe:
+      "`licenses_notices` med en kort tekst, så klikk `adv-licenses-open`",
+    boot: settingsScene(CHOSEN, {
+      ...HEALTHY,
+      licenses_notices:
+        '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;color:#222;padding:16px"><h2>FFmpeg (GPL)</h2><p>Kildekode: https://ffmpeg.org</p><h2>Tauri (MIT og Apache-2.0)</h2><p>Medfølger i appen.</p></body>',
+    }),
+    wait: "adv-licenses-open",
+    act: async (page) => {
+      await page.getByTestId("adv-licenses-open").click();
+      await expect(page.getByTestId("licenses-viewer")).toBeVisible();
+    },
+  },
 
   // ══ FØRSTE GANG ═══════════════════════════════════════════════════════════
   {
     id: "forste-gang--1-lyd-lukket",
     page: "Første gang",
-    state: "Steg 1 av 3 — lydporten er LUKKET: «Neste» venter på lyd",
+    state:
+      "Hint 1 av 3 under kilde-brikka — lydporten er LUKKET: «Neste» venter på lyd",
     recipe: "`onboardingDone:false`, ingen VU-pakker",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
-    full: true,
+    wait: "hint-bubble",
     narrow: true,
   },
   {
     id: "forste-gang--1-lyd-apen",
     page: "Første gang",
-    state: "Steg 1 av 3 — lydporten er ÅPEN: vi hører noe",
+    state: "Hint 1 av 3 — lydporten er ÅPEN: vi hører noe",
     recipe: "`emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await settleVu(page, "vu-levels", -20, -20);
-      await expect(page.getByTestId("first-run-next")).not.toHaveAttribute(
+      await expect(page.getByTestId("hint-next")).not.toHaveAttribute(
         "aria-disabled",
         "true",
       );
     },
-    full: true,
   },
   {
     id: "forste-gang--2-mappe",
     page: "Første gang",
-    state: "Steg 2 av 3 — hvor skal opptakene?",
+    state:
+      "Hint 2 av 3 — hvor skal opptakene? (lydarket åpnes med «Mer», mappe-raden pulserer)",
     recipe: "«Fortsett uten lyd», så ett steg fram",
     boot: { fixtures: FIRST_RUN_FIXTURES, settings: FIRST_RUN_SETTINGS },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await skipGate(page);
       await expect(page.getByTestId("setup-folder")).toBeVisible();
     },
-    full: true,
   },
   {
     id: "forste-gang--3-plan",
     page: "Første gang",
-    state: "Steg 3 av 3 — første faste opptak, i ukevisningen fra Plan",
+    state: "Hint 3 av 3 — faste opptak, over kalenderknappen",
     recipe: "«Fortsett uten lyd», så to steg fram",
     boot: {
       fixtures: FIRST_RUN_FIXTURES,
@@ -1320,13 +1571,15 @@ export const SCENES: Scene[] = [
         saveFolder: "/Users/frivillig/Opptak",
       },
     },
-    wait: "first-run",
+    wait: "hint-bubble",
     act: async (page) => {
       await skipGate(page);
       await nextSteps(page, 1);
-      await expect(page.getByTestId("first-run-plan")).toBeVisible();
+      await expect(page.getByTestId("hint-bubble")).toHaveAttribute(
+        "data-step",
+        "plan",
+      );
     },
-    full: true,
     narrow: true,
   },
 
@@ -1424,7 +1677,7 @@ export const SCENES: Scene[] = [
     id: "skallet--oppdateringsbanner",
     page: "Skallet",
     state: "Oppdateringsstripa — over den siden man ER på",
-    recipe: "`emit('update-available', { version })` på Bibliotek",
+    recipe: "`emit('update-available', { version })` på Opptak",
     boot: {
       fixtures: { ...BASE, ...DEVICES, recordings_list: LIBRARY_ROWS },
       settings: { ...CHOSEN, autoUpdate: true },
@@ -1451,6 +1704,5 @@ export const SCENES: Scene[] = [
       goto: "record",
     },
     wait: "hydrate-error",
-    full: true,
   },
 ];

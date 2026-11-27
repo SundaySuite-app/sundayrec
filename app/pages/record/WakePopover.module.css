@@ -1,0 +1,59 @@
+/*
+ * Vekke-popoveren: et lite kort over flisen. Ruller i seg selv — historikken
+ * kan bli lang, og popoveren skal aldri vokse ut av stripa.
+ */
+
+.pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  width: 340px;
+  max-width: calc(100vw - 2 * var(--sp-6));
+  max-height: 380px;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-toast);
+  text-align: start;
+  animation: rise var(--dur) var(--ease-out);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.sentence {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.notes {
+  margin: 0;
+  padding-inline-start: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.historyHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-3);
+}
+
+.historyTitle {
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  font-weight: 600;
+}

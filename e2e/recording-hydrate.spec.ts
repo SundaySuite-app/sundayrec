@@ -98,7 +98,7 @@ test.describe("oppstart mens motoren allerede tar opp", () => {
     // Nedtellingen er motorens, ikke en lokal gjetning: den satt i det ene
     // feltet snapshotet bar med seg.
     await expect(page.getByTestId("overlay-autostop")).toContainText(
-      "Stopper av seg selv",
+      "Stopper ",
     );
     // Og stoppknappen er der — poenget med hele runden er at frivilligen har
     // en vei ut av et opptak hun ikke startet på denne siden.
@@ -253,7 +253,7 @@ test.describe("kappløpet mellom snapshotet og motorens egne hendelser", () => {
 
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
     await expect(page.getByTestId("overlay-autostop")).toContainText(
-      "Stopper av seg selv",
+      "Stopper ",
     );
   });
 });

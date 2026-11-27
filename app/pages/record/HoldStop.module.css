@@ -1,0 +1,75 @@
+/*
+ * «Hold»-knappen: 112 px rød, hvit firkant, og en ring som fylles over ett
+ * sekund mens den holdes. `touch-action: none` så en finger ikke blir til en
+ * rulling midt i holdet.
+ */
+
+.button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 112px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--rec);
+  color: var(--on-rec);
+  box-shadow: var(--shadow-rec);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.button[data-holding="true"] {
+  transform: scale(0.97);
+}
+
+.button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.track,
+.fill {
+  fill: none;
+  stroke-width: 5;
+}
+
+.track {
+  stroke: var(--ring-track);
+}
+
+.fill {
+  stroke: var(--on-rec);
+  stroke-linecap: round;
+  /* Ned igjen på et kvarter; opp over hele holdet (ett sekund, jevnt). */
+  transition: stroke-dashoffset var(--dur-fast) var(--ease-out);
+}
+
+.fill[data-holding="true"] {
+  transition: stroke-dashoffset 1s linear;
+}
+
+.square {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--on-rec);
+  pointer-events: none;
+}

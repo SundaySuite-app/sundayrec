@@ -1,14 +1,14 @@
 /**
- * Skallets rot — de to linjene, og de fire sidene (F5).
+ * Skallets rot — toppfeltet, og de tre flatene («Én flate»).
  *
  *   TA OPP        `app/pages/record/`: den store knappen, kilden og nivået,
- *                 kameraet og linja om neste planlagte opptak.
+ *                 kameraet og ukestripa (planen) nederst.
  *   OPPTAK        `app/pages/library/` + `app/editor/`: lista er landingen, et
  *                 opptak åpner editoren på samme side, og eksporten er et ark
  *                 inne i editoren. Papirkurven er en fane.
- *   PLAN          `app/pages/plan/`: den ukentlige tidsplanen.
- *   INNSTILLINGER `app/pages/settings/`: lyd, kamera, mappe, varsler, språk,
- *                 oppdatering, personvern og om.
+ *   INNSTILLINGER tannhjulet (`app/pages/settings/GearDialog.tsx`): språk,
+ *                 oppdatering, anonym statistikk og om — et kort over siden
+ *                 man kom fra, ikke en side av seg selv.
  *
  * Skallet, statuslinjen, navigasjonen og fokusflyttingen er det PageShell og
  * denne fila eier; sidene eier resten.
@@ -28,12 +28,13 @@
  *
  * ## Første gang, og samtykkekortet
  *
- * `route.firstRun` bytter ut HELE innholdet med sekvensen (`FirstRun`): de
- * samme fem skjermene, ett spørsmål om gangen. Topplinja og bunnlinja STÅR,
- * fordi de er stedet appen er.
+ * Første gang er ikke en egen skjerm: TA OPP er stedet, og tre
+ * hintbobler (`pages/record/FirstRunHints.tsx`) legger seg over den så lenge
+ * `onboardingDone` er falsk — lydkilde, mappe, faste opptak. Skallet gjør
+ * ingenting selv; hintlaget leser innstillingene.
  *
- * Samtykkekortet hører til OPPTAK og ikke til sekvensen — canvasens sett 6
- * flyttet det ut med vilje. Det bor nå i `RecordPage`, der det hører hjemme.
+ * Samtykkekortet hører til TA OPP og ikke til hintene — canvasens sett 6
+ * flyttet det ut med vilje. Det bor i `RecordPage`, der det hører hjemme.
  *
  * ## Overlays er søsken av `#app`
  *
@@ -85,14 +86,12 @@ import { TrashPage } from "./pages/library/TrashPage";
 import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
-import { FirstRun, firstRunHeading } from "./pages/firstrun/FirstRun";
-import { PlanPage } from "./pages/plan/PlanPage";
-import { SettingsPage } from "./pages/settings/SettingsPage";
+import { GearDialog } from "./pages/settings/GearDialog";
 import {
   consumePendingAction,
-  navigate,
   pendingAction,
   route,
+  underlay,
 } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { audioDevices } from "./state/devices";
@@ -118,69 +117,72 @@ export function Shell({ probe }: ShellProps) {
   useTrayFolder();
   useGlobalShortcuts();
 
-  const firstRun = current.firstRun === true;
+  // Tannhjulet er et kort OVER siden man kom fra: skallet viser den siden
+  // (`underlay`), `inert` bak sløret, og lukking går tilbake dit.
+  const gear = current.page === "settings";
+  const shown = gear ? underlay.value : current;
 
+  /* TA OPP og INNSTILLINGER heter det destinasjonen heter — begge er ÉN
+    skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
+    underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
+    opptaket som er åpent). */
   return (
-    /*
-      TA OPP, PLAN og INNSTILLINGER heter det destinasjonen heter — alle er ÉN
-      skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
-      underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
-      opptaket som er åpent), og første gang er fem spørsmål med hvert sitt.
-    */
-    <PageShell
-      heading={
-        firstRunHeading(firstRun) ??
-        (current.page === "recordings" ? editHeading(current.tab) : undefined)
-      }
-    >
-      {/*
+    <>
+      <PageShell
+        inert={gear}
+        heading={
+          (shown.page === "recordings" ? editHeading(shown.tab) : undefined) ??
+          // Under tannhjulet heter siden det den under heter, ikke «Innstillinger».
+          (gear ? tDyn("app.page", shown.page) : undefined)
+        }
+      >
+        {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
         fabrikkny app. Feilringen er det eneste stedet forskjellen finnes.
       */}
-      {failed ? (
-        <Banner
-          tone="bad"
-          title={tDyn("error", failed)}
-          testId="hydrate-error"
-          actions={
-            <Button testId="hydrate-retry" onClick={() => void retryHydrate()}>
-              {t("error.settingsLoadRetry")}
-            </Button>
-          }
-        />
-      ) : null}
+        {failed ? (
+          <Banner
+            tone="bad"
+            title={tDyn("error", failed)}
+            testId="hydrate-error"
+            actions={
+              <Button
+                testId="hydrate-retry"
+                onClick={() => void retryHydrate()}
+              >
+                {t("error.settingsLoadRetry")}
+              </Button>
+            }
+          />
+        ) : null}
 
-      <UpdateBanner />
+        <UpdateBanner />
 
-      {import.meta.env.DEV && probe === "setting" ? (
-        <SettingProbe />
-      ) : firstRun ? (
-        <FirstRun />
-      ) : current.page === "record" ? (
-        <RecordPage />
-      ) : current.page === "recordings" ? (
-        <RecordingsSurface tab={current.tab} />
-      ) : current.page === "plan" ? (
-        <PlanPage />
-      ) : (
-        <SettingsPage />
-      )}
-    </PageShell>
+        {import.meta.env.DEV && probe === "setting" ? (
+          <SettingProbe />
+        ) : shown.page === "record" ? (
+          /* Panelene (lydarket, ukestripa) åpnes av `RecordPage` selv. */
+          <RecordPage />
+        ) : (
+          <RecordingsSurface tab={shown.tab} />
+        )}
+      </PageShell>
+      {gear ? <GearDialog /> : null}
+    </>
   );
 }
 
 /**
  * «Prøv igjen» på banneret for en feilet innstillingslesing. Leser på nytt; går
  * det, er innstillingene ikke lenger skrivebeskyttet, språket følger det
- * lagrede, og en ekte førstegangsinstallasjon (som oppstarten ikke sendte til
- * oppsettet mens lesingen sto som feilet) kommer dit nå.
+ * lagrede, og hintene for en ekte førstegangsinstallasjon (som ventet mens
+ * lesingen sto som feilet) kommer nå.
  */
 async function retryHydrate(): Promise<void> {
   await hydrateSettings();
   if (hydrateError.peek()) return;
   await setLocale(resolveStartupLocale(settings.peek().language));
-  if (!settings.peek().onboardingDone) navigate("settings", { firstRun: true });
 }
 
 /**

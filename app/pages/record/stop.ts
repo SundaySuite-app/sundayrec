@@ -1,43 +1,30 @@
 /**
- * Å be om å få stoppe — og bare gjøre det hvis svaret er nei.
+ * Å stoppe opptaket — holdt inne, ikke bekreftet.
  *
- * ## Bekreftelsen er snudd med vilje
+ * ## «Hold» erstatter dialogen
  *
- * Eiervalget (canvas sett 2, punkt 3): primærknappen er «Fortsett å ta opp».
- * Et uhell midt i prekenen skal koste ett klikk til, ikke opptaket.
- * `buildConfirm` gir BEKREFT-knappen primærplassen og Enter-tasten når
- * dialogen ikke er `danger` — så «fortsett» ER bekreftelsen her, og «stopp»
- * går den veien som ellers heter avbryt.
+ * Før spurte `confirmAndStop` «Stoppe opptaket?» med «Fortsett» som
+ * primærknapp. Den nye opptaksmodusen (E6) har én kontroll for det: den røde
+ * knappen som må holdes i ett sekund (`HoldStop`). Et uhell midt i prekenen
+ * koster fortsatt mer enn ett trykk — det koster ett HELT sekund med
+ * fingeren på — men ingen dialog skal besvares mens lyden går.
  *
- * Alternativet var `danger: true`, som gir avbryt Enter-plassen — men det maler
- * også stopp-knappen RØD, og rødt betyr én ting i denne appen: at det tas opp.
- * En rød stoppknapp midt i et rødt overlegg er nøyaktig den fargekollisjonen
- * sett 0 låste bort.
+ * Det som holdt dialogen trygg gjelder like mye nå, og bor her:
  *
- * ## F2-T3: Escape skal ikke kunne stoppe opptaket
+ *   - `beginStop()` sier nei mens motoren allerede skriver ferdig (en andre
+ *     stoppforespørsel er ingen ny stoppforespørsel) og leser øktas identitet
+ *     (`sessionStartedAtMs`) i det holdet BEGYNNER.
+ *   - `completeStop()` sjekker den identiteten på nytt når sekundet er omme. Et
+ *     hold kan vare lenge nok til at økta tok slutt av seg selv (planlagt stopp,
+ *     full disk, tapt enhet) — eller tok slutt og en NY startet. «Stopp» betyr
+ *     da ikke lenger det hun holdt inne for å stoppe.
+ *   - `enterFinalizing()` FØR kommandoen, som alltid: skjermen sier «Fullfører»
+ *     fra første øyeblikk, og de neste trykkene ignoreres.
  *
- * `cancelLabel` bærer «stopp» — den AKTIVE handlingen, ikke den vanlige
- * no-op-en avbryt-knappen ellers er. `DialogHost` lukker enhver dialog med
- * Escape (og et klikk på sløret) via KNAPPEN MED `isCancel`, uansett hva den
- * knappen betyr — og uten `escapeConfirms: true` er det nettopp «stopp»-
- * knappen. Bevist i praksis (`e2e/record.spec.ts`): et Escape-trykk kalte
- * `stop_recording` og satte opptaket i «Fullfører …» — nøyaktig den ene
- * uhellet bekreftelsen finnes for å forhindre, bare via tastaturet i stedet
- * for et feilklikk. `escapeConfirms: true` flytter Escape til «Fortsett å ta
- * opp» uten å røre stilen (fortsatt ghost, fortsatt ikke Enter-default) — se
- * `@lib/ui/dialog-core.ts`.
+ * ## Menylinjens «Stopp opptak»
  *
- * ## Egen fil
- *
- * Både overleggets stoppknapp og menylinjens «Stopp opptak» skal gjennom det
- * SAMME spørsmålet. En av dem som spurte og en som ikke gjorde det er den
- * formen for uenighet som koster et opptak.
- *
- * ## `protectRecording` leses ikke
- *
- * Innstillingen har null Rust-lesere (ATLAS §2.6), det nye Avansert viser den
- * ikke, og bekreftelsen er en designbeslutning i sett 2 — ikke noe man skrur
- * av. Legacy-skallet har fortsatt bryteren sin.
+ * Er et bevisst valg i en meny, ikke en knapp man kan treffe ved et uhell, og
+ * ber ikke om noe hold: `stopNow()` går gjennom de samme vaktene.
  */
 
 import { t, tf } from "../../i18n";
@@ -51,38 +38,28 @@ import {
 import { confirmDialog } from "../../ui/dialog";
 import { formatClock } from "./record-core";
 
-/** True while the question is on screen — a second press must not queue a
- *  second dialog whose «stop» answer would then hit whatever runs by then. */
-let asking = false;
+/** Hvor lenge knappen holdes inne (ms). Ringen i `HoldStop` fyller seg over det samme. */
+export const HOLD_TO_STOP_MS = 1000;
 
-export async function confirmAndStop(): Promise<void> {
-  // Et andre trykk mens motoren skriver ferdig er ikke en ny stoppforespørsel.
-  if (finalizing.peek() || asking) return;
-  const startedAt = sessionStartedAtMs.peek();
-  asking = true;
-  let keepRecording: boolean;
-  try {
-    keepRecording = await confirmDialog({
-      title: t("app.overlay.stopQuestion"),
-      message: tf("app.overlay.stopQuestionDesc", {
-        elapsed: formatClock(startedAt === null ? 0 : Date.now() - startedAt),
-      }),
-      confirmLabel: t("app.overlay.keep"),
-      cancelLabel: t("app.overlay.stopYes"),
-      escapeConfirms: true,
-    });
-  } finally {
-    asking = false;
-  }
-  if (keepRecording) return;
+/** Øktas identitet slik den var da holdet begynte. */
+export interface StopTicket {
+  startedAt: number | null;
+}
 
-  // The dialog can stay open for minutes. If the take ended by itself meanwhile
-  // (scheduled stop, disk full, device lost) — or ended and a NEW one started —
-  // «stop» no longer refers to what the volunteer was asked about.
+/** Begynn et stopp. `null` = ignorer: motoren skriver allerede ferdig, eller
+ *  det går ikke noe opptak. */
+export function beginStop(): StopTicket | null {
+  if (finalizing.peek() || !isRecording.peek()) return null;
+  return { startedAt: sessionStartedAtMs.peek() };
+}
+
+/** Fullfør stoppet — men bare hvis det fortsatt er DEN økta. */
+export async function completeStop(ticket: StopTicket | null): Promise<void> {
+  if (ticket === null) return;
   if (
     !isRecording.peek() ||
     finalizing.peek() ||
-    sessionStartedAtMs.peek() !== startedAt
+    sessionStartedAtMs.peek() !== ticket.startedAt
   ) {
     return;
   }
@@ -96,4 +73,48 @@ export async function confirmAndStop(): Promise<void> {
     console.error("[record] stop_recording feilet:", err);
     endSessionLocally();
   }
+}
+
+/** True mens spørsmålet står på skjermen: et andre trykk skal ikke legge en
+ *  andre dialog i køen. */
+let asking = false;
+
+/**
+ * Stopp med en BEKREFTELSE i stedet for et hold — veien for skjermlesere.
+ *
+ * VoiceOver og Narrator «klikker» knappen (et click-event uten pekertrykk), og
+ * et hold kan ikke gjøres med en slik handling. Samme vakter som holdet:
+ * øktas identitet leses FØR spørsmålet og sjekkes etter det (dialogen kan stå
+ * åpen i minutter). Escape og klikk på sløret velger «Fortsett å ta opp»
+ * (`escapeConfirms`: «Fortsett» er dialogens bekreft-knapp, «Stopp» er den
+ * AKTIVE handlingen) — et uhell skal aldri stoppe en gudstjeneste.
+ */
+export async function confirmAndStop(): Promise<void> {
+  if (finalizing.peek() || !isRecording.peek() || asking) return;
+  const ticket = beginStop();
+  if (ticket === null) return;
+  asking = true;
+  let keepRecording: boolean;
+  try {
+    keepRecording = await confirmDialog({
+      title: t("app.rec.stopQuestion"),
+      message: tf("app.rec.stopQuestionDesc", {
+        elapsed: formatClock(
+          ticket.startedAt === null ? 0 : Date.now() - ticket.startedAt,
+        ),
+      }),
+      confirmLabel: t("app.rec.keep"),
+      cancelLabel: t("app.rec.stopYes"),
+      escapeConfirms: true,
+    });
+  } finally {
+    asking = false;
+  }
+  if (keepRecording) return;
+  await completeStop(ticket);
+}
+
+/** Stopp nå, uten hold (menylinja). Samme vakter. */
+export function stopNow(): Promise<void> {
+  return completeStop(beginStop());
 }

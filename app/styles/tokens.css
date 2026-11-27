@@ -84,11 +84,42 @@
    */
   --on-gold: #1b1f2a;
   --on-rec: #ffffff;
+  --ring-track: rgba(255, 255, 255, 0.25);
   /* Bryterens knott og VU-spissmarkøren: ren hvit på alle underlag. */
   --knob: #ffffff;
 
   /* Bakgrunnen bak en modal. Egen token: den er ikke `--bg`, den er et slør. */
   --scrim: rgba(6, 9, 18, 0.72);
+
+  /* ── «Én flate»: gullnivåer, slør og målerdekke (fra skissen) ─────────── */
+  --gold-faint: rgba(235, 184, 75, 0.1);
+  --gold-mid: rgba(235, 184, 75, 0.22);
+  --gold-strong: rgba(235, 184, 75, 0.45);
+  --gold-spot: rgba(235, 184, 75, 0.7);
+  --gold-clear: rgba(235, 184, 75, 0);
+  --scrim-sheet: rgba(6, 9, 18, 0.55);
+  --scrim-chip: rgba(6, 9, 18, 0.6);
+  --scrim-chip-strong: rgba(6, 9, 18, 0.7);
+  /* Dekket som glir over en måler og avslører fargen under. */
+  --meter-cover: rgba(14, 19, 33, 0.92);
+  --ink-soft: rgba(237, 240, 247, 0.12);
+  --ink-soft-2: rgba(237, 240, 247, 0.14);
+  /* Video-stripa nederst i bildet (E7): mørk, så tid og knapper leses over alt. */
+  --video-bar: rgba(6, 9, 18, 0.62);
+  /* Skravuren på et utklippet område i bølgeformen (E7). */
+  --cut-hatch: repeating-linear-gradient(
+    135deg,
+    var(--line-2) 0,
+    var(--line-2) 2px,
+    transparent 2px,
+    transparent 9px
+  );
+
+  /* ── Bevegelse ────────────────────────────────────────────────────────── */
+  --dur-fast: 150ms;
+  --dur: 250ms;
+  --dur-slow: 420ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* ── Skygger ──────────────────────────────────────────────────────────── */
   --shadow-dialog: 0 24px 70px rgba(0, 0, 0, 0.6);
@@ -113,6 +144,12 @@
   --sp-6: 24px;
   --sp-7: 32px;
   --sp-8: 48px;
+  /* Mellomstegene skissen bruker (ukestripa): 6/10 px mellom 4/8/12-rutenettet,
+     og stripas egen luft (28 mellom delene, 32 til kanten). */
+  --gap-tight: 6px;
+  --gap-snug: 10px;
+  --strip-gap: 28px;
+  --strip-pad: 32px;
 
   /*
    * ── Typografi ─────────────────────────────────────────────────────────
@@ -176,7 +213,8 @@
    * dele plass med. 56 px er et 44 px treffmål med 6 px luft over og under.
    */
   --traffic-lights-w: 84px;
-  --topbar-h: 44px;
+  /* E1: 64 px — toppfeltet bærer et 42 px merke og 44 px treffmål. */
+  --topbar-h: 64px;
   --bottombar-h: 56px;
   /* Handlingslinja (`ActionBar`): 12 + 12 padding, 40 px knapp, 1 px kant, med
      litt luft for en to-linjers hint. Brukes til å løfte varsler og

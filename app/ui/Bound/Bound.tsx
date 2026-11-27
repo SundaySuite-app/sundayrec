@@ -23,10 +23,10 @@
  *
  * De bestemmer heller ikke NÅR noe lagres. Det gjør `planCommit` i
  * `@lib/ui/bind-setting-core`, gjennom `useSetting().events`: en bryter
- * committer på valget, et tekstfelt med etterslep. Derfor kaller
- * `BoundTextField` `set()` på hvert tastetrykk (hooken debouncer) og
- * `commit()` på blur/Enter — begge, fordi et felt som bare lyttet på `change`
- * aldri ville lagret en verdi som ble skrevet og forlatt.
+ * committer på valget. (Tekst- og tallfelt-variantene gikk ut i E9 — ingen
+ * flate hadde lenger et fritekstfelt som en innstilling; `useSetting` kan
+ * fortsatt bære dem, og kommer et nytt felt tilbake, skal det få sin Bound*
+ * her med samme form.)
  */
 
 import {
@@ -35,13 +35,10 @@ import {
   type UseSettingOpts,
 } from "../../settings/use-setting";
 import type { Settings } from "../../state/settings";
-import { NumberField, checkNumberInput } from "../NumberField/NumberField";
 import { RadioCards, type RadioOption } from "../RadioCards/RadioCards";
 import { Select, type SelectOption } from "../Select/Select";
 import { SettingRow } from "../SettingRow/SettingRow";
-import { TextField } from "../TextField/TextField";
 import { Toggle } from "../Toggle/Toggle";
-import type { NumberRule, NumberIssue } from "@lib/ui/bind-setting-core";
 
 /** Det hver Bound*-komponent deler. */
 interface BoundBase<K extends ScalarSettingKey> {
@@ -155,102 +152,6 @@ export function BoundRadioCards<K extends ScalarSettingKey>({
           columns={columns}
           onChange={(next) => bound.set(next)}
           disabled={disabled || bound.busy}
-          labelId={ids.labelId}
-          describedBy={ids.describedBy}
-          testId={testId ? `${testId}-control-input` : undefined}
-        />
-      )}
-    </SettingRow>
-  );
-}
-
-export function BoundTextField<K extends ScalarSettingKey>({
-  setting,
-  label,
-  description,
-  placeholder,
-  type,
-  validate,
-  disabled = false,
-  confirmIf,
-  testId,
-}: BoundBase<K> & {
-  placeholder?: string;
-  type?: "text";
-  /** Returner en melding for å avvise verdien. */
-  validate?: (value: Settings[K]) => string | null;
-}) {
-  const bound = useSetting(setting, { kind: "text", validate, confirmIf });
-  return (
-    <SettingRow
-      label={label}
-      description={description}
-      receipt={bound.receipt}
-      error={bound.error}
-      disabled={disabled}
-      testId={testId}
-    >
-      {(ids) => (
-        <TextField
-          value={String(bound.draft ?? "")}
-          type={type}
-          placeholder={placeholder}
-          invalid={bound.error !== null}
-          onInput={(next) => bound.set(next)}
-          onCommit={() => void bound.commit()}
-          disabled={disabled}
-          labelId={ids.labelId}
-          describedBy={ids.describedBy}
-          testId={testId ? `${testId}-control-input` : undefined}
-        />
-      )}
-    </SettingRow>
-  );
-}
-
-export function BoundNumberField<K extends ScalarSettingKey>({
-  setting,
-  label,
-  description,
-  rule,
-  message,
-  disabled = false,
-  confirmIf,
-  testId,
-}: BoundBase<K> & {
-  rule?: NumberRule;
-  /** Teksten for en avvist verdi. Katalogens, ikke bibliotekets. */
-  message: (issue: NumberIssue, bound?: number) => string;
-}) {
-  const bound = useSetting(setting, {
-    kind: "number",
-    // ÉN validering: feltet og hooken stiller samme spørsmål gjennom
-    // `checkNumberInput`, som er `validateNumber` fra bind-setting-core.
-    // To steder som validerer «omtrent likt» er hvordan et felt godtar noe
-    // basen avviser.
-    validate: (value) => {
-      const check = checkNumberInput(String(value ?? ""), rule);
-      return check.ok ? null : message(check.issue ?? "nan", check.bound);
-    },
-    confirmIf,
-  });
-  return (
-    <SettingRow
-      label={label}
-      description={description}
-      receipt={bound.receipt}
-      error={bound.error}
-      disabled={disabled}
-      testId={testId}
-    >
-      {(ids) => (
-        <NumberField
-          value={String(bound.draft ?? "")}
-          rule={rule}
-          invalid={bound.error !== null}
-          onInput={(next) => bound.set(next)}
-          onCommit={() => void bound.commit()}
-          disabled={disabled}
           labelId={ids.labelId}
           describedBy={ids.describedBy}
           testId={testId ? `${testId}-control-input` : undefined}

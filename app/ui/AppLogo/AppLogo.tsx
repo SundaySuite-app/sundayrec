@@ -52,13 +52,94 @@
 
 import styles from "./AppLogo.module.css";
 
+const MARK = (
+  <>
+    <path
+      d="M 701.3 375.6 A 161.3 161.3 0 0 1 701.3 583.0"
+      fill="none"
+      stroke="#EBB84B"
+      stroke-width="15"
+      stroke-linecap="round"
+    />
+    <path
+      d="M 322.7 375.6 A 161.3 161.3 0 0 0 322.7 583.0"
+      fill="none"
+      stroke="#EBB84B"
+      stroke-width="15"
+      stroke-linecap="round"
+    />
+    <path
+      d="M 766.5 301.6 A 270.8 270.8 0 0 1 766.5 657.0"
+      fill="none"
+      stroke="#EBB84B"
+      stroke-width="15"
+      stroke-linecap="round"
+    />
+    <path
+      d="M 257.4 301.6 A 270.8 270.8 0 0 0 257.4 657.0"
+      fill="none"
+      stroke="#EBB84B"
+      stroke-width="15"
+      stroke-linecap="round"
+    />
+    <rect
+      x="479.5"
+      y="320.0"
+      width="65.0"
+      height="425.8"
+      rx="6.2"
+      fill="url(#srlogo-gold)"
+    />
+    <rect
+      x="376.8"
+      y="437.6"
+      width="270.4"
+      height="65.0"
+      rx="6.2"
+      fill="url(#srlogo-gold)"
+    />
+  </>
+);
+
 export interface AppLogoProps {
   /** Kantlengden i piksler. Topplinja ber om 22 (D3 — skinnen ba om 28, og
    *  standardverdien er fortsatt den, fordi den er tegningens eget mål). */
   size?: number;
+  /**
+   * «Én flate»: bare gullkorset og de fire buene, uten marineflis, glød og
+   * avrundet klipp. Tegnet rett på toppfeltets bakgrunn. Samme baner og samme
+   * `srlogo-gold`-gradient som standardvarianten — viewBox beskjæres til
+   * korset (`152 163 720 720`). Én av de to varianter står i dokumentet om
+   * gangen i praksis; id-en deles med vilje (samme gradient, samme verdier).
+   */
+  bare?: boolean;
 }
 
-export function AppLogo({ size = 28 }: AppLogoProps) {
+export function AppLogo({ size = 28, bare = false }: AppLogoProps) {
+  if (bare) {
+    return (
+      <span
+        aria-hidden="true"
+        data-testid="app-logo"
+        class={`${styles.logo} ${styles.bare}`}
+        style={{ width: size, height: size }}
+      >
+        <svg
+          viewBox="152 163 720 720"
+          xmlns="http://www.w3.org/2000/svg"
+          overflow="visible"
+        >
+          <defs>
+            <linearGradient id="srlogo-gold" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#F2D58A" />
+              <stop offset="1" stop-color="#EBB84B" />
+            </linearGradient>
+          </defs>
+          {MARK}
+        </svg>
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"
@@ -87,50 +168,7 @@ export function AppLogo({ size = 28 }: AppLogoProps) {
         <g clip-path="url(#srlogo-clip)">
           <rect width="1024" height="1024" fill="url(#srlogo-bg)" />
           <rect width="1024" height="1024" fill="url(#srlogo-glow)" />
-          <path
-            d="M 701.3 375.6 A 161.3 161.3 0 0 1 701.3 583.0"
-            fill="none"
-            stroke="#EBB84B"
-            stroke-width="15"
-            stroke-linecap="round"
-          />
-          <path
-            d="M 322.7 375.6 A 161.3 161.3 0 0 0 322.7 583.0"
-            fill="none"
-            stroke="#EBB84B"
-            stroke-width="15"
-            stroke-linecap="round"
-          />
-          <path
-            d="M 766.5 301.6 A 270.8 270.8 0 0 1 766.5 657.0"
-            fill="none"
-            stroke="#EBB84B"
-            stroke-width="15"
-            stroke-linecap="round"
-          />
-          <path
-            d="M 257.4 301.6 A 270.8 270.8 0 0 0 257.4 657.0"
-            fill="none"
-            stroke="#EBB84B"
-            stroke-width="15"
-            stroke-linecap="round"
-          />
-          <rect
-            x="479.5"
-            y="320.0"
-            width="65.0"
-            height="425.8"
-            rx="6.2"
-            fill="url(#srlogo-gold)"
-          />
-          <rect
-            x="376.8"
-            y="437.6"
-            width="270.4"
-            height="65.0"
-            rx="6.2"
-            fill="url(#srlogo-gold)"
-          />
+          {MARK}
         </g>
       </svg>
     </span>

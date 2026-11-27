@@ -1,24 +1,25 @@
 # Atlas — SundayRec slik appen ER
 
-Hvert bilde er ett skjermbilde av appen slik den står på denne grenen: v0.28.0
-med designrunden i november 2026 oppå — **luft** (tetthetstokens på 4/8-rutenettet
-og en maksbredde på sidene), **handlingslinje** (Start, «Neste» og eksport står
-fast nederst), **seksjoner** (Innstillinger delt i Kirke og språk · Tidsplan ·
-Legg ut · Opptaket · Oppdateringer og personvern · Hjelp og feilsøking · Om)
-og **ny tekst** på alle sju språk (ordlista: lydkilde, miksebord, lydjustering,
-opptaksmotor). Ingenting her er et forslag — dette er den visuelle
-regresjonsbasen. Scene-id-ene er uendret fra før runden, så de to
-atlasene kan sammenlignes fil for fil, også der navnet på stedet er byttet
-(`redigering--*` er nå **Bibliotek**, `eksport--*` heter **Eksport**).
+Hvert bilde er ett skjermbilde av appen slik den står i **v0.32.0-beta.1 — «én flate»**:
+to flater (**Ta opp** og **Opptak**) og et tannhjul. Alt som før var egne sider er
+flyttet dit det brukes — lydkilde, mappe og kvalitet i **lydarket**, planen og
+bryterne i **ukestripa** nederst på Ta opp, formatet og intro/outro i
+**eksportarket**, språk, oppdatering og statistikk i **tannhjulet** — og opptaket
+selv er «bare opptaket» (**opptaksmodus** med hold-for-stopp). Skissen som ble
+bygget etter ligger i [`../en-flate/`](../en-flate/). Ingenting her er et
+forslag — dette er den visuelle regresjonsbasen. Scene-id-ene som het
+`innstillinger--*` og `plan--*` er erstattet av `tannhjul--*`,
+`lydark--*` og `strip--*`; de som lever (`opptak--*`, `redigering--*`,
+`eksport--*`, `forste-gang--*`, `skallet--*`) beholder navnet.
 
 Arkivet fra v0.15 ligger i [`../atlas-v015/`](../atlas-v015/INDEX.md), sammen
 med IA-uttrekket i [`../ATLAS.md`](../ATLAS.md). De to viser appen slik den
 VAR, og skal ikke forveksles med denne mappa.
 
-**Vindu:** 1180×760 (Tauri-vinduets standardstørrelse). Hovedscenen på hver
-destinasjon er i tillegg fotografert på 1000×760 — bredden der kontrollrommet
-faller til ÉN kolonne — med suffikset `--1000x760` (norsk bare: om en layout
-overlever én kolonne er ikke et språkspørsmål). Sider som ruller forbi vindushøyden har
+**Vindu:** 1180×760 (Tauri-vinduets standardstørrelse). Hovedscenene er i
+tillegg fotografert på 1000×760 — en smalere maskin enn standard — med suffikset
+`--1000x760` (norsk bare: om en layout overlever bredden er ikke et
+språkspørsmål). Sider som ruller forbi vindushøyden har
 et `--full`-skudd som viser hele siden (vindushøyden settes til innholdets
 høyde; Playwrights egen `fullPage` gir ingenting her, fordi appen ruller inne i
 `#main`, ikke i dokumentet).
@@ -26,7 +27,7 @@ høyde; Playwrights egen `fullPage` gir ingenting her, fordi appen ruller inne i
 **Språk:** `no/` og `en/`. De fem andre språkene i språkvelgeren er satt på
 pause og er ikke fotografert.
 
-**Total størrelse:** 7.5 MB i 206 PNG-er. Komprimert med `magick mogrify -colors 256`: 21.1 MB → 7.5 MB.
+**Total størrelse:** 4.0 MB i 149 PNG-er. Komprimert med `magick mogrify -colors 256`: 10.8 MB → 4.0 MB.
 
 ## Kjøre på nytt
 
@@ -53,99 +54,104 @@ det, er en scene som ikke står stille.
 
 ## Scener
 
-### Opptak
+### Ta opp
 
 | Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
 | --- | --- | --- | --- | --- | --- |
-| `opptak--kald` | Kald start — ingen lydkilde valgt ennå | ingen `deviceId`; Start er sperret og sier hvorfor | [`no/opptak--kald.png`](no/opptak--kald.png) | [`en/opptak--kald.png`](en/opptak--kald.png) | [`no/opptak--kald--1000x760.png`](no/opptak--kald--1000x760.png) |
-| `opptak--klar` | Klar — kilde valgt, plass på disken, neste og siste opptak | `deviceId:x32` + `scheduler_status.next` + tre opptak i lista | [`no/opptak--klar.png`](no/opptak--klar.png) | [`en/opptak--klar.png`](en/opptak--klar.png) | [`no/opptak--klar--full.png`](no/opptak--klar--full.png) · [`en/opptak--klar--full.png`](en/opptak--klar--full.png) · [`no/opptak--klar--1000x760.png`](no/opptak--klar--1000x760.png) |
+| `opptak--kald` | Kald start — ingen lydkilde valgt ennå | ingen `deviceId`; den store knappen er sperret og sier hvorfor | [`no/opptak--kald.png`](no/opptak--kald.png) | [`en/opptak--kald.png`](en/opptak--kald.png) | [`no/opptak--kald--1000x760.png`](no/opptak--kald--1000x760.png) |
+| `opptak--klar` | Klar — kilde-brikka med L/R-måler, den store knappen, og ukestripa med «Neste» | `deviceId:x32` + én fast tid + `scheduler_status.next`; måleren settles | [`no/opptak--klar.png`](no/opptak--klar.png) | [`en/opptak--klar.png`](en/opptak--klar.png) | [`no/opptak--klar--1000x760.png`](no/opptak--klar--1000x760.png) |
 | `opptak--kilde-borte` | Kilden er valgt, men ikke til stede nå | `list_audio_devices` uten `x32`; Start er ÅPEN, med advarsel | [`no/opptak--kilde-borte.png`](no/opptak--kilde-borte.png) | [`en/opptak--kilde-borte.png`](en/opptak--kilde-borte.png) | — |
-| `opptak--kort-lyd` | Kilde-kortet foldet ut — hele «Hvilken lydkilde?» på stedet | `?goto=settings:audio` → anker `sound` | [`no/opptak--kort-lyd.png`](no/opptak--kort-lyd.png) | [`en/opptak--kort-lyd.png`](en/opptak--kort-lyd.png) | [`no/opptak--kort-lyd--full.png`](no/opptak--kort-lyd--full.png) · [`en/opptak--kort-lyd--full.png`](en/opptak--kort-lyd--full.png) |
-| `opptak--kort-mappe` | «Hvor lagres opptakene?» foldet ut | `?goto=settings:files` → anker `folder` | [`no/opptak--kort-mappe.png`](no/opptak--kort-mappe.png) | [`en/opptak--kort-mappe.png`](en/opptak--kort-mappe.png) | [`no/opptak--kort-mappe--full.png`](no/opptak--kort-mappe--full.png) · [`en/opptak--kort-mappe--full.png`](en/opptak--kort-mappe--full.png) |
-| `opptak--kort-kvalitet` | «Hvilken kvalitet?» foldet ut | klikk `control-quality-expand` (ingen gammel fane peker hit) | [`no/opptak--kort-kvalitet.png`](no/opptak--kort-kvalitet.png) | [`en/opptak--kort-kvalitet.png`](en/opptak--kort-kvalitet.png) | [`no/opptak--kort-kvalitet--full.png`](no/opptak--kort-kvalitet--full.png) · [`en/opptak--kort-kvalitet--full.png`](en/opptak--kort-kvalitet--full.png) |
-| `opptak--kort-kamera` | «Ta med video» foldet ut, med kameravalget | `?goto=settings:video` + `videoEnabled:true` — kortet kan BARE foldes ut når tillegget er på | [`no/opptak--kort-kamera.png`](no/opptak--kort-kamera.png) | [`en/opptak--kort-kamera.png`](en/opptak--kort-kamera.png) | [`no/opptak--kort-kamera--full.png`](no/opptak--kort-kamera--full.png) · [`en/opptak--kort-kamera--full.png`](en/opptak--kort-kamera--full.png) |
-| `opptak--kort-auto` | «Ta opp automatisk» foldet ut, med to faste tider | `?goto=schedule` → anker `auto`; to slots i innstillingene | [`no/opptak--kort-auto.png`](no/opptak--kort-auto.png) | [`en/opptak--kort-auto.png`](en/opptak--kort-auto.png) | [`no/opptak--kort-auto--full.png`](no/opptak--kort-auto--full.png) · [`en/opptak--kort-auto--full.png`](en/opptak--kort-auto--full.png) |
-| `opptak--kort-varsling` | «Varsling» foldet ut | `?goto=settings:sharing` → anker `notify` | [`no/opptak--kort-varsling.png`](no/opptak--kort-varsling.png) | [`en/opptak--kort-varsling.png`](en/opptak--kort-varsling.png) | [`no/opptak--kort-varsling--full.png`](no/opptak--kort-varsling--full.png) · [`en/opptak--kort-varsling--full.png`](en/opptak--kort-varsling--full.png) |
-| `opptak--kamera-live` | Kamerabildet står — fasen `live` | `videoEnabled:true` + `camera_preview_start`-fixtur og en ekte JPEG ned kanalen | [`no/opptak--kamera-live.png`](no/opptak--kamera-live.png) | [`en/opptak--kamera-live.png`](en/opptak--kamera-live.png) | [`no/opptak--kamera-live--full.png`](no/opptak--kamera-live--full.png) · [`en/opptak--kamera-live--full.png`](en/opptak--kamera-live--full.png) |
+| `opptak--kamera-live` | Kamera på — bildet fyller flaten, med kameranavn, måler i kanten og liten opptaksknapp | `videoEnabled:true` + `camera_preview_start`-fixtur og en ekte JPEG ned kanalen | [`no/opptak--kamera-live.png`](no/opptak--kamera-live.png) | [`en/opptak--kamera-live.png`](en/opptak--kamera-live.png) | — |
+| `opptak--kamera-valg` | Kamera på — popoveren bak den lille pila: kamera og egen lydfil | som over, så klikk `record-camera-more` | [`no/opptak--kamera-valg.png`](no/opptak--kamera-valg.png) | [`en/opptak--kamera-valg.png`](en/opptak--kamera-valg.png) | — |
 | `opptak--kamera-nektet` | Kamerabildet — fasen `denied` (OS-et sa nei) | `camera_preview_start` som svarer «camera access is not allowed» | [`no/opptak--kamera-nektet.png`](no/opptak--kamera-nektet.png) | [`en/opptak--kamera-nektet.png`](en/opptak--kamera-nektet.png) | — |
 | `opptak--kamera-borte` | Kamerabildet — det lagrede kameraet finnes ikke | `videoDeviceName` som ikke er i bakendens kameraliste | [`no/opptak--kamera-borte.png`](no/opptak--kamera-borte.png) | [`en/opptak--kamera-borte.png`](en/opptak--kamera-borte.png) | — |
-| `opptak--banner-avbrutt` | Banner: opptaket ble avbrutt, med grunnen i klartekst | `emit('recording-error', { code: 'device_disconnected' })` | [`no/opptak--banner-avbrutt.png`](no/opptak--banner-avbrutt.png) | [`en/opptak--banner-avbrutt.png`](en/opptak--banner-avbrutt.png) | [`no/opptak--banner-avbrutt--full.png`](no/opptak--banner-avbrutt--full.png) · [`en/opptak--banner-avbrutt--full.png`](en/opptak--banner-avbrutt--full.png) |
-| `opptak--banner-lite-plass` | Banner: under to timer igjen på disken | `get_disk_space.freeBytes = 200 MB` | [`no/opptak--banner-lite-plass.png`](no/opptak--banner-lite-plass.png) | [`en/opptak--banner-lite-plass.png`](en/opptak--banner-lite-plass.png) | [`no/opptak--banner-lite-plass--full.png`](no/opptak--banner-lite-plass--full.png) · [`en/opptak--banner-lite-plass--full.png`](en/opptak--banner-lite-plass--full.png) |
-| `opptak--banner-gikk-glipp` | Banner: et planlagt opptak ble aldri tatt | `emitEvent('scheduler://missed', [{ at, label }])` | [`no/opptak--banner-gikk-glipp.png`](no/opptak--banner-gikk-glipp.png) | [`en/opptak--banner-gikk-glipp.png`](en/opptak--banner-gikk-glipp.png) | [`no/opptak--banner-gikk-glipp--full.png`](no/opptak--banner-gikk-glipp--full.png) · [`en/opptak--banner-gikk-glipp--full.png`](en/opptak--banner-gikk-glipp--full.png) |
-| `opptak--banner-forhandssjekk` | Banner: forhåndssjekken fant noe å se på | `media_permissions.microphone = denied` + ett `run_preflight`-funn | [`no/opptak--banner-forhandssjekk.png`](no/opptak--banner-forhandssjekk.png) | [`en/opptak--banner-forhandssjekk.png`](en/opptak--banner-forhandssjekk.png) | [`no/opptak--banner-forhandssjekk--full.png`](no/opptak--banner-forhandssjekk--full.png) · [`en/opptak--banner-forhandssjekk--full.png`](en/opptak--banner-forhandssjekk--full.png) |
-| `opptak--samtykkekort` | Samtykkekortet — det ene spørsmålet om diagnosedata | `telemetry_consent_get.needsPrompt = true` | [`no/opptak--samtykkekort.png`](no/opptak--samtykkekort.png) | [`en/opptak--samtykkekort.png`](en/opptak--samtykkekort.png) | [`no/opptak--samtykkekort--full.png`](no/opptak--samtykkekort--full.png) · [`en/opptak--samtykkekort--full.png`](en/opptak--samtykkekort--full.png) |
-| `opptak--kvittering` | Kvitteringen etter et ferdig opptak | `emit('recording-finished', { path })` | [`no/opptak--kvittering.png`](no/opptak--kvittering.png) | [`en/opptak--kvittering.png`](en/opptak--kvittering.png) | [`no/opptak--kvittering--full.png`](no/opptak--kvittering--full.png) · [`en/opptak--kvittering--full.png`](en/opptak--kvittering--full.png) |
+| `opptak--banner-avbrutt` | Banner: opptaket ble avbrutt, med grunnen i klartekst | `emit('recording-error', { code: 'device_disconnected' })` | [`no/opptak--banner-avbrutt.png`](no/opptak--banner-avbrutt.png) | [`en/opptak--banner-avbrutt.png`](en/opptak--banner-avbrutt.png) | — |
+| `opptak--banner-lite-plass` | Banner: under to timer igjen på disken | `get_disk_space.freeBytes = 200 MB` | [`no/opptak--banner-lite-plass.png`](no/opptak--banner-lite-plass.png) | [`en/opptak--banner-lite-plass.png`](en/opptak--banner-lite-plass.png) | — |
+| `opptak--banner-gikk-glipp` | Banner: et planlagt opptak ble aldri tatt | `emitEvent('scheduler://missed', [{ at, label }])` | [`no/opptak--banner-gikk-glipp.png`](no/opptak--banner-gikk-glipp.png) | [`en/opptak--banner-gikk-glipp.png`](en/opptak--banner-gikk-glipp.png) | — |
+| `opptak--banner-forhandssjekk` | Banner: forhåndssjekken fant noe å se på | `media_permissions.microphone = denied` + ett `run_preflight`-funn | [`no/opptak--banner-forhandssjekk.png`](no/opptak--banner-forhandssjekk.png) | [`en/opptak--banner-forhandssjekk.png`](en/opptak--banner-forhandssjekk.png) | — |
+| `opptak--samtykkekort` | Samtykkekortet — det ene spørsmålet om diagnosedata | `telemetry_consent_get.needsPrompt = true` | [`no/opptak--samtykkekort.png`](no/opptak--samtykkekort.png) | [`en/opptak--samtykkekort.png`](en/opptak--samtykkekort.png) | — |
+| `opptak--kvittering` | Kvitteringen etter et ferdig opptak | `emit('recording-finished', { path })` | [`no/opptak--kvittering.png`](no/opptak--kvittering.png) | [`en/opptak--kvittering.png`](en/opptak--kvittering.png) | — |
 
-### Opptaksoverlegget
-
-| Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
-| --- | --- | --- | --- | --- | --- |
-| `overlegg--pagar` | Det tas opp — klokke, måler, kamerabilde og fakta | `emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min, ekte JPEG ned kamerakanalen | [`no/overlegg--pagar.png`](no/overlegg--pagar.png) | [`en/overlegg--pagar.png`](en/overlegg--pagar.png) | — |
-| `overlegg--stopp-dialog` | Stopp-bekreftelsen — «Fortsett å ta opp» er primærvalget | overlegget oppe, så klikk `overlay-stop` | [`no/overlegg--stopp-dialog.png`](no/overlegg--stopp-dialog.png) | [`en/overlegg--stopp-dialog.png`](en/overlegg--stopp-dialog.png) | — |
-| `overlegg--nedtelling` | Auto-stopp om 15 minutter, med «+ 15 min» og «Avbryt» | `scheduled_stop_ms` = klokka + 57 min, så klokka flyttes til +42 | [`no/overlegg--nedtelling.png`](no/overlegg--nedtelling.png) | [`en/overlegg--nedtelling.png`](en/overlegg--nedtelling.png) | — |
-
-### Bibliotek og redigering
+### Lydarket
 
 | Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
 | --- | --- | --- | --- | --- | --- |
-| `redigering--bibliotek` | Biblioteket med opptak — dato, lengde, notat | tre rader i `recordings_list`, én med notat | [`no/redigering--bibliotek.png`](no/redigering--bibliotek.png) | [`en/redigering--bibliotek.png`](en/redigering--bibliotek.png) | [`no/redigering--bibliotek--1000x760.png`](no/redigering--bibliotek--1000x760.png) |
-| `redigering--bibliotek-tomt` | Biblioteket er tomt — og sier hva man gjør nå | `recordings_list: []` | [`no/redigering--bibliotek-tomt.png`](no/redigering--bibliotek-tomt.png) | [`en/redigering--bibliotek-tomt.png`](en/redigering--bibliotek-tomt.png) | — |
+| `lydark--enhet` | Lydarket — enhetskort, kanalpar og stor L/R-måler | `?goto=settings:sound` → `record` + panelet `source` | [`no/lydark--enhet.png`](no/lydark--enhet.png) | [`en/lydark--enhet.png`](en/lydark--enhet.png) | — |
+| `lydark--mer` | «Mer» utfoldet — mappe, kvalitet og de fem flisene (Før, Stille, Del, Rydd, Maks) | `?goto=settings:engine` → panelet `source-more`; alle fem flisene på | [`no/lydark--mer.png`](no/lydark--mer.png) | [`en/lydark--mer.png`](en/lydark--mer.png) | — |
+| `lydark--mer-flisene-av` | «Mer» utfoldet — alle fem flisene av, «Av» står under dem | som over, med alle fem verdiene på 0 | [`no/lydark--mer-flisene-av.png`](no/lydark--mer-flisene-av.png) | [`en/lydark--mer-flisene-av.png`](en/lydark--mer-flisene-av.png) | — |
+
+### Ukestripa
+
+| Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
+| --- | --- | --- | --- | --- | --- |
+| `strip--pille` | Uten faste tider: bare den lille kalenderknappen nede til venstre, med gullplussen | `slots: []` | [`no/strip--pille.png`](no/strip--pille.png) | [`en/strip--pille.png`](en/strip--pille.png) | — |
+| `strip--lukket` | Lukket stripe — mini-uke, «Neste: søndag 11:00», nedtelling og de fire statusikonene | én fast tid + `scheduler_status.next`, Auto på | [`no/strip--lukket.png`](no/strip--lukket.png) | [`en/strip--lukket.png`](en/strip--lukket.png) | — |
+| `strip--lukket-auto-av` | Lukket stripe med tider men Auto AV — dempet, «Automatisk opptak er av» | `slots` satt, `autoRecordEnabled:false` | [`no/strip--lukket-auto-av.png`](no/strip--lukket-auto-av.png) | [`en/strip--lukket-auto-av.png`](en/strip--lukket-auto-av.png) | — |
+| `strip--apen` | Åpen stripe — de fire flisene og ukevisningen, «Neste» fremhevet, ett opptak denne uka ikke tatt opp | `?goto=plan`; tre tider, `scheduler_status.next` på søndagen, `emitEvent('scheduler://missed')` | [`no/strip--apen.png`](no/strip--apen.png) | [`en/strip--apen.png`](en/strip--apen.png) | — |
+| `strip--blokk` | Åpen stripe — redigeringen åpen ved siden av en valgt blokk | som over, så et trykk på søndagsblokka | [`no/strip--blokk.png`](no/strip--blokk.png) | [`en/strip--blokk.png`](en/strip--blokk.png) | — |
+| `strip--tom-uke` | Åpen stripe med tom uke — «Hold og dra», ingen faste tider ennå | `?goto=plan`, `slots: []` | [`no/strip--tom-uke.png`](no/strip--tom-uke.png) | [`en/strip--tom-uke.png`](en/strip--tom-uke.png) | — |
+| `strip--auto-uten-tider` | Auto på i en tom uke — flisen lyser ikke og sier «Ingen tider» (ingen tid er funnet på) | `?goto=plan`, `autoRecordEnabled:true`, `slots: []` | [`no/strip--auto-uten-tider.png`](no/strip--auto-uten-tider.png) | [`en/strip--auto-uten-tider.png`](en/strip--auto-uten-tider.png) | — |
+| `strip--vekking` | Vekk-flisens popover — hva maskinen kan, «Legg inn vekking», prøv og logg | `wake_capabilities`; klikk hjørneknappen `strip-wake-more` | [`no/strip--vekking.png`](no/strip--vekking.png) | [`en/strip--vekking.png`](en/strip--vekking.png) | — |
+| `strip--varsel` | Varsel-flisens popover — status fra systemet og «Send testvarsel» | `notification_permission:granted`; klikk `strip-notify-more`, så «Send testvarsel» | [`no/strip--varsel.png`](no/strip--varsel.png) | [`en/strip--varsel.png`](en/strip--varsel.png) | — |
+| `strip--varsel-av-i-systemet` | Varsler slått på, men av i systemet — stripa sier fra og tilbyr systeminnstillingene | `notification_permission:denied` + klikk på Varsel-flisen | [`no/strip--varsel-av-i-systemet.png`](no/strip--varsel-av-i-systemet.png) | [`en/strip--varsel-av-i-systemet.png`](en/strip--varsel-av-i-systemet.png) | — |
+
+### Opptaksmodus
+
+| Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
+| --- | --- | --- | --- | --- | --- |
+| `opptaksmodus--lyd` | Det tas opp uten kamera — enorm klokke, bred L/R-måler, «Hold» og «Til du stopper» | `emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min | [`no/opptaksmodus--lyd.png`](no/opptaksmodus--lyd.png) | [`en/opptaksmodus--lyd.png`](en/opptaksmodus--lyd.png) | — |
+| `opptaksmodus--kamera` | Det tas opp med kamera — bildet i ramme med rød kant, klokka som brikke, loddrett måler | som over med `videoEnabled`, og en ekte JPEG ned kamerakanalen FØR opptaket (overlegget arver bildet) | [`no/opptaksmodus--kamera.png`](no/opptaksmodus--kamera.png) | [`en/opptaksmodus--kamera.png`](en/opptaksmodus--kamera.png) | — |
+| `opptaksmodus--stopper-om` | Planlagt stopp om 15 minutter — «Stopper 11:52» med «+30» og «∞» | `scheduled_stop_ms` = klokka + 57 min, så klokka flyttes til +42 | [`no/opptaksmodus--stopper-om.png`](no/opptaksmodus--stopper-om.png) | [`en/opptaksmodus--stopper-om.png`](en/opptaksmodus--stopper-om.png) | — |
+| `opptaksmodus--stillhet` | Stillhetsvarsel som liten ikon + ord-brikke øverst | overlegget oppe, så `emit('recording-silence', …)` | [`no/opptaksmodus--stillhet.png`](no/opptaksmodus--stillhet.png) | [`en/opptaksmodus--stillhet.png`](en/opptaksmodus--stillhet.png) | — |
+| `opptaksmodus--skjermleser-stopp` | Stopp-bekreftelsen som VoiceOver/Narrator får i stedet for holdet — «Fortsett å ta opp» er primærvalget | overlegget oppe, så et `click` uten pekertrykk (`detail: 0`) på `overlay-stop` | [`no/opptaksmodus--skjermleser-stopp.png`](no/opptaksmodus--skjermleser-stopp.png) | [`en/opptaksmodus--skjermleser-stopp.png`](en/opptaksmodus--skjermleser-stopp.png) | — |
+
+### Opptak og redigering
+
+| Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
+| --- | --- | --- | --- | --- | --- |
+| `redigering--bibliotek` | Lista med opptak — mini-bølgeform, dato, lengde, notat | tre rader i `recordings_list`, én med notat | [`no/redigering--bibliotek.png`](no/redigering--bibliotek.png) | [`en/redigering--bibliotek.png`](en/redigering--bibliotek.png) | [`no/redigering--bibliotek--1000x760.png`](no/redigering--bibliotek--1000x760.png) |
+| `redigering--bibliotek-tomt` | Lista er tom — og sier hva man gjør nå | `recordings_list: []` | [`no/redigering--bibliotek-tomt.png`](no/redigering--bibliotek-tomt.png) | [`en/redigering--bibliotek-tomt.png`](en/redigering--bibliotek-tomt.png) | — |
 | `redigering--sok-ingen-treff` | Søket ga ingen treff | fyll `library-search` med «finnesikke» | [`no/redigering--sok-ingen-treff.png`](no/redigering--sok-ingen-treff.png) | [`en/redigering--sok-ingen-treff.png`](en/redigering--sok-ingen-treff.png) | — |
-| `redigering--papirkurv` | Papirkurven — med «slettes om N dager» | to rader i `trash_list`, så klikk `library-trash-open` (ikke nåbar via `?goto=`) | [`no/redigering--papirkurv.png`](no/redigering--papirkurv.png) | [`en/redigering--papirkurv.png`](en/redigering--papirkurv.png) | [`no/redigering--papirkurv--full.png`](no/redigering--papirkurv--full.png) · [`en/redigering--papirkurv--full.png`](en/redigering--papirkurv--full.png) |
-| `redigering--papirkurv-tom` | Papirkurven er tom | `trash_list: []`, så klikk `library-trash-open` | [`no/redigering--papirkurv-tom.png`](no/redigering--papirkurv-tom.png) | [`en/redigering--papirkurv-tom.png`](en/redigering--papirkurv-tom.png) | — |
-| `redigering--klipp` | Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag | `openEditorWithRecording` på det fikstursydde opptaket | [`no/redigering--klipp.png`](no/redigering--klipp.png) | [`en/redigering--klipp.png`](en/redigering--klipp.png) | [`no/redigering--klipp--full.png`](no/redigering--klipp--full.png) · [`en/redigering--klipp--full.png`](en/redigering--klipp--full.png) · [`no/redigering--klipp--1000x760.png`](no/redigering--klipp--1000x760.png) |
-| `redigering--kuttliste` | Kuttlista — det som blir borte, som rader man kan angre | åpne, så klikk `editor-keep-sermon` | [`no/redigering--kuttliste.png`](no/redigering--kuttliste.png) | [`en/redigering--kuttliste.png`](en/redigering--kuttliste.png) | [`no/redigering--kuttliste--full.png`](no/redigering--kuttliste--full.png) · [`en/redigering--kuttliste--full.png`](en/redigering--kuttliste--full.png) |
-| `redigering--lyd` | Steget «Lyd» — profilene og hva de gjør | åpne, så klikk `editor-steps-row-sound` | [`no/redigering--lyd.png`](no/redigering--lyd.png) | [`en/redigering--lyd.png`](en/redigering--lyd.png) | [`no/redigering--lyd--full.png`](no/redigering--lyd--full.png) · [`en/redigering--lyd--full.png`](en/redigering--lyd--full.png) |
+| `redigering--papirkurv` | Papirkurven (ikon oppe til høyre, med antall) — med «tømmes om N d» | to rader i `trash_list`, så klikk søppelikonet `library-trash-open` | [`no/redigering--papirkurv.png`](no/redigering--papirkurv.png) | [`en/redigering--papirkurv.png`](en/redigering--papirkurv.png) | [`no/redigering--papirkurv--full.png`](no/redigering--papirkurv--full.png) · [`en/redigering--papirkurv--full.png`](en/redigering--papirkurv--full.png) |
+| `redigering--papirkurv-tom` | Papirkurven er tom | `trash_list: []`, så klikk søppelikonet `library-trash-open` | [`no/redigering--papirkurv-tom.png`](no/redigering--papirkurv-tom.png) | [`en/redigering--papirkurv-tom.png`](en/redigering--papirkurv-tom.png) | — |
+| `redigering--klipp` | Redigering, steget «Klipp» (lydopptak) — bølgeform med to håndtak, ingen video | `openEditorWithRecording` på det fikstursydde opptaket | [`no/redigering--klipp.png`](no/redigering--klipp.png) | [`en/redigering--klipp.png`](en/redigering--klipp.png) | [`no/redigering--klipp--full.png`](no/redigering--klipp--full.png) · [`en/redigering--klipp--full.png`](en/redigering--klipp--full.png) · [`no/redigering--klipp--1000x760.png`](no/redigering--klipp--1000x760.png) |
+| `redigering--markering` | Dra i bølgeformen — markering med boblen «Klipp» og lengden | åpne, så dra over bølgeformen fra 30 % til 40 % | [`no/redigering--markering.png`](no/redigering--markering.png) | [`en/redigering--markering.png`](en/redigering--markering.png) | [`no/redigering--markering--full.png`](no/redigering--markering--full.png) · [`en/redigering--markering--full.png`](en/redigering--markering--full.png) |
+| `redigering--kuttliste` | Et klipp er gjort — skravert område med angre-knapp, og kuttlista under | åpne, dra en markering, trykk «Klipp» | [`no/redigering--kuttliste.png`](no/redigering--kuttliste.png) | [`en/redigering--kuttliste.png`](en/redigering--kuttliste.png) | [`no/redigering--kuttliste--full.png`](no/redigering--kuttliste--full.png) · [`en/redigering--kuttliste--full.png`](en/redigering--kuttliste--full.png) |
+| `redigering--stillhetsforslag` | Stillhetsforslag — stiplede områder med «Godta» og «Avvis»; ingenting er klippet | `editor_peaks` med to stillheter, så klikk `editor-silence` | [`no/redigering--stillhetsforslag.png`](no/redigering--stillhetsforslag.png) | [`en/redigering--stillhetsforslag.png`](en/redigering--stillhetsforslag.png) | [`no/redigering--stillhetsforslag--full.png`](no/redigering--stillhetsforslag--full.png) · [`en/redigering--stillhetsforslag--full.png`](en/redigering--stillhetsforslag--full.png) |
+| `redigering--video` | Redigering av et videoopptak — stor 16:9-ramme med spill, tid og Inn/Ut, bølgeformen under | `editor_load_recording.hasVideo = true`; `<video>` har ingen fil å vise i nettleseren, så rammen står svart | [`no/redigering--video.png`](no/redigering--video.png) | [`en/redigering--video.png`](en/redigering--video.png) | [`no/redigering--video--full.png`](no/redigering--video--full.png) · [`en/redigering--video--full.png`](en/redigering--video--full.png) |
+| `redigering--lyd` | Steget «Lyd» — bryteren «Podkastklar lyd» | åpne, så klikk `editor-steps-row-sound` | [`no/redigering--lyd.png`](no/redigering--lyd.png) | [`en/redigering--lyd.png`](en/redigering--lyd.png) | — |
 | `redigering--laster` | Arbeidsflaten laster — «Analyserer …» | `editor_load_recording` som aldri svarer | [`no/redigering--laster.png`](no/redigering--laster.png) | [`en/redigering--laster.png`](en/redigering--laster.png) | — |
 | `redigering--feil` | Arbeidsflaten kunne ikke åpne fila | BÅDE `editor_load_recording: null` OG `editor_peaks: null` — toppene er en ANDRE kilde til varighet | [`no/redigering--feil.png`](no/redigering--feil.png) | [`en/redigering--feil.png`](en/redigering--feil.png) | — |
 
-### Eksport
+### Eksportarket
 
 | Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
 | --- | --- | --- | --- | --- | --- |
-| `eksport--tom` | Ingen fil åpen — siste opptak med én knapp, og en velger | `?goto=export` med tre opptak i lista | [`no/eksport--tom.png`](no/eksport--tom.png) | [`en/eksport--tom.png`](en/eksport--tom.png) | [`no/eksport--tom--1000x760.png`](no/eksport--tom--1000x760.png) |
-| `eksport--ingenting` | Ingen opptak i det hele tatt | `recordings_list: []` | [`no/eksport--ingenting.png`](no/eksport--ingenting.png) | [`en/eksport--ingenting.png`](en/eksport--ingenting.png) | — |
-| `eksport--valg` | Valgene — format, hvor, og hva som blir laget | `export-pick-use` på første rad i velgeren | [`no/eksport--valg.png`](no/eksport--valg.png) | [`en/eksport--valg.png`](en/eksport--valg.png) | [`no/eksport--valg--full.png`](no/eksport--valg--full.png) · [`en/eksport--valg--full.png`](en/eksport--valg--full.png) |
+| `eksport--valg` | Eksportarket (sideark fra høyre) — formatkortene MP3 «Podkast» og WAV «Arkiv», de tre flisene, mappe og «Lagre» | åpne opptaket, så klikk `editor-export-open` | [`no/eksport--valg.png`](no/eksport--valg.png) | [`en/eksport--valg.png`](en/eksport--valg.png) | — |
+| `eksport--video` | Eksportarket for et videoopptak — MP4 «Video» er med som tredje kort; med det valgt står intro/outro dempet | `hasVideo = true`, så klikk MP4-kortet | [`no/eksport--video.png`](no/eksport--video.png) | [`en/eksport--video.png`](en/eksport--video.png) | — |
+| `eksport--jingler` | Intro og outro valgt — filnavn på flisene | innstillingene har `editorIntroPath` og `editorOutroPath`; åpne opptaket, så klikk `editor-export-open` | [`no/eksport--jingler.png`](no/eksport--jingler.png) | [`en/eksport--jingler.png`](en/eksport--jingler.png) | — |
+| `eksport--jingle-meny` | Hjørneknappen på Intro-flisen — «Velg en annen fil» og «Fjern» | som over, så klikk `export-jingle-intro-more` | [`no/eksport--jingle-meny.png`](no/eksport--jingle-meny.png) | [`en/eksport--jingle-meny.png`](en/eksport--jingle-meny.png) | — |
 | `eksport--kjorer` | Eksporten kjører — 40 %, med avbryt | `editor_export` som henger (`EXPORT_HELD`) + `emit('editor-export-progress', {pct:40})` | [`no/eksport--kjorer.png`](no/eksport--kjorer.png) | [`en/eksport--kjorer.png`](en/eksport--kjorer.png) | — |
 | `eksport--kvittering` | Kvitteringen — fila som ble laget, og hvor den ligger | `editor-export-go` med `editor_export` som svarer med én gang | [`no/eksport--kvittering.png`](no/eksport--kvittering.png) | [`en/eksport--kvittering.png`](en/eksport--kvittering.png) | — |
 
-### Innstillinger
+### Tannhjulet
 
 | Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
 | --- | --- | --- | --- | --- | --- |
-| `innstillinger--landing` | Hele flaten — kirkeprofil øverst, Avansert under | `?goto=settings:general` på en frisk maskin | [`no/innstillinger--landing.png`](no/innstillinger--landing.png) | [`en/innstillinger--landing.png`](en/innstillinger--landing.png) | [`no/innstillinger--landing--full.png`](no/innstillinger--landing--full.png) · [`en/innstillinger--landing--full.png`](en/innstillinger--landing--full.png) · [`no/innstillinger--landing--1000x760.png`](no/innstillinger--landing--1000x760.png) |
-| `innstillinger--opptakskortet` | Avansert › Opptak, med alle betingede rader åpne | `stopOnSilence`, `splitMinutes` og `autoDeleteDays` alle satt | [`no/innstillinger--opptakskortet.png`](no/innstillinger--opptakskortet.png) | [`en/innstillinger--opptakskortet.png`](en/innstillinger--opptakskortet.png) | [`no/innstillinger--opptakskortet--full.png`](no/innstillinger--opptakskortet--full.png) · [`en/innstillinger--opptakskortet--full.png`](en/innstillinger--opptakskortet--full.png) |
-| `innstillinger--systemkortet` | Oppdateringer og personvern, og Hjelp og feilsøking — diagnosedata, oppdatering, logg, profil, diagnose | rull til `advanced-help` | [`no/innstillinger--systemkortet.png`](no/innstillinger--systemkortet.png) | [`en/innstillinger--systemkortet.png`](en/innstillinger--systemkortet.png) | [`no/innstillinger--systemkortet--full.png`](no/innstillinger--systemkortet--full.png) · [`en/innstillinger--systemkortet--full.png`](en/innstillinger--systemkortet--full.png) |
-| `innstillinger--oppdatering-klar` | Oppdateringsraden: en versjon er lastet ned og venter | `emit('update-downloaded', { version })` | [`no/innstillinger--oppdatering-klar.png`](no/innstillinger--oppdatering-klar.png) | [`en/innstillinger--oppdatering-klar.png`](en/innstillinger--oppdatering-klar.png) | [`no/innstillinger--oppdatering-klar--full.png`](no/innstillinger--oppdatering-klar--full.png) · [`en/innstillinger--oppdatering-klar--full.png`](en/innstillinger--oppdatering-klar--full.png) |
-| `innstillinger--oppdatering-feilet` | Oppdateringsraden: sjekken gikk ikke | `emit('update-error', 'boom')` — en BAR streng, ikke et objekt | [`no/innstillinger--oppdatering-feilet.png`](no/innstillinger--oppdatering-feilet.png) | [`en/innstillinger--oppdatering-feilet.png`](en/innstillinger--oppdatering-feilet.png) | — |
-| `innstillinger--telemetri-dialog` | «Vis» på diagnosedata — hva som faktisk sendes | `telemetry_preview_payload` + klikk `adv-diag-preview` | [`no/innstillinger--telemetri-dialog.png`](no/innstillinger--telemetri-dialog.png) | [`en/innstillinger--telemetri-dialog.png`](en/innstillinger--telemetri-dialog.png) | — |
-| `innstillinger--tidsplan` | Tidsplanen — to faste tider, ett spesialopptak, vekking | `slots` + `specialRecordings` + `wake_capabilities` | [`no/innstillinger--tidsplan.png`](no/innstillinger--tidsplan.png) | [`en/innstillinger--tidsplan.png`](en/innstillinger--tidsplan.png) | [`no/innstillinger--tidsplan--full.png`](no/innstillinger--tidsplan--full.png) · [`en/innstillinger--tidsplan--full.png`](en/innstillinger--tidsplan--full.png) |
-| `innstillinger--tidsplan-tom` | Tidsplanen — ingen faste tider ennå | `slots: []`, `specialRecordings: []` | [`no/innstillinger--tidsplan-tom.png`](no/innstillinger--tidsplan-tom.png) | [`en/innstillinger--tidsplan-tom.png`](en/innstillinger--tidsplan-tom.png) | [`no/innstillinger--tidsplan-tom--full.png`](no/innstillinger--tidsplan-tom--full.png) · [`en/innstillinger--tidsplan-tom--full.png`](en/innstillinger--tidsplan-tom--full.png) |
-
-### Innstillinger › Diagnose
-
-| Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
-| --- | --- | --- | --- | --- | --- |
-| `diagnose--hvile` | I hvile — «Kjør» og «Test-opptak», ingenting annet | diagnosen åpner en enhet, så den kjører aldri av seg selv | [`no/diagnose--hvile.png`](no/diagnose--hvile.png) | [`en/diagnose--hvile.png`](en/diagnose--hvile.png) | — |
-| `diagnose--resultat` | Resultatet — fem statusrader, funn, enhetsliste, kopiknapp | `run_diagnostics` med tre funn, så klikk `adv-diagnose-run` | [`no/diagnose--resultat.png`](no/diagnose--resultat.png) | [`en/diagnose--resultat.png`](en/diagnose--resultat.png) | [`no/diagnose--resultat--full.png`](no/diagnose--resultat--full.png) · [`en/diagnose--resultat--full.png`](en/diagnose--resultat--full.png) |
-| `diagnose--proven-hoppet-over` | Lydprøven ble ikke kjørt — den tredje tilstanden, ærlig | `captureOk: null` + `captureProbeSkipped` med motorens egen grunn | [`no/diagnose--proven-hoppet-over.png`](no/diagnose--proven-hoppet-over.png) | [`en/diagnose--proven-hoppet-over.png`](en/diagnose--proven-hoppet-over.png) | [`no/diagnose--proven-hoppet-over--full.png`](no/diagnose--proven-hoppet-over--full.png) · [`en/diagnose--proven-hoppet-over--full.png`](en/diagnose--proven-hoppet-over--full.png) |
-| `diagnose--ipc-ring` | Kommandoer som ikke svarte denne økten | la `get_disk_space` og `recordings_list` kaste, så kjør | [`no/diagnose--ipc-ring.png`](no/diagnose--ipc-ring.png) | [`en/diagnose--ipc-ring.png`](en/diagnose--ipc-ring.png) | [`no/diagnose--ipc-ring--full.png`](no/diagnose--ipc-ring--full.png) · [`en/diagnose--ipc-ring--full.png`](en/diagnose--ipc-ring--full.png) |
-| `diagnose--feilet` | Diagnosen kunne ikke kjøres | `run_diagnostics` kaster — den går utenom `call()`s fallback | [`no/diagnose--feilet.png`](no/diagnose--feilet.png) | [`en/diagnose--feilet.png`](en/diagnose--feilet.png) | — |
-| `diagnose--testopptak` | Test-opptaket ble gjennomført | `run_test_recording` → `{ ok: true, signal: 'normal' }` | [`no/diagnose--testopptak.png`](no/diagnose--testopptak.png) | [`en/diagnose--testopptak.png`](en/diagnose--testopptak.png) | — |
-| `diagnose--kopiert` | «Kopier full rapport» — kvitteringen som forsvinner av seg selv | stubbet utklippstavle + klikk `adv-diagnose-copy` | [`no/diagnose--kopiert.png`](no/diagnose--kopiert.png) | [`en/diagnose--kopiert.png`](en/diagnose--kopiert.png) | — |
-| `diagnose--fra-menylinjen` | Menylinjens «Kjør diagnose» — bytter skjerm OG kjører | start på OPPTAK, `emitEvent('tray://action', 'run-diagnostics')` | [`no/diagnose--fra-menylinjen.png`](no/diagnose--fra-menylinjen.png) | [`en/diagnose--fra-menylinjen.png`](en/diagnose--fra-menylinjen.png) | [`no/diagnose--fra-menylinjen--full.png`](no/diagnose--fra-menylinjen--full.png) · [`en/diagnose--fra-menylinjen--full.png`](en/diagnose--fra-menylinjen--full.png) |
+| `tannhjul--kort` | Tannhjulet åpent over siden man kom fra — Språk, Oppdatering, Anonym statistikk og Om | `?goto=settings` (kortet ligger over `underlay`) | [`no/tannhjul--kort.png`](no/tannhjul--kort.png) | [`en/tannhjul--kort.png`](en/tannhjul--kort.png) | [`no/tannhjul--kort--1000x760.png`](no/tannhjul--kort--1000x760.png) |
+| `tannhjul--oppdatering-klar` | Oppdateringsraden: en versjon er lastet ned og venter | `emit('update-downloaded', { version })` | [`no/tannhjul--oppdatering-klar.png`](no/tannhjul--oppdatering-klar.png) | [`en/tannhjul--oppdatering-klar.png`](en/tannhjul--oppdatering-klar.png) | — |
+| `tannhjul--oppdatering-feilet` | Oppdateringsraden: sjekken gikk ikke | `emit('update-error', 'boom')` — en BAR streng, ikke et objekt | [`no/tannhjul--oppdatering-feilet.png`](no/tannhjul--oppdatering-feilet.png) | [`en/tannhjul--oppdatering-feilet.png`](en/tannhjul--oppdatering-feilet.png) | — |
+| `tannhjul--statistikk` | «Vis hva som sendes» på anonym statistikk — hele nyttelasten | `telemetry_preview_payload` + klikk `adv-diag-preview` | [`no/tannhjul--statistikk.png`](no/tannhjul--statistikk.png) | [`en/tannhjul--statistikk.png`](en/tannhjul--statistikk.png) | — |
+| `tannhjul--lisenser` | Om › «Vis lisenser» — de medfølgende lisensene i en ramme | `licenses_notices` med en kort tekst, så klikk `adv-licenses-open` | [`no/tannhjul--lisenser.png`](no/tannhjul--lisenser.png) | [`en/tannhjul--lisenser.png`](en/tannhjul--lisenser.png) | — |
 
 ### Første gang
 
 | Scene-id | Tilstand | Oppskrift | no | en | Ekstra |
 | --- | --- | --- | --- | --- | --- |
-| `forste-gang--1-lyd-lukket` | Steg 1 av 5 — lydporten er LUKKET: «Neste» venter på lyd | `onboardingDone:false`, ingen VU-pakker | [`no/forste-gang--1-lyd-lukket.png`](no/forste-gang--1-lyd-lukket.png) | [`en/forste-gang--1-lyd-lukket.png`](en/forste-gang--1-lyd-lukket.png) | [`no/forste-gang--1-lyd-lukket--1000x760.png`](no/forste-gang--1-lyd-lukket--1000x760.png) |
-| `forste-gang--1-lyd-apen` | Steg 1 av 5 — lydporten er ÅPEN: vi hører noe | `emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS | [`no/forste-gang--1-lyd-apen.png`](no/forste-gang--1-lyd-apen.png) | [`en/forste-gang--1-lyd-apen.png`](en/forste-gang--1-lyd-apen.png) | — |
-| `forste-gang--2-mappe` | Steg 2 av 5 — hvor skal opptakene? | «Fortsett uten lyd», så ett steg fram | [`no/forste-gang--2-mappe.png`](no/forste-gang--2-mappe.png) | [`en/forste-gang--2-mappe.png`](en/forste-gang--2-mappe.png) | — |
-| `forste-gang--3-kvalitet` | Steg 3 av 5 — hvilken kvalitet? | «Fortsett uten lyd», så to steg fram | [`no/forste-gang--3-kvalitet.png`](no/forste-gang--3-kvalitet.png) | [`en/forste-gang--3-kvalitet.png`](en/forste-gang--3-kvalitet.png) | — |
-| `forste-gang--4-kirke` | Steg 4 av 5 — hva heter menigheten? | «Fortsett uten lyd», så tre steg fram | [`no/forste-gang--4-kirke.png`](no/forste-gang--4-kirke.png) | [`en/forste-gang--4-kirke.png`](en/forste-gang--4-kirke.png) | — |
-| `forste-gang--5-varsling` | Steg 5 av 5 — hvem skal få beskjed? | «Fortsett uten lyd», så fire steg fram | [`no/forste-gang--5-varsling.png`](no/forste-gang--5-varsling.png) | [`en/forste-gang--5-varsling.png`](en/forste-gang--5-varsling.png) | — |
-| `forste-gang--6-sjekkliste` | «Klar til søndag» — de fem svarene, med det som mangler i gult | «Fortsett uten lyd» + fire steg; `notify` er ikke satt opp | [`no/forste-gang--6-sjekkliste.png`](no/forste-gang--6-sjekkliste.png) | [`en/forste-gang--6-sjekkliste.png`](en/forste-gang--6-sjekkliste.png) | [`no/forste-gang--6-sjekkliste--full.png`](no/forste-gang--6-sjekkliste--full.png) · [`en/forste-gang--6-sjekkliste--full.png`](en/forste-gang--6-sjekkliste--full.png) · [`no/forste-gang--6-sjekkliste--1000x760.png`](no/forste-gang--6-sjekkliste--1000x760.png) |
+| `forste-gang--1-lyd-lukket` | Hint 1 av 3 under kilde-brikka — lydporten er LUKKET: «Neste» venter på lyd | `onboardingDone:false`, ingen VU-pakker | [`no/forste-gang--1-lyd-lukket.png`](no/forste-gang--1-lyd-lukket.png) | [`en/forste-gang--1-lyd-lukket.png`](en/forste-gang--1-lyd-lukket.png) | [`no/forste-gang--1-lyd-lukket--1000x760.png`](no/forste-gang--1-lyd-lukket--1000x760.png) |
+| `forste-gang--1-lyd-apen` | Hint 1 av 3 — lydporten er ÅPEN: vi hører noe | `emit('vu-levels', { peak_dbfs: [-20,-20] })` — over −50 dBFS | [`no/forste-gang--1-lyd-apen.png`](no/forste-gang--1-lyd-apen.png) | [`en/forste-gang--1-lyd-apen.png`](en/forste-gang--1-lyd-apen.png) | — |
+| `forste-gang--2-mappe` | Hint 2 av 3 — hvor skal opptakene? (lydarket åpnes med «Mer», mappe-raden pulserer) | «Fortsett uten lyd», så ett steg fram | [`no/forste-gang--2-mappe.png`](no/forste-gang--2-mappe.png) | [`en/forste-gang--2-mappe.png`](en/forste-gang--2-mappe.png) | — |
+| `forste-gang--3-plan` | Hint 3 av 3 — faste opptak, over kalenderknappen | «Fortsett uten lyd», så to steg fram | [`no/forste-gang--3-plan.png`](no/forste-gang--3-plan.png) | [`en/forste-gang--3-plan.png`](en/forste-gang--3-plan.png) | [`no/forste-gang--3-plan--1000x760.png`](no/forste-gang--3-plan--1000x760.png) |
 
 ### Skallet
 
@@ -155,21 +161,18 @@ det, er en scene som ikke står stille.
 | `skallet--status-lite-plass` | Statuslinja: «lite plass igjen» (gul) — slår «ingen kilde» | `freeBytes = 200 MB` og ingen valgt kilde samtidig | [`no/skallet--status-lite-plass.png`](no/skallet--status-lite-plass.png) | [`en/skallet--status-lite-plass.png`](en/skallet--status-lite-plass.png) | — |
 | `skallet--status-neste` | Statuslinja: «neste opptak …» (grå) | kilde valgt + `autoRecordEnabled` + `scheduler_status.next` | [`no/skallet--status-neste.png`](no/skallet--status-neste.png) | [`en/skallet--status-neste.png`](en/skallet--status-neste.png) | — |
 | `skallet--status-klar` | Statuslinja: «alt er klart» (grønn) | kilde valgt, plass på disken, ingenting planlagt | [`no/skallet--status-klar.png`](no/skallet--status-klar.png) | [`en/skallet--status-klar.png`](en/skallet--status-klar.png) | — |
-| `skallet--oppdateringsbanner` | Oppdateringsstripa — over den siden man ER på | `emit('update-available', { version })` på Bibliotek | [`no/skallet--oppdateringsbanner.png`](no/skallet--oppdateringsbanner.png) | [`en/skallet--oppdateringsbanner.png`](en/skallet--oppdateringsbanner.png) | — |
-| `skallet--hydreringsfeil` | Innstillingene kunne ikke leses — aldri stille standardverdier | `settings_get` kaster; feilstripa står under overskriften | [`no/skallet--hydreringsfeil.png`](no/skallet--hydreringsfeil.png) | [`en/skallet--hydreringsfeil.png`](en/skallet--hydreringsfeil.png) | [`no/skallet--hydreringsfeil--full.png`](no/skallet--hydreringsfeil--full.png) · [`en/skallet--hydreringsfeil--full.png`](en/skallet--hydreringsfeil--full.png) |
+| `skallet--oppdateringsbanner` | Oppdateringsstripa — over den siden man ER på | `emit('update-available', { version })` på Opptak | [`no/skallet--oppdateringsbanner.png`](no/skallet--oppdateringsbanner.png) | [`en/skallet--oppdateringsbanner.png`](en/skallet--oppdateringsbanner.png) | — |
+| `skallet--hydreringsfeil` | Innstillingene kunne ikke leses — aldri stille standardverdier | `settings_get` kaster; feilstripa står under overskriften | [`no/skallet--hydreringsfeil.png`](no/skallet--hydreringsfeil.png) | [`en/skallet--hydreringsfeil.png`](en/skallet--hydreringsfeil.png) | — |
 
 ## Riggtest før neste slipp
 
-Designrunden er ikke sluppet. Før den går i en utgivelse skal en ekte Mac og
-en ekte Windows-PC (1180×760, og ned til 1000×760) bekrefte:
-
-- [ ] Start-knappen og «Neste» er synlige i handlingslinja, også med «Lyd fra»-kortet åpent og i lyd-steget i biblioteket.
-- [ ] Ingen side ruller sidelengs, og treffflatene er store nok med mus og med fingeren.
-- [ ] «Vis i Finder» heter «Vis i Utforsker» på Windows, og knappen åpner mappen med fila valgt.
-- [ ] Opptak-kortene stiller hele spørsmål («Hvilken lydkilde?», «Hvor lagres opptakene?», «Hvilken kvalitet?», «Ta med video», «Ta opp automatisk», «Hvem får beskjed hvis noe går galt?»).
-- [ ] Første gang, steg 1–6: det er tydelig at man trykker «Bruk denne lydkilden» og så «Neste».
-- [ ] Innstillinger: innholdslista øverst hopper til riktig seksjon, og «Tidsplan → Spesialopptak» står tett fra venstre.
-- [ ] Teksten leses naturlig på de fem språkene som ikke er fotografert (sv, da, de, fr, pl) — av noen som snakker dem.
+Det som bare en ekte maskin kan bevise står i [`docs/PLAN.md`](../../PLAN.md)
+under «Åpent — rigg trengs» og i [`docs/SMOKE-TEST.md`](../../SMOKE-TEST.md).
+For «én flate» er det særlig: kamerabildet på 1280 px / 12 bilder i sekundet på
+en svak Windows-PC, H.264-avspilling i redigeringen (WKWebView og WebView2),
+hold-for-stopp med VoiceOver og Narrator, første gang på en fersk maskin, og
+planlagt opptak med «+30» og «∞» på ekte utstyr. Teksten på bildene her skal i
+tillegg leses av noen som snakker språket (no og en).
 
 ## Hvordan scenene lages
 

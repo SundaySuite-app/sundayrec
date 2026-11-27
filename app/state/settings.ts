@@ -75,6 +75,14 @@ let baseline: Settings = { ...SETTINGS_DEFAULTS };
 const hydrated = signal(false);
 
 /**
+ * `hydrated` for lesere utenfor denne fila. Første-gang-hintene (`pages/record/
+ * first-run-hint.ts`) venter på den: før lesingen er `onboardingDone` den
+ * ferdige standardverdien `false`, og en kirke som er ferdig oppsatt ville fått
+ * hintene blinket opp i første frame.
+ */
+export const settingsHydrated = hydrated;
+
+/**
  * Hvorfor lesningen mislyktes, som en katalognøkkel UNDER `error.` — ellers
  * `null`.
  *

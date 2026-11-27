@@ -147,7 +147,7 @@ done
   echo "  (mikrofon) rate-bytte i strøm:  cargo test -p sundayrec --lib recorder::native_capture::stream::tests::rate_change_under_a_running_stream_is_a_stream_fault -- --ignored --exact --nocapture"
   echo "  (v) alle kameraer:              cargo test -p sundayrec --lib camera::avfoundation::tests::captures_from_every_camera_on_this_mac -- --ignored --exact --nocapture"
   echo "  (v) kamera trekkes ut:          SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib camera::reconnect::tests::real_camera_comes_back_on_the_same_id -- --ignored --exact --nocapture"
-  echo "  (v) forhåndsvisning 4/s:        SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib camera::preview::tests::real_camera_preview_holds_four_a_second_through_a_recording -- --ignored --exact --nocapture"
+  echo "  (v) forhåndsvisning 12/s:       SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib camera::preview::tests::real_camera_preview_holds_twelve_a_second_through_a_recording -- --ignored --exact --nocapture"
   echo "  (v) kamera drept midt i opptak: SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib recorder::longrun::tests::native_video::real_camera_killed_mid_recording_is_recovered_to_an_mp4 -- --ignored --exact --nocapture"
   echo "      (SUNDAYREC_REAL_CAMERA er en del av kameraets navn; bytt FaceTime med ditt kamera.)"
   echo "  (ekstern fil) editor-benker:    SUNDAYREC_BENCH_FILE=<lang opptak> cargo test -p sundayrec --lib editor::tests::ffmpeg_smoke:: -- --ignored --nocapture   (+ SUNDAYREC_B6_BENCH_SOURCE for b6_bench_*)"

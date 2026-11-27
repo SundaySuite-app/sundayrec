@@ -51,6 +51,30 @@
   gap: var(--sp-3);
 }
 
+/* «Eksporter»: gullpille øverst til høyre i hodet. */
+.exportBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  height: 44px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+}
+
+.exportBtn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .sub {
   display: flex;
   align-items: center;
@@ -69,6 +93,27 @@
 }
 
 /* ── Bølgeformen ───────────────────────────────────────────────────────── */
+
+/* Rammen rundt bølgeformen: boblen over en markering står i den, utenfor
+   `.wave`s `overflow: hidden`. */
+.waveWrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+}
+
+/* Uten video er bølgeformen den store flaten; med video ligger den lavere,
+   under bildet (E7). */
+.waveTall {
+  min-height: 300px;
+}
+
+.waveCompact {
+  flex: none;
+  height: 150px;
+  min-height: 150px;
+}
 
 .wave {
   position: relative;
@@ -140,6 +185,223 @@
   outline-offset: 2px;
 }
 
+/* ── Utklippet, forslag og markering (E7) ──────────────────────────────── */
+
+/* Overleggene slipper pekeren gjennom til lerretet; bare knappene tar den. */
+.cutRegion,
+.suggestion {
+  position: absolute;
+  top: 0;
+  bottom: 34px;
+  pointer-events: none;
+}
+
+.cutRegion {
+  background: var(--cut-hatch);
+  border-left: 1px solid var(--line-2);
+  border-right: 1px solid var(--line-2);
+}
+
+.suggestion {
+  background: var(--gold-faint);
+  border: 2px dashed var(--gold);
+}
+
+.cutRegion > .roundBtn,
+.suggestionBtns {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.suggestionBtns {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.roundBtn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  color: var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.roundBtn:hover {
+  border-color: var(--gold);
+}
+
+.roundBtn:focus-visible,
+.cutBtn:focus-visible,
+.bubbleClose:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.roundGold {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+}
+
+/* Boblen over en markering: lengde, «Klipp», kryss. */
+.bubble {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  box-shadow: var(--shadow-toast);
+  transform: translateX(-50%);
+  animation: fadein var(--dur) var(--ease-out);
+}
+
+.bubbleLen {
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.cutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bubbleClose {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.bubbleClose:hover {
+  background: var(--ink-soft);
+  color: var(--ink);
+}
+
+/* ── Bildet (E7) ───────────────────────────────────────────────────────── */
+
+.stage {
+  display: flex;
+  justify-content: center;
+}
+
+/* 764 px ved et vindu på 1208 px; krymper med høyden, så bølgeformen under
+   bildet fortsatt er innenfor skjermen. */
+.video {
+  position: relative;
+  width: min(100%, clamp(420px, calc((100vh - 540px) * 16 / 9), 764px));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+.videoPlaceholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--line);
+}
+
+.videoEl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+}
+
+/* Transporten i en mørk stripe nederst i bildet. */
+.videoBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: 76px;
+  padding: 0 var(--sp-5);
+  background: var(--video-bar);
+}
+
+.playGlass {
+  width: 50px;
+  height: 50px;
+  background: var(--ink-soft);
+  color: var(--ink);
+}
+
+.clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+
+.marks {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mark b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--gold);
+}
+
 /* ── Transportlinja ────────────────────────────────────────────────────── */
 
 .transport {
@@ -158,10 +420,10 @@
 .total {
   color: var(--ink-2);
   font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
 }
 
 .result {
-  margin-left: auto;
   color: var(--ink-2);
   font-size: var(--fs-md);
 }

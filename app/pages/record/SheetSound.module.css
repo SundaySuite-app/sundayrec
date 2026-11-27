@@ -1,0 +1,135 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.devices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 96px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.card:hover {
+  border-color: var(--line-2);
+}
+
+.on {
+  border-color: var(--gold-line);
+  background: var(--gold-faint);
+}
+
+.mixer {
+  display: inline-flex;
+  color: var(--gold);
+}
+
+.plain {
+  display: inline-flex;
+  color: var(--ink-2);
+}
+
+.name {
+  max-width: 100%;
+  padding: 0 var(--sp-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+}
+
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.caption {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+}
+
+.pairGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 52px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.pair.on {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+.leds {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 14px;
+}
+
+.led,
+.ledOn {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+.led {
+  background: var(--line-2);
+  transform: scaleY(0.2);
+  transform-origin: bottom;
+}
+
+.ledOn {
+  background: var(--good);
+}
+
+.meterCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  --meter-w: 340px;
+}
+
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}

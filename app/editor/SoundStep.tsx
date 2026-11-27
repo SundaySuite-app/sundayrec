@@ -14,6 +14,7 @@ import { useEffect } from "preact/hooks";
 
 import { t, tDyn, tf } from "../i18n";
 import { Card } from "../ui/Card/Card";
+import { Icon } from "../ui/Icon/Icon";
 import { Toggle } from "../ui/Toggle/Toggle";
 import { timecode } from "./editor-core";
 import {
@@ -168,16 +169,7 @@ function ListenCard() {
           aria-keyshortcuts={PLAY_KEYS_ARIA}
           onClick={() => void toggleListen()}
         >
-          {listenPlaying.value ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <rect x="6" y="5" width="4" height="14" rx="1" />
-              <rect x="14" y="5" width="4" height="14" rx="1" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
+          {listenPlaying.value ? <Icon name="pause" /> : <Icon name="play" />}
         </button>
         <span data-testid="editor-listen-at" class={styles.hint}>
           {tf("app.editor.sample", {

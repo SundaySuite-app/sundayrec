@@ -12,7 +12,7 @@
  *
  * ## Ingen lokal gjetning på den nye fristen
  *
- * Verken `+ 15 min` eller «Avbryt» skriver `scheduledStopMs`. Motoren flytter
+ * Verken «+30» eller «Avbryt» skriver `scheduledStopMs`. Motoren flytter
  * sin egen timer og re-emitterer `recording://state` med den nye fristen, og
  * `state/recording.ts` tar den derfra — akkurat som den gjør for hver annen
  * tilstandsemit. Et lokalt anslag her ville vært en nedtelling som viste noe
@@ -32,13 +32,13 @@ import { t } from "../../i18n";
 import { toast } from "../../ui/toast";
 
 /**
- * Hvor mye ett trykk flytter fristen.
+ * Hvor mye ett trykk flytter fristen («+30» i stopplinja).
  *
- * Femten og ikke tretti: den som trykker vet sjelden hvor mye lenger det blir,
- * og et lite steg man kan ta to ganger er ærligere enn et stort man ikke kan ta
- * tilbake. Motoren tar minutter som argument, så tallet bor her.
+ * Tretti, som skissen: en gudstjeneste som går over tid går sjelden over med
+ * ett kvarter, og «∞» er der for dem som ikke vil regne i det hele tatt. Motoren
+ * tar minutter som argument, så tallet bor her.
  */
-const AUTOSTOP_EXTEND_MINUTES = 15;
+const AUTOSTOP_EXTEND_MINUTES = 30;
 
 /** Skyv fristen. Motorens svar kommer som en tilstandsemit. */
 export async function extendAutostop(): Promise<void> {

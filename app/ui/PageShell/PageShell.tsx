@@ -1,24 +1,23 @@
 /**
- * PageShell — en slank topplinje, siden, og en bunnlinje à la DaVinci Resolve.
+ * PageShell — toppfeltet, siden, og en slank bunnlinje («Én flate»).
  *
- * ## Skinnen er borte, og hvorfor
+ * ## Toppfeltet (E1)
  *
- * Fram til D3 lå navigasjonen i en 208 px bred venstreskinne. Den kostet en
- * sjettedel av bredden på en 1180 px skjerm — plass sidene trenger til
- * innhold som faktisk sier noe. Det som var i skinnen bor nå i to bånd som til
- * sammen er hundre piksler høye i stedet for to hundre piksler brede:
+ * Venstre: det rene gullkorset (`AppLogo bare`, uten ordmerke). Midten: to
+ * ikonfaner — TA OPP og OPPTAK — 52 px brede piller der den aktive har hevet
+ * bakgrunn og gullikon; navnet står som `aria-label` og `title`. Høyre:
+ * tannhjulet som åpner INNSTILLINGER. PLAN er ikke lenger en fane (ruteren
+ * sender `plan` til TA OPP med stripa åpen, se E2).
  *
- *   TOPPLINJEN  (44 px) merket og produktnavnet — og dra-sonen.
- *   BUNNLINJEN  (56 px) statuslinjen til venstre, de fire sidene sentrert,
- *               versjonen til høyre.
+ * Mens et opptak går skjules fanene og tannhjulet; midten viser en blinkende
+ * rød prikk og «Tar opp». Det er det samme `isRecording`-signalet som resten
+ * av skallet bruker.
  *
- * ## Fire sider (F5)
+ * `data-testid="nav-<side>"` og `aria-current` står på knappen for siden
+ * (også tannhjulet: `nav-settings`), så alt som spør skallet «hvor er jeg?»
+ * får svar fra samme sted som før.
  *
- * Ta opp · Opptak · Plan · Innstillinger, venstre→høyre. Innstillinger er
- * ikke lenger et eget tannhjul ytterst til høyre — den er den fjerde knappen i
- * samme gruppe, med tannhjulet som ikon. Ruten heter `settings`;
- * `data-testid="nav-<side>"` og `aria-current` står på knappen for siden, så
- * alt som spør skallet «hvor er jeg?» får svar fra samme sted som før.
+ * Bunnlinjen (56 px) har statuslinjen til venstre og versjonen til høyre.
  *
  * ## Rutebytte flytter fokus
  *
@@ -35,12 +34,12 @@
  * skjult. Uten det blir appen et vindu man ikke kan flytte — en feil ingen
  * tester finner, fordi alle tester klikker og ingen drar.
  *
- * Topplinja har med vilje INGEN interaktive barn. Det er derfor ingen av dem
- * bærer `data-tauri-drag-region="false"` lenger: unntaket fantes fordi
- * destinasjonene lå inne i dra-sonen, og et klikk på dem ellers ville startet
- * et vindusdrag i stedet for å navigere. Kommer det en knapp hit en dag, må den
- * bære `data-tauri-drag-region="false"` — og bunnlinja, som er full av knapper,
- * er ikke en dra-sone i det hele tatt.
+ * Fra E1 har topplinja knapper (fanene og tannhjulet). Tauri leser attributtet
+ * bare på selve elementet som treffes (ikke på barna), så knappene trenger
+ * ingen unntak — og attributtet står fortsatt på ÉN rot. Derfor er logoen,
+ * fanene og tannhjulet direkte rutenettbarn av `<header>` (ingen omsluttende
+ * `div`er som ville stjålet dra-flaten), og det tomme mellom dem er selve
+ * dra-sonen. Bunnlinja er ikke en dra-sone i det hele tatt.
  *
  * ## Rutebytte flytter fokus
  *
@@ -66,7 +65,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef } from "preact/hooks";
 
 import { locale, t, tDyn, tf } from "../../i18n";
-import { navigate, route, type Page } from "../../router/router";
+import { navigate, route } from "../../router/router";
 import { appVersion } from "../../state/app-info";
 import { audioDevices, soundChosen } from "../../state/devices";
 import { currentRoomMinutes } from "../../state/disk";
@@ -75,11 +74,15 @@ import { isRecording } from "../../state/recording";
 import { settings } from "../../state/settings";
 import { formatNextWhen, statusLine } from "../../state/status-line";
 import { AppLogo } from "../AppLogo/AppLogo";
+import { Icon } from "../Icon/Icon";
 import { StatusDot } from "../StatusDot/StatusDot";
 import styles from "./PageShell.module.css";
 
-/** Sidene i navigasjonen, venstre→høyre. */
-const PAGES: readonly Page[] = ["record", "recordings", "plan", "settings"];
+/** Fanene i midten av toppfeltet, venstre→høyre. Innstillinger er tannhjulet. */
+const TABS = [
+  { page: "record", icon: "record" },
+  { page: "recordings", icon: "recordings" },
+] as const;
 
 /**
  * Produktnavnet. En KONSTANT og ikke tekst i treet: navnet oversettes ikke —
@@ -88,68 +91,6 @@ const PAGES: readonly Page[] = ["record", "recordings", "plan", "settings"];
  * ett sted.
  */
 const PRODUCT = "SundayRec";
-
-/**
- * Ikonene fra canvasen. Rent dekorative — etiketten står UNDER hver av dem.
- *
- * Typen er `Record<Page, …>` med vilje: den er kompileringsgaten som gjør en ny
- * destinasjon umulig å legge til uten å tegne den.
- */
-const ICONS: Record<Page, ComponentChildren> = {
-  record: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-  /*
-   * OPPTAK: to spor over en linje — lista over det man har tatt opp, og
-   * tidslinja man klipper i.
-   */
-  recordings: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="3" y="4" width="18" height="5" rx="1.5" />
-      <rect x="3" y="11" width="18" height="5" rx="1.5" />
-      <path d="M6 20h12" />
-    </svg>
-  ),
-  /* PLAN: en kalender — en uke med en markert dag. */
-  plan: (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <rect x="3.5" y="5" width="17" height="15" rx="2" />
-      <path d="M3.5 10h17M8 3v4M16 3v4" />
-      <circle cx="8.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-  /*
-   * Et EKTE tannhjul: tegnet ingen trenger å lære — og det som står i
-   * menylinjen og i alt annet en frivillig bruker.
-   *
-   * Geometrien er regnet ut, ikke lånt: senter (12,12), nav r 2,6, ring r 6,4
-   * og åtte tenner fra r 6,4 til r 9,2 for hver 45°. Diagonalene er
-   * 6,4·cos45° ≈ 4,5 og 9,2·cos45° ≈ 6,5 — derav 7,5/16,5 og 5,5/18,5.
-   */
-  settings: (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-    >
-      <circle cx="12" cy="12" r="6.4" />
-      <circle cx="12" cy="12" r="2.6" />
-      <path d="M12 5.6V2.8M12 18.4V21.2M5.6 12H2.8M18.4 12H21.2M16.5 7.5L18.5 5.5M7.5 7.5L5.5 5.5M7.5 16.5L5.5 18.5M16.5 16.5L18.5 18.5" />
-    </svg>
-  ),
-};
 
 export interface PageShellProps {
   children: ComponentChildren;
@@ -164,20 +105,35 @@ export interface PageShellProps {
    * skjermleserbruker hører. Utelatt = destinasjonens eget navn.
    */
   heading?: string;
+  /**
+   * `inert` på hele skallet — tannhjulet står OVER det som søsken, og alt bak
+   * sløret skal være utenfor både fokus og klikk.
+   */
+  inert?: boolean;
 }
 
-export function PageShell({ children, heading }: PageShellProps) {
+export function PageShell({ children, heading, inert }: PageShellProps) {
   const current = route.value;
+  const recording = isRecording.value;
   const s = settings.value;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
+  const prevPage = useRef(current.page);
   useEffect(() => {
     // Ny side ELLER ny fane: øverst, og fokus på overskriften. Fanen teller
     // med fordi de fem oppsett-spørsmålene er egne skjermer — å åpne «Hvilken
     // lyd?» uten at fokus flyttet seg ville latt en tastaturbruker stå igjen
     // på knappen på en side som ikke finnes lenger.
     mainRef.current?.scrollTo?.({ top: 0 });
+    // Tannhjulet flytter fokus inn i seg selv (`useSheetBehavior`); en
+    // overskrift bak sløret skal ikke stjele det.
+    const wasGear = prevPage.current === "settings";
+    prevPage.current = current.page;
+    if (current.page === "settings") return;
+    // …og det samme når tannhjulet LUKKES: fokus går tilbake til tannhjulknappen
+    // (`useSheetBehavior`), ikke til overskriften.
+    if (wasGear) return;
     headingRef.current?.focus();
   }, [current.page, current.tab]);
 
@@ -195,20 +151,57 @@ export function PageShell({ children, heading }: PageShellProps) {
       : tDyn("app.status", status.kind);
 
   return (
-    <div class={styles.page}>
+    <div class={styles.page} inert={inert}>
       <header
         // EKSAKT dette attributtet, og EKSAKT her — se toppen av fila.
         data-tauri-drag-region
         data-testid="topbar"
         class={styles.topbar}
       >
-        <AppLogo size={22} />
-        <b class={styles.logoText}>{PRODUCT}</b>
+        <AppLogo bare size={42} />
+
+        <nav aria-label={t("app.rail.label")} class={styles.tabs}>
+          {recording ? (
+            <span data-testid="topbar-recording" class={styles.recording}>
+              <span aria-hidden="true" class={styles.recDot} />
+              {t("app.status.rec")}
+            </span>
+          ) : (
+            TABS.map(({ page, icon }) => (
+              <button
+                key={page}
+                type="button"
+                data-testid={`nav-${page}`}
+                aria-label={tDyn("app.page", page)}
+                title={tDyn("app.page", page)}
+                aria-current={current.page === page ? "page" : undefined}
+                class={`${styles.tab} ${current.page === page ? styles.on : ""}`}
+                onClick={() => navigate(page)}
+              >
+                <Icon name={icon} size={24} />
+              </button>
+            ))
+          )}
+        </nav>
+
+        {recording ? null : (
+          <button
+            type="button"
+            data-testid="nav-settings"
+            aria-label={tDyn("app.page", "settings")}
+            title={tDyn("app.page", "settings")}
+            aria-current={current.page === "settings" ? "page" : undefined}
+            class={`${styles.gear} ${current.page === "settings" ? styles.on : ""}`}
+            onClick={() => navigate("settings")}
+          >
+            <Icon name="gear" size={22} />
+          </button>
+        )}
       </header>
 
       {/*
-        Ruten som ATTRIBUTTER, ikke som synlig tekst. S1a viste `tab`, `anchor`
-        og `firstRun` som små avsnitt i treet fordi det ikke fantes noe annet å
+        Ruten som ATTRIBUTTER, ikke som synlig tekst. S1a viste `tab` og `anchor`
+        som små avsnitt i treet fordi det ikke fantes noe annet å
         se; det var feilsøkingstekst i en app en frivillig skal lese. Nå er de
         det de alltid var — noe e2e kan spørre om, og som ingen ser.
       */}
@@ -218,8 +211,8 @@ export function PageShell({ children, heading }: PageShellProps) {
         data-testid="main"
         data-page={current.page}
         data-tab={current.tab}
+        data-panel={current.panel}
         data-anchor={current.anchor}
-        data-first-run={current.firstRun ? "true" : undefined}
         class={styles.main}
       >
         <h1
@@ -251,24 +244,6 @@ export function PageShell({ children, heading }: PageShellProps) {
             </span>
           </div>
         </div>
-
-        <nav aria-label={t("app.rail.label")} class={styles.nav}>
-          {PAGES.map((page) => (
-            <button
-              key={page}
-              type="button"
-              data-testid={`nav-${page}`}
-              aria-current={current.page === page ? "page" : undefined}
-              class={`${styles.navItem} ${current.page === page ? styles.on : ""}`}
-              onClick={() => navigate(page)}
-            >
-              <span aria-hidden="true" class={styles.navIcon}>
-                {ICONS[page]}
-              </span>
-              <span>{tDyn("app.page", page)}</span>
-            </button>
-          ))}
-        </nav>
 
         <div class={styles.tail}>
           {appVersion.value ? (

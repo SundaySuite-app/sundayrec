@@ -8,20 +8,23 @@ import {
   storedSettings,
 } from "./harness";
 
-// PLAN som ukevisning (F6) — blokkene du drar og strekker.
+// Uka i ukestripa (E5) — blokkene du drar og strekker. `goto: "plan"` løses til
+// TA OPP med stripa åpen (ruteren, E2).
 //
 // Reglene (piksler↔tid, snapping, minimum, midnatt, overlapp) er node-testet i
 // `app/pages/plan/plan-core.test.ts`. Det bare denne kan bevise er SKJØTEN:
 // at pekeren og tastene faktisk ender som en slot i basen, at overlapp
 // avvises med en setning, og at «neste» og «savnet» havner på riktig blokk.
 //
-// Geometrien her er den samme som appens: 56 px per time, minutt 0 øverst i
+// Geometrien her er den samme som appens: 32 px per time, minutt 0 øverst i
 // kolonnen. `plan-cols` er kolonnene; boundingBox gir viewport-koordinater, så
 // et rull er med i regnestykket.
 
 test.use({ viewport: { width: 1280, height: 860 } });
 
-const HOUR_PX = 56;
+// Ukestripa tegner dagen tettere enn den gamle siden (56 px) — se
+// `STRIP_HOUR_PX` i `app/pages/plan/WeekView.tsx`.
+const HOUR_PX = 32;
 
 type Slot = { days: number[]; start: string; stop: string; max: number | null };
 
@@ -74,6 +77,13 @@ async function drag(
 
 const blocks = (page: Page): Locator => page.getByTestId("plan-block");
 
+/** Første trykk velger blokken, trykk på den valgte åpner redigeringen. */
+async function openEditor(block: Locator): Promise<void> {
+  await block.click();
+  await expect(block).toHaveAttribute("data-selected", "true");
+  await block.click();
+}
+
 async function slotsOf(page: Page): Promise<Slot[]> {
   return (await storedSettings(page)).slots as Slot[];
 }
@@ -119,12 +129,12 @@ test.describe("ukevisningen", () => {
       page.locator('[data-today="true"] [data-testid="plan-now"]'),
     ).toHaveCount(1);
 
-    // Skjemaet og lista fra før er borte; bryteren og autostart er der.
+    // Skjemaet og lista fra før er borte; de fire flisene er der.
     await expect(page.getByTestId("adv-slot-add")).toHaveCount(0);
     await expect(page.getByTestId("auto-day")).toHaveCount(0);
-    await expect(page.getByTestId("setup-auto-toggle")).toBeVisible();
-    await expect(page.getByTestId("auto-launch")).toBeVisible();
-    await expect(page.getByTestId("plan-wake")).toBeVisible();
+    for (const id of ["auto", "launch", "wake", "notify"]) {
+      await expect(page.getByTestId(`strip-tile-${id}`)).toBeVisible();
+    }
   });
 
   test("rutenettet åpner slik at en tidlig tid er i synsfeltet", async ({
@@ -201,7 +211,9 @@ test.describe("opprette", () => {
     page,
   }) => {
     await bootPlan(page, [SUNDAY_SERVICE]);
-    await page.getByTestId("plan-add").click();
+    // «Legg til tid» finnes for tastatur og skjermleser (synlig ved fokus).
+    await page.getByTestId("plan-add").focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByTestId("plan-editor")).toBeVisible();
     // Standardtiden (søndag 11:00) er opptatt, så forslaget er et annet sted.
     await page.getByTestId("plan-editor-day").selectOption("3");
@@ -328,11 +340,11 @@ test.describe("flytte og strekke", () => {
 });
 
 test.describe("redigering i popover", () => {
-  test("et trykk på blokken åpner redigeringen; Lagre skriver eksakte tider og dag", async ({
+  test("trykk på den valgte blokken åpner redigeringen; Lagre skriver eksakte tider og dag", async ({
     page,
   }) => {
     await bootPlan(page, [SUNDAY_SERVICE]);
-    await blocks(page).first().click();
+    await openEditor(blocks(page).first());
     const editor = page.getByTestId("plan-editor");
     await expect(editor).toBeVisible();
     await expect(page.getByTestId("plan-editor-start")).toHaveValue("11:00");
@@ -357,7 +369,7 @@ test.describe("redigering i popover", () => {
       SUNDAY_SERVICE,
       { days: [6], start: "15:00", stop: "16:00", max: null },
     ]);
-    await blocks(page).last().click();
+    await openEditor(blocks(page).last());
     const save = page.getByTestId("plan-editor-save");
 
     await page.getByTestId("plan-editor-start").fill("12:00");
@@ -386,7 +398,7 @@ test.describe("redigering i popover", () => {
       { days: [2], start: "19:00", stop: "20:30", max: null },
     ]);
     // Kolonnerekkefølge: onsdagen (2) står før søndagen (6).
-    await page.locator('[data-testid="plan-block"][data-day="2"]').click();
+    await openEditor(page.locator('[data-testid="plan-block"][data-day="2"]'));
     await page.getByTestId("plan-editor-delete").click();
 
     await expect(page.getByTestId("plan-editor")).toHaveCount(0);
@@ -396,10 +408,15 @@ test.describe("redigering i popover", () => {
 
   test("Avbryt og Escape lukker uten å skrive", async ({ page }) => {
     await bootPlan(page, [SUNDAY_SERVICE]);
-    await blocks(page).first().click();
+    await openEditor(blocks(page).first());
     await page.getByTestId("plan-editor-start").fill("08:00");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("plan-editor")).toHaveCount(0);
+    // Esc lukket bare redigeringen, ikke stripa under.
+    await expect(page.getByTestId("record-next-plan")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     expect(await slotsOf(page)).toEqual([SUNDAY_SERVICE]);
     // Fokus er tilbake på blokka.
     await expect(blocks(page).first()).toBeFocused();
@@ -489,7 +506,7 @@ test.describe("midnatt", () => {
       page.getByTestId("plan-col-5").locator('[data-part="tail"]'),
     ).toHaveCount(1);
 
-    await tail.click();
+    await openEditor(tail);
     await expect(page.getByTestId("plan-editor-info")).toContainText(
       "slutter neste dag",
     );
@@ -515,7 +532,8 @@ test.describe("midnatt", () => {
     await bootPlan(page, [
       { days: [6], start: "23:30", stop: "00:30", max: null },
     ]);
-    await page.getByTestId("plan-add").click();
+    await page.getByTestId("plan-add").focus();
+    await page.keyboard.press("Enter");
     await page.getByTestId("plan-editor-day").selectOption("0");
     await page.getByTestId("plan-editor-start").fill("00:15");
     await page.getByTestId("plan-editor-stop").fill("01:15");
@@ -553,7 +571,9 @@ test.describe("neste, savnet og av", () => {
     await expect(sunday).toContainText("Neste");
     await expect(wednesday).not.toHaveAttribute("data-next", "true");
     await expect(sunday).toHaveAttribute("aria-label", /neste opptak/);
-    await expect(page.getByTestId("plan-next")).toContainText("11:00");
+    await expect(page.getByTestId("record-next-auto-when")).toContainText(
+      "11:00",
+    );
 
     expect(
       await emitEvent(page, "scheduler://missed", [
@@ -583,11 +603,22 @@ test.describe("neste, savnet og av", () => {
     page,
   }) => {
     await bootPlan(page, [SUNDAY_SERVICE], { autoRecordEnabled: false });
-    await expect(page.getByTestId("plan-off")).toBeVisible();
+    await expect(page.getByTestId("record-next-auto-when")).toHaveText(
+      "Automatisk opptak er av",
+    );
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
     await expect(blocks(page).first()).toHaveAttribute("data-off", "true");
-    await page.getByTestId("setup-auto-toggle").click();
-    await expect(page.getByTestId("plan-off")).toHaveCount(0);
+    await page.getByTestId("strip-tile-auto").click();
+    await expect(page.getByTestId("strip-tile-auto")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     await expect(blocks(page).first()).not.toHaveAttribute("data-off", "true");
+    // Av/på sletter ingenting: tidene står.
+    await expect.poll(async () => slotsOf(page)).toEqual([SUNDAY_SERVICE]);
   });
 });
 

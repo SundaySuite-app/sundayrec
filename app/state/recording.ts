@@ -55,6 +55,15 @@ import {
 /** Går det et opptak? */
 export const isRecording = signal(false);
 
+/**
+ * Start er trykket, og motoren åpner enheten ennå (`RecordPage` eier den).
+ * Alt som lytter på lydenheten for å pynte en linje — VU-ordet i
+ * første-gang-boblen — slipper den mens dette står: Rust slipper VU-strømmen i
+ * `start_recording`, og å be om den på nytt midt i åpningen er å konkurrere om
+ * enheten opptaket skal ha.
+ */
+export const recordStarting = signal(false);
+
 /** Motorens egen livssyklustilstand, sist sett. `null` = ingen er mottatt. */
 export const recorderState = signal<RecorderState | null>(null);
 

@@ -255,10 +255,8 @@ const X32 = {
 };
 
 /** Tallene målt på de to flatene — se `assertHitTargets`. */
-const SETTINGS_TOGGLES = 7;
-const SETTINGS_GHOSTS = 9;
-const PLAN_TOGGLES = 3;
-const PLAN_GHOSTS = 0;
+const SETTINGS_TOGGLES = 2;
+const SETTINGS_GHOSTS = 0;
 
 const FIXTURES: Fixtures = { ...BOOT_FIXTURES, list_audio_devices: [X32] };
 
@@ -273,13 +271,24 @@ test.describe("treffflater", () => {
   test("TA OPP: kilden og planlinja", async ({ page }) => {
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "record" });
     await expect(page.getByTestId("record-change-source")).toBeVisible();
-    // Ingen brytere og ingen utfoldingsknapper etter F5; de to ghost-knappene
-    // er kildens «Endre» og planlinjas «Plan».
+    // Ingen brytere og ingen utfoldingsknapper; kilde-brikka, kamerabryteren
+    // og kalenderknappen er runde ikonknapper, ikke ghost-knapper (E3).
     await assertHitTargets(page, "record", {
       toggles: 0,
       expands: 0,
-      ghosts: 2,
+      ghosts: 0,
     });
+    // De tre store målene har et ekte treffmål.
+    for (const id of [
+      "record-change-source",
+      "record-start",
+      "record-camera-toggle",
+      "record-next-plan",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+    }
   });
 
   test("INNSTILLINGER: bryterne og knappene på hele flaten", async ({
@@ -290,15 +299,35 @@ test.describe("treffflater", () => {
       settings: CHOSEN,
       goto: "settings",
     });
-    await expect(page.getByTestId("setup-sec-about")).toBeVisible();
+    await expect(page.getByTestId("gear-row-about")).toBeVisible();
     await assertHitTargets(page, "settings", {
       toggles: SETTINGS_TOGGLES,
       expands: 0,
       ghosts: SETTINGS_GHOSTS,
     });
+    // Tannhjulets egne knapper (segmenter, ikonknapper, piller) er ikke `Button`
+    // og er ikke ghost-knapper, så de måles for seg: ingen under 44 px.
+    for (const id of [
+      "gear-close",
+      "gear-language-no",
+      "gear-language-en",
+      "gear-channel-stable",
+      "gear-channel-beta",
+      "adv-diag-preview",
+      "adv-diag-delete",
+      "adv-log-show",
+      "adv-log-copy",
+      "adv-licenses-open",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(38);
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+    }
   });
 
-  test("PLAN: bryteren og radene", async ({ page }) => {
+  test("ukestripa: flisene har treffflater, og ingen stjeler naboene", async ({
+    page,
+  }) => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: {
@@ -308,68 +337,57 @@ test.describe("treffflater", () => {
       },
       goto: "plan",
     });
-    await expect(page.getByTestId("setup-auto-body")).toBeVisible();
-    await assertHitTargets(page, "plan", {
-      toggles: PLAN_TOGGLES,
-      expands: 0,
-      ghosts: PLAN_GHOSTS,
-    });
+    await expect(page.getByTestId("strip-tiles")).toBeVisible();
+    // Flisene er 92 px store brytere (ikke den lille `Toggle`en): hver er et
+    // ekte treffmål, og hjørneknappen og verdien ligger ved siden av, ikke oppå.
+    for (const id of [
+      "strip-tile-auto",
+      "strip-tile-launch",
+      "strip-tile-wake",
+      "strip-tile-notify",
+      "strip-notify-value",
+      "strip-wake-more",
+      "record-next-plan",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(22);
+    }
+    for (const id of [
+      "strip-tile-auto",
+      "strip-tile-launch",
+      "strip-tile-wake",
+      "strip-tile-notify",
+    ]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+      // Midtpunktet er flisens eget: hjørneknappen og verdien stjeler det ikke.
+      const own = await page.getByTestId(id).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        return !!hit && (hit === el || el.contains(hit));
+      });
+      expect(own, `${id}: midtpunktet`).toBe(true);
+    }
   });
 
-  // Første gang, steg 3: ukevisningen og bryterkortet må ha treffflater som
-  // ikke stjeler midtpunktet fra naboene.
+  // Første gang: hintboblens knapper må ha treffflater som ikke stjeler fra
+  // naboene.
   //
   // ⚠️ Booter UTEN `?goto=`: api-shim tvinger `onboardingDone` sann når
   // parameteren finnes, så en dyplenket oppstart kan aldri se første gang.
-  test("første gang: steg 3, bryterkortet og knappene", async ({ page }) => {
+  test("første gang: hintboblens knapper har treffmål", async ({ page }) => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...CHOSEN, onboardingDone: false },
     });
-    await page.getByTestId("first-run-skip-sound").click();
-    await page.getByTestId("first-run-next").click();
-    await expect(page.getByTestId("first-run-plan")).toBeVisible();
-
-    const toggles = await measure(page, 'button[role="switch"]');
-    // To: «Ta opp automatisk» og «Start automatisk med maskinen».
-    expect(toggles.length, "first-run/plan: antall brytere målt").toBe(2);
-    for (const t of toggles) {
-      expect(
-        t.hitH,
-        `first-run/plan/${t.id}: treffhøyde`,
-      ).toBeGreaterThanOrEqual(TOGGLE_FLOOR - PROBE_STEP);
-      expect(t.boxH, `first-run/plan/${t.id}: boksen står stille`).toBe(22);
-    }
-    await nobodyStolen(page);
-  });
-
-  test("Innstillinger/Avansert: hele bryterrekka", async ({ page }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: CHOSEN,
-      goto: "settings",
-    });
-    await expect(page.getByTestId("adv-silence-control-input")).toBeVisible();
-    // Den lengste siden i appen, og den tetteste: her står brytere 43 px fra
-    // hverandre og 8 px fra en slett-knapp sidelengs.
-    const toggles = await measure(page, 'button[role="switch"]');
-    expect(toggles.length).toBeGreaterThanOrEqual(6);
-    for (const t of toggles) {
-      expect(t.hitH, `advanced/${t.id}: treffhøyde`).toBeGreaterThanOrEqual(
-        TOGGLE_FLOOR - PROBE_STEP,
-      );
-      expect(t.boxH, `advanced/${t.id}: boksen står stille`).toBe(22);
-    }
-    // F1-UX1/W2: den TETTESTE siden i appen er også den med flest ghost-
-    // knapper (kopier, forhåndsvis, vis, fjern, …) — samme
-    // gulv, og `toBeGreaterThanOrEqual` av samme grunn som toggle-tallet over:
-    // denne siden vokser oftest.
-    const ghosts = await measure(page, 'button[data-variant="ghost"]');
-    expect(ghosts.length).toBeGreaterThanOrEqual(5);
-    for (const g of ghosts) {
-      expect(g.hitH, `advanced/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
-        GHOST_FLOOR - PROBE_STEP,
-      );
+    await expect(page.getByTestId("hint-bubble")).toBeVisible();
+    for (const id of ["hint-next", "hint-skip", "hint-skip-sound"]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
     }
     await nobodyStolen(page);
   });
@@ -434,9 +452,12 @@ test.describe("treffflater", () => {
     const ghosts = await measure(page, 'button[data-variant="ghost"]');
     // «Endre» (autoslett) — papirkurven er en fane nå, ikke en ghost-knapp.
     expect(ghosts.length).toBe(1);
-    // To rader × «Vis i Finder» + «Slett»: dempede knapper (`quiet`), med
-    // samme treffgulv som ghost-knappene.
-    const quiets = await measure(page, 'button[data-variant="quiet"]');
+    // To rader × «Vis i Finder» + «Slett»: runde ikonknapper (E7), med samme
+    // treffgulv som ghost-knappene.
+    const quiets = await measure(
+      page,
+      'button[data-testid="library-row-reveal"], button[data-testid="library-row-delete"]',
+    );
     expect(quiets.length).toBe(4);
     for (const g of [...ghosts, ...quiets]) {
       expect(g.hitH, `library/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(

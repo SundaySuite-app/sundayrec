@@ -8,11 +8,10 @@
  * `#app`), og det skal ikke rives ned av et rutebytte. Et opptak som går er
  * ikke en side man er på.
  *
- * `--z-recording` er UNDER `--z-modal`: stopp-bekreftelsen er en dialog, og
- * en bekreftelse bak flaten den handler om er en app der spørsmålet ikke går
- * an å svare på. Og fordi `DialogHost` bare setter `inert` på `#app`, setter
- * overlegget det på seg selv mens en dialog står — ellers ville stopp-knappen
- * fortsatt vært klikkbar bak spørsmålet om å stoppe.
+ * `--z-recording` er UNDER `--z-modal`: en dialog (en feil midt i opptaket)
+ * skal ligge OVER flaten den handler om. Og fordi `DialogHost` bare setter
+ * `inert` på `#app`, setter overlegget det på seg selv mens en dialog står —
+ * ellers ville «Hold» fortsatt vært klikkbar bak dialogen.
  *
  * ## F1-UX1: «Du kan lukke vinduet» er sant igjen
  *
@@ -30,6 +29,20 @@
  * Utenfor en økt er ingenting endret — lukk betyr avslutt, som før.
  *
  * Setningen står derfor her igjen (`app.overlay.closeHint`), i JSX-en under.
+ *
+ * ## «Én flate» (E6): bare opptaket
+ *
+ * Alt annet er borte. Øverst bare den blinkende røde prikken og «Tar opp»
+ * (overlegget dekker toppfeltet, så det står her og ikke bak). Uten kamera: en
+ * enorm klokke og en bred L/R-måler. Med kamera: bildet i en ramme med rød
+ * kant, klokka som brikke oppe til venstre og måleren loddrett i kanten.
+ * Nederst «Hold» (`HoldStop`, ett sekund; erstatter bekreftelsesdialogen) og
+ * stopplinja: «Stopper 12:30» med «+30» og «∞», eller «Til du stopper».
+ *
+ * Advarslene (stillhet, gjenkobling, bilder hoppet over, kamera borte) er
+ * små ikon + ord-brikker øverst. Ordet er det øyet ser; hele setningen står i
+ * tittelen og for skjermleser, så ingenting av det gamle bannerets innhold er
+ * borte — bare plassen det tok.
  *
  * ## Måleren leser opptaket, ikke rommet
  *
@@ -58,15 +71,15 @@
  * detektoren som varsler før auto-stoppen — får sitt eget banner.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
-import { t, tf } from "../../i18n";
+import { intlParts } from "@lib/status/next-recording-core";
+
+import { locale, t, tf } from "../../i18n";
+import { lockApp } from "../../ui/app-inert";
 import { activeDialog } from "../../ui/dialog";
-import { Banner } from "../../ui/Banner/Banner";
-import { Button } from "../../ui/Button/Button";
-import { Chip } from "../../ui/Chip/Chip";
-import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { CameraPreview } from "../../ui/CameraPreview/CameraPreview";
+import { Icon, type IconName } from "../../ui/Icon/Icon";
 import { currentRoomMinutes } from "../../state/disk";
 import {
   clearSilence,
@@ -78,18 +91,22 @@ import {
   sessionStartedAtMs,
   silenceActive,
   sessionCameraLost,
-  sessionLufs,
   sessionVideoProblem,
   sessionVideoDropped,
   silenceDetail,
 } from "../../state/recording";
 import { settings } from "../../state/settings";
-import { formatLufs } from "../../audio/lufs";
 import { cancelAutostop, extendAutostop } from "./autostop";
+import { HoldStop } from "./HoldStop";
 import { formatClock, spanOfMinutes } from "./record-core";
-import { recordingLevelsSource } from "./recording-levels";
 import { spanText } from "./span-text";
-import { confirmAndStop } from "./stop";
+import {
+  beginStop,
+  completeStop,
+  confirmAndStop,
+  type StopTicket,
+} from "./stop";
+import { StereoMeter } from "./StereoMeter";
 import styles from "./overlay.module.css";
 
 /** Skilletegnet mellom fakta på én linje. Et tegn, ikke prosa. */
@@ -105,16 +122,54 @@ export function RecordingOverlay() {
  * Selve flaten, som en egen komponent.
  *
  * Delt fra vakten over fordi hooks ikke kan stå etter en tidlig `return`, og
- * fordi det gir ÉN stabil montering per økt: canvas-elementet inne i `VuMeter`
- * byttes aldri ut mens et opptak går. En canvas som remonteres mister
- * konteksten sin, og tegneløkka maler videre i et element ingen ser — måleren
- * «fryser» over et opptak som er helt i orden.
+ * fordi det gir ÉN stabil montering per økt: canvas-elementet inne i
+ * `CameraPreview` og måleren byttes aldri ut mens et opptak går.
  */
 function Overlay() {
   const s = settings.value;
   const done = finalizing.value;
   const startedAt = sessionStartedAtMs.value;
   const [now, setNow] = useState(() => Date.now());
+  const root = useRef<HTMLDivElement | null>(null);
+  // Øktas identitet slik den var da holdet BEGYNTE (`HoldStop.onBegin`) — ikke
+  // da det var ferdig: sjekken i `completeStop` er bare noe verdt mot en
+  // billett fra starten av sekundet.
+  const ticket = useRef<StopTicket | null>(null);
+
+  // Alt utenfor overlegget er `inert` så lenge opptaket går: Tab skal gå
+  // mellom Hold, +30 og ∞ og ingenting bak (skallet, et ark som sto åpent da
+  // en planlagt start kom). Telleren (`app-inert.ts`) hindrer at en dialog som
+  // lukkes åpner skallet igjen. Tab fanges også her, så den ikke forlater
+  // vinduet.
+  useEffect(() => {
+    const unlock = lockApp();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Tab" || !root.current) return;
+      if (activeDialog.peek() !== null) return; // dialogen eier tasten
+      const items = [
+        ...root.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement;
+      const inside = active !== null && root.current.contains(active);
+      if (e.shiftKey && (!inside || active === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || active === last)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      unlock();
+    };
+  }, []);
 
   // Klokken. Ett hakk i sekundet, og bare mens den faktisk teller: når motoren
   // skriver ferdig er økta over, og en klokke som fortsetter å telle ville
@@ -165,193 +220,294 @@ function Overlay() {
   const room = spanOfMinutes(currentRoomMinutes());
   const stopAt = scheduledStopMs.value;
   const device = (s.deviceName ?? "").trim();
-  const camera = s.videoEnabled === true ? (s.videoDeviceName ?? "") : "";
+  const withCamera = s.videoEnabled === true;
+  const cameraName = withCamera ? (s.videoDeviceName ?? "").trim() : "";
+  const clock = formatClock(elapsed);
 
   return (
     <div
+      ref={root}
       data-testid="recording-overlay"
       data-finalizing={done ? "true" : undefined}
+      data-camera={withCamera ? "true" : undefined}
       // Se toppen av fila: DialogHost slår bare av `#app`.
       inert={activeDialog.value !== null}
       class={styles.overlay}
     >
-      <div class={styles.banners}>
-        {reconnecting.value ? (
-          <Banner
-            tone="warn"
-            testId="overlay-reconnect"
-            title={
-              device
-                ? tf("app.overlay.reconnect", { name: device })
-                : t("app.overlay.reconnectAnon")
-            }
-            // Se `dismissReconnecting` i state/recording.ts: stripa hadde ingen
-            // vei ned uten et `recording://reconnected` som ikke alltid kommer.
-            onDismiss={dismissReconnecting}
-          />
-        ) : null}
-        {silenceActive.value ? (
-          <Banner
-            tone="warn"
-            testId="overlay-silence"
-            title={t("recording.silenceWarn")}
-            detail={silenceDetail.value ?? undefined}
-            onDismiss={clearSilence}
-          />
-        ) : null}
-      </div>
+      <header class={styles.top}>
+        <span data-testid="overlay-chip" class={styles.rec}>
+          <span aria-hidden="true" class={styles.recDot} />
+          {t("app.status.rec")}
+        </span>
+      </header>
 
-      <Chip tone="rec" dot="rec" testId="overlay-chip">
-        {t("app.status.rec")}
-      </Chip>
+      <Warnings camera={withCamera} device={device} />
 
-      <div
-        data-testid="overlay-timer"
-        class={`${styles.timer} ${done ? styles.timerDone : ""}`}
-      >
-        {formatClock(elapsed)}
-      </div>
+      <main class={styles.stage}>
+        {withCamera ? (
+          <div data-testid="overlay-panel" class={styles.panel}>
+            <div class={styles.picture}>
+              <CameraPreview testId="overlay-camera-preview" knownCamera fill />
+            </div>
+            <span class={styles.clockChip}>
+              <span aria-hidden="true" class={styles.recDot} />
+              <span
+                data-testid="overlay-timer"
+                class={done ? styles.timerDone : undefined}
+              >
+                {clock}
+              </span>
+            </span>
+            {done ? null : (
+              <span class={styles.panelMeter}>
+                <StereoMeter
+                  variant="vertical"
+                  live="recording"
+                  testId="overlay-vu"
+                />
+              </span>
+            )}
+          </div>
+        ) : (
+          <>
+            <div
+              data-testid="overlay-timer"
+              class={`${styles.clock} ${done ? styles.timerDone : ""}`}
+            >
+              {clock}
+            </div>
+            <div class={styles.meter}>
+              {done ? null : (
+                <StereoMeter live="recording" testId="overlay-vu" />
+              )}
+            </div>
+          </>
+        )}
 
-      <div class={styles.meter}>
-        <VuMeter
-          testId="overlay-vu"
-          source={recordingLevelsSource}
-          // Tallene finnes her og ingen andre steder på nivå 1: den som sitter
-          // ved maskinen under en gudstjeneste er nettopp den som vil vite
-          // hvor mange dB det er igjen til klipping.
-          showNumbers
-        />
-      </div>
-
-      {/* D3: kortsiktig lydstyrke (3 s) ved siden av toppnivåene. Ingenting før
-          motoren har et fullt vindu. Rolig tekst, ikke et varsel: «Opptaket er
-          svært svakt» kommer som eget banner etter fem minutter under −40. */}
-      {formatLufs(sessionLufs.value) !== null ? (
-        <p data-testid="overlay-lufs" class={styles.hint}>
-          {tf("app.overlay.loudness", {
-            lufs: formatLufs(sessionLufs.value) ?? "",
-          })}
-        </p>
-      ) : null}
-
-      {/* Kamerabildet, når kamera er en del av dette opptaket. Brikka under
-          navngir enheten; bare BILDET kan si at det faktisk kommer noe fra
-          den. Se CameraPreview.tsx. */}
-      {camera ? (
-        <div class={styles.camera}>
-          <CameraPreview testId="overlay-camera-preview" knownCamera />
+        <div data-testid="overlay-facts" class={styles.facts}>
+          {device ? <span data-testid="overlay-device">{device}</span> : null}
+          {room.kind !== "none" ? (
+            <>
+              {device ? <span aria-hidden="true">{DOT}</span> : null}
+              <span data-testid="overlay-room">
+                {tf("app.overlay.room", { span: spanText(room) })}
+              </span>
+            </>
+          ) : null}
+          {cameraName ? (
+            <>
+              <span aria-hidden="true">{DOT}</span>
+              <span data-testid="overlay-camera">
+                {tf("app.overlay.camera", { name: cameraName })}
+              </span>
+            </>
+          ) : null}
         </div>
-      ) : null}
+      </main>
 
-      <div data-testid="overlay-facts" class={styles.facts}>
-        {device ? <span data-testid="overlay-device">{device}</span> : null}
-        {room.kind !== "none" ? (
-          <>
-            <span aria-hidden="true">{DOT}</span>
-            <span data-testid="overlay-room">
-              {tf("app.overlay.room", { span: spanText(room) })}
-            </span>
-          </>
-        ) : null}
-        {camera ? (
-          <>
-            <span aria-hidden="true">{DOT}</span>
-            <span data-testid="overlay-camera">
-              {tf("app.overlay.camera", { name: camera })}
-            </span>
-          </>
-        ) : null}
-      </div>
+      <footer class={styles.bottom}>
+        <HoldStop
+          disabled={done}
+          onBegin={() => {
+            // Billetten lages når holdet BEGYNNER; `null` (motoren skriver
+            // allerede ferdig) avviser holdet i stedet for å la ringen fylle
+            // seg mot et stopp som ikke kommer.
+            ticket.current = beginStop();
+            return ticket.current !== null;
+          }}
+          onStop={() => {
+            const held = ticket.current;
+            ticket.current = null;
+            void completeStop(held);
+          }}
+          onAssistiveClick={() => void confirmAndStop()}
+        />
+        <span data-testid="overlay-hold-label" class={styles.holdLabel}>
+          {done ? t("recording.finalizing") : t("app.rec.hold")}
+        </span>
 
-      {/* C3c: kameraet rakk ikke alle bildene. En rolig merknad i hint-stilen, ikke
-          en banner: videoen mister noen bilder, lyden er urørt (lydklokka
-          styrer), og det er ingenting å gjøre midt i en gudstjeneste. Bare når
-          kamera er med og tallet er over null; selve antallet vises ikke. */}
-      {camera && sessionVideoDropped.value > 0 ? (
-        <p
-          data-testid="overlay-video-skipped"
-          role="status"
-          class={styles.hint}
-        >
-          {t("app.overlay.videoSkipped")}
-        </p>
-      ) : null}
-
-      {/* C5b: kameraet er borte nå. Sagt med en gang og borte igjen ved
-          gjenkobling; selve opptaket går videre, og det er det setningen
-          forteller. `role=status`, ikke alert: det er ingenting å gjøre. */}
-      {camera && sessionCameraLost.value ? (
-        <p data-testid="overlay-camera-lost" role="status" class={styles.hint}>
-          {t("app.overlay.cameraLost")}
-        </p>
-      ) : null}
-
-      {/* M3R: opptaket har ikke bilde (koderen stoppet, eller kameraet åpnet
-          aldri), og lyden tas opp. Samme rolige status som over: ingenting å
-          gjøre midt i en gudstjeneste, men hun skal ikke tro at bildet tas opp. */}
-      {camera && sessionVideoProblem.value ? (
-        <p
-          data-testid="overlay-video-problem"
-          role="status"
-          class={styles.hint}
-        >
-          {sessionVideoProblem.value === "camera_not_opened"
-            ? t("app.overlay.cameraNotOpened")
-            : t("app.overlay.videoStopped")}
-        </p>
-      ) : null}
-
-      <Button
-        variant="secondary"
-        size="lg"
-        testId="overlay-stop"
-        disabled={done}
-        disabledReason={t("app.overlay.finalizingHint")}
-        onClick={() => void confirmAndStop()}
-      >
-        {done ? t("recording.finalizing") : t("app.overlay.stop")}
-      </Button>
-
-      {/*
-        F1-UX1/W1: sant i BÅDE «Recording» og «Stopping» (`window.rs:80-116`
-        skjuler vinduet i begge, se filhodet) — derfor uavhengig av `done`, og
-        ikke inni forgreningen under som allerede skiller finalizing/autostop.
-      */}
-      <p data-testid="overlay-close-hint" class={styles.hint}>
-        {t("app.overlay.closeHint")}
-      </p>
-
-      {done ? (
-        <p data-testid="overlay-finalizing-hint" class={styles.hint}>
-          {t("app.overlay.finalizingHint")}
-        </p>
-      ) : stopAt !== null && stopAt > now ? (
-        <>
-          <p data-testid="overlay-autostop" class={styles.hint}>
-            {tf("app.overlay.autoStop", { left: formatClock(stopAt - now) })}
+        {done ? (
+          <p data-testid="overlay-finalizing-hint" class={styles.hint}>
+            {t("app.overlay.finalizingHint")}
           </p>
-          {/* ⚠️ Nedtellingen var en KUNNGJØRING og ikke en kontroll: fristen
-              kunne vises og ikke flyttes (se `./autostop.ts`). Knappene står
-              bare når det FINNES en frist — `manualMaxMinutes` er 0 som
-              standard, og to knapper for noe som ikke skal skje er to knapper
-              å lure på midt i en gudstjeneste. */}
-          <div data-testid="overlay-autostop-actions" class={styles.autostop}>
-            <Button
-              variant="secondary"
-              testId="overlay-autostop-extend"
+        ) : (
+          <StopLine stopAt={stopAt} now={now} />
+        )}
+
+        {/*
+          F1-UX1/W1: sant i BÅDE «Recording» og «Stopping» (`window.rs:80-116`
+          skjuler vinduet i begge, se filhodet) — derfor uavhengig av `done`.
+        */}
+        <p data-testid="overlay-close-hint" class={styles.hint}>
+          {t("app.overlay.closeHint")}
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+// ── Stopplinja ──────────────────────────────────────────────────────────────
+
+/**
+ * «Stopper 12:30» med «+30» og «∞», eller «Til du stopper».
+ *
+ * Fristen er MOTORENS (`scheduledStopMs`, via `recording://state`), aldri et
+ * lokalt anslag: «+30» ber motoren flytte den og tiden her flytter seg først
+ * når motoren sier det (se `./autostop.ts`). Knappene står bare når det
+ * FINNES en frist — `manualMaxMinutes` er 0 som standard, og to knapper for noe
+ * som ikke skal skje er to knapper å lure på midt i en gudstjeneste. Et
+ * manuelt opptak med tak har en frist som alle andre og får samme linje.
+ */
+function StopLine({ stopAt, now }: { stopAt: number | null; now: number }) {
+  const pending = stopAt !== null && stopAt > now;
+  const time = pending ? intlParts(locale.value)(stopAt).time : "";
+  return (
+    <div data-testid="overlay-stop-line" class={styles.stopLine}>
+      <Icon name="timer" size={18} />
+      {pending ? (
+        <>
+          <span
+            data-testid="overlay-autostop"
+            data-stop-ms={String(stopAt)}
+            class={styles.stopText}
+          >
+            {tf("app.rec.stopsAt", { time })}
+          </span>
+          <span data-testid="overlay-autostop-actions" class={styles.actions}>
+            <button
+              type="button"
+              data-testid="overlay-autostop-extend"
+              aria-label={t("app.rec.extendAria")}
+              title={t("app.rec.extendTitle")}
+              class={styles.extend}
               onClick={() => void extendAutostop()}
             >
-              {t("recording.extend15")}
-            </Button>
-            <Button
-              variant="ghost"
-              testId="overlay-autostop-cancel"
+              +30
+            </button>
+            <button
+              type="button"
+              data-testid="overlay-autostop-cancel"
+              aria-label={t("recording.cancelAutostop")}
+              title={t("app.rec.noStopTitle")}
+              class={styles.noStop}
               onClick={() => void cancelAutostop()}
             >
-              {t("recording.cancelAutostop")}
-            </Button>
-          </div>
+              ∞
+            </button>
+          </span>
         </>
+      ) : stopAt !== null ? (
+        <span data-testid="overlay-autostop-now" class={styles.stopText}>
+          {t("app.rec.stoppingNow")}
+        </span>
+      ) : (
+        <span data-testid="overlay-until-stop" class={styles.stopText}>
+          {t("app.rec.untilStop")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Advarsler: ikon + ord ───────────────────────────────────────────────────
+
+interface WarnChipProps {
+  icon: IconName;
+  /** Ordet øyet ser. */
+  word: string;
+  /** Hele setningen: tittel og skjermleser. */
+  full: string;
+  testId: string;
+  onDismiss?: () => void;
+}
+
+function WarnChip({ icon, word, full, testId, onDismiss }: WarnChipProps) {
+  return (
+    <span role="status" data-testid={testId} title={full} class={styles.chip}>
+      <Icon name={icon} size={16} />
+      <span aria-hidden="true">{word}</span>
+      <span class={styles.sr}>{full}</span>
+      {onDismiss ? (
+        <button
+          type="button"
+          aria-label={t("app.common.dismiss")}
+          class={styles.chipClose}
+          onClick={onDismiss}
+        >
+          <Icon name="x" size={12} strokeWidth={2.5} />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Stillhet, gjenkobling og kameraets tilstand — som små brikker øverst, så de
+ * ikke flytter klokka når de kommer og går.
+ *
+ *   • stillhet / gjenkobling: motorens egne varsler, avvises med kryss (stripa
+ *     hadde ingen vei ned uten et `recording://reconnected` som ikke alltid
+ *     kommer — se `dismissReconnecting`),
+ *   • bilder hoppet over (C3c): lyden er urørt, ingenting å gjøre midt i en
+ *     gudstjeneste; selve antallet vises ikke,
+ *   • kameraet er borte (C5b) / bildet stoppet eller åpnet aldri (M3R): selve
+ *     opptaket går videre — hun skal bare ikke tro at bildet tas opp.
+ */
+function Warnings({ camera, device }: { camera: boolean; device: string }) {
+  const problem = sessionVideoProblem.value;
+  return (
+    <div class={styles.chips}>
+      {reconnecting.value ? (
+        <WarnChip
+          icon="refresh"
+          testId="overlay-reconnect"
+          word={t("app.rec.chip.reconnect")}
+          full={
+            device
+              ? tf("app.overlay.reconnect", { name: device })
+              : t("app.overlay.reconnectAnon")
+          }
+          onDismiss={dismissReconnecting}
+        />
+      ) : null}
+      {silenceActive.value ? (
+        <WarnChip
+          icon="mute"
+          testId="overlay-silence"
+          word={t("app.rec.chip.silence")}
+          full={[t("recording.silenceWarn"), silenceDetail.value]
+            .filter(Boolean)
+            .join(" ")}
+          onDismiss={clearSilence}
+        />
+      ) : null}
+      {camera && sessionVideoDropped.value > 0 ? (
+        <WarnChip
+          icon="camera"
+          testId="overlay-video-skipped"
+          word={t("app.rec.chip.videoSkipped")}
+          full={t("app.overlay.videoSkipped")}
+        />
+      ) : null}
+      {camera && sessionCameraLost.value ? (
+        <WarnChip
+          icon="camera"
+          testId="overlay-camera-lost"
+          word={t("app.rec.chip.cameraLost")}
+          full={t("app.overlay.cameraLost")}
+        />
+      ) : null}
+      {camera && problem ? (
+        <WarnChip
+          icon="camera"
+          testId="overlay-video-problem"
+          word={t("app.rec.chip.noVideo")}
+          full={
+            problem === "camera_not_opened"
+              ? t("app.overlay.cameraNotOpened")
+              : t("app.overlay.videoStopped")
+          }
+        />
       ) : null}
     </div>
   );

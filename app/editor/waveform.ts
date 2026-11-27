@@ -138,20 +138,21 @@ function drawWaveform(): void {
     const index = Math.floor(sec * PEAKS_PER_SEC);
     if (index < 0 || index >= E.peaks.length) continue;
     const barH = Math.min(maxBar, E.peaks[index] * maxBar);
-    const inCut = isInCut(sec) || isInDrag(sec);
+    const inCut = isInCut(sec);
     ctx.fillStyle = inCut ? dim : gold;
     ctx.globalAlpha = inCut ? 0.45 : sec < cur ? 0.34 : 0.85;
     ctx.fillRect(px, midY - barH, 1, barH * 2);
   }
   ctx.globalAlpha = 1;
 
-  // Den aktive markeringen (dra for å kutte).
-  if (E.isDragging && E.dragStartSec >= 0) {
-    const x1 = secToX(Math.min(E.dragStartSec, E.dragEndSec), W);
-    const x2 = secToX(Math.max(E.dragStartSec, E.dragEndSec), W);
-    ctx.fillStyle = col("--bad-soft");
+  // Markeringen: mens man drar, og etterpå mens den venter på «Klipp» (E7).
+  const sel = pendingRange();
+  if (sel) {
+    const x1 = secToX(sel.start, W);
+    const x2 = secToX(sel.end, W);
+    ctx.fillStyle = col("--gold-mid");
     ctx.fillRect(x1, RULER, x2 - x1, H - RULER);
-    ctx.strokeStyle = col("--bad");
+    ctx.strokeStyle = col("--gold");
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x1 + 0.5, RULER + 0.5, x2 - x1 - 1, H - RULER - 1);
   }
@@ -322,9 +323,16 @@ function isInCut(sec: number): boolean {
   return E.cuts.some((c) => sec >= c.start && sec <= c.end);
 }
 
-function isInDrag(sec: number): boolean {
-  if (!E.isDragging) return false;
-  const s = Math.min(E.dragStartSec, E.dragEndSec);
-  const e = Math.max(E.dragStartSec, E.dragEndSec);
-  return sec >= s && sec <= e;
+/** Markeringen som skal tegnes: dragets egen, ellers den som venter. */
+function pendingRange(): { start: number; end: number } | null {
+  if (E.isDragging && E.dragStartSec >= 0) {
+    return {
+      start: Math.min(E.dragStartSec, E.dragEndSec),
+      end: Math.max(E.dragStartSec, E.dragEndSec),
+    };
+  }
+  if (E.selStart >= 0 && E.selEnd > E.selStart) {
+    return { start: E.selStart, end: E.selEnd };
+  }
+  return null;
 }

@@ -28,13 +28,7 @@ import { describe, expect, it } from "vitest";
 import { activeDialog } from "./dialog";
 import { toasts } from "./toast";
 import { Banner } from "./Banner/Banner";
-import {
-  BoundNumberField,
-  BoundRadioCards,
-  BoundSelect,
-  BoundTextField,
-  BoundToggle,
-} from "./Bound/Bound";
+import { BoundRadioCards, BoundSelect, BoundToggle } from "./Bound/Bound";
 import { Button } from "./Button/Button";
 import { Card } from "./Card/Card";
 import { Chip } from "./Chip/Chip";
@@ -43,7 +37,6 @@ import { ControlCard } from "./ControlCard/ControlCard";
 import { DialogHost } from "./DialogHost/DialogHost";
 import { EmptyState } from "./EmptyState/EmptyState";
 import { Gate } from "./Gate/Gate";
-import { NumberField } from "./NumberField/NumberField";
 import { PageShell } from "./PageShell/PageShell";
 import { ProgressBar } from "./ProgressBar/ProgressBar";
 import { RadioCards } from "./RadioCards/RadioCards";
@@ -172,11 +165,6 @@ const LIBRARY: Array<{
       render(<TextField testId="probe" value="" onInput={() => {}} />),
   },
   {
-    name: "NumberField",
-    markup: () =>
-      render(<NumberField testId="probe" value="12" onInput={() => {}} />),
-  },
-  {
     name: "Slider",
     markup: () =>
       render(
@@ -280,26 +268,6 @@ const LIBRARY: Array<{
       ),
     derived: ["probe-control-input"],
   },
-  {
-    name: "BoundTextField",
-    markup: () =>
-      render(<BoundTextField testId="probe" setting="deviceName" label="L" />),
-    derived: ["probe-control-input"],
-  },
-  {
-    name: "BoundNumberField",
-    markup: () =>
-      render(
-        <BoundNumberField
-          testId="probe"
-          setting="autoDeleteDays"
-          label="L"
-          rule={{ min: 30 }}
-          message={() => "nei"}
-        />,
-      ),
-    derived: ["probe-control-input"],
-  },
 ];
 
 describe("komponentbiblioteket", () => {
@@ -320,7 +288,7 @@ describe("komponentbiblioteket", () => {
   it("dekker hele biblioteket — en komponent uten rad ville sluppet unna", () => {
     // Et tall å måtte oppdatere BEVISST. Legger noen til en komponent uten en
     // rad her, feiler denne i stedet for at dekningen stille blir mindre.
-    expect(LIBRARY.length).toBe(25);
+    expect(LIBRARY.length).toBe(22);
   });
 });
 
@@ -470,7 +438,7 @@ describe("ToastHost", () => {
 });
 
 describe("PageShell", () => {
-  it("har topplinjas dra-attributt, de fire knappene og statuslinjen", () => {
+  it("har topplinjas dra-attributt, de tre knappene og statuslinjen", () => {
     const html = render(
       <PageShell>
         <span />
@@ -479,10 +447,11 @@ describe("PageShell", () => {
     // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes. D3 flyttet
     // det fra skinnens rot til topplinjas; formen er den samme.
     expect(html).toContain("data-tauri-drag-region");
-    // F5: fire sider i bunnlinja.
-    for (const page of ["record", "recordings", "plan", "settings"]) {
+    // E1: to ikonfaner i midten og tannhjulet til høyre; Plan er ikke en fane.
+    for (const page of ["record", "recordings", "settings"]) {
       expect(html).toContain(`data-testid="nav-${page}"`);
     }
+    expect(html).not.toContain('data-testid="nav-plan"');
     expect(html).toContain('data-testid="status-line"');
     expect(html).toContain('data-testid="app-heading"');
   });

@@ -63,14 +63,22 @@ function consentSpy(): { fixtures: Fixtures } {
   };
 }
 
-/** Walk the three steps to the last one. Step 1 is gated on hearing sound; a
- *  browser has no backend to hear with, so it takes the grey emergency exit —
- *  the same one a real operator has when the mixer is not on yet. */
-async function reachChecklist(page: import("@playwright/test").Page) {
-  await expect(page.getByTestId("first-run")).toBeVisible();
-  await page.getByTestId("first-run-skip-sound").click();
-  await page.getByTestId("first-run-next").click();
-  await expect(page.getByTestId("first-run-later")).toBeVisible();
+/** Walk the three hints to the last one. Hint 1 is gated on hearing sound; a
+ *  browser has no backend to hear with, so it takes the emergency exit — the
+ *  same one a real operator has when the mixer is not on yet. */
+async function reachLastHint(page: import("@playwright/test").Page) {
+  await expect(page.getByTestId("hint-bubble")).toBeVisible();
+  await page.getByTestId("hint-skip-sound").click();
+  await expect(page.getByTestId("hint-bubble")).toHaveAttribute(
+    "data-step",
+    "folder",
+  );
+  await page.getByTestId("hint-next").click();
+  await expect(page.getByTestId("hint-bubble")).toHaveAttribute(
+    "data-step",
+    "plan",
+  );
+  await expect(page.getByTestId("hint-next")).toHaveText("Ferdig");
 }
 
 test.describe("onboarding", () => {
@@ -81,17 +89,17 @@ test.describe("onboarding", () => {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: false },
     });
-    await expect(page.getByTestId("first-run")).toBeVisible();
+    await expect(page.getByTestId("hint-bubble")).toBeVisible();
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-first-run",
-      "true",
+      "data-page",
+      "record",
     );
 
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: true },
     });
-    await expect(page.getByTestId("first-run")).toBeHidden();
+    await expect(page.getByTestId("hint-bubble")).toBeHidden();
   });
 
   test("en dyplenke hopper over sekvensen, akkurat som i legacy", async ({
@@ -106,11 +114,7 @@ test.describe("onboarding", () => {
       settings: { onboardingDone: false },
       goto: "settings:sound",
     });
-    await expect(page.getByTestId("first-run")).toHaveCount(0);
-    await expect(page.getByTestId("main")).not.toHaveAttribute(
-      "data-first-run",
-      "true",
-    );
+    await expect(page.getByTestId("hint-bubble")).toHaveCount(0);
     await expect(page.getByTestId("setup-sound")).toBeVisible();
   });
 
@@ -215,9 +219,9 @@ test.describe("onboarding", () => {
     // Declining must not change anything else: the sequence still runs, the
     // checklist still says the same five things, and «Åpne SundayRec» still
     // ends first-run.
-    await reachChecklist(page);
-    await page.getByTestId("first-run-later").click();
-    await expect(page.getByTestId("first-run")).toBeHidden();
+    await reachLastHint(page);
+    await page.getByTestId("hint-next").click();
+    await expect(page.getByTestId("hint-bubble")).toBeHidden();
 
     await page.getByTestId("consent-card-no").click();
     await expect
@@ -226,7 +230,9 @@ test.describe("onboarding", () => {
 
     // First-run is over: it must not reappear on the next boot — checked at
     // the storage layer (the fake sqlite row a fresh settings_get would read).
-    expect((await storedSettings(page)).onboardingDone).toBe(true);
+    await expect
+      .poll(async () => (await storedSettings(page)).onboardingDone)
+      .toBe(true);
   });
 
   test("a backend that cannot record the answer does not trap the operator", async ({
@@ -264,6 +270,6 @@ test.describe("onboarding", () => {
     await expect(page.getByTestId("consent-card")).toBeVisible();
     // The rest of the app is untouched — the bottom bar still navigates.
     await page.getByTestId("nav-settings").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
   });
 });

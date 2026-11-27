@@ -1,0 +1,140 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  flex: none;
+  width: 196px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  align-content: start;
+}
+
+.cell {
+  position: relative;
+}
+
+.tile {
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border-radius: 18px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.tile:hover {
+  transform: translateY(-2px);
+}
+
+.tile.on {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+.word {
+  font-size: var(--fs-base);
+  color: var(--ink);
+}
+
+/* Verdien under Varsel-flisen: en egen knapp (ikke inni flis-knappen). */
+.value {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.value:hover {
+  background: var(--ink-soft);
+  color: var(--ink);
+}
+
+/* «Ingen tider» under Auto-flisen når uka er tom. Ikke en knapp. */
+.hint {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 6px;
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  text-align: center;
+  pointer-events: none;
+}
+
+.cell:has(.hint) .tile {
+  padding-bottom: var(--sp-4);
+}
+
+/* Varsel-flisen trenger rom til verdien under ordet. */
+.cell:has(.value) .tile {
+  padding-bottom: var(--sp-4);
+}
+
+.corner {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.corner:hover,
+.corner[aria-expanded="true"] {
+  background: var(--ink-soft);
+  color: var(--ink);
+}
+
+.popHolder {
+  position: fixed;
+  z-index: var(--z-header);
+  display: flex;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--warn-line);
+  background: var(--warn-soft);
+  font-size: var(--fs-sm);
+}

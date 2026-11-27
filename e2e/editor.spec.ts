@@ -854,11 +854,15 @@ test.describe("editor", () => {
     await openEditor(page);
     await goToExport(page);
 
-    const same = page.getByTestId("editor-dest-row-same");
-    await expect(same).toHaveAttribute("data-selected", "true");
-    await expect(same).toContainText("Samme mappe som opptaket");
-    // …og den NAVNGIR mappen, i stedet for å be brukeren stole på ordet.
-    await expect(same).toContainText("Opptak");
+    const same = page.getByTestId("editor-dest-row");
+    await expect(same).toHaveAttribute("data-selected", "false");
+    await expect(same).toContainText("Samme mappe");
+    // …og den NAVNGIR mappen (tittelen og forhåndsvisningen), i stedet for å
+    // be brukeren stole på ordet.
+    await expect(same).toHaveAttribute("title", /Opptak/);
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "Opptak",
+    );
 
     // Navnet er bakendens form (`<navn>_redigert.<ext>`), ikke et løfte om
     // innholdet, og anslaget er regnet av det som faktisk blir igjen.
@@ -867,19 +871,28 @@ test.describe("editor", () => {
     );
     await expect(page.getByTestId("editor-export-preview")).toContainText("MB");
 
-    await page.getByTestId("editor-format-row-flac").click();
+    await page.getByTestId("editor-format-row-wav").click();
     await expect(page.getByTestId("editor-export-preview")).toContainText(
-      "_redigert.flac",
+      "_redigert.wav",
     );
   });
 
-  test("«Ta med video» finnes bare når opptaket har video", async ({
-    page,
-  }) => {
+  test("MP4-kortet finnes bare når opptaket har video", async ({ page }) => {
     await openEditor(page);
     await goToExport(page);
-    await expect(page.getByTestId("editor-video-card")).toHaveCount(0);
+    // Lydopptak: to kort (MP3 «Podkast», WAV «Arkiv»), ingen MP4.
     await expect(page.getByTestId("editor-format")).toBeVisible();
+    await expect(page.getByTestId("editor-format-row-mp3")).toContainText(
+      "Podkast",
+    );
+    await expect(page.getByTestId("editor-format-row-wav")).toContainText(
+      "Arkiv",
+    );
+    await expect(page.getByTestId("editor-format-row-mp4")).toHaveCount(0);
+    await expect(page.getByTestId("editor-format")).toHaveAttribute(
+      "data-count",
+      "2",
+    );
 
     // Det SAMME opptaket, men bakenden sier at det har et videospor.
     await openEditor(page, {
@@ -893,15 +906,22 @@ test.describe("editor", () => {
       },
     });
     await goToExport(page);
-    await expect(page.getByTestId("editor-video-card")).toBeVisible();
+    await expect(page.getByTestId("editor-format")).toHaveAttribute(
+      "data-count",
+      "3",
+    );
+    const mp4 = page.getByTestId("editor-format-row-mp4");
+    await expect(mp4).toBeVisible();
+    await expect(mp4).toContainText("Video");
 
-    // Uten bryteren er eksporten fortsatt lyd — det er hva de fleste vil ha
+    // Uten MP4-kortet er eksporten fortsatt lyd — det er hva de fleste vil ha
     // med en gudstjeneste-mp4.
-    await expect(page.getByTestId("editor-format-locked")).toHaveCount(0);
-    await page.getByTestId("editor-video-toggle").click();
-    // Med bryteren PÅ er containeren mp4, og da er de tre lydformatene ikke et
-    // valg lenger. De står dempet med grunnen i stedet for å forsvinne.
-    await expect(page.getByTestId("editor-format-locked")).toBeVisible();
+    await expect(page.getByTestId("editor-format-row-mp3")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await mp4.click();
+    await expect(mp4).toHaveAttribute("data-selected", "true");
     await expect(page.getByTestId("editor-export-preview")).toContainText(
       "_redigert.mp4",
     );

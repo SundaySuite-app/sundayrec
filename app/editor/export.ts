@@ -74,8 +74,21 @@ export const exportFormat = signal<ExportFormat>(DEFAULT_EXPORT_FORMAT);
  * navnet som vises — aldri stien (se filhodet).
  */
 export const exportFolder = signal<ChosenPlace | null>(null);
-/** «Ta med video (MP4)». Bare synlig når kilden HAR et videospor. */
+/** MP4-kortet er valgt (E7). Bare mulig når kilden HAR et videospor. */
 export const includeVideo = signal(false);
+
+/**
+ * Intro og outro er på eller av for denne økta (E7). Fila ligger i
+ * innstillingene uansett; «av» betyr bare at eksporten ikke bruker den. Aldri
+ * lagret, og tilbake til «på» for hvert opptak.
+ */
+export const introOn = signal(true);
+export const outroOn = signal(true);
+
+/** Av/på-signalet for en jingle-plass. */
+export function jingleOnSignal(slot: JingleSlot) {
+  return slot === "intro" ? introOn : outroOn;
+}
 
 // ── Innholdet ───────────────────────────────────────────────────────────────
 //
@@ -188,6 +201,8 @@ export function resetExport(): void {
   exportFormat.value = DEFAULT_EXPORT_FORMAT;
   exportFolder.value = null;
   includeVideo.value = false;
+  introOn.value = true;
+  outroOn.value = true;
   exportTitle.value = "";
   exportSpeaker.value = "";
   exportDescription.value = "";
@@ -308,6 +323,8 @@ export async function pickJingle(slot: JingleSlot): Promise<void> {
   }
   if (!answer.settings) return;
   patchSettings(jinglePatch(answer.settings));
+  // En fil man nettopp har valgt er en fil man vil bruke.
+  jingleOnSignal(slot).value = true;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFailed.value = false;
@@ -457,7 +474,10 @@ export async function runExport(
     ...sound,
     // Intro og outro er innstillinger Rust leser selv: her sier vi bare JA eller
     // NEI (og alltid nei for video — motoren legger dem rundt lydsporet).
-    ...jingleFlags(video, settings.value),
+    ...jingleFlags(video, settings.value, {
+      intro: introOn.value,
+      outro: outroOn.value,
+    }),
   });
 
   // Estimatoren eies av JOBBEN og ikke av stripa: en bar som forsvinner og
