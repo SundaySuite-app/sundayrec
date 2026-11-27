@@ -3,6 +3,59 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.32.0-beta.1 — én flate, til beta-ringen
+
+Skjermene er bygd om rundt det du faktisk gjør: ta opp, rediger, eksporter og planlegg.
+Det er to flater og et tannhjul, og nesten alle innstillinger står der du bruker dem.
+Ingenting nytt samles inn, og ingenting er fjernet fra opptaket selv.
+
+- **Ta opp er hele opptaksflaten.** Kilde-brikka øverst viser lydkortet og et lite nivå;
+  trykk på den for å åpne **lydarket**: velg enhet og kanalpar, se et stort L/R-nivå, og
+  under «Mer» velg lagringsmappe, kvalitet (God, Best, Arkiv) og fem fliser — Før
+  (forhåndsbuffer), Stille (stopp ved lang stillhet), Del (del lange opptak), Rydd (slett
+  gamle opptak) og Maks (lengste opptak, som ender på «Av»). Den store knappen puster
+  mens den venter.
+- **Kameraet fyller flaten.** Slår du på kamera, tar bildet hele skjermen, med nivået
+  loddrett i kanten og en liten opptaksknapp over bildet. Den lille pila på
+  kameraknappen velger kamera og om du vil ha en egen lydfil. Under opptak er bildet
+  mindre og tegnes sjeldnere, så maskinen har mer å gå på.
+- **Opptaksmodus viser bare opptaket.** En blinkende rød «Tar opp», en stor klokke (eller
+  bildet med klokka som brikke), nivået og «Hold». **Hold den røde knappen i ett sekund
+  for å stoppe** — et kort trykk gjør ingenting, og bekreftelsesdialogen er borte.
+  Med tastatur holder du Mellomrom eller Enter. VoiceOver og Narrator får en bekreftelse
+  i stedet, siden de ikke kan holde en knapp. Tab går bare mellom knappene i opptaksmodus.
+- **«+30» og «∞» på planlagt stopp.** Har opptaket et planlagt stopp, står «Stopper 12:30»
+  med «+30» (30 minutter til) og «∞» (stopp aldri av seg selv). Et manuelt opptak uten
+  grense sier «Til du stopper».
+- **Ukeplanen ligger nederst på Ta opp.** Den lille kalenderknappen åpner **ukestripa**:
+  ukevisningen med blokkene du drar, og fire fliser — **Auto** (ta opp etter planen),
+  **Oppstart** (start med maskinen), **Vekk** (vekk maskinen fra dvale, med prøv og
+  logg i hjørnet) og **Varsel** (varsel når opptak starter og stopper, med status fra
+  systemet og «Send testvarsel» i hjørnet). Stripa viser neste opptak og nedtellingen
+  også når den er lukket. Står tidene men «Auto» er av, sier stripa det i stedet for å
+  late som om det finnes et neste opptak, og «Auto» på uten tider lyser ikke.
+- **Opptak har lista og redigeringen.** Hver rad har en liten bølgeform; papirkurven er et
+  ikon oppe til høyre med antall. I redigeringen drar du over bølgeformen for å markere
+  og trykker «Klipp» (angre finnes). Et videoopptak viser bildet stort, og det følger
+  spillehodet.
+- **Forslag om stillhet.** Én knapp i redigeringen viser lange stillheter som stiplede
+  områder. Du godtar ett eller alle, eller avviser dem — ingenting klippes av seg selv.
+- **Eksport er et ark fra siden.** Formatkort: MP3 «Podkast», WAV «Arkiv» og MP4 «Video»
+  (bare når opptaket har bilde). Tre fliser: Podkastklar lyd, Intro og Outro (velg,
+  bytt eller **fjern** filen i hjørnemenyen). FLAC er ikke lenger et valg i arket.
+- **Tannhjulet** oppe til høyre er et kort over siden du kom fra: språk, oppdatering
+  (se etter nå, kanal stabil/beta, automatisk), anonym statistikk, og Om (logg og lisenser).
+- **Første gang er tre hint** oppå Ta opp: lydkilde (med lydporten), mappe og faste
+  opptak. De kan nås med Tab selv mens lydarket står åpent.
+- **Gamle lenker virker.** `?goto=plan`, innstillingsankrene for lyd, kvalitet, varsler og
+  kamera, og menylinjen lander på flaten som nå har innstillingen.
+- **Borte:** Plan som egen side, Innstillinger som side (Lyd, Kamera, Lagringsmappe,
+  Varsler og Opptaksvalg bor nå i lydarket, kameraknappen og stripa), «Stoppe opptaket?»-
+  dialogen, «+ 15 min» og «Avbryt» på planlagt stopp, og første-gang-veiviseren som sider.
+- **Under panseret:** kamerabildet i hvile er 1280 piksler bredt med 12 bilder i sekundet
+  og under opptak 640 piksler med 4; skallet bak opptaksmodus er avslått for tastatur og
+  skjermleser mens opptaket går.
+
 ## v0.31.0-beta.1 — rent bord, til beta-ringen
 
 SundayRec er skåret ned til det en frivillig bruker på en søndag: ta opp, rediger,

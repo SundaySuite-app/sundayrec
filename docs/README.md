@@ -13,14 +13,14 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 
 ## Status og planer — levende, oppdateres når noe endres
 
-| Dokument                             | Hva                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| [PLAN.md](PLAN.md)                   | Hva SundayRec er nå, hva «rent bord» bevisst fjernet, og alt som gjenstår (rigg og eier)         |
-| [VARSLING.md](VARSLING.md)           | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår                     |
-| [RIG-DAY.md](RIG-DAY.md)             | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                                         |
-| [SMOKE-TEST.md](SMOKE-TEST.md)       | Maskinvare-runbook for kjernen (Ta opp, Opptak, Plan, Innstillinger) — hva som skal skje på rigg |
-| [AVHENGIGHETER.md](AVHENGIGHETER.md) | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista                     |
-| [design/](design/)                   | Designunderlag og atlas-skjermbilder                                                             |
+| Dokument                             | Hva                                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| [PLAN.md](PLAN.md)                   | Hva SundayRec er nå, hva «rent bord» bevisst fjernet, og alt som gjenstår (rigg og eier)                           |
+| [VARSLING.md](VARSLING.md)           | Hvordan appen sier fra når noe går galt — runder, status og det som gjenstår                                       |
+| [RIG-DAY.md](RIG-DAY.md)             | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                                                           |
+| [SMOKE-TEST.md](SMOKE-TEST.md)       | Maskinvare-runbook for «én flate» (Ta opp med lydark og ukestripe, Opptak, tannhjulet) — hva som skal skje på rigg |
+| [AVHENGIGHETER.md](AVHENGIGHETER.md) | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista                                       |
+| [design/](design/)                   | Designunderlag og atlas-skjermbilder                                                                               |
 
 ## Utgivelse og drift
 

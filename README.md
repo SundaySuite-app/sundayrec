@@ -20,25 +20,31 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 
 ## What it does
 
-Four pages, one job each:
+Two surfaces and a gear — nothing is a page you have to go looking for:
 
-- **Ta opp** — the big record button, the source and its level, the camera.
-  Crash-safe capture straight to WAV with reconnect, split and pre-roll.
-- **Opptak** — the recordings list. A click opens the editor on the same page:
-  a waveform with two handles, cut away the rest, and one «Podkastklar lyd»
-  switch (−16 LUFS). «Eksporter» is a sheet with optional intro/outro.
-- **Plan** — a week view with draggable blocks for the weekly recordings, auto
-  start with the machine, and OS wake-from-sleep so a scheduled recording
-  happens with nobody there.
-- **Innstillinger** — sound and channels, camera, save folder and format,
-  notifications, language (Norwegian or English), updates, privacy and log.
+- **Ta opp** — the source chip with a live L/R meter (it opens the sound sheet:
+  device, channel pairs, save folder, quality, pre-roll, silence stop, split,
+  clean-up, max length), the big record button, the camera (the picture fills the
+  surface), and the **week strip** at the bottom: weekly recordings as draggable
+  blocks, auto start, start with the machine, wake from sleep and notifications,
+  so a scheduled recording happens with nobody there. Crash-safe capture straight
+  to WAV with reconnect, split and pre-roll. While it records the screen shows
+  only the recording: the clock, the meter, and a red **Hold** button (one second)
+  to stop, with **+30** and **∞** on a scheduled stop.
+- **Opptak** — the recordings list with a mini waveform. A click opens the editor
+  on the same page: a waveform (and the picture, for a video recording), drag to
+  cut, optional silence suggestions, and one «Podkastklar lyd» switch (−16 LUFS).
+  «Eksporter» is a side sheet with format cards (MP3, WAV, MP4 for video) and
+  optional intro/outro. The trash is an icon at the top.
+- **The gear** — language (Norwegian or English), update, anonymous statistics
+  and about (log, licenses).
 
-First run is three steps: sound card and channels (with a live meter), save
+First run is three hint bubbles on Ta opp: sound source (with a live meter), save
 folder, first weekly recording. A native notification on the machine tells you
 when a take fails or goes silent; the app itself uploads nothing.
 
 SundayRec is deliberately a small RECORDING app. «Rent bord» (v0.31.0) cut it
-back to this core: no learning from your corrections, no sermon finder, no
+back to this core and «én flate» (v0.32.0) rebuilt the screens around it: no learning from your corrections, no sermon finder, no
 diagnostics/test recordings, no «Legg ut», no church profile or calendar, no
 special recordings, and only Norwegian and English. The full list of what was
 removed, and why it should stay out, is in [`docs/PLAN.md`](docs/PLAN.md).
@@ -62,9 +68,10 @@ removed, and why it should stay out, is in [`docs/PLAN.md`](docs/PLAN.md).
   C/C++ toolchain dependency** (whisper-rs/libwhisper was the only one): a
   stock Rust toolchain plus the ffmpeg sidecar builds everything except the
   Windows `asio` feature (Steinberg SDK, see `docs/BUILD_ASIO.md`).
-- **`app/`** — the shipping frontend: a Preact shell and the Vite root. Four
-  pages — **Ta opp · Opptak · Plan · Innstillinger** — plus first run
-  (`pages/firstrun`). Signals at module scope for state, CSS Modules over one
+- **`app/`** — the shipping frontend: a Preact shell and the Vite root. Two
+  surfaces — **Ta opp** (with the sound sheet and the week strip) and
+  **Opptak** (list, editor, export sheet) — plus the gear and the first-run
+  hints on Ta opp. Signals at module scope for state, CSS Modules over one
   token file for every colour, JSX from the compiler (no Babel plugin), and one
   door into Tauri: `window.api`. The long, historical description of the shell
   before «rent bord» is [`docs/archive/APP-SHELL.md`](docs/archive/APP-SHELL.md).

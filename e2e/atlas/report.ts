@@ -299,25 +299,26 @@ function writeIndex(
 
   const md = `# Atlas — SundayRec slik appen ER
 
-Hvert bilde er ett skjermbilde av appen slik den står på denne grenen: v0.28.0
-med designrunden i november 2026 oppå — **luft** (tetthetstokens på 4/8-rutenettet
-og en maksbredde på sidene), **handlingslinje** (Start, «Neste» og eksport står
-fast nederst), **seksjoner** (Innstillinger delt i Kirke og språk · Tidsplan ·
-Legg ut · Opptaket · Oppdateringer og personvern · Hjelp og feilsøking · Om)
-og **ny tekst** på begge språk (ordlista: lydkilde, miksebord, lydjustering,
-opptaksmotor). Ingenting her er et forslag — dette er den visuelle
-regresjonsbasen. Scene-id-ene er uendret fra før runden, så de to
-atlasene kan sammenlignes fil for fil, også der navnet på stedet er byttet
-(\`redigering--*\` er nå **Bibliotek**, \`eksport--*\` heter **Eksport**).
+Hvert bilde er ett skjermbilde av appen slik den står i **v0.32.0-beta.1 — «én flate»**:
+to flater (**Ta opp** og **Opptak**) og et tannhjul. Alt som før var egne sider er
+flyttet dit det brukes — lydkilde, mappe og kvalitet i **lydarket**, planen og
+bryterne i **ukestripa** nederst på Ta opp, formatet og intro/outro i
+**eksportarket**, språk, oppdatering og statistikk i **tannhjulet** — og opptaket
+selv er «bare opptaket» (**opptaksmodus** med hold-for-stopp). Skissen som ble
+bygget etter ligger i [\`../en-flate/\`](../en-flate/). Ingenting her er et
+forslag — dette er den visuelle regresjonsbasen. Scene-id-ene som het
+\`innstillinger--*\` og \`plan--*\` er erstattet av \`tannhjul--*\`,
+\`lydark--*\` og \`strip--*\`; de som lever (\`opptak--*\`, \`redigering--*\`,
+\`eksport--*\`, \`forste-gang--*\`, \`skallet--*\`) beholder navnet.
 
 Arkivet fra v0.15 ligger i [\`../atlas-v015/\`](../atlas-v015/INDEX.md), sammen
 med IA-uttrekket i [\`../ATLAS.md\`](../ATLAS.md). De to viser appen slik den
 VAR, og skal ikke forveksles med denne mappa.
 
-**Vindu:** 1180×760 (Tauri-vinduets standardstørrelse). Hovedscenen på hver
-destinasjon er i tillegg fotografert på 1000×760 — bredden der kontrollrommet
-faller til ÉN kolonne — med suffikset \`--1000x760\` (norsk bare: om en layout
-overlever én kolonne er ikke et språkspørsmål). Sider som ruller forbi vindushøyden har
+**Vindu:** 1180×760 (Tauri-vinduets standardstørrelse). Hovedscenene er i
+tillegg fotografert på 1000×760 — en smalere maskin enn standard — med suffikset
+\`--1000x760\` (norsk bare: om en layout overlever bredden er ikke et
+språkspørsmål). Sider som ruller forbi vindushøyden har
 et \`--full\`-skudd som viser hele siden (vindushøyden settes til innholdets
 høyde; Playwrights egen \`fullPage\` gir ingenting her, fordi appen ruller inne i
 \`#main\`, ikke i dokumentet).
@@ -356,17 +357,13 @@ ${sections.join("\n\n")}
 ${missing.length ? `\n**Ikke fotografert i denne kjøringen:** ${missing.map((m) => `\`${m}\``).join(", ")}.\n` : ""}
 ## Riggtest før neste slipp
 
-Designrunden er ikke sluppet. Før den går i en utgivelse skal en ekte Mac og
-en ekte Windows-PC (1180×760, og ned til 1000×760) bekrefte:
-
-- [ ] Start-knappen og «Neste» er synlige i handlingslinja, også med «Lyd fra»-kortet åpent og i lyd-steget i biblioteket.
-- [ ] Ingen side ruller sidelengs, og treffflatene er store nok med mus og med fingeren.
-- [ ] «Vis i Finder» heter «Vis i Utforsker» på Windows, og knappen åpner mappen med fila valgt.
-- [ ] Opptak-kortene stiller hele spørsmål («Hvilken lydkilde?», «Hvor lagres opptakene?», «Hvilken kvalitet?», «Ta med video», «Ta opp automatisk», «Hvem får beskjed hvis noe går galt?»).
-- [ ] Første gang, steg 1–6: det er tydelig at man trykker «Bruk denne lydkilden» og så «Neste».
-- [ ] Lydjusteringen (mikseren) leses uten lydbakgrunn: hverdagsord i tittelen, fagordet under.
-- [ ] Innstillinger: innholdslista øverst hopper til riktig seksjon, og «Tidsplan → Spesialopptak» står tett fra venstre.
-- [ ] Teksten leses naturlig på de fem språkene som ikke er fotografert (sv, da, de, fr, pl) — av noen som snakker dem.
+Det som bare en ekte maskin kan bevise står i [\`docs/PLAN.md\`](../../PLAN.md)
+under «Åpent — rigg trengs» og i [\`docs/SMOKE-TEST.md\`](../../SMOKE-TEST.md).
+For «én flate» er det særlig: kamerabildet på 1280 px / 12 bilder i sekundet på
+en svak Windows-PC, H.264-avspilling i redigeringen (WKWebView og WebView2),
+hold-for-stopp med VoiceOver og Narrator, første gang på en fersk maskin, og
+planlagt opptak med «+30» og «∞» på ekte utstyr. Teksten på bildene her skal i
+tillegg leses av noen som snakker språket (no og en).
 
 ## Hvordan scenene lages
 

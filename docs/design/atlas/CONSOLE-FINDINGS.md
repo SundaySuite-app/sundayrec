@@ -26,12 +26,19 @@ Les hver rad sammen med scenens oppskrift i [INDEX.md](INDEX.md): noen scener
 **fyrer en feil med vilje** (feilbannere, feilede lastinger, feilede lagringer).
 En `console.error` derfra er riktig oppførsel, ikke gjeld.
 
-_Ingen. Ingen scene ga `console.error` eller `pageerror` utover harness-støyen._
+| Scene | Språk | Type | Melding |
+| --- | --- | --- | --- |
+| `tannhjul--lisenser` | no | pageerror | Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag. |
+| `tannhjul--lisenser` | no | console.error | Blocked script execution in 'about:srcdoc' because the document's frame is sandboxed and the 'allow-scripts' permission is not set. |
+| `tannhjul--lisenser` | en | pageerror | Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag. |
+| `tannhjul--lisenser` | en | console.error | Blocked script execution in 'about:srcdoc' because the document's frame is sandboxed and the 'allow-scripts' permission is not set. |
 
 ## Harness-støy (forventet, ikke gjeld)
 
-_Ingen._
+| Antall | Melding |
+| --- | --- |
+| 4 | Failed to load resource: net::ERR_UNKNOWN_URL_SCHEME |
 
 ---
 
-Scener fotografert: 142. Ekte funn: 0. Støy-treff: 0.
+Scener fotografert: 137. Ekte funn: 4. Støy-treff: 4.
