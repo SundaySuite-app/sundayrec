@@ -2,6 +2,7 @@ import { parseGoto } from "@lib/goto-core";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  closeGear,
   handleTrayAction,
   navigate,
   panel,
@@ -9,6 +10,7 @@ import {
   resolveRoute,
   route,
   type Route,
+  underlay,
 } from "./router";
 
 /** What a `?goto=` string resolves to, end to end: the shim parses it with
@@ -70,10 +72,15 @@ describe("?goto= i de tre flatene", () => {
         highlight: false,
       },
     ],
-    // Andre innstillingsankre blir på INNSTILLINGER.
+    // Varslene bor i ukestripa.
     [
       "?goto=settings:notify",
-      { page: "settings", anchor: "notify", highlight: false },
+      { page: "record", panel: "strip", anchor: "notify", highlight: false },
+    ],
+    // Andre innstillingsankre åpner tannhjulet (INNSTILLINGER).
+    [
+      "?goto=settings:updates",
+      { page: "settings", anchor: "updates", highlight: false },
     ],
   ] as Array<[string, Route]>)("%s", (search, expected) => {
     expect(fromGoto(search)).toEqual(expected);
@@ -144,6 +151,14 @@ describe("resolveRoute", () => {
       firstRun: true,
     });
   });
+
+  it("an unknown settings anchor opens the gear and keeps the anchor", () => {
+    expect(resolveRoute("settings", { anchor: "licenses" })).toEqual({
+      page: "settings",
+      anchor: "licenses",
+      highlight: true,
+    });
+  });
 });
 
 describe("navigate", () => {
@@ -152,12 +167,45 @@ describe("navigate", () => {
     expect(route.value).toEqual({ page: "record" });
     navigate("recordings", { tab: "trash" });
     expect(route.value).toEqual({ page: "recordings", tab: "trash" });
-    navigate("settings", { anchor: "notify" });
+    navigate("settings", { anchor: "language" });
     expect(route.value).toEqual({
       page: "settings",
-      anchor: "notify",
+      anchor: "language",
       highlight: true,
     });
+  });
+});
+
+describe("tannhjulet", () => {
+  it("husker siden under, og lukking går dit — uten panel og puls", () => {
+    navigate("recordings", { tab: "trash" });
+    navigate("settings");
+    expect(underlay.value).toEqual({ page: "recordings", tab: "trash" });
+    closeGear();
+    expect(route.value).toEqual({ page: "recordings", tab: "trash" });
+  });
+
+  it("åpnes fra et åpent ark: arket blir ikke stående bak kortet", () => {
+    navigate("record", { panel: "source" });
+    navigate("settings");
+    expect(underlay.value).toEqual({ page: "record" });
+    closeGear();
+    expect(route.value).toEqual({ page: "record" });
+  });
+
+  it("å gå fra tannhjulet til en annen side oppdaterer siden under", () => {
+    navigate("record");
+    navigate("settings");
+    navigate("recordings");
+    expect(underlay.value).toEqual({ page: "recordings" });
+    closeGear();
+    expect(route.value).toEqual({ page: "recordings" });
+  });
+
+  it("closeGear er en no-op når tannhjulet ikke er åpent", () => {
+    navigate("record", { panel: "strip" });
+    closeGear();
+    expect(route.value).toEqual({ page: "record", panel: "strip" });
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * «Del anonym diagnostikk» — bryteren, «Vis» og «Slett mine data».
+ * «Anonym statistikk» — bryteren, «Vis» og «Slett mine data» (som ikoner).
  *
  * ## Sannheten er IKKE i innstillingene
  *
@@ -29,12 +29,14 @@ import { useEffect, useState } from "preact/hooks";
 import type { TelemetryConsent } from "@legacy/bindings/TelemetryConsent";
 
 import { t } from "../../../i18n";
-import { Button } from "../../../ui/Button/Button";
 import { alertDialog, confirmDialog } from "../../../ui/dialog";
-import { SettingRow } from "../../../ui/SettingRow/SettingRow";
+import { Icon } from "../../../ui/Icon/Icon";
+import { Receipt } from "../../../ui/Receipt/Receipt";
 import { Toggle } from "../../../ui/Toggle/Toggle";
 import { toast } from "../../../ui/toast";
 import { useReceipt } from "../../../settings/use-receipt";
+import { GearRow } from "./GearRow";
+import styles from "./gear.module.css";
 
 /** Samtykket slik bakenden ser det. `null` = ikke lest ennå. */
 function useConsent(): {
@@ -125,28 +127,34 @@ export function TelemetryRow() {
   }
 
   return (
-    <SettingRow
-      label={t("app.setup.advanced.diag")}
-      description={t("app.setup.advanced.diagDesc")}
-      receipt={receipt}
+    <GearRow
       testId="adv-diag"
-    >
-      {(ids) => (
+      anchors={["privacy", "telemetry", "diag"]}
+      icon="shield"
+      title={t("app.gear.telemetry")}
+      sub={<Receipt state={receipt} testId="adv-diag-receipt" />}
+      controls={
         <>
-          <Button
-            variant="ghost"
-            testId="adv-diag-preview"
+          <button
+            type="button"
+            class={styles.iconBtn}
+            data-testid="adv-diag-preview"
+            aria-label={t("app.gear.telemetryShow")}
+            title={t("app.gear.telemetryShow")}
             onClick={() => void showTelemetryPreview()}
           >
-            {t("app.setup.advanced.show")}
-          </Button>
-          <Button
-            variant="ghost"
-            testId="adv-diag-delete"
+            <Icon name="eye" size={20} />
+          </button>
+          <button
+            type="button"
+            class={styles.iconBtn}
+            data-testid="adv-diag-delete"
+            aria-label={t("app.setup.advanced.diagDelete")}
+            title={t("app.setup.advanced.diagDelete")}
             onClick={() => void deleteData()}
           >
-            {t("app.setup.advanced.diagDelete")}
-          </Button>
+            <Icon name="trash" size={20} />
+          </button>
           <Toggle
             // `active`, ikke `status === "granted"`: et ja til et smalere
             // omfang er ikke et ja til dagens, og bakenden er det ene stedet
@@ -154,12 +162,14 @@ export function TelemetryRow() {
             checked={consent?.active === true}
             onChange={(next) => void setGranted(next)}
             disabled={busy}
-            labelId={ids.labelId}
-            describedBy={ids.describedBy}
+            labelId="gear-telemetry-label"
             testId="adv-diag-control-input"
           />
+          <span id="gear-telemetry-label" hidden>
+            {t("app.gear.telemetry")}
+          </span>
         </>
-      )}
-    </SettingRow>
+      }
+    />
   );
 }

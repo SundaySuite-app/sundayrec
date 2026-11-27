@@ -87,11 +87,11 @@ test.describe("settings", () => {
       goto: "settings",
     });
 
-    const field = page.getByTestId("language-control-input");
+    const field = page.getByTestId("gear-language-en");
     await expect(field).toBeVisible();
-    await field.selectOption("en");
+    await field.click();
 
-    await expect(page.getByTestId("language-row-receipt")).toHaveText(
+    await expect(page.getByTestId("gear-language-receipt")).toHaveText(
       "Saved ✓",
     );
     await expect
@@ -104,7 +104,10 @@ test.describe("settings", () => {
     );
     // Etter en reload står `?goto=settings` fortsatt i URL-en, så vi er tilbake
     // på flaten — og kontrollen bærer det som faktisk ble lagret.
-    await expect(page.getByTestId("language-control-input")).toHaveValue("en");
+    await expect(page.getByTestId("gear-language-en")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 
   test("the value survives a full reload, not just a re-render", async ({
@@ -137,21 +140,23 @@ test.describe("settings", () => {
   }) => {
     // `?goto=settings:<anker>` er det hvert skjermbilde-pass og et titalls
     // andre spec hviler på, så den får sin egen spiker. På Innstillinger er
-    // «fanen» et anker: siden ruller til seksjonen den navngir.
+    // «fanen» et anker: raden den navngir pulserer.
     for (const [param, anchor, testId] of [
       ["settings:sound", "sound", "setup-sound"],
-      ["settings:notify", "notify", "setup-notify"],
+      // Varslene bor i ukestripas fliser.
+      ["settings:notify", "notify", "strip-tiles"],
       ["settings:folder", "folder", "setup-folder"],
       // Den fullt kvalifiserte skrivemåten betyr det samme som den bare.
-      ["settings:settings-language", "language", "setup-language"],
+      ["settings:settings-language", "language", "gear-row-language"],
     ] as const) {
       await boot(page, {
         fixtures: BOOT_FIXTURES,
         settings: SETTLED_SETTINGS,
         goto: param,
       });
-      // E2: sound/folder bor i lydkilde-arket på TA OPP, resten på Innstillinger.
-      const moved = anchor === "sound" || anchor === "folder";
+      // E2/E5: sound/folder bor i lydkilde-arket og notify i ukestripa — begge
+      // på TA OPP. Resten åpner tannhjulet.
+      const moved = anchor !== "language";
       await expect(
         page.getByTestId(moved ? "nav-record" : "nav-settings"),
       ).toHaveAttribute("aria-current", "page");
@@ -168,8 +173,8 @@ test.describe("settings", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings",
     });
-    await expect(page.getByTestId("setup-advanced")).toBeVisible();
-    await expect(page.getByTestId("setup-language")).toBeVisible();
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
+    await expect(page.getByTestId("gear-row-language")).toBeVisible();
     await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
   });
 });

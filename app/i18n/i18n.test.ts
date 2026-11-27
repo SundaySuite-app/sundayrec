@@ -104,7 +104,7 @@ describe("app i18n", () => {
     async (code) => {
       for (const shown of ALL_LOCALES) {
         await setLocale(shown);
-        expect(tDyn("app.language", code)).not.toBe("");
+        expect(tDyn("app.gear.lang", code)).not.toBe("");
       }
       await setLocale("no");
     },

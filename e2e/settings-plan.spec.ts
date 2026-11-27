@@ -14,8 +14,8 @@ import {
 // `decisions-core.test.ts`), og skjermene har sine egne spec. Det bare denne
 // kan bevise er SKJØTENE:
 //
-//   1. en seksjon på INNSTILLINGER lagrer der man står, og verdien står i
-//      basen (kvalitet, mappe, varsler),
+//   1. en innstilling lagrer der man står, og verdien står i basen
+//      (kvalitet, mappe — i lydarket),
 //   2. TA OPP peker dit det som er flyttet: «Endre» på kilden, banneret om lite
 //      plass og linja om neste planlagte opptak,
 //   3. dyplenkene (`?goto=settings:sound`, `?goto=plan:auto`) lander på siden og
@@ -67,61 +67,6 @@ test.describe("innstillingene lagrer der man står", () => {
         return [s.format, s.bitrate];
       })
       .toEqual(["mp3", "256"]);
-  });
-
-  test("varsler lagrer der man står", async ({ page }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: { ...CHOSEN, notifyStart: true, notifyStop: true },
-      goto: "settings",
-    });
-
-    await page.getByTestId("notify-os-control-input").click();
-    await expect(page.getByTestId("notify-os-receipt")).toHaveText("Lagret ✓");
-    // Én bryter, to nøkler.
-    await expect
-      .poll(async () => {
-        const stored = await storedSettings(page);
-        return [stored.notifyStart, stored.notifyStop];
-      })
-      .toEqual([false, false]);
-  });
-
-  test("varsler slått av i OS-et sier det, og peker på bryteren", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: {
-        ...FIXTURES,
-        notification_permission: "denied",
-        notification_request_permission: "denied",
-        notification_open_settings: fn(`() => {
-          window.__E2E_OPENED__ = (window.__E2E_OPENED__ ?? 0) + 1;
-        }`),
-        notification_send_test: fn(`() => {
-          window.__E2E_TESTED__ = (window.__E2E_TESTED__ ?? 0) + 1;
-        }`),
-      },
-      settings: CHOSEN,
-      goto: "settings",
-    });
-
-    await expect(page.getByTestId("notify-permission")).toContainText(
-      "Slått av for SundayRec.",
-    );
-    await page.getByTestId("notify-open-settings").click();
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_OPENED__))
-      .toBe(1);
-
-    // Sendt er ikke det samme som vist — teksten sier det.
-    await page.getByTestId("notify-send-test").click();
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_TESTED__))
-      .toBe(1);
-    await expect(page.getByTestId("toast-host")).toContainText(
-      "varsler er slått av",
-    );
   });
 
   test("lagringsmappen sier hvor opptakene havner", async ({ page }) => {
@@ -191,30 +136,6 @@ test.describe("innstillingene lagrer der man står", () => {
     await expect(page.getByTestId("folder-path")).toHaveText(
       "/Users/frivillig/SundayRec",
     );
-  });
-
-  test("seksjonene er der, og innholdslista hopper til dem", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: CHOSEN,
-      goto: "settings",
-    });
-    for (const key of ["notify", "language", "updates", "privacy", "about"]) {
-      await expect(page.getByTestId(`setup-sec-${key}`)).toBeVisible();
-      await expect(page.getByTestId(`setup-toc-${key}`)).toBeVisible();
-    }
-    // Lyd, kamera, mappe og opptaksvalg bor i lydarket (E4).
-    for (const key of ["sound", "camera", "folder", "recording"]) {
-      await expect(page.getByTestId(`setup-sec-${key}`)).toHaveCount(0);
-    }
-    // Tidsplanen bor i ukestripa på TA OPP.
-    await expect(page.getByTestId("plan-week")).toHaveCount(0);
-    await expect(page.getByTestId("strip-tiles")).toHaveCount(0);
-
-    await page.getByTestId("setup-toc-about").click();
-    await expect(page.locator("#sec-about-h")).toBeFocused();
   });
 });
 

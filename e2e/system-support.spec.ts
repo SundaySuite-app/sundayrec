@@ -94,7 +94,9 @@ test.describe("licenses", () => {
       goto: "settings",
     });
 
-    await expect(page.getByTestId("adv-licenses")).toContainText("Lisenser");
+    await expect(page.getByTestId("adv-licenses-open")).toContainText(
+      "Lisenser",
+    );
     await page.getByTestId("adv-licenses-open").click();
 
     const frame = page.frameLocator('[data-testid="licenses-frame"]');
@@ -104,8 +106,10 @@ test.describe("licenses", () => {
       "",
     );
 
+    // Esc lukker BARE leseren — tannhjulet under den blir stående.
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("licenses-viewer")).toHaveCount(0);
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
   });
 
   test("a missing notices file says so instead of showing an empty page", async ({

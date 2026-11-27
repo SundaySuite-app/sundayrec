@@ -6,7 +6,8 @@
  *   `recordings` OPPTAK — lista er landingsvisningen; et opptak åpner editoren
  *                på SAMME side (pil tilbake), eksporten er et ark inne i
  *                editoren. Papirkurven er en fane (`tab: "trash"`).
- *   `settings`   INNSTILLINGER — det som ikke hører hjemme på de to andre.
+ *   `settings`   INNSTILLINGER — tannhjulet: et sentrert kort over siden man
+ *                kom fra (`underlay`), ikke en side av seg selv.
  *
  * ## E2: eldre lenker lever videre, men lander på nye steder
  *
@@ -14,8 +15,10 @@
  * løses til `record` med `panel: "strip"` (ukestripa åpen). Innstillingsankrene
  * som flyttet til lydkilde-arket — `sound`, `engine`, `folder`, `autodelete` —
  * løses til `record` med `panel: "source"` (`"source-more"` for de tre siste,
- * som bor under «Mer»). Andre innstillingsankre blir på `settings`.
- * Ankeret følger med i ruten.
+ * som bor under «Mer»). `notify` (varsler) bor i ukestripa, så det løses til
+ * `record` med `panel: "strip"`. ALLE andre innstillingsankre — språk,
+ * oppdatering, personvern, om, og alt som er pensjonert — åpner tannhjulet
+ * (`settings`). Ankeret følger med i ruten.
  *
  * Den frittstående eksportsiden og de eldste `?goto=`-aliasene er borte. Det
  * som er igjen er ÉN regel for ukjente sider: de lander på TA OPP, og sier fra
@@ -79,6 +82,8 @@ const SOURCE_ANCHORS: Readonly<Record<string, Panel>> = {
   engine: "source-more",
   folder: "source-more",
   autodelete: "source-more",
+  // Varslene (OS-varsler, påminnelse) bor i ukestripas fliser.
+  notify: "strip",
 };
 
 /** Samme form som legacy `navigateTo`s opsjoner, så et kallsted kan flyttes
@@ -133,9 +138,38 @@ export function resolveRoute(page: string, opts: NavigateOpts = {}): Route {
   return next;
 }
 
+/**
+ * Flaten under tannhjulet: den siste ruten som IKKE var `settings`, uten
+ * anker, puls og panel. Tannhjulet er et kort over denne siden, og lukkingen
+ * går tilbake dit — så en frivillig som åpnet tannhjulet fra OPPTAK lander på
+ * OPPTAK igjen, ikke på TA OPP. Panelet nulles: et åpent ark BAK et åpent
+ * tannhjul er to ting som kjemper om samme Esc.
+ */
+export const underlay = signal<Route>({ page: "record" });
+
+/** Sett ruten, og husk hva som står under tannhjulet. */
+function setRoute(next: Route): void {
+  const prev = route.peek();
+  if (next.page !== "settings") {
+    underlay.value = next;
+  } else if (prev.page !== "settings") {
+    const base: Route = { page: prev.page };
+    if (prev.tab) base.tab = prev.tab;
+    underlay.value = base;
+  }
+  route.value = next;
+}
+
 /** Gå et sted. Samme signatur som legacy `navigateTo`. */
 export function navigate(page: string, opts: NavigateOpts = {}): void {
-  route.value = resolveRoute(page, opts);
+  setRoute(resolveRoute(page, opts));
+}
+
+/** Lukk tannhjulet: tilbake til siden under. Ingenting hvis det ikke er åpent. */
+export function closeGear(): void {
+  if (route.peek().page !== "settings") return;
+  const { page, tab } = underlay.peek();
+  route.value = tab ? { page, tab } : { page };
 }
 
 /**

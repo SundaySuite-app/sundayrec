@@ -48,12 +48,26 @@ export type IconName =
   | "laptop"
   | "mic"
   | "check"
-  | "chevron-up";
+  | "chevron-up"
+  | "eye"
+  | "copy";
 
 /** Former som males med fyll i stedet for strek. */
 const FILLED: ReadonlySet<IconName> = new Set(["play", "pause"]);
 
 const GLYPHS: Record<IconName, ComponentChildren> = {
+  eye: (
+    <>
+      <path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </>
+  ),
   record: (
     <>
       <circle cx="12" cy="12" r="9" />

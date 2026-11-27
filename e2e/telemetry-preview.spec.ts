@@ -68,7 +68,7 @@ test.describe("telemetry preview", () => {
     await openAdvanced(page);
 
     const button = page.getByTestId("adv-diag-preview");
-    await expect(button).toHaveText("Vis");
+    await expect(button).toHaveAccessibleName("Vis hva som sendes");
     await button.click();
 
     await expect(page.getByTestId("dialog")).toBeVisible();

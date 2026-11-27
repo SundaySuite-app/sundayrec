@@ -156,11 +156,12 @@ test.describe("opptaksradene", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings",
     });
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    await expect(page.getByTestId("setup-language")).toBeVisible();
-    // Resten er delt i seksjoner med overskrift (og en innholdsliste øverst).
-    await expect(page.getByTestId("setup-toc")).toBeVisible();
-    await expect(page.getByTestId("setup-advanced")).toBeVisible();
+    // Tannhjulet er et kort over TA OPP — ikke en side med seksjoner.
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
+    await expect(page.getByTestId("gear-row-language")).toBeVisible();
+    await expect(page.getByTestId("gear-row-update")).toBeVisible();
+    await expect(page.getByTestId("adv-diag")).toBeVisible();
+    await expect(page.getByTestId("gear-row-about")).toBeVisible();
     await expect(page.getByTestId("tile-pre")).toHaveCount(0);
   });
 });

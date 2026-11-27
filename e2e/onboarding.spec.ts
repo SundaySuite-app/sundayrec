@@ -264,6 +264,6 @@ test.describe("onboarding", () => {
     await expect(page.getByTestId("consent-card")).toBeVisible();
     // The rest of the app is untouched — the bottom bar still navigates.
     await page.getByTestId("nav-settings").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
   });
 });

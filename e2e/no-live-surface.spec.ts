@@ -49,7 +49,7 @@ test.describe("appen uten Direkte", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS },
-      goto: "settings:notify",
+      goto: "settings",
     });
 
     // 1. Ingen Direkte i navigasjonen — og ikke noe femte punkt i det hele tatt.
@@ -58,12 +58,9 @@ test.describe("appen uten Direkte", () => {
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 
-    // 2. Varsler-seksjonen rendrer — dyplenken navnga den — med varselet på
-    //    maskinen, men UTEN stream-destinasjons-kortet og
-    //    oppløsningsvelgeren.
-    await expect(page.getByTestId("setup-notify")).toBeVisible();
-    await expect(page.getByTestId("notify-card")).toBeVisible();
-    await expect(page.getByTestId("notify-os")).toBeVisible();
+    // 2. Tannhjulet rendrer — dyplenken åpnet det — UTEN stream-destinasjons-
+    //    kortet og oppløsningsvelgeren.
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
     await expect(page.getByTestId("stream-destinations-card")).toHaveCount(0);
     await expect(page.locator('input[name="stream-resolution"]')).toHaveCount(
       0,

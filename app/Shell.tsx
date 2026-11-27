@@ -6,8 +6,9 @@
  *   OPPTAK        `app/pages/library/` + `app/editor/`: lista er landingen, et
  *                 opptak åpner editoren på samme side, og eksporten er et ark
  *                 inne i editoren. Papirkurven er en fane.
- *   INNSTILLINGER `app/pages/settings/`: lyd, kamera, mappe, varsler, språk,
- *                 oppdatering, personvern og om.
+ *   INNSTILLINGER tannhjulet (`app/pages/settings/GearDialog.tsx`): språk,
+ *                 oppdatering, anonym statistikk og om — et kort over siden
+ *                 man kom fra, ikke en side av seg selv.
  *
  * Skallet, statuslinjen, navigasjonen og fokusflyttingen er det PageShell og
  * denne fila eier; sidene eier resten.
@@ -85,12 +86,13 @@ import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/firstrun/FirstRun";
-import { SettingsPage } from "./pages/settings/SettingsPage";
+import { GearDialog } from "./pages/settings/GearDialog";
 import {
   consumePendingAction,
   navigate,
   pendingAction,
   route,
+  underlay,
 } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { audioDevices } from "./state/devices";
@@ -117,53 +119,62 @@ export function Shell({ probe }: ShellProps) {
   useGlobalShortcuts();
 
   const firstRun = current.firstRun === true;
+  // Tannhjulet er et kort OVER siden man kom fra: skallet viser den siden
+  // (`underlay`), `inert` bak sløret, og lukking går tilbake dit.
+  const gear = current.page === "settings" && !firstRun;
+  const shown = gear ? underlay.value : current;
 
+  /* TA OPP og INNSTILLINGER heter det destinasjonen heter — begge er ÉN
+    skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
+    underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
+    opptaket som er åpent), og første gang er fem spørsmål med hvert sitt. */
   return (
-    /*
-      TA OPP og INNSTILLINGER heter det destinasjonen heter — begge er ÉN
-      skjerm, og et eget navn på en av dem ville vært en overskrift som lover en
-      underside. OPPTAK har to andre ting å hete (Papirkurv, og datoen på
-      opptaket som er åpent), og første gang er fem spørsmål med hvert sitt.
-    */
-    <PageShell
-      heading={
-        firstRunHeading(firstRun) ??
-        (current.page === "recordings" ? editHeading(current.tab) : undefined)
-      }
-    >
-      {/*
+    <>
+      <PageShell
+        inert={gear}
+        heading={
+          firstRunHeading(firstRun) ??
+          (shown.page === "recordings" ? editHeading(shown.tab) : undefined) ??
+          // Under tannhjulet heter siden det den under heter, ikke «Innstillinger».
+          (gear ? tDyn("app.page", shown.page) : undefined)
+        }
+      >
+        {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
         fabrikkny app. Feilringen er det eneste stedet forskjellen finnes.
       */}
-      {failed ? (
-        <Banner
-          tone="bad"
-          title={tDyn("error", failed)}
-          testId="hydrate-error"
-          actions={
-            <Button testId="hydrate-retry" onClick={() => void retryHydrate()}>
-              {t("error.settingsLoadRetry")}
-            </Button>
-          }
-        />
-      ) : null}
+        {failed ? (
+          <Banner
+            tone="bad"
+            title={tDyn("error", failed)}
+            testId="hydrate-error"
+            actions={
+              <Button
+                testId="hydrate-retry"
+                onClick={() => void retryHydrate()}
+              >
+                {t("error.settingsLoadRetry")}
+              </Button>
+            }
+          />
+        ) : null}
 
-      <UpdateBanner />
+        <UpdateBanner />
 
-      {import.meta.env.DEV && probe === "setting" ? (
-        <SettingProbe />
-      ) : firstRun ? (
-        <FirstRun />
-      ) : current.page === "record" ? (
-        /* Panelene (lydarket, ukestripa) åpnes av `RecordPage` selv. */
-        <RecordPage />
-      ) : current.page === "recordings" ? (
-        <RecordingsSurface tab={current.tab} />
-      ) : (
-        <SettingsPage />
-      )}
-    </PageShell>
+        {import.meta.env.DEV && probe === "setting" ? (
+          <SettingProbe />
+        ) : firstRun ? (
+          <FirstRun />
+        ) : shown.page === "record" ? (
+          /* Panelene (lydarket, ukestripa) åpnes av `RecordPage` selv. */
+          <RecordPage />
+        ) : (
+          <RecordingsSurface tab={shown.tab} />
+        )}
+      </PageShell>
+      {gear ? <GearDialog /> : null}
+    </>
   );
 }
 

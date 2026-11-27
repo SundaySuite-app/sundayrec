@@ -163,23 +163,27 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       page,
     }) => {
       // Migrert fra før F4: `settings.language` kan stå på et språk som ikke finnes lenger. Appen
-      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og boksen
-      // viser språket som GJELDER — ikke den lagrede strengen, som en `<select>` uten treff ville
-      // fortiet ved å vise den første optionen.
+      // starter på systemregelen (norsk system → norsk, ellers engelsk) uten feilmelding, og
+      // tannhjulet viser språket som GJELDER — ikke den lagrede strengen, som en gruppe uten treff
+      // ville fortiet ved å merke det første valget.
       await boot(page, {
         fixtures: BOOT_FIXTURES,
         settings: { ...SETTLED_SETTINGS, language: "de" },
         goto: "settings",
       });
 
-      await expect(page.getByTestId("setup-language")).toBeVisible();
-      await expect(page.getByTestId("setup-language-lede")).toHaveText(
-        "The language the app uses.",
+      await expect(page.getByTestId("gear-dialog")).toBeVisible();
+      await expect(page.getByTestId("gear-language-en")).toHaveAttribute(
+        "aria-checked",
+        "true",
       );
-      const select = page.getByTestId("language-control-input");
-      await expect(select).toHaveValue("en");
-      await expect(select.locator("option")).toHaveCount(2);
-      await expect(select.locator("option:disabled")).toHaveCount(0);
+      await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      await expect(
+        page.getByTestId("gear-language").getByRole("radio"),
+      ).toHaveCount(2);
     });
   });
 
@@ -193,16 +197,17 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
         goto: "settings",
       });
 
-      await expect(page.getByTestId("setup-language-lede")).toHaveText(
-        "Språket appen bruker.",
+      await expect(page.getByTestId("gear-dialog")).toContainText(
+        "Innstillinger",
       );
-      await expect(page.getByTestId("language-control-input")).toHaveValue(
-        "no",
+      await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+        "aria-checked",
+        "true",
       );
     });
   });
 
-  test("valgboksen tilbyr norsk og engelsk, ingen deaktivert", async ({
+  test("språkvalget tilbyr norsk og engelsk, ingen deaktivert", async ({
     page,
   }) => {
     await boot(page, {
@@ -211,10 +216,17 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       goto: "settings",
     });
 
-    const select = page.getByTestId("language-control-input");
-    await expect(select).toHaveValue("no");
-    await expect(select.locator("option")).toHaveCount(2);
-    await expect(select.locator("option:disabled")).toHaveCount(0);
+    const radios = page.getByTestId("gear-language").getByRole("radio");
+    await expect(radios).toHaveCount(2);
+    await expect(radios.nth(0)).toHaveText("Norsk");
+    await expect(radios.nth(1)).toHaveText("English");
+    await expect(page.getByTestId("gear-language-no")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(
+      page.getByTestId("gear-language").locator('[aria-disabled="true"]'),
+    ).toHaveCount(0);
   });
 
   test("et språkbytte til engelsk maler skjermen om, og lagres", async ({
@@ -228,11 +240,9 @@ test.describe("språkvalget — språket til en migrert profil (R9, F4)", () => 
       goto: "settings",
     });
 
-    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("gear-language-en").click();
 
-    await expect(page.getByTestId("setup-language-lede")).toHaveText(
-      "The language the app uses.",
-    );
+    await expect(page.getByTestId("gear-dialog")).toContainText("Settings");
     await expect
       .poll(async () => (await storedSettings(page)).language)
       .toBe("en");

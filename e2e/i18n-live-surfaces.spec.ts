@@ -59,13 +59,13 @@ test.describe("language switch keeps live-painted state", () => {
       "Opptak",
     );
 
-    // Bytt språk under Innstillinger — den ene flaten som eier språkvalget.
+    // Bytt språk i tannhjulet — det eneste stedet som eier språkvalget.
     await page.getByTestId("nav-settings").click();
-    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("gear-language-en").click();
+    await page.getByTestId("gear-close").click();
 
     // 1. En innstillings-malt flate er malt om PÅ ENGELSK — ikke stående på
     //    norsk, og ikke nullstilt til noe generisk.
-    await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("nav-recordings")).toHaveAttribute(
       "aria-label",
       "Recordings",
@@ -108,14 +108,16 @@ test.describe("notify toggles persist", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS, // both toggles default ON
+      // Varslene bor i ukestripas «Varsel»-flis siden E5; det gamle ankeret
+      // `settings:notify` åpner stripa.
       goto: "settings:notify",
     });
 
-    const toggle = page.getByTestId("notify-os-control-input");
+    const toggle = page.getByTestId("strip-tile-notify");
     await expect(toggle).toHaveAttribute("aria-checked", "true");
 
     await toggle.click();
-    await expect(page.getByTestId("notify-os-receipt")).toHaveText("Lagret ✓");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
 
     // Persistert på lagringslaget — en «bryteren er av»-assertion alene ville
     // også passert for en ren UI-vipp som aldri skrev noe.
@@ -128,11 +130,12 @@ test.describe("notify toggles persist", () => {
 
     // Forlat siden og kom tilbake — kontrollen rives ut av treet og kobles på
     // nytt fra innstillingene.
+    await page.getByTestId("nav-recordings").click();
+    await expect(page.getByTestId("strip-tiles")).toHaveCount(0);
     await page.getByTestId("nav-record").click();
-    await expect(page.getByTestId("setup-notify")).toHaveCount(0);
-    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("record-next-plan").click();
 
-    await expect(page.getByTestId("notify-os-control-input")).toHaveAttribute(
+    await expect(page.getByTestId("strip-tile-notify")).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -198,7 +201,8 @@ test.describe("engine codes render as catalogue sentences", () => {
 
     // Språket byttes der det bor: Innstillinger.
     await page.getByTestId("nav-settings").click();
-    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("gear-language-en").click();
+    await page.getByTestId("gear-close").click();
     // Plan er ikke lenger en fane: gå via dyplenken (E2: record + stripe).
     await page.evaluate(() => window.showPage("plan"));
     await page.getByTestId("strip-wake-more").click();
@@ -250,7 +254,8 @@ test.describe("engine codes render as catalogue sentences", () => {
     // …og oppslaget skjer ved RENDER, så et språkbytte etterpå virker. F2-W9
     // oversatte ved mottak; da hadde denne stått igjen på norsk.
     await page.getByTestId("nav-settings").click();
-    await page.getByTestId("language-control-input").selectOption("en");
+    await page.getByTestId("gear-language-en").click();
+    await page.getByTestId("gear-close").click();
     await page.getByTestId("nav-record").click();
 
     await expect(page.getByTestId("banner-preflight")).toContainText(

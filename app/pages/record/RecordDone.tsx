@@ -20,7 +20,7 @@ import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { ConsentCard } from "../../ui/ConsentCard/ConsentCard";
 import { reveal, revealLabel } from "../../ui/reveal";
-import { showTelemetryPreview } from "../settings/advanced/TelemetryRow";
+import { showTelemetryPreview } from "../settings/gear/TelemetryRow";
 import { basename, formatBytes, spanOfSeconds } from "./record-core";
 import styles from "./record.module.css";
 import { spanText } from "./span-text";

@@ -70,13 +70,29 @@ test.describe("skallet", () => {
     // bunnlinja og må tabbe gjennom hele navigasjonen på nytt for hver side.
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
+    // Tannhjulet er et kort OVER siden man kom fra: overskriften under er
+    // fortsatt OPPTAK, og fokus står i kortet (ikke på overskriften bak sløret).
     await page.getByTestId("nav-settings").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
-    await expect(page.getByTestId("app-heading")).toBeFocused();
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
+    await expect(page.getByTestId("gear-close")).toBeFocused();
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "settings",
+    );
     await expect(page.getByTestId("nav-settings")).toHaveAttribute(
       "aria-current",
       "page",
     );
+
+    // Esc: tilbake til siden under, og fokus tilbake på tannhjulet.
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("gear-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "recordings",
+    );
+    await expect(page.getByTestId("nav-settings")).toBeFocused();
 
     await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");

@@ -31,9 +31,8 @@ test.describe("settings seam — a patch crosses, boot only reads", () => {
       goto: "settings",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    // (`settings:general` lands on the Innstillinger surface — church profile
-    // plus Avansert — since D2; before that it was a tab of its own.)
-    await expect(page.getByTestId("setup-advanced")).toBeVisible();
+    // (`settings` opens the gear — a card over TA OPP — since E8.)
+    await expect(page.getByTestId("gear-dialog")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 

@@ -11,11 +11,11 @@
  * av `general-page.ts` når UA-en sa Windows. Fase B slettet den fila, og
  * notisen fulgte med — som er nøyaktig den typen tap som ikke merkes, fordi
  * ingen test og ingen bruker savner en setning de aldri leste. Den er bygget
- * opp igjen her, på Avansert, som den nærmeste flaten som finnes.
+ * opp igjen her, som liten tekst nederst i «Om» i tannhjulet.
  *
  * ## Bare på Windows
  *
- * Samme regel som før: kortet vises der ASIO finnes. Avgjørelsen kommer fra
+ * Samme regel som før: teksten vises der ASIO finnes. Avgjørelsen kommer fra
  * `detectOs` — den samme kilden som bestemmer om DirectShow-valget finnes i
  * `EngineRow` — og ikke fra en delstreng i UA-linja, fordi «Winamp» inneholder
  * «win».
@@ -29,9 +29,8 @@
  * ikke måtte gjette.
  */
 
-import { t } from "../../../i18n";
-import { Card } from "../../../ui/Card/Card";
 import { currentOs, type Os } from "../../../state/platform-core";
+import styles from "./gear.module.css";
 
 /** Lisensteksten, ordrett. Se `docs/BUILD_ASIO.md`. */
 const ASIO_NOTICE =
@@ -44,15 +43,11 @@ const ASIO_NOTICE =
 export function AsioAttribution({ os = currentOs() }: { os?: Os } = {}) {
   if (os !== "win") return null;
   return (
-    <Card
-      title={t("app.setup.advanced.audioTech")}
-      description={t("app.setup.advanced.audioTechNote")}
-      testId="advanced-asio-attribution"
-    >
-      {/* Lisensteksten, ordrett og på engelsk. Den norske setningen over
-          forklarer hvorfor — en frivillig skal ikke tro at appen "mangler
-          oversettelse". */}
-      <p lang="en">{ASIO_NOTICE}</p>
-    </Card>
+    // Lisensteksten, ordrett og på engelsk, som liten tekst nederst i «Om».
+    // `lang="en"` forklarer hvorfor den ikke er oversatt: en frivillig skal
+    // ikke tro at appen «mangler oversettelse».
+    <p lang="en" data-testid="advanced-asio-attribution" class={styles.asio}>
+      {ASIO_NOTICE}
+    </p>
   );
 }

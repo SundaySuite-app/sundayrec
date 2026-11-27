@@ -235,7 +235,7 @@ Expect both green before spending time on a rig.
 - VERIFIED-BY: e2e/settings-plan.spec.ts::«Endre» på kilden fører til Lyd og kanaler i Innstillinger
 - VERIFIED-BY: e2e/settings-plan.spec.ts::opptaksstart river måleren ut av TA OPP
 - VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
-- VERIFIED-BY: e2e/settings-plan.spec.ts::varsler slått av i OS-et sier det, og peker på bryteren
+- VERIFIED-BY: e2e/strip.spec.ts::slås varsler på mens OS-et har dem av, sier stripa det og tilbyr systeminnstillingene
 - VERIFIED-BY: crates/sundayrec-core/src/notify.rs::a_take_alert_reaches_the_os_only_when_nobody_is_looking
 - VERIFIED-BY: src-tauri/src/notify/take.rs::a_new_take_lets_every_kind_be_said_again
 - VERIFIED-BY: app/lib/api-shim-files.test.ts::en mappe som ikke finnes ennå, sies med vanlige ord — og huskes

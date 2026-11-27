@@ -105,21 +105,35 @@ export interface PageShellProps {
    * skjermleserbruker hører. Utelatt = destinasjonens eget navn.
    */
   heading?: string;
+  /**
+   * `inert` på hele skallet — tannhjulet står OVER det som søsken, og alt bak
+   * sløret skal være utenfor både fokus og klikk.
+   */
+  inert?: boolean;
 }
 
-export function PageShell({ children, heading }: PageShellProps) {
+export function PageShell({ children, heading, inert }: PageShellProps) {
   const current = route.value;
   const recording = isRecording.value;
   const s = settings.value;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
+  const prevPage = useRef(current.page);
   useEffect(() => {
     // Ny side ELLER ny fane: øverst, og fokus på overskriften. Fanen teller
     // med fordi de fem oppsett-spørsmålene er egne skjermer — å åpne «Hvilken
     // lyd?» uten at fokus flyttet seg ville latt en tastaturbruker stå igjen
     // på knappen på en side som ikke finnes lenger.
     mainRef.current?.scrollTo?.({ top: 0 });
+    // Tannhjulet flytter fokus inn i seg selv (`useSheetBehavior`); en
+    // overskrift bak sløret skal ikke stjele det.
+    const wasGear = prevPage.current === "settings";
+    prevPage.current = current.page;
+    if (current.page === "settings" && !current.firstRun) return;
+    // …og det samme når tannhjulet LUKKES: fokus går tilbake til tannhjulknappen
+    // (`useSheetBehavior`), ikke til overskriften.
+    if (wasGear && !current.firstRun) return;
     headingRef.current?.focus();
   }, [current.page, current.tab]);
 
@@ -137,7 +151,7 @@ export function PageShell({ children, heading }: PageShellProps) {
       : tDyn("app.status", status.kind);
 
   return (
-    <div class={styles.page}>
+    <div class={styles.page} inert={inert}>
       <header
         // EKSAKT dette attributtet, og EKSAKT her — se toppen av fila.
         data-tauri-drag-region

@@ -385,22 +385,40 @@ describe("Shell", () => {
     navigate("record");
   });
 
-  it("INNSTILLINGER har alle seksjonene, med lede", () => {
+  it("INNSTILLINGER er tannhjulet: et kort med fire rader over siden under", () => {
+    navigate("record");
     navigate("settings");
     const html = render(<Shell />);
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
-    expect(html).toContain('data-testid="setup-toc"');
-    for (const id of ["notify", "language", "updates", "privacy", "about"]) {
-      expect(html, id).toContain(`data-testid="setup-sec-${id}"`);
+    // Siden under står bak sløret — overskriften er fortsatt TA OPP.
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Ta opp</);
+    expect(html).toContain('data-testid="gear-dialog"');
+    expect(html).toContain("inert");
+    for (const id of [
+      "gear-row-language",
+      "gear-row-update",
+      "adv-diag",
+      "gear-row-about",
+    ]) {
+      expect(html, id).toContain(`data-testid="${id}"`);
     }
-    // Lyd, kamera, mappe og opptaksvalg flyttet til lydarket (E4).
-    for (const id of ["sound", "camera", "folder", "recording"]) {
-      expect(html, id).not.toContain(`data-testid="setup-sec-${id}"`);
+    // Lyd, kamera, mappe og opptaksvalg bor i lydarket, tidsplanen i stripa.
+    for (const id of ["setup-toc", "setup-sec-notify", "setup-advanced"]) {
+      expect(html, id).not.toContain(`data-testid="${id}"`);
     }
-    // Skjermene inni er de samme som første gang, og rammen (leden) står.
-    expect(html).toContain('data-testid="setup-language-lede"');
-    // Tidsplanen bor på PLAN.
-    expect(html).not.toContain('data-testid="advanced-schedule"');
+    navigate("record");
+    expect(render(<Shell />)).not.toContain('data-testid="gear-dialog"');
+  });
+
+  it("tannhjulet pulserer raden et gammelt anker peker på", () => {
+    navigate("record");
+    navigate("settings", { anchor: "updates" });
+    const html = render(<Shell />);
+    expect(html).toMatch(
+      /data-testid="gear-row-update"[^>]*data-anchor-hit="true"/,
+    );
+    expect(html).not.toMatch(
+      /data-testid="gear-row-language"[^>]*data-anchor-hit/,
+    );
     navigate("record");
   });
 
